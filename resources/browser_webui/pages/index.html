@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="chrome://theme/colors.css?sets=ui,chrome" />
+    <link rel="stylesheet" href="chrome://resources/css/md_colors.css" />
+    <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+    <style>
+      :root {
+        /* Surfaces: prefer WebUI tab strip tokens to better match native */
+        /* https://chromium.googlesource.com/chromium/src/%2B/main/chrome/browser/ui/color/chrome_color_id.h */
+        --app-bg: var(--color-web-ui-tab-strip-background);
+        --app-tab-active-bg: var(--color-web-ui-tab-strip-tab-active-title-background);
+        --app-surface: var(--color-web-ui-tab-strip-tab-background);
+        --app-toolbar-bg: var(--color-web-ui-tab-strip-tab-background);
+        --app-addr-bar-bg: var(--color-omnibox-results-background);
+        --app-addr-bar-bg-hover: var(--color-omnibox-results-background-hovered);
+        --app-addr-bar-bg-selected: var(--color-omnibox-results-background-selected);
+
+        --app-splitter-bg: var(--color-web-ui-tab-strip-tab-separator);
+
+        --app-radius: 6px;
+        /* Text */
+        --text-primary: var(--cr-primary-text-color);
+        --text-secondary: var(--cr-secondary-text-color);
+        --text-disabled: var(--cr-disabled-text-color);
+        --text-link: var(--cr-link-color);
+
+        /* Controls */
+        --control-bg: var(--cr-control-background-color);
+        --control-hover: var(--cr-hover-on-light-background-color);
+        --control-active: var(--cr-active-background-color);
+        --focus-ring: var(--cr-focus-outline-color);
+
+        /* Accents / semantics */
+        --accent: var(--google-blue-500);
+        --danger: var(--google-red-600);
+        --success: var(--google-green-600);
+        --warning: var(--google-yellow-700);
+
+        /* Vertical bar page margins */ 
+        --app-edge: 10px;
+        --app-edge-semi: 5px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --control-hover: var(--cr-hover-on-dark-background-color);
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        margin: 0;
+        background-color: var(--app-bg);
+        transition: background-color 80ms linear;
+      }
+    </style>
+    <script type="module" src="pages/index.js"></script>
+  </head>
+  <body>
+    <main-app></main-app>
+</body>
+</html>

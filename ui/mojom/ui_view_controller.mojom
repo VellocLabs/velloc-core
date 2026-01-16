@@ -1,0 +1,109 @@
+// Copyright 2021 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module custom_browser.mojom;
+
+import "custom_browser/ui/mojom/browser_constants.mojom";
+import "ui/gfx/geometry/mojom/geometry.mojom";
+
+// 'sidebar' | 'compactsidebar' | 'standard' | 'compactstandard';
+enum UIMode {
+  kFirst = 0,
+  kSidebar = 1,
+  kCompactSidebar = 2,
+  kStandard = 3,
+  kCompactStandard = 4,
+  kLast = 5
+};
+
+enum ChromeColorID {
+  kColorWebUiTabStripBackground = 0,
+  kColorToolbarBackgroundSubtleEmphasis = 1
+};
+
+enum MouseMovePositionArea {
+  kActiveWebContentsArea = 0,
+  kVisibleNativeViewArea = 1,
+  kBackgroundWebContentsDragArea = 2,
+  kBackgroundWebContentsArea = 3,
+  kSidePanelArea = 4,
+  kDevToolsArea = 5,
+  kWidgetOwnedArea = 6,
+  kInfoBarArea = 7,
+  kWindowCaptionArea = 8,
+  kOtherBrowserArea = 9,
+  kUnknownArea = 100
+};
+
+// Composite info for mouse move position reporting.
+struct PositionAreaInfo {
+  MouseMovePositionArea area;
+  string? view_class_name;
+  gfx.mojom.Point position;
+};
+
+struct UILayoutParams {
+  int32 version;
+  array<NativeViewParams> child_layouts;
+};
+
+enum LayoutAlignment {
+  kStart = 0,
+  kEnd = 1,
+  kCenter = 2,
+  kFill = 3,
+};
+
+struct LayoutParams {
+  int32? left;
+  int32? top;
+  int32? right;
+  int32? bottom;
+  int32? width;
+  int32? height;
+};
+
+struct NativeChildView {
+  string? view_class;
+  string? view_id;
+  int32? flex;
+  int32? width;
+  int32? height;
+};
+
+struct NativeViewParams {
+  int32   hash_id;
+  string? view_class_name;
+  string? view_id;
+  string? extra_style;
+  int32? radius;
+  int32? gap; // default to 0
+  ChromeColorID? background_color;
+  bool visible;  // now computed by the element, not set by markup
+
+  LayoutParams params;
+  // Optional alignment settings only if the child_views empty.
+  LayoutAlignment? v_align;
+  LayoutAlignment? h_align;
+
+  array<NativeChildView>? child_views;
+};
+
+
+interface UIViewHandler {
+  SetUIMode(UIMode ui_mode);
+
+  SaveIntPref(IntKey key, int32 value);
+  SaveBoolPref(BoolKey key, bool value);
+
+
+  UpsertNativeViewLayouts(array<NativeViewParams> batch);
+  EnableLayoutsSaving(bool enable);
+  StartCapture(gfx.mojom.Rect bound, int32 id, int32 delay_ms);
+};
+
+interface UIView {
+  CaptureCompleted(int32 id);
+  PrefUIModeChanged(UIMode ui_mode);
+};

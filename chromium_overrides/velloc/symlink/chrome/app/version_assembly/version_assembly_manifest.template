@@ -1,0 +1,8 @@
+<assembly
+  xmlns='urn:schemas-microsoft-com:asm.v1' manifestVersion='1.0'>
+  <assemblyIdentity
+      name='@CUSTOM_BROWSER_MAJOR@.@CUSTOM_BROWSER_MINOR@.@CUSTOM_BROWSER_BUILD@.@CUSTOM_BROWSER_PATCH@'
+      version='@CUSTOM_BROWSER_MAJOR@.@CUSTOM_BROWSER_MINOR@.@CUSTOM_BROWSER_BUILD@.@CUSTOM_BROWSER_PATCH@'
+      type='win32'/>
+  <file name='chrome_elf.dll'/>
+</assembly>

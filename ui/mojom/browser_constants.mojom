@@ -1,0 +1,32 @@
+// Copyright 2021 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module custom_browser.mojom;
+
+// import "url/mojom/url.mojom";
+// import "ui/gfx/geometry/mojom/geometry.mojom";
+// import "skia/public/mojom/skcolor.mojom";
+
+// const string kChromeUICustomBrowserURL = "chrome://custom.top-chrome/";
+// const string kChromeUICustomBrowserHost = "custom.top-chrome";
+
+
+enum IntKey {
+  kUIMode, /* key for UIMode enum */
+  kGlobalEnd = 1000, /*End of global keys.*/
+  kLeftPanelWidth,
+};
+
+enum BoolKey {
+  kGlobalEnd = 1000, /*End of global keys.*/
+  kLeftPanelLocked,
+};
+
+// The following are names of some specific view area, or specific UI elements.
+const string kLocationBarAutoSizeViewName = "location-bar-auto-size-view";
+const string kMainContentsViewName = "main-contents-view";
+const string kViewsContainerViewName = "views-container-view";
+const string kNewTabToolbarButtonViewName = "new-tab-toolbar-button";
+
+const int32 kUIVersion = 1;

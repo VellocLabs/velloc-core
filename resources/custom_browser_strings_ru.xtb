@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="ru">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">Макет</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">Вкладки сбоку</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">Вертикальные вкладки на боковой панели.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">Вкладки сбоку · Компактно</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">Вертикальные вкладки только со значками на боковой панели.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">Вкладки сверху</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">Горизонтальные вкладки на верхней панели.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">Вкладки сверху · Компактно</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">Горизонтальные вкладки, появляющиеся при наведении.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">Новая вкладка</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">Показывать поле поиска</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">Поисковая система</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">Начните работу с новой вкладкой. Советы и ярлыки для персонализации.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">Открыть руководство по началу работы</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">Загрузка…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">Начать</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">Начните здесь</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">Закрыть</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Начните с Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Логотип Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">Встроенное расширение</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">Имя</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">Описание</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">Версия</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">Включено</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">По умолчанию</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">Фоновая страница</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">Вкл.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">Выкл.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">Да</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">Нет</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">Н/Д</translation>
+</translationbundle>

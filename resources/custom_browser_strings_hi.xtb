@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="hi">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">लेआउट</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">साइडबार टैब</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">साइडबार पर लंबवत टैब।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">साइडबार टैब · कॉम्पैक्ट</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">साइडबार पर केवल आइकन वाले लंबवत टैब।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">शीर्ष टैब</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">शीर्ष बार पर क्षैतिज टैब।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">शीर्ष टैब · कॉम्पैक्ट</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">होवर करने पर दिखाई देने वाले क्षैतिज टैब।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">नई टैब</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">खोज बॉक्स दिखाएं</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">खोज इंजन</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">अपनी नई टैब के साथ शुरू करें। इसे वैयक्तिकृत करने के लिए सुझाव और शॉर्टकट।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">शुरुआत गाइड खोलें</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">लोड हो रहा है…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">शुरू करें</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">यहां से शुरू करें</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">बंद करें</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium के साथ शुरू करें</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium लोगो</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">अंतर्निहित एक्सटेंशन</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">नाम</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">विवरण</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">संस्करण</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">आईडी</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">सक्षम</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">डिफ़ॉल्ट</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">पृष्ठभूमि पृष्ठ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">चालू</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">बंद</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">हाँ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">नहीं</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">लागू नहीं</translation>
+</translationbundle>

@@ -1,0 +1,647 @@
+<BrowserRootView bounds="0 0 2560x1391" enabled="true" id="0" needs-layout="true" visible="true">
+  <NonClientView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+    <BrowserFrameViewWin bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+      <BrowserCaptionButtonContainer bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+        <WindowsCaptionButton bounds="0 0 0x0" enabled="true" id="1" needs-layout="true" visible="true">
+          <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        </WindowsCaptionButton>
+        <WindowsCaptionButton bounds="0 0 0x0" enabled="true" id="2" needs-layout="true" visible="false">
+          <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        </WindowsCaptionButton>
+        <WindowsCaptionButton bounds="0 0 0x0" enabled="true" id="3" needs-layout="true" visible="true">
+          <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        </WindowsCaptionButton>
+        <WindowsCaptionButton bounds="0 0 0x0" enabled="true" id="4" needs-layout="true" visible="true">
+          <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        </WindowsCaptionButton>
+      </BrowserCaptionButtonContainer>
+      <BrowserView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+        <TopContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+          <TabStripRegionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+            <TabStrip bounds="0 0 0x0" enabled="true" id="21" needs-layout="true" visible="true">
+              <TabContainerImpl bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="false" visible="false" />
+              </TabContainerImpl>
+              <TabStrip::TabDragContextImpl bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            </TabStrip>
+            <TabStripControlButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+              <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            </TabStripControlButton>
+            <FrameGrabHandle bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            <TabStripActionContainer bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+              <TabStripNudgeButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </LabelButton>
+              </TabStripNudgeButton>
+              <TabStripNudgeButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </LabelButton>
+              </TabStripNudgeButton>
+              <ProductSpecificationsButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </LabelButton>
+              </ProductSpecificationsButton>
+              <FlexLayoutView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <GlicActorTaskIcon bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </GlicActorTaskIcon>
+              </FlexLayoutView>
+              <GlicButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </LabelButton>
+              </GlicButton>
+              <Separator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+            </TabStripActionContainer>
+          </TabStripRegionView>
+          <ToolbarView bounds="0 0 0x0" enabled="true" id="1000" needs-layout="true" visible="true">
+            <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            <ToolbarView::ContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+              <BackForwardButton bounds="0 0 0x0" enabled="true" id="1001" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </BackForwardButton>
+              <BackForwardButton bounds="0 0 0x0" enabled="true" id="1002" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </BackForwardButton>
+              <ReloadButton bounds="0 0 0x0" enabled="true" id="1003" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </ReloadButton>
+              <HomeButton bounds="0 0 0x16" enabled="true" id="1004" needs-layout="true" visible="false">
+                <FocusRing bounds="-3 -3 6x22" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x16" enabled="true" id="0" needs-layout="false" visible="false" />
+                <ImageView bounds="7 8 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="7 0 0x16" enabled="true" id="0" needs-layout="false" visible="true" />
+              </HomeButton>
+              <SplitTabsToolbarButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <PinnedToolbarButtonStatusIndicator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ImageView>
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </SplitTabsToolbarButton>
+              <LocationBarView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <PermissionDashboardView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <PermissionChipView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                      <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    </View>
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  </PermissionChipView>
+                  <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <PermissionChipView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                      <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    </View>
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  </PermissionChipView>
+                </PermissionDashboardView>
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LocationIconView bounds="0 0 0x0" enabled="true" id="1011" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </LocationIconView>
+                <OmniboxViewViews bounds="0 0 0x0" enabled="true" id="1012" needs-layout="true" visible="true">
+                  <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="false" visible="false" />
+                </OmniboxViewViews>
+                <Label bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <Label bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <SelectedKeywordView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </SelectedKeywordView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="1022" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="1023" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <ContentSettingImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ContentSettingImageView>
+                <PageActionContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                  <PageActionView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PageActionView>
+                </PageActionContainerView>
+                <PageActionIconContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <LensOverlayHomeworkPageActionIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </LensOverlayHomeworkPageActionIconView>
+                  <SharingIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </SharingIconView>
+                  <SharingIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </SharingIconView>
+                  <PwaInstallView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </PwaInstallView>
+                  <CookieControlsIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </CookieControlsIconView>
+                  <SavePaymentIconView bounds="0 0 0x0" enabled="true" id="1014" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </SavePaymentIconView>
+                  <SavePaymentIconView bounds="0 0 0x0" enabled="true" id="1015" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </SavePaymentIconView>
+                  <FilledCardInformationIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </FilledCardInformationIconView>
+                  <VirtualCardEnrollIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </VirtualCardEnrollIconView>
+                  <CollaborationMessagingPageActionIconView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </CollaborationMessagingPageActionIconView>
+                  <StarView bounds="0 0 0x0" enabled="true" id="1005" needs-layout="true" visible="true">
+                    <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                    <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                    <IconLabelBubbleView::SeparatorView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </StarView>
+                </PageActionIconContainerView>
+                <ImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ImageButton>
+              </LocationBarView>
+              <ExtensionsToolbarContainer bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <ExtensionsToolbarButton bounds="0 0 0x0" enabled="true" id="1006" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </ExtensionsToolbarButton>
+                <ExtensionsRequestAccessButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </ExtensionsRequestAccessButton>
+                <ToolbarButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </ToolbarButton>
+              </ExtensionsToolbarContainer>
+              <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <PinnedToolbarActionsContainer bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <PinnedActionToolbarButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                    <PinnedToolbarButtonStatusIndicator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </ImageView>
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </PinnedActionToolbarButton>
+                <PinnedActionToolbarButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                    <PinnedToolbarButtonStatusIndicator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                  </ImageView>
+                  <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                </PinnedActionToolbarButton>
+                <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              </PinnedToolbarActionsContainer>
+              <BatterySaverButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </BatterySaverButton>
+              <PerformanceInterventionButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </PerformanceInterventionButton>
+              <MediaToolbarButtonView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </MediaToolbarButtonView>
+              <AvatarToolbarButton bounds="0 0 34x34" enabled="true" id="1018" needs-layout="true" visible="true">
+                <FocusRing bounds="-1 -1 36x36" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 34x34" enabled="true" id="0" needs-layout="false" visible="false" />
+                <ImageView bounds="7 7 21x21" enabled="true" id="0" needs-layout="false" visible="true" />
+                <LabelButtonLabel bounds="33 0 0x34" enabled="true" id="0" needs-layout="false" visible="true" />
+              </AvatarToolbarButton>
+              <ToolbarButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </ToolbarButton>
+              <OverflowButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </OverflowButton>
+              <BrowserAppMenuButton bounds="0 0 0x0" enabled="true" id="1007" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <InkDropContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <LabelButtonLabel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </BrowserAppMenuButton>
+            </ToolbarView::ContainerView>
+          </ToolbarView>
+          <ContentsSeparator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+        </TopContainerView>
+        <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+          <WebView bounds="0 0 0x0" enabled="true" id="1033" needs-layout="true" visible="false">
+            <NativeViewHost bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+          </WebView>
+          <ScrimView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+          <MultiContentsView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+            <ContentsContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+              <ContentsWebView bounds="0 0 0x0" enabled="true" id="1032" needs-layout="true" visible="true">
+                <NativeViewHost bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </ContentsWebView>
+              <ContentsSeparator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              <NewTabFooterWebView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <NativeViewHost bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </NewTabFooterWebView>
+              <ScrimView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <ScrimView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <GlicBorderView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <MultiContentsViewMiniToolbar bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <Label bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <ImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ImageButton>
+              </MultiContentsViewMiniToolbar>
+            </ContentsContainerView>
+            <MultiContentsResizeArea bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+              <MultiContentsResizeHandle bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              </MultiContentsResizeHandle>
+            </MultiContentsResizeArea>
+            <ContentsContainerView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+              <ContentsWebView bounds="0 0 0x0" enabled="true" id="1032" needs-layout="true" visible="true">
+                <NativeViewHost bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </ContentsWebView>
+              <ContentsSeparator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              <NewTabFooterWebView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <NativeViewHost bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </NewTabFooterWebView>
+              <ScrimView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <ScrimView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <GlicBorderView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+              <MultiContentsViewMiniToolbar bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <Label bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+                <ImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                  <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+                </ImageButton>
+              </MultiContentsViewMiniToolbar>
+            </ContentsContainerView>
+            <MultiContentsDropTargetView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+              <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+                <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+              </View>
+            </MultiContentsDropTargetView>
+          </MultiContentsView>
+          <View bounds="0 0 0x0" enabled="true" id="1034" needs-layout="true" visible="false" />
+          <WatermarkView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+        </View>
+        <ContentsSeparator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        <SidePanel bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+          <ContentParentView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+          <BorderView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+          <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+            <ImageView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            <Label bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+            <ToggleImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+              <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+            </ToggleImageButton>
+            <ImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+              <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+            </ImageButton>
+            <ImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false">
+              <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+            </ImageButton>
+            <ImageButton bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+              <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+            </ImageButton>
+          </View>
+          <SidePanelResizeArea bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+            <SidePanelResizeHandle bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true">
+              <FocusRing bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+            </SidePanelResizeHandle>
+          </SidePanelResizeArea>
+        </SidePanel>
+        <ContentsSeparator bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        <SidePanelRoundedCorner bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        <InfoBarContainerView bounds="0 0 0x0" enabled="true" id="1037" needs-layout="true" visible="false">
+          <ContentShadow bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="true" />
+        </InfoBarContainerView>
+        <View bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+        <ScrimView bounds="0 0 0x0" enabled="true" id="0" needs-layout="true" visible="false" />
+      </BrowserView>
+    </BrowserFrameViewWin>
+  </NonClientView>
+</BrowserRootView>

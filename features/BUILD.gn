@@ -1,0 +1,11 @@
+source_set("hooks_registration") {
+  sources = [
+    "hooks_registration.cc",
+    "hooks_registration.h",
+  ]
+
+  deps = [
+    "//custom_browser/chromium_hooks:hook_api",
+    "//custom_browser/features/patch_webui:feature",
+  ]
+}

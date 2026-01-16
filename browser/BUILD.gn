@@ -1,0 +1,26 @@
+import("//build/config/chrome_build.gni")
+
+assert(enable_custom_browser)
+
+source_set("browser") {
+  sources = [
+    "//custom_browser/chromium_overrides/feature_list_override.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser:main_extra_parts",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:constants",
+    "//components/policy/core/browser",
+    "//components/prefs",
+    "//ui/base",
+  ]
+
+  # Ensure the pak file is copied to output before runtime.
+  data_deps = [
+    "//custom_browser/resources:custom_browser_strings_pak",
+  ]
+
+  visibility = [ "//chrome/browser/*" ]
+}

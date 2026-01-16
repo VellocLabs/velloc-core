@@ -1,0 +1,17 @@
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojo_bindings") {
+  sources = [ "browser_controller.mojom",
+              "browser_command_ids.mojom",
+              "browser_constants.mojom",
+              "ui_view_controller.mojom" ]
+  public_deps = [
+    "//chrome/browser/ui/webui/tabs:mojo_bindings",
+    "//mojo/public/mojom/base",
+    "//ui/webui/resources/cr_components/color_change_listener:mojom",
+    "//url/mojom:url_mojom_gurl",
+    "//ui/gfx/geometry/mojom",
+  ]
+  webui_module_path = "/"
+}

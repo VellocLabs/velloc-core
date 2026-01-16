@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="bn">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">লেআউট</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">সাইডবার ট্যাব</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">সাইডবারে উল্লম্ব ট্যাব।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">সাইডবার ট্যাব · কম্প্যাক্ট</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">সাইডবারে শুধু আইকনযুক্ত উল্লম্ব ট্যাব।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">উপরের ট্যাব</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">উপরের বারে অনুভূমিক ট্যাব।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">উপরের ট্যাব · কম্প্যাক্ট</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">হোভার করলে দেখা যায় এমন অনুভূমিক ট্যাব।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">নতুন ট্যাব</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">অনুসন্ধান বাক্স দেখান</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">সার্চ ইঞ্জিন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">আপনার নতুন ট্যাব দিয়ে শুরু করুন। এটিকে ব্যক্তিগতকরণে সহায়তার জন্য টিপস ও শর্টকাট।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">শুরু করার নির্দেশিকা খুলুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">লোড হচ্ছে…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">শুরু করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">এখান থেকে শুরু করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">বন্ধ করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium দিয়ে শুরু করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium লোগো</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">অন্তর্নির্মিত এক্সটেনশন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">নাম</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">বর্ণনা</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">সংস্করণ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">আইডি</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">সক্রিয়</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">ডিফল্ট</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">পটভূমি পৃষ্ঠা</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">চালু</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">বন্ধ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">হ্যাঁ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">না</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">প্রযোজ্য নয়</translation>
+</translationbundle>

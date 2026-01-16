@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="fr">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">Disposition</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">Onglets latéraux</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">Onglets verticaux dans la barre latérale.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">Onglets latéraux · Compact</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">Onglets verticaux avec icônes uniquement dans la barre latérale.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">Onglets supérieurs</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">Onglets horizontaux dans la barre supérieure.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">Onglets supérieurs · Compact</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">Onglets horizontaux qui apparaissent au survol.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">Nouvel onglet</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">Afficher le champ de recherche</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">Moteur de recherche</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">Commencez avec votre nouvel onglet. Conseils et raccourcis pour le personnaliser.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">Ouvrir le guide de démarrage</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">Chargement…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">Commencer</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">Commencez ici</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">Fermer</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Commencez avec Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Logo Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">Extension intégrée</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">Nom</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">Description</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">Version</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">Activé</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">Par défaut</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">Page en arrière-plan</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">Activé</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">Désactivé</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">Oui</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">Non</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">N/D</translation>
+</translationbundle>

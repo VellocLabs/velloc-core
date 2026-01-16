@@ -1,0 +1,50 @@
+# Copyright 2024 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//chrome/common/features.gni")
+import("//tools/grit/grit_rule.gni")
+
+assert(enable_custom_browser)
+
+# Generate localized strings for Custom Browser.
+# Paks are loaded separately at runtime based on locale.
+grit("custom_browser_strings") {
+  source = "custom_browser_strings.grd"
+  output_dir = "$root_gen_dir/custom_browser/resources"
+  outputs = [
+    "grit/custom_browser_strings.h",
+    "custom_browser_strings_en-US.pak",
+    "custom_browser_strings_bn.pak",
+    "custom_browser_strings_es.pak",
+    "custom_browser_strings_fr.pak",
+    "custom_browser_strings_hi.pak",
+    "custom_browser_strings_pt.pak",
+    "custom_browser_strings_ru.pak",
+    "custom_browser_strings_zh-CN.pak",
+  ]
+}
+
+# Copy the strings pak to the output directory so it can be loaded at runtime.
+copy("custom_browser_strings_pak") {
+  sources = [
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_en-US.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_bn.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_es.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_fr.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_hi.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_pt.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_ru.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_zh-CN.pak",
+  ]
+  outputs = [ "$root_out_dir/{{source_file_part}}" ]
+  deps = [ ":custom_browser_strings" ]
+}
+
+# Group target that includes both the grit target and the copy.
+group("strings") {
+  public_deps = [
+    ":custom_browser_strings",
+    ":custom_browser_strings_pak",
+  ]
+}

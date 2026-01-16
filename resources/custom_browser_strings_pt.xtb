@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="pt">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">Disposição</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">Separadores laterais</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">Separadores verticais na barra lateral.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">Separadores laterais · Compacto</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">Separadores verticais apenas com ícones na barra lateral.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">Separadores superiores</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">Separadores horizontais na barra superior.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">Separadores superiores · Compacto</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">Separadores horizontais que aparecem ao passar o cursor.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">Novo separador</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">Mostrar caixa de pesquisa</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">Motor de pesquisa</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">Comece com o seu novo separador. Dicas e atalhos para o personalizar.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">Abrir guia de introdução</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">A carregar…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">Começar</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">Comece aqui</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">Fechar</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Comece com o Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Logótipo do Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">Extensão integrada</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">Nome</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">Descrição</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">Versão</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">Ativado</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">Predefinição</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">Página em segundo plano</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">Ligado</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">Desligado</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">Sim</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">Não</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">N/D</translation>
+</translationbundle>

@@ -1,0 +1,43 @@
+{
+  "languages": {
+    "zh-CN": {
+      "replacements": [
+        { "pattern": "\\bChromium\\b", "replacement": "%brand%" },
+        { "pattern": "\\bChromium\\b", "replacement": "%brand%" }
+      ],
+      "blacklist": [
+        "chromium://[^\\s]*",
+        "https?://[^\\s]*chromium[^\\s]*",
+        { "text": "Chrome Web Store" }
+      ]
+    }
+  },
+
+  "default": {
+    "replacements": [
+      { "pattern": "\\bChromium\\b", "replacement": "%brand%" },
+      { "pattern": "\\bChrome\\b", "replacement": "%brand%" }
+    ],
+    "blacklist": [
+      "chromium://[^\\s]*",
+      "https?://[^\\s]*chromium[^\\s]*",
+      "(?:[Tt]he\\s+)?[Cc]hromium\\s+open[-\\s]?source\\b",
+      { "text": "Chrome Web Store" },
+      {
+        "text": "tabs (Chrome)"
+      },
+      {
+        "text": "Chrome-style"
+      },
+      {
+        "text": "Google Chrome"
+      },
+      {
+        "text": "Chromium</a>"
+      },
+      {
+        "text": "Based on Chromium"
+      }
+    ]
+  }
+}

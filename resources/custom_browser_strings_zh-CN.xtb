@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="zh-CN">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">布局</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">侧边栏标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">侧边栏上的垂直标签页。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">侧边栏标签页 · 紧凑</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">侧边栏上的仅图标垂直标签页。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">顶部标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">顶部栏上的水平标签页。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">顶部标签页 · 紧凑</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">悬停时显示的水平标签页。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">新标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">显示搜索框</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">搜索引擎</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">开始使用您的新标签页。提示和快捷方式可用于个性化。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">打开入门指南</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">正在加载…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">开始使用</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">从这里开始</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">关闭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">开始使用 Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium 标志</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">内置扩展程序</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">名称</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">说明</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">版本</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">已启用</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">默认</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">后台页面</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">开</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">关</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">是</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">否</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">不适用</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">版本 <ph name="PRODUCT_VERSION">$1</ph>（<ph name="OFFICIAL_LABEL">$2</ph>）<ph name="VERSION_MODIFIER">$3</ph></translation>
+  <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">基于 Chromium <ph name="CHROMIUM_VERSION">$1</ph></translation>
+</translationbundle>

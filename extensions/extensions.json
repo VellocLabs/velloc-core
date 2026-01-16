@@ -1,0 +1,19 @@
+{
+  "extensions": [
+    {
+      "name": "uBlock",
+      "path": "custom_extensions/uBlock",
+      "background_page": true,
+      "enabled_by_default": true,
+      "esbuild": {
+        "minify": true
+      }
+    },
+    {
+      "name": "tampermonkey_legacy",
+      "path": "custom_extensions/tampermonkey_legacy",
+      "background_page": true,
+      "enabled_by_default": false
+    }
+  ]
+}

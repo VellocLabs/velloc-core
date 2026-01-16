@@ -1,0 +1,55 @@
+import("//build/config/compiler/compiler.gni")
+
+_product_version_inc = "$root_gen_dir/custom_browser/common/generated/product_version.inc"
+_custom_browser_version_file =
+    "$root_gen_dir/custom_browser/common/generated/custom_browser_version.txt"
+
+action("generate_product_version") {
+  script = "//custom_browser/common/scripts/gen_product_version.py"
+  inputs = [
+    "//chrome/VERSION",
+    "//custom_browser/VERSION",
+  ]
+  outputs = [
+    _product_version_inc,
+    _custom_browser_version_file,
+  ]
+  args = [
+    "--input",
+    rebase_path("//custom_browser/VERSION", root_build_dir),
+    "--output-inc",
+    rebase_path(_product_version_inc, root_build_dir),
+    "--output-custom-version-file",
+    rebase_path(_custom_browser_version_file, root_build_dir),
+    "--chromium-version-file",
+    rebase_path("//chrome/VERSION", root_build_dir),
+  ]
+}
+
+source_set("common") {
+  sources = [
+    "pref_names.cc",
+    "pref_names.h",
+    "product_version.h",
+  ]
+
+  include_dirs = [ "$root_gen_dir" ]
+
+  deps = [
+    ":generate_product_version",
+    "//base",
+  ]
+
+  public_deps = [
+    "//base",
+  ]
+
+  # Optional, but good hygiene
+  visibility = [
+    "//chrome/*",
+    "//chrome/browser/*",
+    "//content/browser/*",
+    "//components/*",
+    "//custom_browser/*",
+  ]
+}

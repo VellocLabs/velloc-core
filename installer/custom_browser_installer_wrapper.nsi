@@ -1,0 +1,132 @@
+; Minimal NSIS wrapper for mini_installer.exe
+; Usage:
+;   makensis.exe /DPRODUCT_NAME="Custom Browser" /DMINI_INSTALLER_SOURCE="path\\to\\mini_installer.exe" custom_browser_installer_wrapper.nsi
+;   CustomBrowserSetup.exe /system   ; for system-level (requires admin)
+
+!include "MUI2.nsh"
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
+
+!ifndef PRODUCT_NAME
+  !define PRODUCT_NAME "Velloc Browser"
+!endif
+!ifndef PRODUCT_PUBLISHER
+  !define PRODUCT_PUBLISHER "Velloc Browser"
+!endif
+!define MINI_INSTALLER_NAME "mini_installer.exe"
+!ifndef MINI_INSTALLER_SOURCE
+  !define MINI_INSTALLER_SOURCE "..\\..\\out\\Velloc\\mini_installer.exe"
+!endif
+!ifndef PRODUCT_VERSION
+  ; Read version from the mini_installer.exe file version resource.
+  !getdllversion /NoErrors /Packed "${MINI_INSTALLER_SOURCE}" MINI_VER_
+  !ifndef MINI_VER_HIGH
+    !error "Missing or unreadable mini_installer.exe at ${MINI_INSTALLER_SOURCE}"
+  !endif
+  !define /math MINI_VER_MAJOR ${MINI_VER_HIGH} >> 16
+  !define /math MINI_VER_MINOR ${MINI_VER_HIGH} & 0xFFFF
+  !define /math MINI_VER_BUILD ${MINI_VER_LOW} >> 16
+  !define /math MINI_VER_PATCH ${MINI_VER_LOW} & 0xFFFF
+  !define PRODUCT_VERSION "${MINI_VER_MAJOR}.${MINI_VER_MINOR}.${MINI_VER_BUILD}.${MINI_VER_PATCH}"
+  !undef MINI_VER_HIGH
+  !undef MINI_VER_LOW
+  !undef MINI_VER_MAJOR
+  !undef MINI_VER_MINOR
+  !undef MINI_VER_BUILD
+  !undef MINI_VER_PATCH
+!endif
+
+!define MASTER_PREFERENCES_NAME "master_preferences"
+!ifndef MASTER_PREFERENCES_SOURCE
+  !define MASTER_PREFERENCES_SOURCE ".\\master_preferences"
+!endif
+!define TARGET_APP_EXE "C:\\Users\\myyyb\\AppData\\Local\\Velloc\\Application\\chrome.exe"
+
+; Version info (defaults to PRODUCT_VERSION unless overridden).
+!ifndef MINI_COMPANY_NAME
+  !define MINI_COMPANY_NAME "Velloc"
+!endif
+!ifndef MINI_FILE_DESCRIPTION
+  !define MINI_FILE_DESCRIPTION "Velloc Browser Installer"
+!endif
+!ifndef MINI_PRODUCT_NAME
+  !define MINI_PRODUCT_NAME "Velloc Browser Installer"
+!endif
+!ifndef MINI_COPYRIGHT
+  !define MINI_COPYRIGHT "Copyright 2026 Velloc. All rights reserved."
+!endif
+!ifndef MINI_FILE_VERSION
+  !define MINI_FILE_VERSION "${PRODUCT_VERSION}"
+!endif
+!ifndef MINI_PRODUCT_VERSION
+  !define MINI_PRODUCT_VERSION "${PRODUCT_VERSION}"
+!endif
+
+Name "${PRODUCT_NAME}"
+OutFile "${PRODUCT_NAME} Setup.exe"
+BrandingText "${PRODUCT_NAME} Installer"
+VIProductVersion "${MINI_FILE_VERSION}"
+VIAddVersionKey "CompanyName" "${MINI_COMPANY_NAME}"
+VIAddVersionKey "FileDescription" "${MINI_FILE_DESCRIPTION}"
+VIAddVersionKey "FileVersion" "${MINI_FILE_VERSION}"
+VIAddVersionKey "ProductName" "${MINI_PRODUCT_NAME}"
+VIAddVersionKey "ProductVersion" "${MINI_PRODUCT_VERSION}"
+VIAddVersionKey "LegalCopyright" "${MINI_COPYRIGHT}"
+; RequestExecutionLevel highest
+RequestExecutionLevel user
+ShowInstDetails show
+AutoCloseWindow true
+
+!define MUI_ABORTWARNING
+; Optional branding assets:
+!define MUI_ICON "..\\chromium_overrides\\velloc\\symlink\\chrome\\app\\theme\\velloc\\win\\velloc.ico"
+; !define MUI_HEADERIMAGE
+; !define MUI_HEADERIMAGE_BITMAP "branding\\header.bmp"
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_LANGUAGE "English"
+
+Var InstallMode
+Var MiniArgs
+Var MiniExit
+
+Function .onInit
+  StrCpy $InstallMode "user"
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/system" $R1
+  ${IfNot} ${Errors}
+    StrCpy $InstallMode "system"
+  ${EndIf}
+FunctionEnd
+
+Section "Install"
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  SetCompress off
+  File "/oname=$PLUGINSDIR\\${MINI_INSTALLER_NAME}" "${MINI_INSTALLER_SOURCE}"
+  File "/oname=$PLUGINSDIR\\${MASTER_PREFERENCES_NAME}" "${MASTER_PREFERENCES_SOURCE}"
+  SetCompress auto
+
+  StrCpy $MiniArgs "--installerdata=$\"$PLUGINSDIR\\${MASTER_PREFERENCES_NAME}$\""
+  ${If} $InstallMode == "system"
+    StrCpy $MiniArgs "$MiniArgs --system-level"
+    DetailPrint "Running system-level mini installer..."
+  ${Else}
+    DetailPrint "Running per-user mini installer..."
+  ${EndIf}
+
+  ExecWait '"$PLUGINSDIR\\${MINI_INSTALLER_NAME}" $MiniArgs' $MiniExit
+
+  ${If} $MiniExit == 0
+    DetailPrint "Mini installer completed successfully."
+  ${Else}
+    DetailPrint "Mini installer failed with exit code $MiniExit."
+    MessageBox MB_ICONSTOP "Installation failed (exit code $MiniExit)."
+    SetErrorLevel $MiniExit
+    Abort
+  ${EndIf}
+SectionEnd
+
+Function .onInstSuccess
+FunctionEnd

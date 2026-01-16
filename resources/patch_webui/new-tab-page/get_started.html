@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+  <link rel="stylesheet" href="chrome://theme/colors.css?sets=ui,chrome">
+  <style>
+    :root {
+      color: var(--cr-primary-text-color, #202124);
+      background: var(--color-new-tab-page-background, #f8f9fa);
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-new-tab-page-background, #f8f9fa);
+    }
+
+    #wrapper {
+      position: relative;
+      padding: 24px 28px;
+      background: var(--cr-card-background-color, #ffffff);
+      border-radius: 12px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12),
+          0 2px 8px rgba(0, 0, 0, 0.08);
+      min-width: min(360px, 90vw);
+    }
+
+    #closeButton {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+    }
+
+    #content {
+      font-size: 16px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrapper">
+    <cr-icon-button id="closeButton" iron-icon="cr:close">
+    </cr-icon-button>
+    <div id="content"></div>
+  </div>
+  <script type="module" src="get_started.js"></script>
+</body>
+</html>

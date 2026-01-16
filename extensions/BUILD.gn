@@ -1,0 +1,126 @@
+import("//build/config/chrome_build.gni")
+import("//tools/grit/grit_rule.gni")
+
+assert(enable_custom_browser)
+
+_custom_extensions_gen_dir = "$root_gen_dir/custom_browser/extensions"
+_custom_extensions_build_manifest =
+    "$_custom_extensions_gen_dir/custom_component_extensions.build.json"
+_custom_extensions_build_depfile =
+    "$_custom_extensions_gen_dir/custom_component_extensions.build.d"
+_custom_extensions_depfile = "$_custom_extensions_gen_dir/custom_component_extensions.d"
+_custom_extensions_locales_depfile =
+    "$_custom_extensions_gen_dir/custom_component_extensions_locales.d"
+_custom_extensions_locales_stamp =
+    "$_custom_extensions_gen_dir/custom_component_extensions_locales.stamp"
+
+_esbuild_path =
+    "//third_party/devtools-frontend/src/third_party/esbuild/esbuild"
+if (is_win) {
+  _esbuild_path += ".exe"
+}
+
+action("build_custom_component_extensions") {
+  script =
+      "//custom_browser/extensions/scripts/build_custom_component_extensions.py"
+  inputs = [ "extensions.json" ]
+  inputs += [ _esbuild_path ]
+  outputs = [ _custom_extensions_build_manifest ]
+  depfile = _custom_extensions_build_depfile
+  args = [
+    "--input",
+    rebase_path("extensions.json", root_build_dir),
+    "--root-dir",
+    rebase_path(".", root_build_dir),
+    "--out-gen-dir",
+    rebase_path(_custom_extensions_gen_dir, root_build_dir),
+    "--out-json",
+    rebase_path(_custom_extensions_build_manifest, root_build_dir),
+    "--esbuild",
+    rebase_path(_esbuild_path, root_build_dir),
+    "--depfile",
+    rebase_path(_custom_extensions_build_depfile, root_build_dir),
+  ]
+}
+
+action("generate_custom_component_extensions") {
+  script = "//custom_browser/extensions/scripts/gen_custom_component_extensions.py"
+  inputs = [ _custom_extensions_build_manifest ]
+  outputs = [
+    "$_custom_extensions_gen_dir/custom_component_extension_resources.grd",
+    "$_custom_extensions_gen_dir/custom_component_extensions.inc",
+  ]
+  depfile = _custom_extensions_depfile
+  deps = [ ":build_custom_component_extensions" ]
+  args = [
+    "--input",
+    rebase_path(_custom_extensions_build_manifest, root_build_dir),
+    "--output-grd",
+    rebase_path(
+        "$_custom_extensions_gen_dir/custom_component_extension_resources.grd",
+        root_build_dir),
+    "--output-inc",
+    rebase_path(
+        "$_custom_extensions_gen_dir/custom_component_extensions.inc",
+        root_build_dir),
+    "--depfile",
+    rebase_path(_custom_extensions_depfile, root_build_dir),
+    "--root-dir",
+    rebase_path(".", root_build_dir),
+    "--root-gen-dir",
+    rebase_path(_custom_extensions_gen_dir, root_build_dir),
+  ]
+}
+
+action("stage_custom_component_extension_locales") {
+  script = "//custom_browser/extensions/scripts/stage_custom_component_locales.py"
+  inputs = [ _custom_extensions_build_manifest ]
+  outputs = [ _custom_extensions_locales_stamp ]
+  depfile = _custom_extensions_locales_depfile
+  deps = [ ":build_custom_component_extensions" ]
+  args = [
+    "--input",
+    rebase_path(_custom_extensions_build_manifest, root_build_dir),
+    "--root-dir",
+    rebase_path(".", root_build_dir),
+    "--root-gen-dir",
+    rebase_path(_custom_extensions_gen_dir, root_build_dir),
+    "--out-resources-dir",
+    rebase_path("$root_out_dir/resources", root_build_dir),
+    "--stamp",
+    rebase_path(_custom_extensions_locales_stamp, root_build_dir),
+    "--depfile",
+    rebase_path(_custom_extensions_locales_depfile, root_build_dir),
+  ]
+}
+
+grit("custom_component_extension_resources") {
+  source =
+      "$_custom_extensions_gen_dir/custom_component_extension_resources.grd"
+  enable_input_discovery_for_gn_analyze = false
+  outputs = [
+    "grit/custom_component_extension_resources.h",
+    "grit/custom_component_extension_resources_map.cc",
+    "grit/custom_component_extension_resources_map.h",
+    "custom_component_extension_resources.pak",
+  ]
+  output_dir = "$root_gen_dir/chrome"
+  deps = [ ":generate_custom_component_extensions" ]
+}
+
+source_set("component_extensions") {
+  sources = [
+    "custom_component_extensions.cc",
+    "custom_component_extensions.h",
+  ]
+  deps = [
+    ":custom_component_extension_resources",
+    ":generate_custom_component_extensions",
+    ":stage_custom_component_extension_locales",
+    "//base",
+    "//components/crx_file",
+    "//extensions/common:common",
+    "//ui/base",
+  ]
+  include_dirs = [ "$root_gen_dir" ]
+}

@@ -1,0 +1,113 @@
+# Copyright 2020 The Velloc Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/chrome_build.gni")
+assert(!custom_browser_branding || !is_chrome_branded,
+       "custom_browser_branding and is_chrome_branded cannot both be true.")
+
+browser_name = "Velloc"
+browser_product_name = "Velloc"
+crash_product_name = "Velloc Updater"
+# Updater crash report upload endpoint.
+crash_upload_url = "https://crash.velloc.app/report"
+# Help center link shown by installer/update UI.
+help_center_url = "https://support.velloc.app/installer/"
+# Base URL for updater UI logos/icons.
+app_logo_url = "https://velloc.app/update/icons/"
+keystone_app_name = "VellocSoftwareUpdate"
+keystone_bundle_identifier = "org.velloc.Keystone"
+mac_browser_bundle_identifier = "org.velloc.browser"
+mac_updater_bundle_identifier = "org.velloc.VellocUpdater"
+privileged_helper_bundle_name = "VellocUpdaterPrivilegedHelper"
+privileged_helper_name = "org.velloc.Velloc.UpdaterPrivilegedHelper"
+updater_app_icon_path = "//chrome/app/theme/velloc/mac/app.icns"
+updater_company_full_name = "Velloc Authors"
+updater_company_short_name = "Velloc"
+updater_company_short_name_lowercase = "velloc"
+updater_company_short_name_uppercase = "VELLOC"
+updater_copyright =
+    "Copyright 2020 The Velloc Authors. All rights reserved."
+updater_product_full_name = "VellocUpdater"
+updater_product_full_name_dashed_lowercase = "velloc-updater"
+updater_product_full_display_name = "Velloc Updater"
+updater_metainstaller_name = "Velloc Installer"
+mac_team_identifier = "PLACEHOLDER"
+updater_appid = "{245887CA-A14B-4AC2-A93F-A41D0A733114}"
+browser_appid = "{B9363225-2877-4D37-937B-3F761784F75F}"
+qualification_appid = "{99BDD281-2CE0-446A-863F-2A7975D57BCC}"
+platform_experience_helper_appid = "{CE1D0A57-097F-43B6-A625-C60301132F80}"
+crx_pkhash = ""
+legacy_service_name_prefix = "vellocupdate"
+prefs_access_mutex = "{C1645518-602E-4B2F-9A7C-06FB0BA8B3D4}"
+setup_mutex_prefix = "{4542F0EB-6F7D-4463-A1D4-EB1E2F256407}"
+grdfile_name = "chromium_strings"
+extra_args_is_chrome_branded = "IS_CHROME_BRANDED=False"
+# Omaha JSON update-check endpoint (expects POST, protocol 4.0 response).
+update_check_url = "https://updater.velloc.app/json"
+# Updater event logging endpoint (optional telemetry sink).
+updater_event_logging_url = "https://updater.velloc.app/eventlog"
+
+UpdaterLegacyLibGUID = "C2ED782B-7157-45C8-A16D-B3563ED90503"
+GoogleUpdate3WebUserClassGUID = "0923FC39-65B9-482D-A24C-103FC7DFC83D"
+GoogleUpdate3WebSystemClassGUID = "02FF411D-B7E4-4F0F-824B-CC40F7C1F81D"
+GoogleUpdate3WebServiceClassGUID = "EAB971F7-3B44-476A-859B-43D7AF6C88B3"
+PolicyStatusUserClassGUID = "43A17345-0C59-4F7A-8D14-A5318D69E794"
+PolicyStatusSystemClassGUID = "62A8BBE2-AA0C-415F-817F-F0F167F413F9"
+ProcessLauncherClassGUID = "ABF493AA-F050-4DB0-9810-28EF2D8283F6"
+
+IAppVersionWebGUID = "3DFA1252-B27E-4284-A6BA-F83E9F09B301"
+IAppVersionWebUserGUID = "0699BB02-F6D0-4551-ADF7-839434150087"
+IAppVersionWebSystemGUID = "21B7B8E3-44B1-4FE9-8C39-A1191265CDE2"
+
+ICurrentStateGUID = "CCF9A4C0-8BFA-48FB-B4C7-CD127A433686"
+ICurrentStateUserGUID = "5484986D-D777-46BF-AA3A-14CA60F154BD"
+ICurrentStateSystemGUID = "2B1951DE-12E0-4A12-A192-A08AABE04094"
+
+IGoogleUpdate3WebGUID = "F07AC23E-E650-408F-9656-84E3F65C98BB"
+IGoogleUpdate3WebUserGUID = "909283F3-91FA-4E7A-8183-9703F1F2AEE2"
+IGoogleUpdate3WebSystemGUID = "463BD616-A624-4B72-9DDE-2F99EB0F5B9B"
+
+IAppBundleWebGUID = "FE62FDA6-0263-4DAE-9710-EA5C32CB884F"
+IAppBundleWebUserGUID = "5220DDAD-9609-4C16-814C-EA91F498AC65"
+IAppBundleWebSystemGUID = "96754DF2-1A71-4E5F-A38A-3C870EA0BA6A"
+
+IAppWebGUID = "53990C6E-5CDB-484C-9588-AAF03AD22D24"
+IAppWebUserGUID = "A4B60096-542E-4C82-A5DA-19E6F4086C27"
+IAppWebSystemGUID = "FF0F4D27-2F69-4153-952D-1FC3826BAA50"
+
+IAppCommandWebGUID = "64FC7BC1-BFEC-4FD1-B9A9-3F0E4D97CA2A"
+IAppCommandWebUserGUID = "5F05FD3B-8863-4FB9-BC41-9351B7618E26"
+IAppCommandWebSystemGUID = "4A38A43C-2E65-4DF4-A8EF-DCE6ABACDD13"
+
+IPolicyStatusGUID = "1117765A-5819-44ED-B531-B3FD6293D886"
+IPolicyStatusUserGUID = "8FC25531-1424-457D-8BDD-A6F1F26F703E"
+IPolicyStatusSystemGUID = "CFBC2CD9-3D81-4801-A0CD-51C662BEAF61"
+
+IPolicyStatus2GUID = "0783994D-0470-4403-BB6B-FB27F8176617"
+IPolicyStatus2UserGUID = "1E56B909-E70B-4E55-B04A-F7F64B906C37"
+IPolicyStatus2SystemGUID = "ABE6D1BD-8ADB-4E83-AE04-C1EC6A233A29"
+
+IPolicyStatus3GUID = "6F6E7CA8-FB69-4991-BF51-E228C723A58A"
+IPolicyStatus3UserGUID = "E51B73B7-4462-4254-94E5-E1B4F2D1DCAF"
+IPolicyStatus3SystemGUID = "8DB1E82A-F6CE-486D-8960-1CF01DE7A5C8"
+
+IPolicyStatus4GUID = "BEEF5991-8608-452B-84CE-C7752F0CD09B"
+IPolicyStatus4UserGUID = "17357200-C0D6-4421-BA8D-13202D13FD4B"
+IPolicyStatus4SystemGUID = "C9994413-F201-4DC7-AEE6-3AB72F2F2F65"
+
+IPolicyStatusValueGUID = "A93D2848-F190-4F0D-B7CB-B6F507CC2B07"
+IPolicyStatusValueUserGUID = "E577A3D8-68C9-43EB-B0ED-C954BDD4CACE"
+IPolicyStatusValueSystemGUID = "7BD3AAAF-F476-4CB2-AF91-432EE52E8A8B"
+
+IProcessLauncherGUID = "65F9AD2E-6B8E-47FB-979C-2BC6CB58055D"
+IProcessLauncherSystemGUID = "8FB9762B-1D4F-4C83-893C-C7BCE67C3801"
+
+IProcessLauncher2GUID = "290B2CE1-9996-4224-B4A0-990C6933AB08"
+IProcessLauncher2SystemGUID = "0CE5B695-680E-489C-BA05-B48E06F37FF9"
+
+if (is_mac) {
+  legacy_google_update_appid = keystone_bundle_identifier
+} else {
+  legacy_google_update_appid = "{35C52652-0DDC-4851-BC91-8D2D84EBD7A7}"
+}

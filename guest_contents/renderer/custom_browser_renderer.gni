@@ -1,0 +1,6 @@
+
+
+custom_browser_renderer_sources = [
+  "//custom_browser/guest_contents/renderer/render_frame_observer.h",
+  "//custom_browser/guest_contents/renderer/render_frame_observer.cc",
+]

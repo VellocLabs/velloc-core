@@ -1,0 +1,18 @@
+import("//build/buildflag_header.gni")
+import("//build/config/chrome_build.gni")
+
+buildflag_header("buildflags") {
+  header = "buildflags.h"
+  visibility = [ "*" ]
+  flags = [ "ENABLE_CUSTOM_BROWSER=$enable_custom_browser", 
+            "CUSTOM_BROWSER_BRANDING=$custom_browser_branding"]
+}
+
+config("custom_browser_icon_config") {
+  defines = []
+  if (is_win && custom_browser_branding) {
+    defines += [
+      "CUSTOM_BROWSER_ICON_PATH=\"theme\\\\${branding_path_component}\\\\win\\\\${branding_path_component}.ico\"",
+    ]
+  }
+}

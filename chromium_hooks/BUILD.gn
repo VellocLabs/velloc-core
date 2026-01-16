@@ -1,0 +1,40 @@
+source_set("hook_api") {
+  public = [
+    "hook_callbacks.h",
+    "hook_registrar.h",
+    "hook_types.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//url",
+  ]
+}
+
+component("hook_core") {
+  public = [
+    "chromium_hooks_export.h",
+    "hook_dispatcher.h",
+  ]
+
+  sources = [ "hook_dispatcher.cc" ]
+
+  public_deps = [ "//base" ]
+
+  deps = [ ":hook_api" ]
+
+  defines = [ "IS_CUSTOM_BROWSER_HOOKS_IMPL=1" ]
+}
+
+source_set("chrome_integration") {
+  sources = [
+    "custom_browser_main_extra_parts.cc",
+    "custom_browser_main_extra_parts.h",
+  ]
+
+  deps = [
+    ":hook_core",
+    "//chrome/browser:main_extra_parts",
+    "//custom_browser/features:hooks_registration",
+  ]
+}

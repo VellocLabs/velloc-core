@@ -1,0 +1,19 @@
+import("//build/config/gclient_args.gni")
+import("//build_overrides/build.gni")
+
+declare_args() {
+  # Whether to enable the custom browser.
+  enable_custom_browser = false
+}
+
+if (enable_custom_browser) {
+  _custom_browser_override_copy =
+      exec_script("//custom_browser/override.py", [], "string")
+}
+
+declare_args() {
+  # The product name used in various places including installer file names.
+  custom_browser_branding = enable_custom_browser &&
+                            branding_path_component != "chromium" &&
+                            branding_path_component != ""
+}

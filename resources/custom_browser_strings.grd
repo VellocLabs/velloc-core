@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+This file contains definitions of resources for Custom Browser that will be
+translated for each locale.
+-->
+
+<grit base_dir="." latest_public_release="0" current_release="1"
+      source_lang_id="en" enc_check="möl">
+  <outputs>
+    <output filename="grit/custom_browser_strings.h" type="rc_header">
+      <emit emit_type='prepend'></emit>
+    </output>
+    <output filename="custom_browser_strings_en-US.pak" type="data_package" lang="en" />
+    <output filename="custom_browser_strings_bn.pak" type="data_package" lang="bn" />
+    <output filename="custom_browser_strings_es.pak" type="data_package" lang="es" />
+    <output filename="custom_browser_strings_fr.pak" type="data_package" lang="fr" />
+    <output filename="custom_browser_strings_hi.pak" type="data_package" lang="hi" />
+    <output filename="custom_browser_strings_pt.pak" type="data_package" lang="pt" />
+    <output filename="custom_browser_strings_ru.pak" type="data_package" lang="ru" />
+    <output filename="custom_browser_strings_zh-CN.pak" type="data_package" lang="zh-CN" />
+  </outputs>
+  <translations>
+    <file path="custom_browser_strings_bn.xtb" lang="bn" />
+    <file path="custom_browser_strings_es.xtb" lang="es" />
+    <file path="custom_browser_strings_fr.xtb" lang="fr" />
+    <file path="custom_browser_strings_hi.xtb" lang="hi" />
+    <file path="custom_browser_strings_pt.xtb" lang="pt" />
+    <file path="custom_browser_strings_ru.xtb" lang="ru" />
+    <file path="custom_browser_strings_zh-CN.xtb" lang="zh-CN" />
+  </translations>
+  <release seq="1">
+    <messages fallback_to_english="true">
+      <!-- UI Mode Settings -->
+      <message name="IDS_CUSTOM_BROWSER_MODES_HEADER" desc="Header for the UI modes section in settings" use_name_for_id="true">
+        Layout
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_SIDEBAR" desc="Sidebar mode option label" use_name_for_id="true">
+        Sidebar tabs
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION" desc="Describes the Sidebar layout option in the Customize Chrome side panel" use_name_for_id="true">
+        Vertical tabs on the sidebar.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR" desc="Compact Sidebar mode option label" use_name_for_id="true">
+        Sidebar tabs · Compact
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION" desc="Description for the compact sidebar layout option" use_name_for_id="true">
+        Vertical icon-only tabs on the sidebar.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_STANDARD" desc="Standard mode option label" use_name_for_id="true">
+        Top tabs
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION" desc="Description for the standard top-tabs layout option" use_name_for_id="true">
+        Horizontal tabs on the top bar.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD" desc="Compact Standard mode option label" use_name_for_id="true">
+        Top tabs · Compact
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION" desc="Description for the compact standard layout option" use_name_for_id="true">
+        Horizontal tabs that appear on hover.
+      </message>
+      <!-- Customize Chrome side panel -->
+      <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE" desc="Header for the New Tab Page section in the Customize Chrome side panel" use_name_for_id="true">
+        New Tab
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH" desc="Label for the toggle that shows or hides the search box on the New Tab Page" use_name_for_id="true">
+        Show search box
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO" desc="Label for the toggle that shows or hides the search provider logo on the New Tab Page" use_name_for_id="true">
+        Show search provider logo
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE" desc="Label for the action chip that opens the search engine settings" use_name_for_id="true">
+        Search engine
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY" desc="Body text for the custom Get started entry in the New Tab Page setup list" use_name_for_id="true">
+        Get started with your new tab. Tips and shortcuts to personalize it.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION" desc="Action text for the custom Get started entry in the New Tab Page setup list" use_name_for_id="true">
+        Open get started guide
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_LOADING" desc="Loading text shown while the layout options are initializing" use_name_for_id="true">
+        Loading…
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE" desc="Title for the Get started page" use_name_for_id="true">
+        Get started
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_BODY" desc="Body text for the Get started page" use_name_for_id="true">
+        Get started here
+      </message>
+      <!-- Settings Get started page -->
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE" desc="Hero title for the Settings Get started page" use_name_for_id="true">
+        Get started with Chromium
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE" desc="Subtitle for the Settings Get started page" use_name_for_id="true">
+        Set up Chromium in a minute: import your data, pick a layout, and tune your New Tab.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE" desc="Title for the bring your stuff section on the Settings Get started page" use_name_for_id="true">
+        Step 1. Bring your stuff
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION" desc="Description for the bring your stuff section on the Settings Get started page" use_name_for_id="true">
+        Import bookmarks, passwords, and settings from another browser—no account required.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON" desc="Label for the import button on the Settings Get started page" use_name_for_id="true">
+        Import
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP" desc="Label for the skip button on the Settings Get started import section" use_name_for_id="true">
+        Skip for now
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY" desc="Microcopy under import button explaining local processing" use_name_for_id="true">
+        Import happens locally on your device.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE" desc="Title for the layout section on the Settings Get started page" use_name_for_id="true">
+        Step 2. Choose your layout
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION" desc="Description for the layout section on the Settings Get started page" use_name_for_id="true">
+        Pick the tab style that fits how you work. You can switch anytime.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE" desc="Title for the Sidebar Tabs layout option" use_name_for_id="true">
+        Sidebar Tabs
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION" desc="Description for the Sidebar Tabs layout option" use_name_for_id="true">
+        Your tabs, address bar, and tools in one vertical sidebar.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE" desc="Title for the Compact Sidebar layout option" use_name_for_id="true">
+        Compact Sidebar
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION" desc="Description for the Compact Sidebar layout option" use_name_for_id="true">
+        Icon-first sidebar that expands when you hover—great for smaller screens.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE" desc="Title for the Top Tabs layout option" use_name_for_id="true">
+        Top Tabs
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION" desc="Description for the Top Tabs layout option" use_name_for_id="true">
+        Classic tabs across the top for a familiar Chrome-style layout.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE" desc="Title for the Compact Top Tabs layout option" use_name_for_id="true">
+        Compact Top Tabs
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION" desc="Description for the Compact Top Tabs layout option" use_name_for_id="true">
+        A slimmer top layout that leaves more room for what matters: the page.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT" desc="Helper text under the layout options" use_name_for_id="true">
+        Layout changes apply instantly.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION" desc="Primary action button label for the layout section" use_name_for_id="true">
+        Apply layout
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE" desc="Title for the New Tab section on the Settings Get started page" use_name_for_id="true">
+        Step 3. Customize your New Tab
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION" desc="Description for the New Tab section on the Settings Get started page" use_name_for_id="true">
+        Keep it clean, or keep search up front.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL" desc="Label for the New Tab search toggle on the Settings Get started page" use_name_for_id="true">
+        Show search box on New Tab
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON" desc="On text for the New Tab search toggle" use_name_for_id="true">
+        Search box is visible
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF" desc="Off text for the New Tab search toggle" use_name_for_id="true">
+        New Tab stays distraction-free
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE" desc="Title for the search branding section on the Settings Get started page" use_name_for_id="true">
+        Your search, your look
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION" desc="Description for the search branding section on the Settings Get started page" use_name_for_id="true">
+        If you choose a non-Google default search, Chromium updates the New Tab branding automatically.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE" desc="Title for the built-in tools section on the Settings Get started page" use_name_for_id="true">
+        Step 4. Built-in power tools
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION" desc="Description for the built-in tools section on the Settings Get started page" use_name_for_id="true">
+        Chromium includes optional built-in extensions. You stay in control.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE" desc="Title for the uBlock Origin tool card" use_name_for_id="true">
+        uBlock Origin
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS" desc="Status text for the uBlock Origin tool card" use_name_for_id="true">
+        Enabled by default
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION" desc="Description for the uBlock Origin tool card" use_name_for_id="true">
+        Efficient content blocking for a faster, cleaner web.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE" desc="Title for the Tampermonkey tool card" use_name_for_id="true">
+        Tampermonkey (Legacy)
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS" desc="Status text for the Tampermonkey tool card" use_name_for_id="true">
+        Off by default
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION" desc="Description for the Tampermonkey tool card" use_name_for_id="true">
+        Advanced userscript manager for deep site customization.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON" desc="Button label for managing built-in tools in extensions" use_name_for_id="true">
+        Manage extensions
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE" desc="Footnote under the built-in tools section" use_name_for_id="true">
+        Some built-in tools may differ from Chrome Web Store availability.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE" desc="Title for the finish section on the Settings Get started page" use_name_for_id="true">
+        Step 5. You’re ready
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION" desc="Description for the finish section on the Settings Get started page" use_name_for_id="true">
+        Well done. Want to go further? Explore more features next.
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY" desc="Primary button label for the finish section" use_name_for_id="true">
+        Open New Tab
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY" desc="Secondary button label for the finish section" use_name_for_id="true">
+        Go to Settings
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY" desc="Tertiary link label for the finish section" use_name_for_id="true">
+        Extensions →
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED" desc="Badge label for recommended items" use_name_for_id="true">
+        Recommended
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BADGE_MINIMAL" desc="Badge label for minimal items" use_name_for_id="true">
+        Minimal
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON" desc="Badge label for coming soon items" use_name_for_id="true">
+        Coming soon
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC" desc="Badge label for automatic items" use_name_for_id="true">
+        Automatic
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BADGE_ADVANCED" desc="Badge label for advanced items" use_name_for_id="true">
+        Advanced
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL" desc="Badge label for optional items" use_name_for_id="true">
+        Optional
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_CLOSE" desc="Label for a close button or action" use_name_for_id="true">
+        Close
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL" desc="Menu label for the Settings Get started entry" use_name_for_id="true">
+        Get started with Chromium
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_LOGO_ALT" desc="Alt text for the Chromium logo image" use_name_for_id="true">
+        Chromium logo
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE" desc="Title for the built-in extension details dialog" use_name_for_id="true">
+        Built-in extension
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME" desc="Label for extension name in the built-in extension details dialog" use_name_for_id="true">
+        Name
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION" desc="Label for extension description in the built-in extension details dialog" use_name_for_id="true">
+        Description
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION" desc="Label for extension version in the built-in extension details dialog" use_name_for_id="true">
+        Version
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID" desc="Label for extension ID in the built-in extension details dialog" use_name_for_id="true">
+        ID
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED" desc="Label for enabled state in the built-in extension details dialog" use_name_for_id="true">
+        Enabled
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT" desc="Label for default enabled state in the built-in extension details dialog" use_name_for_id="true">
+        Default
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE" desc="Label for background page state in the built-in extension details dialog" use_name_for_id="true">
+        Background page
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_VALUE_ON" desc="Label for an enabled on state" use_name_for_id="true">
+        On
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_VALUE_OFF" desc="Label for a disabled off state" use_name_for_id="true">
+        Off
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_VALUE_YES" desc="Label for a yes value" use_name_for_id="true">
+        Yes
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_VALUE_NO" desc="Label for a no value" use_name_for_id="true">
+        No
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_VALUE_NA" desc="Label for a not-applicable value" use_name_for_id="true">
+        N/A
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_VERSION_LINE" desc="First line in chrome://version showing the product version and build info" use_name_for_id="true">
+        Version <ph name="PRODUCT_VERSION">$1</ph> (<ph name="OFFICIAL_LABEL">$2</ph>)<ph name="VERSION_MODIFIER">$3</ph>
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE" desc="Second line in chrome://version showing the underlying Chromium version" use_name_for_id="true">
+        Based on Chromium <ph name="CHROMIUM_VERSION">$1</ph>
+      </message>
+    </messages>
+  </release>
+</grit>

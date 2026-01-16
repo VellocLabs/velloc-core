@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+  <dependentAssembly>
+    <assemblyIdentity type='win32'
+      name='@CUSTOM_BROWSER_MAJOR@.@CUSTOM_BROWSER_MINOR@.@CUSTOM_BROWSER_BUILD@.@CUSTOM_BROWSER_PATCH@'
+      version='@CUSTOM_BROWSER_MAJOR@.@CUSTOM_BROWSER_MINOR@.@CUSTOM_BROWSER_BUILD@.@CUSTOM_BROWSER_PATCH@' language='*'/>
+  </dependentAssembly>
+  </dependency>
+</assembly>

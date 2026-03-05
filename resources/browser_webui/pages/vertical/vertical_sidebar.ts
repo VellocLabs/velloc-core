@@ -79,7 +79,7 @@ export class VerticalSidebar extends CrLitElement {
       <!-- Sidebar Top Bar: left app/home, right back/forward/reload -->
       <div id="topBar" data-anchor-layout-host>
         <div class="group">
-          <tab-search-container></tab-search-container>
+          <pinned-tab-search-button></pinned-tab-search-button>
         </div>
         <div id="spacer"></div>
         <div class="group">

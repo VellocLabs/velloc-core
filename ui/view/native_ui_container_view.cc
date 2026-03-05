@@ -16,11 +16,14 @@
 #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+#include "chrome/browser/ui/ui_features.h"
+#include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "custom_browser/ui/mojom/browser_constants.mojom.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
+#include "custom_browser/ui/view/native_ui/create_toolbar_button_native_ui.h"
 #include "custom_browser/ui/view/native_ui/main_contents_native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui_factory_registry.h"
 #include "custom_browser/ui/view/native_ui/native_ui_utils.h"
@@ -213,7 +216,6 @@ NativeUIContainerView::CreateNativeUI(
 
     views::View* view = SearchView(custom_browser_view_->parent(), selector);
     if (!view) {
-      view = SearchView(custom_browser_view_->parent(), selector);
       LOG(ERROR) << "No view found for layout ";
       return nullptr;
     }

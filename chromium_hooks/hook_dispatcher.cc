@@ -46,6 +46,11 @@ class HookRegistryImpl final : public HookRegistrar {
     main_hooks_.push_back(std::move(hook));
   }
 
+  void SetBubbleAnchorRectOverride(
+      BubbleAnchorRectOverrideCallback cb) override {
+    bubble_anchor_rect_override_ = std::move(cb);
+  }
+
   const std::vector<WebUIDataSourceCallbackEntry>& webui_callbacks() const {
     return webui_callbacks_;
   }
@@ -60,12 +65,16 @@ class HookRegistryImpl final : public HookRegistrar {
       const {
     return main_hooks_;
   }
+  const BubbleAnchorRectOverrideCallback& bubble_anchor_rect_override() const {
+    return bubble_anchor_rect_override_;
+  }
 
  private:
   std::vector<WebUIDataSourceCallbackEntry> webui_callbacks_;
   std::vector<LocalizedStringOverrideCallback> localized_string_callbacks_;
   std::vector<NavigationThrottleProviderCallback> nav_providers_;
   std::vector<std::unique_ptr<BrowserMainLifecycleHook>> main_hooks_;
+  BubbleAnchorRectOverrideCallback bubble_anchor_rect_override_;
 };
 
 HookRegistryImpl& GetRegistry() {
@@ -135,6 +144,16 @@ void RunBrowserMainPostMainMessageLoopRunHooks() {
   for (const auto& hook : GetRegistry().main_hooks()) {
     hook->PostMainMessageLoopRun();
   }
+}
+
+std::optional<gfx::Rect> OnGetBubbleAnchorRect(
+    const views::View* anchor_view,
+    const gfx::Rect& default_rect) {
+  const auto& cb = GetRegistry().bubble_anchor_rect_override();
+  if (cb) {
+    return cb.Run(anchor_view, default_rect);
+  }
+  return std::nullopt;
 }
 
 }  // namespace custom_browser

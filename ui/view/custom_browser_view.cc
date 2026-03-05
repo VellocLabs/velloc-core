@@ -18,6 +18,9 @@
 #include "chrome/browser/ui/views/frame/multi_contents_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "custom_browser/ui/view/mouse_event_handler.h"
+#include "chrome/browser/ui/views/tab_search_bubble_host.h"
+#include "custom_browser/chromium_hooks/hook_dispatcher.h"
+#include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui.h"
@@ -151,6 +154,42 @@ void CustomBrowserView::OnPrefUIModeChanged(custom_browser::mojom::UIMode ui_mod
   //  }
 }
 
+void CustomBrowserView::SetActiveTabSearchButton(views::View* button) {
+  if (button) {
+    active_tab_search_button_tracker_.SetView(button);
+  } else {
+    active_tab_search_button_tracker_.SetView(nullptr);
+  }
+}
+
+// static
+std::optional<gfx::Rect> CustomBrowserView::GetTabSearchAnchorRectOverride(
+    const views::View* anchor_view,
+    const gfx::Rect& default_rect) {
+  if (!anchor_view || !anchor_view->GetWidget()) {
+    return std::nullopt;
+  }
+  auto* browser_view = BrowserView::GetBrowserViewForNativeWindow(
+      anchor_view->GetWidget()->GetNativeWindow());
+  if (!browser_view || !browser_view->GetIsNormalType()) {
+    return std::nullopt;
+  }
+  auto* custom_view = static_cast<CustomBrowserView*>(browser_view);
+  if (custom_view->IsChromiumUI()) {
+    return std::nullopt;
+  }
+  // Only redirect tab search bubbles.
+  if (!custom_view->tab_search_bubble_host_ ||
+      anchor_view != custom_view->tab_search_bubble_host_->button()) {
+    return std::nullopt;
+  }
+  auto* tracked = custom_view->active_tab_search_button_tracker_.view();
+  if (!tracked || !tracked->GetVisible() || !tracked->GetWidget()) {
+    return std::nullopt;
+  }
+  return tracked->GetBoundsInScreen();
+}
+
 void CustomBrowserView::InitializeCustomBrowser() {
     ui_prefs_ = std::make_unique<CustomBrowserUiPrefs>(browser()->profile()->GetPrefs());
     ui_prefs_->AddObserver(this);
@@ -168,11 +207,15 @@ void CustomBrowserView::InitializeCustomBrowser() {
 
     ReorderChildView(custom_browser_webui_view_.get(), 0);
     ReorderChildView(native_ui_container_.get(), 1);
+    custom_browser::GetHookRegistrar()->SetBubbleAnchorRectOverride(
+        base::BindRepeating(
+            &CustomBrowserView::GetTabSearchAnchorRectOverride));
     UpdateVisibilityAndOrder();
 }
 
 void CustomBrowserView::UpdateVisibilityAndOrder() {
   if (IsChromiumUI()) {
+    SetActiveTabSearchButton(nullptr);
     native_ui_container_->RestoreChromiumHierarchy();
   }
   if (IsChromiumLayout()) {

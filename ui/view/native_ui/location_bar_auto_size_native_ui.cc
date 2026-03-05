@@ -29,14 +29,24 @@ LocationBarAutoSizeNativeUI::LocationBarAutoSizeNativeUI(
 
 LocationBarAutoSizeNativeUI::~LocationBarAutoSizeNativeUI() {
   ResetFocusObservation();
+  LocationBarView* location_bar = location_bar_state_.view();
+  location_bar_state_.Reset();
+  if (location_bar) {
+    location_bar->SetVisible(true);
+  }
+  // Prevent NativeUI::~NativeUI() from hiding the restored view.
+  if (!views_.empty()) {
+    views_[0] = nullptr;
+  }
   // rect_animation_.reset();
 }
 
 void LocationBarAutoSizeNativeUI::OnPrepare() {
   DCHECK(!view());
-  auto* view = GetCustomBrowserView()->GetLocationBarView();
-  host_view()->parent()->AddChildView(view);
-  AddView(view);
+  auto* location_bar = GetCustomBrowserView()->GetLocationBarView();
+  location_bar_state_ = location_bar;
+  location_bar_state_.SetParent(host_view()->parent());
+  AddView(location_bar);
   RefreshExpandOnFocusState();
 }
 

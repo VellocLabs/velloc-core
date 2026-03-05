@@ -144,7 +144,7 @@ bool GlicEnabling::IsInRolloutLocation() {
 }
 
 bool GlicEnabling::IsEnabledByFlags() {
-  return false;
+  return true;
 }
 
 bool GlicEnabling::IsProfileEligible(const Profile* profile) {
@@ -212,8 +212,13 @@ mojom::ProfileReadyState GlicEnabling::GetProfileReadyState(Profile* profile) {
   if (enablement.DisallowedByAdmin()) {
     return mojom::ProfileReadyState::kDisabledByAdmin;
   }
-  if (!enablement.IsEnabledAndConsented()) {
+  if (!enablement.IsEnabled()) {
     return mojom::ProfileReadyState::kIneligible;
+  }
+  if (enablement.not_consented) {
+    // Allow opening the panel so the FRE can be shown instead of treating the
+    // profile as ineligible.
+    return mojom::ProfileReadyState::kReady;
   }
 
   auto* command_line = base::CommandLine::ForCurrentProcess();
@@ -334,26 +339,10 @@ bool GlicEnabling::IsShareImageEnabledForProfile(Profile* profile) {
 }
 
 bool GlicEnabling::IsMultiInstanceEnabled() {
-  if (IsMultiInstanceEnabledByFlags()) {
-    return true;
-  }
-
-  if (!base::FeatureList::IsEnabled(
-          features::kGlicEnableMultiInstanceBasedOnTier)) {
-    return false;
-  }
-
-  // MultiTab feaure enablement should still gate multi-instance enablement when
-  // considering subscription tier.
-  if (!base::FeatureList::IsEnabled(mojom::features::kGlicMultiTab) ||
-      !base::FeatureList::IsEnabled(features::kGlicMultitabUnderlines)) {
-    LOG(ERROR) << "Multi-instance functions cannot be enabled without the "
-                  "kGlicMultiTab and kGlicMultitabUnderlines features. These "
-                  "features must be enabled to ensure proper behavior.";
-    return false;
-  }
-
-  return IsEligibleForGlicMultiInstanceTieredRolloutThisRun();
+  // Only enable multi-instance when explicitly enabled by flags. This avoids
+  // adding `mode=mi` to guest/FRE URLs in environments where the server does
+  // not support it.
+  return IsMultiInstanceEnabledByFlags();
 }
 
 bool GlicEnabling::IsEligibleForGlicMultiInstanceTieredRolloutThisRun() {

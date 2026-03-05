@@ -10,6 +10,7 @@
 #include "custom_browser/ui/mojom/browser_constants.mojom-forward.h"
 #include "custom_browser/ui/view/native_ui/native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui_registration_macros.h"
+#include "custom_browser/ui/view/native_ui/scoped_view_state.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/animation/tween.h"
@@ -73,6 +74,7 @@ class LocationBarAutoSizeNativeUI : public NativeUI,
 
   bool expand_on_focus_enabled_ = true;
   raw_ptr<views::FocusManager> focus_manager_ = nullptr;
+  ScopedViewState<LocationBarView> location_bar_state_;
   // std::unique_ptr<gfx::SlideAnimation> rect_animation_;
   // gfx::Rect animation_start_bounds_;
   // gfx::Rect animation_target_bounds_;

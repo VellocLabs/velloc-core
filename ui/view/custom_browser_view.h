@@ -59,6 +59,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
+#include "ui/views/view_tracker.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/client_view.h"
@@ -200,6 +201,7 @@ class CustomBrowserView : public BrowserView,
 
   CustomBrowserUiPrefs* ui_prefs() const { return ui_prefs_.get(); }
   NativeUIContainerView* native_ui_container() { return native_ui_container_.get(); }
+  void SetActiveTabSearchButton(views::View* button);
   custom_browser::CustomBrowserViewLayout* GetCustomBrowserViewLayout() const;
   void LayoutCustomBrowserViewNow();
   bool StartMouseCapture(const gfx::Rect& bounds,
@@ -214,6 +216,9 @@ private:
   void ObserveFullscreenController();
   void InitializeCustomBrowser();
   void UpdateVisibilityAndOrder();
+  static std::optional<gfx::Rect> GetTabSearchAnchorRectOverride(
+      const views::View* anchor_view,
+      const gfx::Rect& default_rect);
   void PerformCustomLayout();
   void LayoutCustomBrowserViewImpl();
 
@@ -240,6 +245,7 @@ private:
   base::ScopedObservation<FullscreenController, FullscreenObserver>
       fullscreen_observation_{this};
   std::unique_ptr<MouseEventHandler> mouse_event_filter_;
+  views::ViewTracker active_tab_search_button_tracker_;
   base::WeakPtrFactory<CustomBrowserView> weak_ptr_factory_{this};
 };
 

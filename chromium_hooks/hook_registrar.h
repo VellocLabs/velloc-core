@@ -27,6 +27,9 @@ class HookRegistrar {
 
   virtual void AddBrowserMainLifecycleHook(
       std::unique_ptr<BrowserMainLifecycleHook> hook) = 0;
+
+  virtual void SetBubbleAnchorRectOverride(
+      BubbleAnchorRectOverrideCallback cb) = 0;
 };
 
 }  // namespace custom_browser

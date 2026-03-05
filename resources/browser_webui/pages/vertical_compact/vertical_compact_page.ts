@@ -54,7 +54,7 @@ export class VerticalCompactPage extends CrLitElement {
       align-items: center;
     }
 
-    #topContainer tab-search-container-center {
+    #topContainer pinned-tab-search-button {
       flex: 0 0 40px;
       width: 40px;
       height: 100%;
@@ -200,7 +200,7 @@ export class VerticalCompactPage extends CrLitElement {
   protected override render() {
     return html`
       <div id="topContainer">
-        <tab-search-container-center></tab-search-container-center>
+        <pinned-tab-search-button></pinned-tab-search-button>
         <vertical-compact-topbar></vertical-compact-topbar>
       </div>
       <div id="mainContents">

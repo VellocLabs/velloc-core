@@ -6,6 +6,7 @@
 #include "custom_browser/ui/mojom/browser_constants.mojom-forward.h"
 #include "custom_browser/ui/view/native_ui/native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui_registration_macros.h"
+#include "custom_browser/ui/view/native_ui/scoped_view_state.h"
 
 class TabStripRegionView;
 
@@ -33,12 +34,8 @@ class TabSearchContainerNativeUI : public ViewNativeUI {
   void OnPrepare() override;
 
  private:
-  // Finds the TabStripRegionView that owns the TabSearchContainer.
-  TabStripRegionView* FindTabStripRegionView() const;
-
-  // Saved reference to restore on destruction.
-  raw_ptr<TabStripRegionView> tab_strip_region_view_ = nullptr;
-  raw_ptr<TabSearchContainer> saved_tab_search_container_ = nullptr;
+  // Tracks temporary tab search container state and restores on teardown.
+  ScopedViewState<TabSearchContainer> tab_search_container_state_;
 };
 
 }  // namespace custom_browser::native_ui

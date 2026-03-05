@@ -1,9 +1,15 @@
 #ifndef CUSTOM_BROWSER_CHROMIUM_HOOKS_HOOK_DISPATCHER_H_
 #define CUSTOM_BROWSER_CHROMIUM_HOOKS_HOOK_DISPATCHER_H_
 
+#include <optional>
 #include <string_view>
 
 #include "custom_browser/chromium_hooks/chromium_hooks_export.h"
+#include "ui/gfx/geometry/rect.h"
+
+namespace views {
+class View;
+}  // namespace views
 
 namespace content {
 class BrowserContext;
@@ -44,6 +50,11 @@ CUSTOM_BROWSER_HOOKS_EXPORT void RunBrowserMainPreCreateThreadsHooks();
 CUSTOM_BROWSER_HOOKS_EXPORT void RunBrowserMainPostCreateThreadsHooks();
 CUSTOM_BROWSER_HOOKS_EXPORT void RunBrowserMainPreMainMessageLoopRunHooks();
 CUSTOM_BROWSER_HOOKS_EXPORT void RunBrowserMainPostMainMessageLoopRunHooks();
+
+// ---------- Bubble anchor rect override hook ----------
+CUSTOM_BROWSER_HOOKS_EXPORT std::optional<gfx::Rect> OnGetBubbleAnchorRect(
+    const views::View* anchor_view,
+    const gfx::Rect& default_rect);
 
 
 }  // namespace custom_browser

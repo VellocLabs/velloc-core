@@ -2,6 +2,8 @@
 
 #include "base/check.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/ui/ui_features.h"
+#include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
@@ -39,25 +41,30 @@ views::View* CreateToolbarButtonNativeUI::CreatePinnedButtonForAction(
 
 void CreateToolbarButtonNativeUI::OnPrepare() {
   DCHECK(layout_params_->view_class_name.has_value());
-  const auto& class_name = *layout_params_->view_class_name;
-  auto* view = utils::FindUnusedView(host_view(), class_name);
+  const std::string& class_name = *layout_params_->view_class_name;
+  std::string effective_class_name = class_name;
+  auto* view = utils::FindUnusedView(host_view(), effective_class_name);
   if (!view) {
-    if (base::StartsWith(class_name, "Pinned")) {
-      view = CreatePinnedButtonForAction(class_name);
-    } else if (base::StartsWith(class_name, "DividerView")) {
+    if (base::StartsWith(effective_class_name, "Pinned")) {
+      view = CreatePinnedButtonForAction(effective_class_name);
+    } else if (base::StartsWith(effective_class_name, "DividerView")) {
       view =
-          utils::CreateDividerView(class_name == "DividerView-Dark").release();
+          utils::CreateDividerView(
+              effective_class_name == "DividerView-Dark").release();
     }
   }
 
-  if (class_name == "PinnedShowDownloadsButton") {
+  if (effective_class_name == "PinnedShowDownloadsButton") {
     is_download_button_ = true;
     utils::SaveDownloadButton(GetCustomBrowserView(),
                               static_cast<ToolbarButton*>(view));
   }
+  if (effective_class_name == "PinnedTabSearchButton" && view) {
+    GetCustomBrowserView()->SetActiveTabSearchButton(view);
+  }
   AddView(view);
   host_view()->AddChildView(view);
-  utils::MarkViewUsed(view, class_name);
+  utils::MarkViewUsed(view, effective_class_name);
   DCHECK(views_.size() == 1);
 }
 

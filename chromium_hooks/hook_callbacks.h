@@ -1,9 +1,15 @@
 #ifndef CUSTOM_BROWSER_CHROMIUM_HOOKS_HOOK_CALLBACKS_H_
 #define CUSTOM_BROWSER_CHROMIUM_HOOKS_HOOK_CALLBACKS_H_
 
+#include <optional>
 #include <string_view>
 
 #include "base/functional/callback.h"
+#include "ui/gfx/geometry/rect.h"
+
+namespace views {
+class View;
+}  // namespace views
 
 namespace content {
 class BrowserContext;
@@ -30,6 +36,13 @@ using LocalizedStringOverrideCallback =
 // Repeating because it can fire multiple times.
 using NavigationThrottleProviderCallback =
     base::RepeatingCallback<void(content::NavigationThrottleRegistry&)>;
+
+// Override-style hook: optionally replaces the anchor rect for a WebUI bubble.
+// Receives the anchor view and its default rect; returns a replacement or
+// std::nullopt.
+using BubbleAnchorRectOverrideCallback =
+    base::RepeatingCallback<std::optional<gfx::Rect>(const views::View*,
+                                                     const gfx::Rect&)>;
 
 }  // namespace custom_browser
 

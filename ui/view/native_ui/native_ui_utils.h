@@ -6,6 +6,7 @@
 class ToolbarButton;
 class BrowserView;
 class CustomBrowserView;
+class TabStripRegionView;
 namespace views {
 class View;
 }  // namespace views
@@ -29,6 +30,8 @@ void SaveDownloadButton(views::View* browser_view,
 // download ui controller uses this to get the download button.
 ToolbarButton* GetDownloadsButton(BrowserView* browser_view);
 bool IsChromiumUI(BrowserView* browser_view);
+
+TabStripRegionView* FindTabStripRegionView(BrowserView* browser_view);
 
 std::unique_ptr<views::View> CreateDividerView(bool use_dark_color = false);
 views::View* FindUnusedView(views::View* parent_view,

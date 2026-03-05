@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+#include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/native_ui/create_toolbar_button_native_ui.h"
@@ -253,6 +254,15 @@ bool IsChromiumUI(BrowserView* browser_view) {
   DCHECK(browser_view);
   auto* custom_browser_view = static_cast<CustomBrowserView*>(browser_view);
   return custom_browser_view->IsChromiumUI();
+}
+
+TabStripRegionView* FindTabStripRegionView(BrowserView* browser_view) {
+  // In custom mode TabStripRegionView may be detached from root hierarchy.
+  // Search from tab strip pointer first.
+  if (auto* tab_strip_view = browser_view->tab_strip_view()) {
+    return static_cast<TabStripRegionView*>(tab_strip_view);
+  }
+  return nullptr;
 }
 
 std::unique_ptr<views::View> CreateDividerView(bool use_dark_color) {

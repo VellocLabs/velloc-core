@@ -199,12 +199,17 @@ export const CustomBrowserAppMenuButton = defineNativeViewAlias(
 
 export const CustomBrowserCaptionButtonContainer = defineNativeViewAlias(
   'caption-button-container',
-  {viewClass: 'BrowserCaptionButtonContainer', width: 137, height: 39}
+  {viewClass: 'BrowserCaptionButtonContainer', width: 174, height: 39}
 );
 
 export const CustomBrowserPinnedDownloadsButton = defineNativeViewAlias(
   'pinned-downloads-button',
   {viewClass: 'PinnedShowDownloadsButton', width: 34, height: 34}
+);
+
+export const CustomBrowserPinnedTabSearchButton = defineNativeViewAlias(
+  'pinned-tab-search-button',
+  {viewClass: 'PinnedTabSearchButton', width: 34, height: 34}
 );
 
 export const CustomBrowserDividerView = defineNativeViewAlias(

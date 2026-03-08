@@ -125,8 +125,10 @@ void PinnedToolbarActionsContainerNativeUI::OnPrepare() {
   for (const auto& action_id : all_pinned_action_ids) {
     // Pin the action without announcing it.
     if (actions_container->GetActionItemFor(action_id)) {
+      bool shown_in_toolbar = action_id != kActionShowDownloads &&
+                              action_id != kActionTabSearch;
       actions_container->UpdatePinnedStateAndAnnounce(
-          action_id, action_id != kActionShowDownloads);
+          action_id, shown_in_toolbar);
     }
   }
 }

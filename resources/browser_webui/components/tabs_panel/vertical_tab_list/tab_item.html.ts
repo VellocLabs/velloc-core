@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {html, css, nothing} from '//resources/lit/v3_0/lit.rollup.js';
+/* eslint-disable @webui-eslint/lit-element-template-structure */
+
+import {html, css, nothing, type CSSResultGroup} from '//resources/lit/v3_0/lit.rollup.js';
 
 import type {TabItem} from './tab_item.js';
 import {CrUrlListItemSize} from '//resources/cr_elements/cr_url_list_item/cr_url_list_item.js';
 
-export function getCSS() {
-  return css`
+export const tabItemStyles: CSSResultGroup = css`
     :host {
       /* The tab's outer box - size usually controlled by parent */
       --tabstrip-tab-transition-duration: 250ms;
@@ -265,18 +266,6 @@ export function getCSS() {
       display: none;
     }
   `;
-}
-
-function renderIcon() {
-  return html`
-      <div id="faviconContainer" aria-hidden="true" slot="prefix">
-        <div id="progressSpinner"></div>
-        <div id="favicon"></div>
-        <div id="crashedIcon"></div>
-        <div id="blocked"></div>
-      </div>
-    `;
-}
 
 export function getHtml(this: TabItem) {
   const item_size = CrUrlListItemSize.COMPACT;
@@ -295,7 +284,14 @@ export function getHtml(this: TabItem) {
     @click=${this.onActivate_}
     @contextmenu=${this.onContextMenu_}
   >
-    ${renderIcon()}
+    ${html`
+      <div id="faviconContainer" aria-hidden="true" slot="prefix">
+        <div id="progressSpinner"></div>
+        <div id="favicon"></div>
+        <div id="crashedIcon"></div>
+        <div id="blocked"></div>
+      </div>
+    `}
     <div class="badge" slot="badges">
       <tabstrip-alert-indicators id="alertIndicators"></tabstrip-alert-indicators>
     </div>

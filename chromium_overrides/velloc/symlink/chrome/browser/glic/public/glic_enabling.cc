@@ -4,8 +4,15 @@
 
 #include "chrome/browser/glic/public/glic_enabling.h"
 
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <string>
+
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/browser_management/browser_management_service.h"
 #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
@@ -15,10 +22,15 @@
 #include "chrome/browser/glic/host/auth_controller.h"
 #include "chrome/browser/glic/host/glic.mojom.h"
 #include "chrome/browser/glic/host/glic_features.mojom-features.h"
+#include "chrome/browser/glic/public/features.h"
+#include "chrome/browser/global_features.h"
+#include "chrome/browser/glic/host/glic_synthetic_trial_manager.h"
+#include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/startup_data.h"
 #include "chrome/browser/subscription_eligibility/subscription_eligibility_service.h"
 #include "chrome/browser/subscription_eligibility/subscription_eligibility_service_factory.h"
 #include "chrome/browser/ui/ui_features.h"
@@ -30,7 +42,10 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
+#include "components/signin/public/base/signin_switches.h"
+#include "components/signin/public/identity_manager/account_capabilities.h"
 #include "components/variations/service/variations_service.h"
+#include "components/variations/service/variations_service_utils.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "base/system/sys_info.h"
@@ -505,6 +520,143 @@ void GlicEnabling::UpdateConsentStatus() {
   consent_changed_callback_list_.Notify();
   show_settings_page_changed_callback_list_.Notify();
   profile_ready_state_changed_callback_list_.Notify();
+}
+
+// --- Missing upstream implementations that are needed for linking ---
+
+GlicEnabling::ProfileEnablement::ProfileEnablement() = default;
+GlicEnabling::ProfileEnablement::ProfileEnablement(ProfileEnablement&&) =
+    default;
+GlicEnabling::ProfileEnablement::~ProfileEnablement() = default;
+
+bool GlicEnabling::IsTrustFirstOnboardingEnabledForProfile(Profile* profile) {
+  return IsMultiInstanceEnabled() && !HasConsentedForProfile(profile) &&
+         base::FeatureList::IsEnabled(features::kGlicTrustFirstOnboarding);
+}
+
+bool GlicEnabling::ShouldBypassFreUi(
+    Profile* profile,
+    mojom::InvocationSource invocation_source) {
+  return invocation_source == mojom::InvocationSource::kAutoOpenedForPdf &&
+         base::FeatureList::IsEnabled(features::kAutoOpenGlicForPdf) &&
+         !HasConsentedForProfile(profile);
+}
+
+// static
+void GlicEnabling::SetBypassEnablementChecksForTesting(bool bypass) {
+  // No-op in custom browser override.
+}
+
+namespace {
+
+std::vector<std::string> GetFieldTrialParamAsSplitString(
+    const base::Feature& feature,
+    const std::string& param_name,
+    const std::string& default_value) {
+  std::string string_list = base::GetFieldTrialParamByFeatureAsString(
+      feature, param_name, default_value);
+  return base::SplitString(string_list, ", \t\n'\"", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_NONEMPTY);
+}
+
+constexpr char kDefaultEnabledCountries[] = "us,ca";
+constexpr char kDefaultEnabledLocales[] = "en-us";
+
+std::optional<bool> GetCountryEnablement(
+    GlicGlobalEnabling::Delegate& delegate) {
+  if (!base::FeatureList::IsEnabled(features::kGlicCountryFiltering)) {
+    return std::nullopt;
+  }
+  std::vector<std::string> enabled_countries = GetFieldTrialParamAsSplitString(
+      features::kGlicCountryFiltering, "enabled_countries",
+      kDefaultEnabledCountries);
+  std::vector<std::string> disabled_countries = GetFieldTrialParamAsSplitString(
+      features::kGlicCountryFiltering, "disabled_countries", "");
+  std::string country_code = delegate.GetCountryCode();
+  auto country_matches = [&](const std::string& c) {
+    return base::EqualsCaseInsensitiveASCII(c, country_code);
+  };
+  if (std::ranges::any_of(disabled_countries, country_matches)) {
+    return false;
+  }
+  if (enabled_countries.size() == 1 && enabled_countries[0] == "*") {
+    return true;
+  }
+  return std::ranges::any_of(enabled_countries, country_matches);
+}
+
+std::optional<bool> GetLocaleEnablement(
+    GlicGlobalEnabling::Delegate& delegate) {
+  if (!base::FeatureList::IsEnabled(features::kGlicLocaleFiltering)) {
+    return std::nullopt;
+  }
+  auto normalize_locale = [&](const std::string& locale) {
+    std::string out;
+    base::ReplaceChars(locale, "_", "-", &out);
+    return base::ToLowerASCII(out);
+  };
+  std::vector<std::string> disabled_locales = GetFieldTrialParamAsSplitString(
+      features::kGlicLocaleFiltering, "disabled_locales", "");
+  std::vector<std::string> enabled_locales = GetFieldTrialParamAsSplitString(
+      features::kGlicLocaleFiltering, "enabled_locales",
+      kDefaultEnabledLocales);
+  std::string locale = normalize_locale(delegate.GetLocale());
+  auto matches_locale = [&](const std::string& a) {
+    return normalize_locale(a) == locale;
+  };
+  if (std::ranges::any_of(disabled_locales, matches_locale)) {
+    return false;
+  }
+  if (enabled_locales.size() == 1 && enabled_locales[0] == "*") {
+    return true;
+  }
+  return std::ranges::any_of(enabled_locales, matches_locale);
+}
+
+}  // namespace
+
+std::string GlicGlobalEnabling::Delegate::GetCountryCode() {
+  std::string country_code =
+      base::ToLowerASCII(variations::GetCurrentCountryCode(
+          g_browser_process->variations_service()));
+  DLOG_IF(WARNING, country_code.empty()) << "Couldn't get country info.";
+  return country_code;
+}
+
+std::string GlicGlobalEnabling::Delegate::GetLocale() {
+  auto* startup_data = g_browser_process->startup_data();
+  if (!startup_data) {
+    return std::string();
+  }
+  return base::ToLowerASCII(
+      startup_data->chrome_feature_list_creator()->actual_locale());
+}
+
+GlicGlobalEnabling::GlicGlobalEnabling(Delegate& delegate) {
+  locale_enablement_ = GetLocaleEnablement(delegate);
+  country_enablement_ = GetCountryEnablement(delegate);
+}
+
+GlicGlobalEnabling::~GlicGlobalEnabling() = default;
+
+bool GlicGlobalEnabling::IsEnabledByFlags() {
+  bool is_enabled = base::FeatureList::IsEnabled(features::kGlic) &&
+                    locale_enablement_.value_or(true) &&
+                    country_enablement_.value_or(true);
+#if BUILDFLAG(IS_CHROMEOS)
+  static const bool supported_system_requirements = [] {
+    constexpr base::ByteCount kMinimumMemoryThreshold = base::GiB(8);
+    const bool bypass_cbx_requirement =
+        base::FeatureList::IsEnabled(
+            chromeos::features::kGlicEnableFor8GbDevices) &&
+        base::SysInfo::AmountOfPhysicalMemory() >= kMinimumMemoryThreshold;
+    return (bypass_cbx_requirement ||
+            base::FeatureList::IsEnabled(
+                chromeos::features::kFeatureManagementGlic));
+  }();
+  is_enabled = is_enabled && supported_system_requirements;
+#endif  // BUILDFLAG(IS_CHROMEOS)
+  return is_enabled;
 }
 
 }  // namespace glic

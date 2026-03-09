@@ -4,9 +4,10 @@
 
 #include "chrome/browser/glic/glic_pref_names.h"
 
-#include "base/types/cxx23_to_underlying.h"
+#include <utility>
+
 #include "chrome/browser/background/glic/glic_launcher_configuration.h"
-#include "chrome/browser/glic/widget/local_hotkey_manager.h"
+#include "chrome/browser/glic/common/local_hotkey_manager.h"
 #include "chrome/common/chrome_features.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry.h"
@@ -58,7 +59,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
   registry->RegisterIntegerPref(
       prefs::kGlicActuationOnWeb,
-      base::to_underlying(GetGlicActuationOnWebPolicyState()));
+      std::to_underlying(GetGlicActuationOnWebPolicyState()));
 
   // Default on for custom browser builds; explicit user choices still win.
   registry->RegisterBooleanPref(prefs::kGlicUserEnabledActuationOnWeb, true);

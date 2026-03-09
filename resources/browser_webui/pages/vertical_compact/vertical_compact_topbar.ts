@@ -1,8 +1,8 @@
-import {CrLitElement, html, css} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, html, css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import '../../components/native/native_view_aliases.js';
 
 export class VerticalCompactTopbar extends CrLitElement {
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       display: flex;
       align-items: center;

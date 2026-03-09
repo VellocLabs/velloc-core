@@ -112,7 +112,9 @@ TabContext PopulateTabContext(Browser* expected_browser,
     return context;
   }
 
-  context.tab_strip = browser_view->tabstrip();
+
+\
+  context.tab_strip = browser_view->horizontal_tab_strip_for_testing();
   if (!context.tab_strip) {
     return context;
   }

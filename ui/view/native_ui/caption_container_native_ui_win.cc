@@ -2,6 +2,7 @@
 
 #include "base/check.h"
 #include "chrome/browser/ui/views/frame/browser_frame_view_win.h"
+#include "chrome/browser/ui/views/frame/horizontal_tab_strip_region_view.h"
 #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_action_container.h"
 #include "chrome/browser/ui/views/frame/windows_caption_button.h"
@@ -154,14 +155,16 @@ void CaptionContainerNativeUI::AttachTabStripActionContainer() {
   if (!tab_strip_region_view) {
     return;
   }
+  auto* horizontal_view =
+      static_cast<HorizontalTabStripRegionView*>(tab_strip_region_view);
 
  tab_strip_action_container_ =
-      tab_strip_region_view->tab_strip_action_container_;
+      horizontal_view->tab_strip_action_container_;
   if (!tab_strip_action_container_) {
     return;
   }
   tab_strip_action_container_.TemporarilyClearReference(
-          &tab_strip_region_view->tab_strip_action_container_);
+          &horizontal_view->tab_strip_action_container_);
   tab_strip_action_container_.SetParent(frame_view);
   tab_strip_action_container_.EnsureLayer();
   tab_strip_action_container_.SetFillsBoundsOpaquely(false);

@@ -446,15 +446,7 @@ class TabsController {
 
   private cloneTab(tab: Tab): Tab {
     const clone: Tab = {...tab};
-    if (tab.url) {
-      clone.url = {...tab.url};
-    }
-    if (tab.faviconUrl) {
-      clone.faviconUrl = {...tab.faviconUrl};
-    }
-    if (tab.activeFaviconUrl) {
-      clone.activeFaviconUrl = {...tab.activeFaviconUrl};
-    }
+    // url.mojom.Url is a string in Chromium 146+ bindings; no deep clone needed.
     return clone;
   }
 

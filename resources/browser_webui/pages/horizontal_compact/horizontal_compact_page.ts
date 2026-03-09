@@ -1,4 +1,4 @@
-import {CrLitElement, html, css} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, html, css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {installHoverSwap, type HoverSwapHandle} from '../../utils/hover_swap_util.js';
 import '../../components/native/native_view_aliases.js';
 
@@ -18,7 +18,7 @@ export class HorizontalCompactPage extends CrLitElement {
   private readonly tabStripHoverAttr_ = 'tabstrip-hovered';
   private readonly hoverLeaveDelayMs_ = 300;
 
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       display: flex;
       flex-direction: column;

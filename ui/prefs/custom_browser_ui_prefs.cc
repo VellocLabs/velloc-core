@@ -16,6 +16,8 @@
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
@@ -105,7 +107,7 @@ void CustomBrowserUiPrefs::InitMainUI(content::WebUIDataSource* source,
                                       PrefService* prefs) {
   DCHECK(source);
   DCHECK(prefs);
-  const base::Value::Dict& root = prefs->GetDict(kCustomBrowserPrefPath);
+  const base::DictValue& root = prefs->GetDict(kCustomBrowserPrefPath);
 
   // 1) Global prefs.
   for (const auto [key, value] : root) {
@@ -121,7 +123,7 @@ void CustomBrowserUiPrefs::InitMainUI(content::WebUIDataSource* source,
 
   // 2) Load per-UIMode child prefs for the current mode.
   UIMode mode = GetUIModeFromPref(prefs);
-  const base::Value::Dict* prefs_by_mode = root.FindDict(MojomToString(mode));
+  const base::DictValue* prefs_by_mode = root.FindDict(MojomToString(mode));
   if (!prefs_by_mode) {
     return;
   }
@@ -142,7 +144,7 @@ void CustomBrowserUiPrefs::SavePrefImpl(const std::string& key,
                                         base::Value value,
                                         bool global) {
   ScopedDictPrefUpdate update(prefs_, kCustomBrowserPrefPath);
-  base::Value::Dict* dict = &update.Get();
+  base::DictValue* dict = &update.Get();
   if (!global) {
     dict = dict->EnsureDict(MojomToString(current_mode()));
   }
@@ -193,7 +195,7 @@ bool CustomBrowserUiPrefs::LoadUILayoutParams(const UIMode& mode) {
   touched_hash_ids_.clear();
   ui_mode_ = mode;
   const std::string mode_key = MojomToString(mode);
-  const base::Value::Dict& stored =
+  const base::DictValue& stored =
       prefs_->GetDict(kCustomChildLayoutsPrefPath);
   const std::string* encoded = stored.FindString(mode_key);
   if (encoded) {
@@ -300,7 +302,7 @@ void CustomBrowserUiPrefs::SaveCurrentUILayoutParams() {
   std::string encoded = base::Base64Encode(bytes);
   // Store under per-mode key.
   ScopedDictPrefUpdate update(prefs_, kCustomChildLayoutsPrefPath);
-  base::Value::Dict& root = update.Get();
+  base::DictValue& root = update.Get();
   const std::string mode_key = MojomToString(ui_mode_);
   root.Set(mode_key, encoded);
 }
@@ -334,20 +336,17 @@ void CustomBrowserUiPrefs::OnNewTabPrefChanged() {
       prefs_->GetBoolean(kCustomNewTabShowLogoPrefPath);
   const bool show_shortcuts =
       prefs_->GetBoolean(kCustomNewTabShowShortcutsPrefPath);
-  BrowserList* browser_list = BrowserList::GetInstance();
-  if (!browser_list) {
-    return;
-  }
-
-  for (Browser* browser : *browser_list) {
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+    Browser* browser = window->GetBrowserForMigrationOnly();
     if (!browser || !browser->profile() ||
         browser->profile()->GetPrefs() != prefs_) {
-      continue;
+      return true;
     }
 
     TabStripModel* tab_strip_model = browser->tab_strip_model();
     if (!tab_strip_model) {
-      continue;
+      return true;
     }
 
     for (int index = 0; index < tab_strip_model->count(); ++index) {
@@ -373,7 +372,8 @@ void CustomBrowserUiPrefs::OnNewTabPrefChanged() {
           "customBrowserUpdateNtpPrefs", show_search, show_logo,
           show_shortcuts);
     }
-  }
+    return true;
+  });
 }
 
 NativeViewParamsPtr* CustomBrowserUiPrefs::FindExistingLayout(

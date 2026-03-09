@@ -11,8 +11,8 @@ import '//resources/cr_elements/cr_url_list_item/cr_url_list_item.js';
 import './cr_url_list_item_ex.js';
 
 import {CrRippleMixin} from '//resources/cr_elements/cr_ripple/cr_ripple_mixin.js';
-import {getHtml, getCSS} from './tab_item.html.js';
-import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
+import {getHtml, tabItemStyles} from './tab_item.html.js';
+import {CrLitElement, type CSSResultGroup} from '//resources/lit/v3_0/lit.rollup.js';
 import {getFavicon} from 'chrome://resources/js/icon.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {TabMode, TabsMode, type TabId} from "../types.js";
@@ -36,7 +36,7 @@ const DELAY_TO_HIDE_PREVIEW_MS = 2000;
 const CrTabItemElementBase = CrRippleMixin(CrLitElement);
 export class TabItem extends CrTabItemElementBase implements TabObserver {
       static override get properties() {
-        return {  
+        return {
           item_mode: {type: String, reflect: true},
           mode:     {type: String, reflect: false, noAccessor: true},
           title:    {type: String},
@@ -61,15 +61,15 @@ export class TabItem extends CrTabItemElementBase implements TabObserver {
     this._mode = value;
     this.updateItemMode();
   }
-  
+
   accessor tabId!: TabId;                   // 外部设置，标识对应 Tab
-  override accessor title: string = '';             
+  override accessor title: string = '';
   protected accessor domain: string = '';
   protected accessor thumbnailUrl: string | null = null;
   protected accessor openedCount: number = 0;
   private tabExtras: TabExtras | null = null; // 附加数据
   private observerAttached = false;
-  static override styles = getCSS();
+  static override styles: CSSResultGroup = tabItemStyles;
   private getAccessibleTitle(tab: Tab): string {
       const tabTitle = tab.title;
 
@@ -122,14 +122,14 @@ export class TabItem extends CrTabItemElementBase implements TabObserver {
       this.title =
           loadTimeData.getString('defaultTabTitle');
     }
-    
+
     if (faviconEl_) {
       if (tab.networkState === TabNetworkState.kWaiting ||
           (tab.networkState === TabNetworkState.kLoading &&
            tab.isDefaultFavicon)) {
         faviconEl_.style.backgroundImage = 'none';
       } else if (tab.faviconUrl) {
-        const faviconUrl = tab.faviconUrl.url;
+        const faviconUrl = tab.faviconUrl;
         faviconEl_.style.backgroundImage = `url(${faviconUrl})`;
       } else {
         faviconEl_.style.backgroundImage = getFavicon('');
@@ -180,7 +180,7 @@ export class TabItem extends CrTabItemElementBase implements TabObserver {
         this.item_mode = nextTabMode;
         if (nextTabMode === TabMode.PREVIEW) {
           tabsController.addTrackedPreviewId(this.tabId);
-        } 
+        }
       }
     }
   }
@@ -363,7 +363,7 @@ export class TabItem extends CrTabItemElementBase implements TabObserver {
   protected onContextMenu_(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    
+
     const proxy = BrowserApiProxyImpl.getInstance();
     proxy.showTabContextMenu(
       this.tabId,

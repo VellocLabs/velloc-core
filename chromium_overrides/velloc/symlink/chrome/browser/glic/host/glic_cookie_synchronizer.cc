@@ -226,7 +226,7 @@ class GlicCookieSynchronizer::SyncCookiesForDevelopmentTask {
         /*max_body_size=*/1024);
   }
 
-  void OnSessionValidationComplete(std::unique_ptr<std::string> body) {
+  void OnSessionValidationComplete(std::optional<std::string> body) {
     bool session_valid = true;
     if (validation_loader_) {
       GURL final_url = validation_loader_->GetFinalURL();

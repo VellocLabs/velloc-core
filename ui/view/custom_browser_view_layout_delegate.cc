@@ -23,7 +23,7 @@ bool CustomBrowserViewDelegateImpl::GetBorderlessModeEnabled() const {
 gfx::Rect
 CustomBrowserViewDelegateImpl::GetBoundsForTabStripRegionInBrowserView() const {
   const gfx::Size tabstrip_minimum_size =
-      custom_browser_view_->tab_strip_region_view()->GetMinimumSize();
+      custom_browser_view_->tab_strip_view()->GetMinimumSize();
   gfx::RectF bounds_f(custom_browser_view_->frame()->GetBoundsForTabStripRegion(
       tabstrip_minimum_size));
   views::View::ConvertRectToTarget(custom_browser_view_->parent(),

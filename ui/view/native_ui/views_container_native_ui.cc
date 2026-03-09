@@ -7,7 +7,7 @@
 #include "base/check.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/ui/views/extensions/extensions_toolbar_container.h"
+#include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
 #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
@@ -162,7 +162,7 @@ bool ViewsContainerNativeUI::EnsureChildViews() {
       GetCustomBrowserView()->toolbar_button_provider();
   auto* extensions_toolbar_container =
       toolbar_button_provider
-          ? toolbar_button_provider->GetExtensionsToolbarContainer()
+          ? toolbar_button_provider->GetExtensionsToolbarDesktop()
           : nullptr;
   for (auto& view : views_) {
     bool is_location_bar = view == GetCustomBrowserView()->GetLocationBarView();

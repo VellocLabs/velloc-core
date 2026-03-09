@@ -1,4 +1,4 @@
-import {CrLitElement, html, css} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, html, css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {uiStore} from '../../ui_store.js';
 import {installHoverSwap, type HoverSwapHandle} from '../../utils/hover_swap_util.js';
 import type {CrSplitterElement} from 'chrome://resources/cr_elements/cr_splitter/cr_splitter.js';
@@ -11,7 +11,7 @@ import './vertical_sidebar.js';
 // A layout with a left sidebar (address bar + tabs) and a right content pane.
 // Inspired by Arc/Zen vertical layout concept.
 export class VerticalPage extends CrLitElement {
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       display: grid;
       grid-template-columns: var(--vertical-bar-left-width, 310px) var(--app-edge, 16px) minmax(0, 1fr);
@@ -31,7 +31,7 @@ export class VerticalPage extends CrLitElement {
       margin: 0;
       box-shadow: 0 8px 24px rgba(0,0,0,.12);
       -webkit-app-region: drag;
-      
+
       --vtp-list-active-shadow: none;
       --vtp-list-radius: 17px;
       --vtp-separator: var(--app-bg);
@@ -114,7 +114,7 @@ export class VerticalPage extends CrLitElement {
     }
 
     #singleTopBar {
-      flex: 0 0 auto;           
+      flex: 0 0 auto;
       height: var(--app-edge);
       width: 100%;
       overflow: hidden;

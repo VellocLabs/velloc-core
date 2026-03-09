@@ -62,14 +62,11 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
       TabStripModel* tab_strip_model,
       const TabStripModelChange& change,
       const TabStripSelectionChange& selection) override;
-  void TabChangedAt(content::WebContents* contents,
-                    int index,
-                    TabChangeType change_type) override;
-  void TabPinnedStateChanged(TabStripModel* tab_strip_model,
-                             content::WebContents* contents,
-                             int index) override;
-  void TabBlockedStateChanged(content::WebContents* contents,
-                              int index) override;
+  void OnTabChangedAt(tabs::TabInterface* tab,
+                      int index,
+                      TabChangeType change_type) override;
+  void OnTabPinnedStateChanged(tabs::TabInterface* tab, int index) override;
+  void OnTabBlockedStateChanged(tabs::TabInterface* tab, int index) override;
 
  private:
   void OnLongPressTimer();
@@ -82,7 +79,7 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
   custom_browser::mojom::TabGroupVisualDataPtr GetTabGroupData(TabGroup* group);
   void HandleThumbnailUpdate(content::WebContents* tab,
                              ThumbnailTracker::CompressedThumbnailData image);
-  void OnTabCloseCancelled(content::WebContents* tab);
+  void OnTabCloseCancelledByUser(content::WebContents* tab);
   void ReportTabDurationHistogram(const char* histogram_fragment,
                                   int tab_count,
                                   base::TimeDelta duration);

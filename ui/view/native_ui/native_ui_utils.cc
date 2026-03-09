@@ -268,12 +268,12 @@ TabStripRegionView* FindTabStripRegionView(BrowserView* browser_view) {
 std::unique_ptr<views::View> CreateDividerView(bool use_dark_color) {
   auto divider = std::make_unique<views::View>();
   divider->SetPreferredSize(
-      gfx::Size(GetLayoutConstant(TOOLBAR_DIVIDER_WIDTH),
-                GetLayoutConstant(TOOLBAR_DIVIDER_HEIGHT)));
+      gfx::Size(GetLayoutConstant(LayoutConstant::kToolbarDividerWidth),
+                GetLayoutConstant(LayoutConstant::kToolbarDividerHeight)));
   divider->SetBackground(views::CreateRoundedRectBackground(
       use_dark_color ? kColorToolbarButtonIconDisabled
                      : kColorToolbarExtensionSeparatorEnabled,
-      GetLayoutConstant(TOOLBAR_DIVIDER_CORNER_RADIUS)));
+      GetLayoutConstant(LayoutConstant::kToolbarDividerCornerRadius)));
   divider->SetPaintToLayer();
   return divider;
 }

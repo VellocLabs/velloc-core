@@ -270,11 +270,11 @@ CustomBrowserViewLayout::CalculateProposedLayout(
                   params.visual_client_area, !is_chrome_layout);
 
 
-  if (views().tab_strip_region_view) {
-    views().tab_strip_region_view->SetVisible(show_top_container);
+  if (views().horizontal_tab_strip_region_view) {
+    views().horizontal_tab_strip_region_view->SetVisible(show_top_container);
   }
-  if (views().vertical_tab_strip_container) {
-    views().vertical_tab_strip_container->SetVisible(show_top_container);
+  if (views().vertical_tab_strip_region_view) {
+    views().vertical_tab_strip_region_view->SetVisible(show_top_container);
   }
   if (views().top_container) {
     views().top_container->SetVisible(show_top_container);

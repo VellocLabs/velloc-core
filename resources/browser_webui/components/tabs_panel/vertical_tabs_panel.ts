@@ -1,5 +1,5 @@
 import '/strings.m.js';
-import {CrLitElement, css, html, type PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, css, html, type PropertyValues, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {TabsMode, type TabId} from './types.js';
 import {verticalScrollbarStyles} from './vertical_tab_list/custom_scrollbar.js';
 import './vertical_tab_list/tab_item.js';
@@ -30,7 +30,7 @@ export class VerticalTabsPanel extends CrLitElement implements TabsObserver {
   accessor mode: TabsMode = TabsMode.TABS_PREVIE_LIST;
   accessor show_pinned: ShowPinned = ShowPinned.GRID;
 
-  static override styles = [verticalScrollbarStyles, css`
+  static override styles: CSSResultGroup = [verticalScrollbarStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -108,7 +108,7 @@ export class VerticalTabsPanel extends CrLitElement implements TabsObserver {
       gap: 10px;
       justify-content: start;
     }
-    
+
 
     .separator {
       border: none;

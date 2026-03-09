@@ -98,13 +98,13 @@ void CustomBrowserUiModePrefPaths::PersistPrefForMode(UIMode mode,
   }
 
   ScopedDictPrefUpdate update(prefs_, kCustomBrowserUiModePrefRoot);
-  base::Value::Dict& root = update.Get();
+  base::DictValue& root = update.Get();
   root.EnsureDict(ModeKey(mode))->Set(path, value->Clone());
 }
 
 void CustomBrowserUiModePrefPaths::RestoreTrackedPrefs(UIMode mode) {
-  const base::Value::Dict& root = prefs_->GetDict(kCustomBrowserUiModePrefRoot);
-  const base::Value::Dict* stored = root.FindDict(ModeKey(mode));
+  const base::DictValue& root = prefs_->GetDict(kCustomBrowserUiModePrefRoot);
+  const base::DictValue* stored = root.FindDict(ModeKey(mode));
 
   base::AutoReset<bool> auto_reset(&is_restoring_, true);
   for (const std::string& path : tracked_pref_paths_) {

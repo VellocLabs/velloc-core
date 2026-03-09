@@ -1,4 +1,4 @@
-import {CrLitElement, html, css} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, html, css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
 import {TabsMode} from '../../components/tabs_panel/types.js';
 import type {VerticalTabsPanel} from '../../components/tabs_panel/vertical_tabs_panel.js';
@@ -22,7 +22,7 @@ export class VerticalCompactPage extends CrLitElement {
     this.sidebarHoverLocked_ = uiStore.leftPaneLocked;
   }
 
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       display: flex;
       flex-direction: column;

@@ -1,4 +1,4 @@
-import {CrLitElement, html, css} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, html, css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import 'chrome://resources/cr_elements/cr_shared_vars.css.js';
 import {ColorChangeUpdater} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 import './vertical/vertical_page.js';
@@ -10,7 +10,7 @@ import { errorReporter } from '../error_reporter.js';
 
 
 export class MainApp extends CrLitElement {
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       display: flex;
       height: 100%;

@@ -5,7 +5,7 @@ import {addWebUiListener, removeWebUiListener} from
     'chrome://resources/js/cr.js';
 import type {WebUiListener} from 'chrome://resources/js/cr.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
-import {CrLitElement, css, html} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, css, html, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {CrToggleElement} from
     'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
 import {SearchEnginesBrowserProxyImpl} from
@@ -305,7 +305,7 @@ export class GetStartedPage extends CrLitElement {
     return 'get-started-page';
   }
 
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       position: fixed;
       inset: 0;

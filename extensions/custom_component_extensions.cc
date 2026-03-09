@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
@@ -47,7 +46,7 @@ int GetResourceIdForCustomComponentPath(const base::FilePath& resource_path) {
   return 0;
 }
 
-std::optional<base::Value::Dict> ParseManifestResource(
+std::optional<base::DictValue> ParseManifestResource(
     int manifest_resource_id) {
   if (!ui::ResourceBundle::HasSharedInstance()) {
     return std::nullopt;
@@ -65,7 +64,7 @@ std::optional<base::Value::Dict> ParseManifestResource(
   return manifest;
 }
 
-std::optional<base::Value::Dict> LoadMessageCatalogResource(
+std::optional<base::DictValue> LoadMessageCatalogResource(
     const base::FilePath& extension_root,
     const std::string& locale) {
   if (!ui::ResourceBundle::HasSharedInstance()) {
@@ -95,9 +94,9 @@ std::optional<base::Value::Dict> LoadMessageCatalogResource(
   return catalog;
 }
 
-std::optional<base::Value::Dict> LocalizeManifestForDisplay(
+std::optional<base::DictValue> LocalizeManifestForDisplay(
     const CustomComponentExtension& extension,
-    const base::Value::Dict& manifest) {
+    const base::DictValue& manifest) {
   std::string error;
   const std::string default_locale =
       extension_l10n_util::GetDefaultLocaleFromManifest(manifest, &error);
@@ -112,7 +111,7 @@ std::optional<base::Value::Dict> LocalizeManifestForDisplay(
   extensions::MessageBundle::CatalogVector catalogs;
   const base::FilePath extension_root(extension.root_relative_path);
   for (const auto& locale : fallback_locales) {
-    std::optional<base::Value::Dict> catalog =
+    std::optional<base::DictValue> catalog =
         LoadMessageCatalogResource(extension_root, locale);
     if (catalog) {
       catalogs.push_back(std::move(*catalog));
@@ -131,7 +130,7 @@ std::optional<base::Value::Dict> LocalizeManifestForDisplay(
     return std::nullopt;
   }
 
-  base::Value::Dict localized_manifest = manifest.Clone();
+  base::DictValue localized_manifest = manifest.Clone();
   if (!extension_l10n_util::LocalizeManifest(*bundle, &localized_manifest,
                                              &error)) {
     LOG(ERROR) << "Failed to localize manifest for custom component extension "
@@ -142,7 +141,7 @@ std::optional<base::Value::Dict> LocalizeManifestForDisplay(
   return localized_manifest;
 }
 
-extensions::ExtensionId GenerateIdFromManifest(const base::Value::Dict& manifest,
+extensions::ExtensionId GenerateIdFromManifest(const base::DictValue& manifest,
                                                int manifest_resource_id) {
   const std::string* raw_key =
       manifest.FindString(extensions::manifest_keys::kPublicKey);
@@ -175,7 +174,7 @@ const extensions::ExtensionIdSet& GetCustomExtensionIdAllowlist() {
   }
 
   for (const auto& entry : GetCustomComponentExtensionsStorage()) {
-    std::optional<base::Value::Dict> manifest =
+    std::optional<base::DictValue> manifest =
         ParseManifestResource(entry.manifest_resource_id);
     if (!manifest) {
       continue;
@@ -201,7 +200,7 @@ bool ReadEnabledPref(const PrefService* prefs,
   if (!prefs) {
     return extension.enabled_by_default;
   }
-  const base::Value::Dict& dict =
+  const base::DictValue& dict =
       prefs->GetDict(kCustomComponentExtensionsPrefPath);
   const base::Value* value = dict.Find(extension.name);
   if (!value || !value->is_bool()) {
@@ -233,7 +232,7 @@ base::span<const CustomComponentExtension> GetCustomComponentExtensions() {
 
 bool IsCustomComponentExtensionAllowlisted(const std::string& extension_id) {
   const auto& allowlist = GetCustomExtensionIdAllowlist();
-  return base::Contains(allowlist, extension_id);
+  return allowlist.contains(extension_id);
 }
 
 bool IsCustomComponentExtensionAllowlisted(int manifest_resource_id) {
@@ -284,7 +283,7 @@ void SetCustomComponentExtensionEnabled(
 
 std::string GetCustomComponentExtensionId(
     const CustomComponentExtension& extension) {
-  std::optional<base::Value::Dict> manifest =
+  std::optional<base::DictValue> manifest =
       ParseManifestResource(extension.manifest_resource_id);
   if (!manifest) {
     return std::string();
@@ -302,12 +301,12 @@ std::vector<CustomComponentExtensionInfo> GetCustomComponentExtensionInfos(
     info.has_background_page = entry.has_background_page;
     info.enabled = ReadEnabledPref(prefs, entry, nullptr);
 
-    std::optional<base::Value::Dict> manifest =
+    std::optional<base::DictValue> manifest =
         ParseManifestResource(entry.manifest_resource_id);
     if (manifest) {
-      std::optional<base::Value::Dict> localized_manifest =
+      std::optional<base::DictValue> localized_manifest =
           LocalizeManifestForDisplay(entry, *manifest);
-      const base::Value::Dict& info_manifest =
+      const base::DictValue& info_manifest =
           localized_manifest ? *localized_manifest : *manifest;
 
       if (const std::string* name =
@@ -337,7 +336,7 @@ std::vector<CustomComponentExtensionInfo> GetCustomComponentExtensionInfos(
 }
 
 bool LocalizeCustomComponentManifest(int manifest_resource_id,
-                                     base::Value::Dict* manifest) {
+                                     base::DictValue* manifest) {
   if (!manifest) {
     return false;
   }
@@ -346,7 +345,7 @@ bool LocalizeCustomComponentManifest(int manifest_resource_id,
   if (!extension) {
     return false;
   }
-  std::optional<base::Value::Dict> localized_manifest =
+  std::optional<base::DictValue> localized_manifest =
       LocalizeManifestForDisplay(*extension, *manifest);
   if (!localized_manifest) {
     return false;

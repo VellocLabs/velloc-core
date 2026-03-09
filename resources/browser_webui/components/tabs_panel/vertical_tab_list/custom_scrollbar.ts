@@ -1,6 +1,6 @@
-import {css} from "chrome://resources/lit/v3_0/lit.rollup.js";
+import {css, type CSSResultGroup} from "chrome://resources/lit/v3_0/lit.rollup.js";
 
-export const verticalScrollbarStyles = css`
+export const verticalScrollbarStyles: CSSResultGroup = css`
   .list {
     scrollbar-width: thin;
     scrollbar-color: var(--vertical-bar-scroll-thumb, rgba(95, 99, 104, 0.3)) transparent;

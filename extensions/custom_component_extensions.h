@@ -56,7 +56,7 @@ std::string GetCustomComponentExtensionId(
 std::vector<CustomComponentExtensionInfo> GetCustomComponentExtensionInfos(
     PrefService* prefs);
 bool LocalizeCustomComponentManifest(int manifest_resource_id,
-                                     base::Value::Dict* manifest);
+                                     base::DictValue* manifest);
 
 }  // namespace custom_browser
 

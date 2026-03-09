@@ -47,7 +47,7 @@
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tab_groups/tab_group_visual_data.h"
 #include "components/tabs/public/split_tab_data.h"
-#include "components/tabs/public/split_tab_id.h"
+#include "components/split_tabs/split_tab_id.h"
 #include "components/tabs/public/tab_group.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/common/drop_data.h"
@@ -200,7 +200,7 @@ CustomBrowserHandler::CustomBrowserHandler(
           base::BindRepeating(&CustomBrowserHandler::HandleThumbnailUpdate,
                               base::Unretained(this))),
       tab_before_unload_tracker_(
-          base::BindRepeating(&CustomBrowserHandler::OnTabCloseCancelled,
+          base::BindRepeating(&CustomBrowserHandler::OnTabCloseCancelledByUser,
                               base::Unretained(this))) {
   DCHECK(browser_);
   browser_->tab_strip_model()->AddObserver(this);
@@ -409,25 +409,22 @@ void CustomBrowserHandler::OnTabStripModelChanged(
   }
 }
 
-void CustomBrowserHandler::TabChangedAt(content::WebContents* contents,
-                                        int index,
-                                        TabChangeType change_type) {
-  TRACE_EVENT0("browser", "CustomBrowserHandler:TabChangedAt");
-  TabStripModel* tab_strip_model = browser_->tab_strip_model();
-  NotifyTabDataChanged(contents, tab_strip_model->GetTabAtIndex(index), index);
+void CustomBrowserHandler::OnTabChangedAt(tabs::TabInterface* tab,
+                                          int index,
+                                          TabChangeType change_type) {
+  TRACE_EVENT0("browser", "CustomBrowserHandler:OnTabChangedAt");
+  NotifyTabDataChanged(tab->GetContents(), tab, index);
 }
 
-void CustomBrowserHandler::TabPinnedStateChanged(TabStripModel* tab_strip_model,
-                                                 content::WebContents* contents,
-                                                 int index) {
-  NotifyTabDataChanged(contents, tab_strip_model->GetTabAtIndex(index), index);
+void CustomBrowserHandler::OnTabPinnedStateChanged(tabs::TabInterface* tab,
+                                                    int index) {
+  NotifyTabDataChanged(tab->GetContents(), tab, index);
 }
 
-void CustomBrowserHandler::TabBlockedStateChanged(
-    content::WebContents* contents,
+void CustomBrowserHandler::OnTabBlockedStateChanged(
+    tabs::TabInterface* tab,
     int index) {
-  TabStripModel* tab_strip_model = browser_->tab_strip_model();
-  NotifyTabDataChanged(contents, tab_strip_model->GetTabAtIndex(index), index);
+  NotifyTabDataChanged(tab->GetContents(), tab, index);
 }
 
 void CustomBrowserHandler::OnLongPressTimer() {
@@ -489,7 +486,8 @@ custom_browser::mojom::TabPtr CustomBrowserHandler::GetTabData(
   }
 
   TabRendererData tab_renderer_data =
-      TabRendererData::FromTabInModel(tab_strip_model, index);
+      TabRendererData::FromTabInterface(
+          tab_strip_model->GetTabAtIndex(index));
   tab_data->pinned = tab_renderer_data.pinned;
   tab_data->title = base::UTF16ToUTF8(tab_renderer_data.title);
   tab_data->url = tab_renderer_data.visible_url;
@@ -525,7 +523,7 @@ custom_browser::mojom::TabPtr CustomBrowserHandler::GetTabData(
   tab_data->network_state = tab_renderer_data.network_state;
   tab_data->should_hide_throbber = tab_renderer_data.should_hide_throbber;
   tab_data->blocked = tab_renderer_data.blocked;
-  tab_data->crashed = tab_renderer_data.IsCrashed();
+  tab_data->crashed = tab_renderer_data.is_crashed;
   // TODO(johntlee): Add the rest of TabRendererData
 
   tab_data->alert_states =
@@ -567,7 +565,8 @@ int CustomBrowserHandler::GetOrCreateGuestIdForTab(
   // //    last_guest_handle->DetachFromOuterWebContents();
   // // }
   // guest_last_active_id_ = guest_handle->id();
-  return guest_handle->id();
+  return static_cast<int>(
+      guest_handle->id().GetLowForSerialization() & 0x7FFFFFFF);
 }
 
 custom_browser::mojom::TabGroupVisualDataPtr
@@ -687,7 +686,7 @@ void CustomBrowserHandler::MoveGroup(const std::string& group_id_string,
     group_selection.SetSelectedIndex(tabs_in_group.start());
     group_selection.SetSelectionFromAnchorTo(tabs_in_group.end() - 1);
     group_selection.set_active(
-        target_browser->tab_strip_model()->selection_model().active());
+        target_browser->tab_strip_model()->active_index());
     target_browser->tab_strip_model()->SetSelectionFromModel(group_selection);
 
     target_browser->tab_strip_model()->MoveGroupTo(group_id.value(), to_index);
@@ -909,7 +908,7 @@ void CustomBrowserHandler::HandleThumbnailUpdate(
   page_browser_->TabThumbnailUpdated(tab_id, data_uri);
 }
 
-void CustomBrowserHandler::OnTabCloseCancelled(content::WebContents* tab) {
+void CustomBrowserHandler::OnTabCloseCancelledByUser(content::WebContents* tab) {
   tab_before_unload_tracker_.Unobserve(tab);
   const SessionID::id_type tab_id = extensions::ExtensionTabUtil::GetTabId(tab);
   page_browser_->TabCloseCancelled(tab_id);
@@ -1004,4 +1003,3 @@ void CustomBrowserHandler::ExecuteBrowserCommand(
     }
   }
 }
-

@@ -58,11 +58,8 @@ inline void AppendFeatureListOverrides(
   }
 
   if (!glic::GlicEnabling::IsEnabledByFlags()) {
-    overrides->emplace_back(std::cref(features::kTabstripComboButton),
-                            base::FeatureList::OVERRIDE_DISABLE_FEATURE);
-    overrides->emplace_back(
-        std::cref(features::kLaunchedTabSearchToolbarButton),
-        base::FeatureList::OVERRIDE_DISABLE_FEATURE);
+    // kTabstripComboButton and kLaunchedTabSearchToolbarButton were removed in
+    // Chromium 146. No overrides needed.
   }
 
   // Enable development cookie sync for GLIC so the webview can authenticate

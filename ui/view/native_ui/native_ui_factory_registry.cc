@@ -1,7 +1,7 @@
 #include "custom_browser/ui/view/native_ui/native_ui_factory_registry.h"
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
-#include "chrome/browser/ui/views/extensions/extensions_toolbar_container.h"
+#include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
 #include "chrome/browser/ui/views/tabs/tab_search_button.h"
 #include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_control_button.h"
@@ -34,7 +34,7 @@ REGISTER_NATIVE_UI_CLASS(CaptionContainerNativeUI)
 REGISTER_NATIVE_UI_CLASS(LocationBarAutoSizeNativeUI)
 
 REGISTER_VIEW_NATIVE_UI_ADAPTER(BookmarkBarView)
-REGISTER_DYNAMIC_VIEW_NATIVE_UI_ADAPTER(ExtensionsToolbarContainer)
+REGISTER_DYNAMIC_VIEW_NATIVE_UI_ADAPTER(ExtensionsToolbarDesktop)
 REGISTER_VIEW_NATIVE_UI_ADAPTER(SplitTabsToolbarButton)
 REGISTER_NATIVE_UI_CLASS(TabSearchContainerNativeUI)
 

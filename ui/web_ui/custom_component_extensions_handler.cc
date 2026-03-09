@@ -55,16 +55,16 @@ void CustomComponentExtensionsHandler::RegisterMessages() {
 }
 
 void CustomComponentExtensionsHandler::HandleGetCustomComponentExtensions(
-    const base::Value::List& args) {
+    const base::ListValue& args) {
   AllowJavascript();
   CHECK_EQ(args.size(), 1u);
   const base::Value& callback_id = args[0];
 
-  base::Value::List result;
+  base::ListValue result;
   if (profile_) {
     for (const auto& info :
          GetCustomComponentExtensionInfos(profile_->GetPrefs())) {
-      base::Value::Dict entry;
+      base::DictValue entry;
       entry.Set("name", info.name);
       entry.Set("displayName", info.display_name);
       if (!info.description.empty()) {
@@ -87,7 +87,7 @@ void CustomComponentExtensionsHandler::HandleGetCustomComponentExtensions(
 }
 
 void CustomComponentExtensionsHandler::HandleSetCustomComponentExtensionEnabled(
-    const base::Value::List& args) {
+    const base::ListValue& args) {
   AllowJavascript();
   CHECK_EQ(args.size(), 3u);
   const base::Value& callback_id = args[0];

@@ -1,4 +1,4 @@
-import {CrLitElement, html, css} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, html, css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {BATCH} from './native_view_batcher.js';
 import {ChromeColorID, LayoutAlignment, NativeChildView} from '../../ui_view_controller.mojom-webui.js';
 
@@ -6,7 +6,7 @@ type AlignX = 'left' | 'right' | 'stretch';
 type AlignY = 'top' | 'bottom' | 'stretch';
 
 export class NativeViewHolder extends CrLitElement {
-  static override styles = css`:host{display:block}`;
+  static override styles: CSSResultGroup = css`:host{display:block}`;
   static override properties = {
     viewClass:    {type: String, attribute: 'view-class'},
     viewID:       {type: String, attribute: 'view-id'},
@@ -354,4 +354,3 @@ export class NativeViewHolder extends CrLitElement {
 }
 
 customElements.define('native-view-holder', NativeViewHolder);
-

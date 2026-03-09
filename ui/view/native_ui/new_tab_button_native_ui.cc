@@ -26,7 +26,8 @@ NewTabButtonNativeUI::NewTabButtonNativeUI(
 NewTabButtonNativeUI::~NewTabButtonNativeUI() = default;
 
 void NewTabButtonNativeUI::OnPrepare() {
-  TabStrip* tab_strip = GetCustomBrowserView()->tabstrip();
+  TabStrip* tab_strip =
+      GetCustomBrowserView()->horizontal_tab_strip_for_testing();
   if (!tab_strip) {
     return;
   }

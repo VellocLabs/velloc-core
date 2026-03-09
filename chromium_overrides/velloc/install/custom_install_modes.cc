@@ -3,23 +3,8 @@
 // found in the LICENSE file.
 
 // Brand-specific constants and install modes for the custom browser.
+// As of Chromium 146, all brand constants are inline constexpr in the header.
 
 #include "custom_browser/chromium_overrides/Velloc/install/custom_install_modes.h"
 
-#include <stdlib.h>
-
-#include "chrome/install_static/buildflags.h"
 #include "chrome/install_static/install_modes.h"
-
-namespace install_static {
-
-const wchar_t kCompanyPathName[] = L"";
-
-const wchar_t kProductPathName[] =
-    BUILDFLAG(CUSTOM_BRANDING_PATH_COMPONENT_WIDE);
-
-const size_t kProductPathNameLength = _countof(kProductPathName) - 1;
-
-const char kSafeBrowsingName[] = BUILDFLAG(CUSTOM_BRANDING_PATH_COMPONENT);
-
-}  // namespace install_static

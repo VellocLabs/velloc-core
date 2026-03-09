@@ -15,9 +15,7 @@
 #include "base/metrics/user_metrics_action.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
-#include "base/version_info/channel.h"
 #include "chrome/browser/background/glic/glic_launcher_configuration.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/glic/fre/fre_util.h"
 #include "chrome/browser/glic/fre/glic_fre_dialog_view.h"
 #include "chrome/browser/glic/fre/glic_fre_page_handler.h"
@@ -36,7 +34,6 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/public/tab_dialog_manager.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
-#include "chrome/common/channel_info.h"
 #include "chrome/common/chrome_features.h"
 #include "components/google/core/common/google_util.h"
 #include "components/prefs/pref_service.h"
@@ -99,16 +96,16 @@ bool GlicFreController::ShouldShowFreDialog() {
          !GlicEnabling::HasConsentedForProfile(profile_);
 }
 
-bool GlicFreController::CanShowFreDialog(Browser* browser) {
+bool GlicFreController::CanShowFreDialog(BrowserWindowInterface* bwi) {
   // The FRE can only be shown given a valid browser. If there is no browser,
   // then an OS-level entrypoint is being used, which should not be possible
   // before the FRE has been accepted.
-  if (!browser) {
+  if (!bwi) {
     return false;
   }
   // If there is a browser, the FRE can only be shown if no other modal is
   // currently being shown on the same tab.
-  tabs::TabInterface* tab = browser->GetActiveTabInterface();
+  tabs::TabInterface* tab = bwi->GetActiveTabInterface();
   return tab && tab->CanShowModalUI();
 }
 
@@ -119,27 +116,27 @@ void GlicFreController::OpenFreDialogInNewTab(BrowserWindowInterface* bwi,
     return;
   }
   chrome::AddAndReturnTabAt(browser, GURL(), /*index=*/-1, /*foreground=*/true);
-  if (CanShowFreDialog(browser)) {
+  if (CanShowFreDialog(bwi)) {
     if (GlicEnabling::IsUnifiedFreEnabled(profile_)) {
       GlicKeyedServiceFactory::GetGlicKeyedService(profile_)->ToggleUI(
-          browser, /*prevent_close=*/true, source);
+          bwi, /*prevent_close=*/true, source);
     } else {
-      ShowFreDialog(browser, source);
+      ShowFreDialog(bwi, source);
     }
   }
 }
 
-void GlicFreController::ShowFreDialog(Browser* browser,
+void GlicFreController::ShowFreDialog(BrowserWindowInterface* bwi,
                                       mojom::InvocationSource source) {
-  CHECK(CanShowFreDialog(browser));
+  CHECK(CanShowFreDialog(bwi));
   profile_->GetPrefs()->SetInteger(
       prefs::kGlicCompletedFre,
       static_cast<int>(prefs::FreStatus::kIncomplete));
 
   if (auth_controller_.CheckAuthBeforeShowSync(
           base::BindOnce(&GlicFreController::OpenFreDialogInNewTab,
-                         GetWeakPtr(), browser, source))) {
-    ShowFreDialogAfterAuthCheck(browser->AsWeakPtr(), source);
+                         GetWeakPtr(), bwi, source))) {
+    ShowFreDialogAfterAuthCheck(bwi, source);
   } else {
     // Sign-in required and handled by AuthController. In this case, do not
     // record the FRE load time metric.
@@ -149,12 +146,12 @@ void GlicFreController::ShowFreDialog(Browser* browser,
 }
 
 void GlicFreController::ShowFreDialogAfterAuthCheck(
-    base::WeakPtr<Browser> browser,
+    BrowserWindowInterface* bwi,
     mojom::InvocationSource source) {
   // Abort if the browser was closed, to avoid crashing. Note, the user
   // shouldn't have much chance to close the browser between ShowFreDialog() and
   // ShowFreDialogAfterAuthCheck().
-  if (!browser) {
+  if (!bwi) {
     return;
   }
 
@@ -163,12 +160,12 @@ void GlicFreController::ShowFreDialogAfterAuthCheck(
     DismissFre(webui_state_);
   }
 
-  source_browser_ = browser.get();
+  source_browser_ = bwi;
 
   base::ElapsedTimer widget_creation_timer;
   CreateView();
 
-  tab_showing_modal_ = browser->GetActiveTabInterface();
+  tab_showing_modal_ = bwi->GetActiveTabInterface();
   // Note that this call to `CreateShowDialogAndBlockTabInteraction` is
   // necessarily preceded by a call to `CanShowModalUI`. See
   // `GlicFreController::CanShowFreDialog`.
@@ -211,7 +208,8 @@ void GlicFreController::RecordFrameworkStartTime() {
   pending_framework_start_time_ = base::TimeTicks::Now();
 }
 
-void GlicFreController::DismissFreIfOpenOnActiveTab(Browser* browser) {
+void GlicFreController::DismissFreIfOpenOnActiveTab(
+    BrowserWindowInterface* browser) {
   if (!browser) {
     return;
   }
@@ -239,20 +237,12 @@ void GlicFreController::AcceptFre(GlicFrePageHandler* handler) {
 
   // Enable the launcher if it is still disabled by default and the browser
   // is default or is on the stable channel.
-  bool is_enabled_default = false;
-  const bool is_launcher_enabled =
-      GlicLauncherConfiguration::IsEnabled(&is_enabled_default);
-  if (is_enabled_default && !is_launcher_enabled) {
-    base::MakeRefCounted<shell_integration::DefaultBrowserWorker>()
-        ->StartCheckIsDefault(
-            base::BindOnce(&GlicFreController::OnCheckIsDefaultBrowserFinished,
-                           chrome::GetChannel()));
-  }
+  GlicLauncherConfiguration::CheckDefaultBrowserToEnableLauncher();
 
   // Dismiss the FRE window and then show the Glic panel, but store source
   // browser before it is cleared.
-  Browser* source_browser = source_browser_;
-  CloseWithReason(views::Widget::ClosedReason::kAcceptButtonClicked);
+  BrowserWindowInterface* source_browser = source_browser_;
+  CloseWithFreReason(GlicFreWidgetClosedReason::kAcceptButtonClicked);
 
   // Show a glic window attached to the invocation source browser.
   if (source_browser) {
@@ -263,12 +253,15 @@ void GlicFreController::AcceptFre(GlicFrePageHandler* handler) {
 
 void GlicFreController::RejectFre() {
   base::RecordAction(base::UserMetricsAction("Glic.Fre.NoThanks"));
-  CloseWithReason(views::Widget::ClosedReason::kCancelButtonClicked);
+  CloseWithFreReason(GlicFreWidgetClosedReason::kCancelButtonClicked);
+}
+
+void GlicFreController::CloseWithFreReason(GlicFreWidgetClosedReason reason) {
+  base::UmaHistogramEnumeration("Glic.Fre.WidgetClosedReason2", reason);
+  DismissFre(webui_state_);
 }
 
 void GlicFreController::CloseWithReason(views::Widget::ClosedReason reason) {
-  base::UmaHistogramEnumeration("Glic.Fre.WidgetClosedReason2",
-                                ToGlicFreWidgetClosedReason(reason));
   switch (reason) {
     case views::Widget::ClosedReason::kAcceptButtonClicked:
     case views::Widget::ClosedReason::kCancelButtonClicked:
@@ -283,7 +276,7 @@ void GlicFreController::CloseWithReason(views::Widget::ClosedReason reason) {
       base::RecordAction(base::UserMetricsAction("Glic.Fre.CloseWithX"));
       break;
   }
-  DismissFre(webui_state_);
+  CloseWithFreReason(ToGlicFreWidgetClosedReason(reason));
 }
 
 void GlicFreController::DismissFre(mojom::FreWebUiState panel) {
@@ -489,26 +482,6 @@ void GlicFreController::MaybePreconnect() {
         GURL("https://www.gstatic.com/"), /*allow_credentials=*/true,
         anonymization_key, kGlicFrePreconnectTrafficAnnotation,
         &storage_partition_config);
-  }
-}
-
-// static
-void GlicFreController::OnCheckIsDefaultBrowserFinished(
-    version_info::Channel channel,
-    shell_integration::DefaultWebClientState state) {
-  // Don't do anything because a different channel is the default browser
-  if (state ==
-      shell_integration::DefaultWebClientState::OTHER_MODE_IS_DEFAULT) {
-    return;
-  }
-
-  // Enables the launcher if the current browser is the default or
-  // is on the stable channel.
-  if (g_browser_process &&
-      (state == shell_integration::DefaultWebClientState::IS_DEFAULT ||
-       channel == version_info::Channel::STABLE)) {
-    g_browser_process->local_state()->SetBoolean(prefs::kGlicLauncherEnabled,
-                                                 true);
   }
 }
 

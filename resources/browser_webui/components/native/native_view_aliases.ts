@@ -151,7 +151,7 @@ export const CustomBrowserLocationExtensionBarViews = defineNativeViewAlias(
     gap: 4,
     childViews: [
       {viewClass: 'LocationBarView', height: 34, flex: 1},
-      {viewClass: 'ExtensionsToolbarContainer', height: 34, flex: 0}
+      {viewClass: 'ExtensionsToolbarDesktop', height: 34, flex: 0}
     ]
   }
 );
@@ -161,7 +161,7 @@ export const CustomBrowserSidebarBottomBarViews = defineNativeViewAlias(
   { viewClass: VIEWS_CONTAINER_VIEW_NAME, height: 34,
     gap: 4,
     childViews: [
-      {viewClass: 'ExtensionsToolbarContainer', height: 34, flex: 1},
+      {viewClass: 'ExtensionsToolbarDesktop', height: 34, flex: 1},
       {viewClass: 'SplitTabsToolbarButton', height: 34, flex: 0}
     ]
   }
@@ -199,7 +199,7 @@ export const CustomBrowserAppMenuButton = defineNativeViewAlias(
 
 export const CustomBrowserCaptionButtonContainer = defineNativeViewAlias(
   'caption-button-container',
-  {viewClass: 'BrowserCaptionButtonContainer', width: 174, height: 39}
+  {viewClass: 'BrowserCaptionButtonContainer', width: 300, height: 39}
 );
 
 export const CustomBrowserPinnedDownloadsButton = defineNativeViewAlias(
@@ -224,7 +224,7 @@ export const CustomBrowserDividerViewDark = defineNativeViewAlias(
 
 export const CustomBrowserExtensionsToolbarContainer = defineNativeViewAlias(
   'extensions-toolbar-container',
-  {viewClass: 'ExtensionsToolbarContainer', hAlign: LayoutAlignment.kStart, height: 34}
+  {viewClass: 'ExtensionsToolbarDesktop', hAlign: LayoutAlignment.kStart, height: 34}
 );
 
 export const CustomBrowserSplitTabsButton = defineNativeViewAlias(

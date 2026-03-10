@@ -29,11 +29,9 @@ export class VerticalCompactTopbar extends CrLitElement {
     /* flex behavior for inner elements */
     .cluster > .location {
       flex: 1 1 0;
-      min-width: 0;
+      min-width: 100px;
       width: auto;
     }
-
-    .spacer { width: 50px; }
 
     .caption {
       flex: 0 0 auto;
@@ -49,7 +47,6 @@ export class VerticalCompactTopbar extends CrLitElement {
         <divider-view-dark align-x="right"></divider-view-dark>
         <pinned-downloads-button align-x="right"></pinned-downloads-button>
         <app-menu-button align-x="right"></app-menu-button>
-        <div class="spacer"></div>
       </div>
       <caption-button-container class="caption" align-x="right"></caption-button-container>
     `;

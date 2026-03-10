@@ -29,4 +29,4 @@ const string kMainContentsViewName = "main-contents-view";
 const string kViewsContainerViewName = "views-container-view";
 const string kNewTabToolbarButtonViewName = "new-tab-toolbar-button";
 
-const int32 kUIVersion = 1;
+const int32 kUIVersion = 2;

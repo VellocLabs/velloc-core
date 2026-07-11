@@ -4,11 +4,17 @@ _product_version_inc = "$root_gen_dir/custom_browser/common/generated/product_ve
 _custom_browser_version_file =
     "$root_gen_dir/custom_browser/common/generated/custom_browser_version.txt"
 
+# Product version = {CUSTOM_BROWSER_MAJOR}.{chromium MAJOR}.{bridge
+# interface version}.{CUSTOM_BROWSER_PATCH} — composed from three inputs
+# (see gen_product_version.py header). The interface-version header is the
+# same constant that pins the /v<N>/ guest URL, so the app version always
+# names the web contract this binary speaks.
 action("generate_product_version") {
   script = "//custom_browser/common/scripts/gen_product_version.py"
   inputs = [
     "//chrome/VERSION",
     "//custom_browser/VERSION",
+    "//custom_browser/browser/nexus/nexus_interface_version.h",
   ]
   outputs = [
     _product_version_inc,
@@ -23,6 +29,9 @@ action("generate_product_version") {
     rebase_path(_custom_browser_version_file, root_build_dir),
     "--chromium-version-file",
     rebase_path("//chrome/VERSION", root_build_dir),
+    "--interface-version-file",
+    rebase_path("//custom_browser/browser/nexus/nexus_interface_version.h",
+                root_build_dir),
   ]
 }
 

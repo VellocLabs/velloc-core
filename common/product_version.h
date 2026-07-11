@@ -5,8 +5,12 @@
 
 namespace custom_browser {
 
-// Keep this separate from Chromium's version. Source of truth is
-// custom_browser/VERSION, with MAJOR overridden to match Chromium's MAJOR.
+// Keep this separate from Chromium's version. Composed at build time as
+//   {CUSTOM_BROWSER_MAJOR}.{chromium MAJOR}.{bridge interface version}.{CUSTOM_BROWSER_PATCH}
+// (e.g. "1.149.1.0") from custom_browser/VERSION, chrome/VERSION, and
+// browser/nexus/nexus_interface_version.h — so the app version always names
+// the nexus_web /v<N>/ contract this binary speaks. See
+// common/scripts/gen_product_version.py and docs/agents/versioning-installer.md.
 inline constexpr char kCustomBrowserProductVersion[] =
     CUSTOM_BROWSER_PRODUCT_VERSION;
 

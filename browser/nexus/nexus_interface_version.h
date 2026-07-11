@@ -6,18 +6,27 @@
 // Bridge interface version — the compatibility contract between this
 // binary and the nexus_web guest runtime.
 //
-// The number is a single monotonic integer defined once per side:
-//   - C++: NEXUS_INTERFACE_VERSION below
-//   - JS:  NEXUS_INTERFACE_VERSION in
-//          nexus_web/src/browser/bridge/protocol/interfaceVersion.ts
+// SINGLE SOURCE OF TRUTH: the NEXUS_INTERFACE_VERSION key in
+// custom_browser/VERSION (alongside CUSTOM_BROWSER_MAJOR/PATCH). It fans
+// out as generated artifacts:
+//   - the #define included below (gen_product_version.py
+//     --output-interface-inc, via //custom_browser/common:
+//     generate_product_version),
+//   - the committed nexus_web TS constant
+//     (nexus_web/src/browser/bridge/protocol/interfaceVersion.gen.ts),
+//     regenerated with `python browser/nexus/scripts/
+//     check_interface_version.py --sync` — the same script's default
+//     (check) mode is the ninja gate that fails any binary build whose
+//     sibling nexus_web checkout drifted,
+//   - the third field of the product version itself
+//     (docs/agents/versioning-installer.md).
 //
-// Bump BOTH (paired commits, web side first) whenever the host<->guest
-// contract changes: the *.api.json / *.tool.json declarations, the TS wire
-// types under nexus_web/src/browser/bridge/protocol/, the bootstrap message
-// shape, or a provider wire dialect. Web-only fixes that keep the contract
-// intact do NOT bump. The ninja-time gate
-// (scripts/check_interface_version.py, wired in BUILD.gn) fails the build
-// if the two constants ever diverge.
+// Bump it (then run --sync and commit both repos, web side first)
+// whenever the host<->guest contract changes: the *.api.json /
+// *.tool.json declarations, the TS wire types under
+// nexus_web/src/browser/bridge/protocol/, the bootstrap message shape, or
+// a provider wire dialect. Web-only fixes that keep the contract intact
+// do NOT bump.
 //
 // Enforcement is URL-based: GetResolvedNexusGuestURL() appends "v<N>/" to
 // any https guest base URL, so a release binary can only ever request the
@@ -27,10 +36,7 @@
 // caught by the build gate instead. See
 // docs/agents/nexus-interface-versioning.md.
 
-// The number lives in exactly this one #define; everything else (the int
-// constant, the string used in URL construction, the JS constant checked
-// by the build gate) derives from it.
-#define NEXUS_INTERFACE_VERSION 1
+#include "custom_browser/common/generated/nexus_interface_version.inc"
 
 #define NEXUS_IF_VERSION_STR_IMPL(x) #x
 #define NEXUS_IF_VERSION_STR(x) NEXUS_IF_VERSION_STR_IMPL(x)

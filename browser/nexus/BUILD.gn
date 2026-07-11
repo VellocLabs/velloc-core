@@ -22,26 +22,29 @@ declare_args() {
 # =============================================================================
 # Bridge interface version
 #
-# `nexus_interface_version.h` holds the binary side of the host<->guest
-# compatibility contract (see docs/agents/nexus-interface-versioning.md).
-# Release pairing is URL-pinned (GetResolvedNexusGuestURL appends /v<N>/);
-# the dev flow (localhost, unversioned path) is covered by this ninja-time
-# gate instead: any build fails if the sibling nexus_web checkout declares
-# a different NEXUS_INTERFACE_VERSION. The guest-side constant is reported
-# through a depfile, so editing either side's constant re-runs the check.
+# The single source of truth is the NEXUS_INTERFACE_VERSION key in
+# //custom_browser/VERSION (see docs/agents/nexus-interface-versioning.md);
+# `nexus_interface_version.h` wraps the generated
+# nexus_interface_version.inc. Release pairing is URL-pinned
+# (GetResolvedNexusGuestURL appends /v<N>/); the dev flow (localhost,
+# unversioned path) is covered by this ninja-time gate instead: any build
+# fails if the sibling nexus_web checkout's committed, GENERATED
+# interfaceVersion.gen.ts (regenerate with `check_interface_version.py
+# --sync`) declares a different number. The guest-side file is reported
+# through a depfile, so editing either side re-runs the check.
 # =============================================================================
 action("check_interface_version") {
   script = "scripts/check_interface_version.py"
 
-  inputs = [ "nexus_interface_version.h" ]
+  inputs = [ "//custom_browser/VERSION" ]
 
   _stamp = "$target_gen_dir/interface_version_check.stamp"
   outputs = [ _stamp ]
   depfile = "$target_gen_dir/interface_version_check.d"
 
   args = [
-    "--header",
-    rebase_path("nexus_interface_version.h", root_build_dir),
+    "--version-file",
+    rebase_path("//custom_browser/VERSION", root_build_dir),
     "--stamp",
     rebase_path(_stamp, root_build_dir),
     "--depfile",
@@ -60,6 +63,11 @@ action("check_interface_version") {
 
 source_set("interface_version") {
   sources = [ "nexus_interface_version.h" ]
+
+  public_deps = [
+    # Emits the generated nexus_interface_version.inc the header includes.
+    "//custom_browser/common:generate_product_version",
+  ]
 
   deps = [ ":check_interface_version" ]
 }

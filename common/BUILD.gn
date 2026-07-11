@@ -1,23 +1,27 @@
 import("//build/config/compiler/compiler.gni")
 
 _product_version_inc = "$root_gen_dir/custom_browser/common/generated/product_version.inc"
+_interface_version_inc = "$root_gen_dir/custom_browser/common/generated/nexus_interface_version.inc"
 _custom_browser_version_file =
     "$root_gen_dir/custom_browser/common/generated/custom_browser_version.txt"
 
 # Product version = {CUSTOM_BROWSER_MAJOR}.{chromium MAJOR}.{bridge
-# interface version}.{CUSTOM_BROWSER_PATCH} — composed from three inputs
-# (see gen_product_version.py header). The interface-version header is the
-# same constant that pins the /v<N>/ guest URL, so the app version always
-# names the web contract this binary speaks.
+# interface version}.{CUSTOM_BROWSER_PATCH} — composed from
+# custom_browser/VERSION (the single hand-edited source, which also owns
+# NEXUS_INTERFACE_VERSION) and chrome/VERSION. The interface version is
+# the same constant that pins the /v<N>/ guest URL, so the app version
+# always names the web contract this binary speaks; it fans out here as
+# the generated nexus_interface_version.inc consumed by
+# browser/nexus/nexus_interface_version.h.
 action("generate_product_version") {
   script = "//custom_browser/common/scripts/gen_product_version.py"
   inputs = [
     "//chrome/VERSION",
     "//custom_browser/VERSION",
-    "//custom_browser/browser/nexus/nexus_interface_version.h",
   ]
   outputs = [
     _product_version_inc,
+    _interface_version_inc,
     _custom_browser_version_file,
   ]
   args = [
@@ -25,13 +29,12 @@ action("generate_product_version") {
     rebase_path("//custom_browser/VERSION", root_build_dir),
     "--output-inc",
     rebase_path(_product_version_inc, root_build_dir),
+    "--output-interface-inc",
+    rebase_path(_interface_version_inc, root_build_dir),
     "--output-custom-version-file",
     rebase_path(_custom_browser_version_file, root_build_dir),
     "--chromium-version-file",
     rebase_path("//chrome/VERSION", root_build_dir),
-    "--interface-version-file",
-    rebase_path("//custom_browser/browser/nexus/nexus_interface_version.h",
-                root_build_dir),
   ]
 }
 

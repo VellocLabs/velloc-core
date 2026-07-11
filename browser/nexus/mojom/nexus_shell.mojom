@@ -1,0 +1,167 @@
+module nexus.mojom;
+
+import "mojo/public/mojom/base/big_buffer.mojom";
+import "mojo/public/mojom/base/file_path.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+// One discovered external tool (shell or binary) on the host machine.
+//
+// Reported by `NexusShellService.GetCapabilities()` so the guest runtime
+// (nexus_web SharedWorker) and the LLM can reason about which shells and
+// utilities are usable on this host before issuing an Exec request.
+struct ShellResolvedTool {
+  // Stable lookup key used by the guest tool layer (e.g. "rg", "git",
+  // "bash", "pwsh", "powershell", "cmd"). Lowercase, no extension.
+  string id;
+
+  // Absolute path to the resolved executable. Empty when `available` is
+  // false. The guest is not expected to interpret this path; it is purely
+  // diagnostic / for surfacing in error messages.
+  mojo_base.mojom.FilePath path;
+
+  // First line of `<tool> --version` output, trimmed and capped to a
+  // reasonable length. Empty when the probe failed or the tool does not
+  // implement a `--version` flag (e.g. `cmd.exe`).
+  string version;
+
+  // True iff the executable was located AND (when applicable) responded to
+  // a `--version` probe. Tools that exist but cannot be probed (notably
+  // `cmd.exe`) are still reported as available with an empty `version`.
+  bool available;
+};
+
+// One environment-variable entry passed to a child process. Mojo maps do
+// not preserve insertion order, but env entries do — when the same key
+// appears more than once, the *last* entry wins, matching POSIX
+// `execve` and Windows CreateProcess semantics.
+struct ShellEnvEntry {
+  string name;
+  string value;
+};
+
+// Inputs to `NexusShellService.Exec()`.
+struct ShellSpawnOptions {
+  // Either:
+  //   * a known tool id (e.g. "rg", "git"); resolved to an absolute path
+  //     by the service against the same allowlist that
+  //     `GetCapabilities()` reports, OR
+  //   * an absolute path that must canonicalise to one of the resolved
+  //     tool paths reported by `GetCapabilities()`.
+  // Anything else is rejected with COMMAND_NOT_ALLOWED.
+  string command;
+
+  // Argv excluding argv[0]. Each entry is passed verbatim — no shell
+  // interpolation. Use the `use_shell` field if you actually need a
+  // shell to interpret a string.
+  array<string> args;
+
+  // Working directory. Must be absolute, must exist, and must be a
+  // directory. The service rejects anything else with INVALID_CWD.
+  // Phase 2 adds optional confinement to a per-profile root.
+  mojo_base.mojom.FilePath cwd;
+
+  // Additional / overriding env vars. Combined with the
+  // `SafeCommandPolicy` baseline (PATH, HOME/USERPROFILE, SystemRoot,
+  // etc. — see safe_command_policy.cc). Setting a baseline key here
+  // overrides the inherited value; setting a non-baseline key adds it.
+  // Forbidden keys (LD_PRELOAD, DYLD_*, etc.) are silently dropped.
+  array<ShellEnvEntry> env;
+
+  // When true, prepend the host's resolved default shell + its "-c" /
+  // "/C" flag and pass `args` joined by spaces as the single command
+  // string. When false, `command` is invoked directly. Phase 1 default
+  // is false; the `Bash` tool sets it to true.
+  bool use_shell;
+
+  // Hard wall-clock cap. The service kills the process tree (Job Object
+  // on Windows, process group on POSIX) when this elapses. 0 means
+  // "use the service default" (currently 30 000 ms — see
+  // safe_command_policy.cc). Capped at 5 minutes server-side.
+  uint32 timeout_ms;
+
+  // Per-stream output cap. Once exceeded, additional bytes are
+  // dropped and the matching `_truncated` flag in the result is set.
+  // 0 means "use the service default" (currently 1 MiB per stream).
+  // Capped at 16 MiB server-side.
+  uint32 max_output_bytes;
+};
+
+// Process-exit summary. Exactly one of `code` and `signal` is non-null
+// on POSIX; on Windows `signal` is always null.
+struct ShellExitInfo {
+  int32? code;
+  int32? signal;
+
+  // True iff the service killed the process because `timeout_ms`
+  // expired before it exited on its own.
+  bool timed_out;
+
+  // True when the service forcibly killed the process for any reason
+  // (timeout, output cap exceeded, parent disconnect). `timed_out`
+  // implies `killed`; the inverse does not hold.
+  bool killed;
+
+  // Wall-clock duration from spawn to exit (or kill).
+  uint64 duration_ms;
+};
+
+// Result of a one-shot `Exec` call.
+struct ShellExecResult {
+  ShellExitInfo exit;
+
+  // Captured stdout/stderr, capped to `max_output_bytes` per stream.
+  // Always present (possibly empty); never null.
+  mojo_base.mojom.BigBuffer stdout_buffer;
+  mojo_base.mojom.BigBuffer stderr_buffer;
+
+  bool stdout_truncated;
+  bool stderr_truncated;
+};
+
+// Sandboxed-utility-process service exposing host-shell capabilities to
+// nexus_web. See `web-ui/test/docs/agents/nexus-process.md` for the full
+// design.
+//
+// Slice 1 added `GetCapabilities`; slice 2 (this revision) adds `Exec`.
+// Streaming `Spawn` arrives in slice 4.
+//
+// ServiceSandbox=kNoSandbox is required because this service intentionally
+// spawns *child* processes (the resolved host shell / utility binaries).
+// The standard utility sandbox forbids `CreateProcess` / `fork+exec` and
+// would defeat the purpose. Hardening of the spawned children is layered
+// on top via SafeCommandPolicy (env + cwd + allowlist) and — in slice 4 —
+// Job Object containment on Windows / killpg + rlimit on POSIX. The
+// utility process itself is still isolated from the browser's renderer
+// and network state by virtue of being a separate process.
+[ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
+interface NexusShellService {
+  // See ShellResolvedTool / `GetCapabilities` doc on slice 1.
+  GetCapabilities() => (string platform,
+                        ShellResolvedTool? default_shell,
+                        array<ShellResolvedTool> tools,
+                        array<string> command_allowlist);
+
+  // Synchronous (from the caller's perspective) child-process invocation.
+  //
+  // Returns:
+  //   * `ok = true` and a populated `result` when the child was launched
+  //     and either exited on its own or was killed by the service; in
+  //     either case `result.exit.code` / `signal` describe the outcome
+  //     and the caller should consult `timed_out` / `killed` for cause.
+  //   * `ok = false`, `result = null`, and `error_code` / `error_message`
+  //     populated when the request was rejected before launch (e.g.
+  //     COMMAND_NOT_ALLOWED, INVALID_CWD, BINARY_NOT_FOUND). Once the
+  //     child has been launched, errors flow through `result.exit`
+  //     instead of `error_code`.
+  // `install_hint` is populated only when `error_code == "BINARY_NOT_FOUND"`.
+  // It carries a multi-line, platform-specific instruction string that the
+  // guest tool layer surfaces verbatim to the model so it can install the
+  // missing binary via the Bash tool and retry. See `install_hints.cc` for
+  // the concrete strings.
+  Exec(ShellSpawnOptions options)
+      => (bool ok,
+          ShellExecResult? result,
+          string? error_code,
+          string? error_message,
+          string? install_hint);
+};

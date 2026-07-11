@@ -19,17 +19,28 @@ build_webui("build") {
     "./settings/appearance/appearance_patch.ts",
     "./settings/get-started/get_started_patch.ts",
     "./settings/get-started/get_started_page.ts",
+
     "./extensions/builtin_extensions.ts",
     "./new-tab-page/custom_new_tab.ts",
     "./new-tab-page/get_started.ts",
     "./version/version_patch.ts",
+
+    "./glic/browser-actor-tools/actionsConverter.ts",
+    "./glic/browser-actor-tools/elementRegistry.ts",
+    "./glic/browser-actor-tools/hostTypes.ts",
+    "./glic/browser-actor-tools/index.ts",
+    "./glic/browser-actor-tools/observationParser.ts",
+    "./glic/browser-actor-tools/protoCodec.ts",
+    "./glic/browser-actor-tools/skillDefinitions.ts",
+    "./glic/browser-actor-tools/toolDefinitions.ts",
+    "./glic/browser-actor-tools/toolExecutor.ts",
+    "./glic/browser-actor-tools/types.ts",
+    "./glic/hostedActorTaskManager.ts",
+    "./glic/nexus_boot.ts",
+    "./glic/nexusTrace.ts",
   ]
-  extra_grdp_files = [
-    "$target_gen_dir/new-tab-page/icons/resources.grdp",
-  ]
-  extra_grdp_deps = [
-    "new-tab-page/icons:build_grdp",
-  ]
+  extra_grdp_files = [ "$target_gen_dir/new-tab-page/icons/resources.grdp" ]
+  extra_grdp_deps = [ "new-tab-page/icons:build_grdp" ]
   ts_composite = true
   ts_definitions = [
     "//tools/typescript/definitions/metrics_private.d.ts",
@@ -37,26 +48,30 @@ build_webui("build") {
     "//tools/typescript/definitions/settings_private.d.ts",
   ]
   ts_deps = [
-    "//third_party/lit/v3_0:build_ts",
     "//chrome/browser/resources/settings:build_ts",
     "//chrome/browser/resources/side_panel/customize_chrome:build_ts",
-    "//ui/webui/resources/cr_elements:build_ts",
+    "//third_party/lit/v3_0:build_ts",
     "//ui/webui/resources/cr_components/color_change_listener:build_ts",
+    "//ui/webui/resources/cr_elements:build_ts",
     "//ui/webui/resources/js:build_ts",
     "//ui/webui/resources/mojo:build_ts",
   ]
-  ts_path_mappings =
-      [ "chrome://customize-chrome-side-panel.top-chrome/shared/*|" +
+  mojo_files_deps =
+      [ "//custom_browser/browser/nexus/mojom:mojom_ts__generator" ]
+  mojo_files = [ "$root_gen_dir/custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom-webui.ts" ]
+  ts_path_mappings = [
+    "chrome://customize-chrome-side-panel.top-chrome/shared/*|" +
         rebase_path(
             "$root_gen_dir/chrome/browser/resources/side_panel/shared/tsc/*",
             target_gen_dir),
-        "chrome://customize-chrome-side-panel.top-chrome/*|" +
-        rebase_path(
+    "chrome://customize-chrome-side-panel.top-chrome/*|" + rebase_path(
             "$root_gen_dir/chrome/browser/resources/side_panel/customize_chrome/tsc/*",
             target_gen_dir),
-        "chrome://settings/*|" +
-        rebase_path(
-            "$root_gen_dir/chrome/browser/resources/settings/tsc/*",
-            target_gen_dir) ]
+    "chrome://settings/*|" +
+        rebase_path("$root_gen_dir/chrome/browser/resources/settings/tsc/*",
+                    target_gen_dir),
+    "/*|" + rebase_path("$root_gen_dir/custom_browser/browser/nexus/mojom/*",
+                        target_gen_dir),
+  ]
   webui_context_type = "trusted"
 }

@@ -14,11 +14,13 @@ module custom_browser.mojom;
 
 enum IntKey {
   kUIMode, /* key for UIMode enum */
+  kNexusViewWidth,
   kGlobalEnd = 1000, /*End of global keys.*/
   kLeftPanelWidth,
 };
 
 enum BoolKey {
+  kNexusWarningAcknowledged,
   kGlobalEnd = 1000, /*End of global keys.*/
   kLeftPanelLocked,
 };
@@ -29,4 +31,4 @@ const string kMainContentsViewName = "main-contents-view";
 const string kViewsContainerViewName = "views-container-view";
 const string kNewTabToolbarButtonViewName = "new-tab-toolbar-button";
 
-const int32 kUIVersion = 2;
+const int32 kUIVersion = 5;

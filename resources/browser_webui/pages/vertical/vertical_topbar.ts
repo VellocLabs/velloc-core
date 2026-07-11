@@ -19,6 +19,7 @@ export class VerticalTopbar extends CrLitElement {
   protected override render() {
     return html`
       <pinned-toolbar-actions class="left" x-align="stretch"></pinned-toolbar-actions>
+      <glic-nexus-button></glic-nexus-button>
       <caption-button-container></caption-button-container>
     `;
   }

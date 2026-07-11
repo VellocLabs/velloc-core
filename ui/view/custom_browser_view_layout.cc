@@ -74,7 +74,8 @@ void CustomBrowserViewLayout::FixViewsParentForCustom() {
 }
 
 void CustomBrowserViewLayout::LayoutContentsContainerView(
-    gfx::Rect& contents_container_bounds) {
+    gfx::Rect& contents_container_bounds,
+    bool visible) {
   FixViewsParentForCustom();
 
   BrowserLayoutParams params;
@@ -83,7 +84,7 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
   const bool show_shadow_overlay = ShadowOverlayVisible();
 
   // Lay out the bookmarks bar if one is present.
-  const bool bookmarks_visible = delegate().IsBookmarkBarVisible();
+  const bool bookmarks_visible = visible && delegate().IsBookmarkBarVisible();
   if (IsParentedTo(views().bookmark_bar, custom_views().native_ui_container)) {
     const gfx::Rect bookmarks_bounds(
         params.visual_client_area.x(), params.visual_client_area.y(),
@@ -114,7 +115,7 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
     }
     SetViewBoundAndVisibility(
         views().loading_bar, loading_bar_bounds,
-        top_separator_type == TopSeparatorType::kLoadingBar);
+        visible && (top_separator_type == TopSeparatorType::kLoadingBar));
   }
 
   // Maybe show the separator in the multi-contents view.
@@ -141,7 +142,7 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
       params.SetTop(infobar_bounds.bottom());
     }
     SetViewBoundAndVisibility(views().infobar_container, infobar_bounds,
-                              infobar_visible);
+                              visible && infobar_visible);
   }
 
   // Lay out contents-height side panel.
@@ -201,8 +202,11 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
                   contents_height_side_panel_visible_width,
         contents_height_side_panel_top, contents_height_side_panel_width,
         params.visual_client_area.bottom() - contents_height_side_panel_top);
+    const std::optional<bool> side_panel_visibility =
+        visible ? std::nullopt : std::optional<bool>(false);
     SetViewBoundAndVisibility(views().contents_height_side_panel,
-                              contents_height_side_panel_bounds);
+                              contents_height_side_panel_bounds,
+                              side_panel_visibility);
     params.InsetHorizontal(contents_height_side_panel_visible_width,
                            contents_height_side_panel_leading);
   }
@@ -217,8 +221,7 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
   // Lay out contents container. The contents container contains the multi-
   // contents view when multi-contents are enabled. The checks here are to
   // force the logic to be updated when multi-contents is fully rolled-out.
-  CHECK(
-      IsParentedToAndVisible(views().contents_container, views().browser_view));
+  CHECK(IsParentedTo(views().contents_container, views().browser_view));
   CHECK(views().contents_container->Contains(views().multi_contents_view));
 
   // Because side panels have minimum width, in a small browser, it is possible
@@ -242,7 +245,8 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
       views().contents_container,
       gfx::Rect(content_left, params.visual_client_area.y(),
                 content_right - content_left,
-                params.visual_client_area.height()));
+                params.visual_client_area.height()),
+      visible);
 }
 
 CustomBrowserViewLayout::ProposedLayout

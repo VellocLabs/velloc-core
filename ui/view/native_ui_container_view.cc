@@ -1,7 +1,6 @@
 #include "custom_browser/ui/view/native_ui_container_view.h"
 
 #include <algorithm>
-#include <optional>
 #include <utility>
 #include <variant>
 
@@ -9,26 +8,25 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
 #include "chrome/browser/ui/views/frame/multi_contents_view.h"
 #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
-#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "custom_browser/ui/mojom/browser_constants.mojom.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
+#include "custom_browser/ui/view/nexus_mode_button.h"
 #include "custom_browser/ui/view/native_ui/create_toolbar_button_native_ui.h"
 #include "custom_browser/ui/view/native_ui/main_contents_native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui_factory_registry.h"
 #include "custom_browser/ui/view/native_ui/native_ui_utils.h"
 #include "custom_browser/ui/view/native_ui/navigation_container_native_ui.h"
-#include "custom_browser/ui/view/view_debug.h"
 #include "ui/actions/action_id.h"
 #include "ui/actions/actions.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
@@ -70,6 +68,7 @@ NativeUIContainerView::~NativeUIContainerView() {
 
 void NativeUIContainerView::Init(views::View* webui_view) {
   webui_view_ = webui_view;
+  EnsureNexusModeButton();
 }
 
 void NativeUIContainerView::RestoreChromiumHierarchy() {
@@ -84,6 +83,7 @@ void NativeUIContainerView::SaveChromiumHierarchy() {
 }
 
 void NativeUIContainerView::Layout(PassKey) {
+  EnsureNexusModeButton();
   for (auto& native_ui : native_ui_views_) {
     native_ui->CalculateBounds();
     native_ui->Layout();
@@ -146,6 +146,10 @@ T* NativeUIContainerView::FindNativeUI(
 
 void NativeUIContainerView::OnUIModeChanged(
     custom_browser::mojom::UIMode ui_mode) {
+  EnsureNexusModeButton();
+  if (nexus_mode_button_) {
+    nexus_mode_button_->OnUIModeChanged(ui_mode);
+  }
   custom_browser::native_ui::utils::PrintViewHierarchyLog(custom_browser_view_);
 }
 
@@ -179,6 +183,8 @@ void NativeUIContainerView::OnLayoutAdded(
     native_ui->Layout();
     native_ui_views_.push_back(std::move(native_ui));
   }
+
+  EnsureNexusModeButton();
 }
 
 void NativeUIContainerView::OnLayoutRemoved(const NativeViewParams* layout) {
@@ -228,6 +234,17 @@ NativeUIContainerView::CreateNativeUI(
     return nullptr;
   }
   return native_ui;
+}
+
+void NativeUIContainerView::EnsureNexusModeButton() {
+  if (!nexus_mode_button_) {
+    nexus_mode_button_ = AddChildView(
+        std::make_unique<custom_browser::NexusModeButton>(custom_browser_view_));
+  }
+
+  if (nexus_mode_button_) {
+    nexus_mode_button_->EnsureAttached();
+  }
 }
 
 BEGIN_METADATA(NativeUIContainerView)

@@ -1,0 +1,12 @@
+{
+  "name": "Default Nexus Agent",
+  "version": "1.0.0",
+  "description": "Default agent configuration for the Nexus AI platform",
+  "capabilities": [
+    "browser",
+    "llm"
+  ],
+  "permissions": [],
+  "entry_point": "/",
+  "icon": "icon.png"
+}

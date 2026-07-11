@@ -58,6 +58,12 @@ translated for each locale.
       <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION" desc="Description for the compact standard layout option" use_name_for_id="true">
         Horizontal tabs that appear on hover.
       </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS" desc="OpenClaw mode option label" use_name_for_id="true">
+        OpenClaw
+      </message>
+      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION" desc="Description for the OpenClaw layout option" use_name_for_id="true">
+        Keep OpenClaw beside the active page in a dedicated workspace.
+      </message>
       <!-- Customize Chrome side panel -->
       <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE" desc="Header for the New Tab Page section in the Customize Chrome side panel" use_name_for_id="true">
         New Tab
@@ -281,6 +287,498 @@ translated for each locale.
       </message>
       <message name="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE" desc="Second line in chrome://version showing the underlying Chromium version" use_name_for_id="true">
         Based on Chromium <ph name="CHROMIUM_VERSION">$1</ph>
+      </message>
+      <!-- Nexus AI agent platform -->
+      <message name="IDS_NEXUS_PANEL_TOOLTIP" desc="Tooltip for the Nexus AI agent panel toolbar button" use_name_for_id="true">
+        OpenClaw in Chrome
+      </message>
+      <message name="IDS_NEXUS_PANEL_ACCESSIBLE_NAME" desc="Accessible name for the Nexus AI panel button" use_name_for_id="true">
+        Open the OpenClaw in Chrome panel
+      </message>
+      <message name="IDS_NEXUS_CONSENT_TITLE" desc="Title of the Nexus consent/onboarding screen" use_name_for_id="true">
+        OpenClaw in Chrome
+      </message>
+      <message name="IDS_NEXUS_CONSENT_BODY" desc="Body text for the Nexus consent/onboarding screen explaining the feature" use_name_for_id="true">
+        Enable OpenClaw in Chrome to automate browser tasks, generate content, and interact with web pages using your preferred AI provider.
+      </message>
+      <message name="IDS_NEXUS_CONSENT_ACCEPT" desc="Accept button on the Nexus consent screen" use_name_for_id="true">
+        Enable OpenClaw in Chrome
+      </message>
+      <message name="IDS_NEXUS_CONSENT_DECLINE" desc="Decline button on the Nexus consent screen" use_name_for_id="true">
+        Not now
+      </message>
+      <message name="IDS_NEXUS_WARNING_TITLE" desc="Title for the embedded Nexus security warning shown before OpenClaw is enabled in the custom browser UI" use_name_for_id="true">
+        Security warning
+      </message>
+      <message name="IDS_NEXUS_WARNING_INTRO" desc="Introductory sentence shown under the Nexus security warning title in the custom browser UI" use_name_for_id="true">
+        Please read before enabling OpenClaw.
+      </message>
+      <message name="IDS_NEXUS_WARNING_BODY_1" desc="First warning paragraph for the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        OpenClaw can connect external messaging apps and services to AI-powered actions inside the browser. Depending on configuration, it may read message content, interact with connected services, and perform actions on your behalf.
+      </message>
+      <message name="IDS_NEXUS_WARNING_BODY_2" desc="Second warning paragraph for the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        Because of this, a bad prompt, unsafe configuration, or untrusted message source could cause unintended behavior, data exposure, or actions you did not expect.
+      </message>
+      <message name="IDS_NEXUS_WARNING_BODY_3" desc="Third warning paragraph for the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        Only enable this feature if you understand the risks and are comfortable managing access, permissions, and connected accounts.
+      </message>
+      <message name="IDS_NEXUS_WARNING_RECOMMENDATIONS_TITLE" desc="Lead-in sentence for the recommendation list on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        Before continuing, we strongly recommend that you:
+      </message>
+      <message name="IDS_NEXUS_WARNING_RECOMMENDATION_ENABLE_TRUSTED" desc="First recommendation bullet on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        enable only the services you trust
+      </message>
+      <message name="IDS_NEXUS_WARNING_RECOMMENDATION_MINIMUM_PERMISSIONS" desc="Second recommendation bullet on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        use the minimum permissions necessary
+      </message>
+      <message name="IDS_NEXUS_WARNING_RECOMMENDATION_AVOID_SENSITIVE_DATA" desc="Third recommendation bullet on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        avoid exposing sensitive data to connected tools
+      </message>
+      <message name="IDS_NEXUS_WARNING_RECOMMENDATION_REVIEW_PROVIDERS" desc="Fourth recommendation bullet on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        review connected providers and configuration carefully
+      </message>
+      <message name="IDS_NEXUS_WARNING_RECOMMENDATION_USE_SAFEGUARDS" desc="Fifth recommendation bullet on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        use stronger safeguards for any feature that can perform actions automatically
+      </message>
+      <message name="IDS_NEXUS_WARNING_SHARED_DEVICE" desc="Shared device warning paragraph on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        If this browser is used on a shared or unmanaged device, enabling this feature may increase security and privacy risk.
+      </message>
+      <message name="IDS_NEXUS_WARNING_ACKNOWLEDGMENT" desc="Acknowledgment checkbox label on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        I understand that OpenClaw is powerful and may introduce security and privacy risks.
+      </message>
+      <message name="IDS_NEXUS_WARNING_CONTINUE" desc="Continue button label on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
+        Continue
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_TITLE" desc="Title for the Nexus settings subpage at chrome://settings/nexus" use_name_for_id="true">
+        OpenClaw
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE" desc="Title for the Nexus provider settings subpage and landing section" use_name_for_id="true">
+        Model Providers
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_LABEL" desc="Label for the LLM provider dropdown in Nexus settings" use_name_for_id="true">
+        AI Provider
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_API_KEY_LABEL" desc="Label for the API key field in Nexus settings" use_name_for_id="true">
+        API Key
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER" desc="Placeholder text for the API key field" use_name_for_id="true">
+        Enter your API key
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_TEST_CONNECTION" desc="Button label to test provider connection" use_name_for_id="true">
+        Test connection
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS" desc="Success message after testing provider connection" use_name_for_id="true">
+        Connection successful
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_CONNECTION_FAILED" desc="Failure message after testing provider connection" use_name_for_id="true">
+        Connection failed
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL" desc="Label for the custom webapp URL field" use_name_for_id="true">
+        Custom OpenClaw web app URL
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER" desc="Placeholder for the custom webapp URL field" use_name_for_id="true">
+        https://your-openclaw-app.example.com
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET" desc="Button to reset webapp URL to default" use_name_for_id="true">
+        Reset to default
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE" desc="Title for the Nexus web app settings subpage" use_name_for_id="true">
+        Agent Web App Url
+      </message>
+      <message name="IDS_NEXUS_PROVIDER_OPENAI" desc="Display name for the OpenAI provider" use_name_for_id="true">
+        OpenAI
+      </message>
+      <message name="IDS_NEXUS_PROVIDER_ANTHROPIC" desc="Display name for the Anthropic provider" use_name_for_id="true">
+        Anthropic
+      </message>
+      <message name="IDS_NEXUS_PROVIDER_GOOGLE" desc="Display name for the Google AI provider" use_name_for_id="true">
+        Google AI
+      </message>
+      <message name="IDS_NEXUS_PROVIDER_OLLAMA" desc="Display name for the Ollama provider" use_name_for_id="true">
+        Ollama (Local)
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_FILES_TITLE" desc="Title for the file system permission prompt" use_name_for_id="true">
+        File System Access
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_FILES_BODY" desc="Body text for the file system permission prompt" use_name_for_id="true">
+        This agent wants to read and write files on your computer.
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE" desc="Title for the clipboard permission prompt" use_name_for_id="true">
+        Clipboard Access
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY" desc="Body text for the clipboard permission prompt" use_name_for_id="true">
+        This agent wants to access your clipboard.
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE" desc="Title for the browser data permission prompt" use_name_for_id="true">
+        Browser Data Access
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY" desc="Body text for the browser data permission prompt" use_name_for_id="true">
+        This agent wants to access your bookmarks, history, and downloads.
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE" desc="Title for the notifications permission prompt" use_name_for_id="true">
+        Notifications
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY" desc="Body text for the notifications permission prompt" use_name_for_id="true">
+        This agent wants to send you notifications.
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_ALLOW" desc="Allow button on permission prompts" use_name_for_id="true">
+        Allow
+      </message>
+      <message name="IDS_NEXUS_PERMISSION_DENY" desc="Deny button on permission prompts" use_name_for_id="true">
+        Deny
+      </message>
+      <message name="IDS_NEXUS_SETUP_PROVIDER_TITLE" desc="Title for the in-panel provider setup during first run" use_name_for_id="true">
+        Set up your AI provider
+      </message>
+      <message name="IDS_NEXUS_SETUP_PROVIDER_BODY" desc="Body text for the in-panel provider setup" use_name_for_id="true">
+        Choose an AI provider and enter your credentials to get started.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_LABEL" desc="Label for the model selection dropdown in Nexus settings" use_name_for_id="true">
+        Model
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_BASE_URL_LABEL" desc="Label for the base URL field (Ollama)" use_name_for_id="true">
+        Base URL
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER" desc="Placeholder for the Ollama base URL field" use_name_for_id="true">
+        http://localhost:11434
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0" desc="Introductory warning line describing OpenClaw in Chrome on the Nexus settings landing page" use_name_for_id="true">
+        These features use AI, are in early development, and won't always get it right.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1" desc="First paragraph describing OpenClaw in Chrome on the Nexus settings landing page" use_name_for_id="true">
+        This feature runs OpenClaw directly in the browser, connecting apps like WhatsApp, Telegram, Discord, and iMessage to AI coding assistants.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2" desc="Second paragraph describing OpenClaw in Chrome on the Nexus settings landing page" use_name_for_id="true">
+        It turns your browser into a central place where you can chat and use AI to help with anything you normally do online.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION" desc="Description on the Nexus provider subpage" use_name_for_id="true">
+        OpenClaw can use many LLM providers. Pick a provider, authenticate, then set the default model.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL" desc="Description for the provider row on the Nexus settings landing page" use_name_for_id="true">
+        OpenClaw can use many LLM providers. Pick a provider, authenticate, then set the default model.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION" desc="Description shown above the connection controls on the Nexus provider settings page" use_name_for_id="true">
+        Choose the service Nexus should connect to and verify the connection.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL" desc="Description for the web app row on the Nexus settings landing page" use_name_for_id="true">
+        Configure the web app URL used by OpenClaw in Chrome.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION" desc="Description on the Nexus web app subpage" use_name_for_id="true">
+        Set a custom OpenClaw web app URL. Leave it empty to use the default experience.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_OLLAMA_NOTE" desc="Helper text for the Ollama provider on the Nexus settings page" use_name_for_id="true">
+        No API key is required. OpenClaw in Chrome loads models from the configured Ollama server.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_API_KEY_HINT" desc="Helper text below the API key field on the Nexus settings page" use_name_for_id="true">
+        Leave the API key empty to keep the current stored key.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL" desc="Heading for the provider status section on the Nexus settings page" use_name_for_id="true">
+        Provider status
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED" desc="Status chip text for a configured provider on the Nexus settings page" use_name_for_id="true">
+        Configured
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED" desc="Status chip text for a provider that still needs setup on the Nexus settings page" use_name_for_id="true">
+        Not configured
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_NO_PROVIDERS" desc="Fallback label when no AI providers are available on the Nexus settings page" use_name_for_id="true">
+        No providers available
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE" desc="Message shown when provider state is unavailable on the Nexus settings page" use_name_for_id="true">
+        OpenClaw in Chrome provider information is not available for this profile.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_LOADING" desc="Status message shown while models are loading on the Nexus settings page" use_name_for_id="true">
+        Loading available models...
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_TESTING_CONNECTION" desc="Status message shown while testing the provider connection on the Nexus settings page" use_name_for_id="true">
+        Testing connection...
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX" desc="Prefix shown before the default provider base URL on the Nexus settings page" use_name_for_id="true">
+        Default:
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL" desc="Validation message for invalid custom web app url on the Nexus settings page" use_name_for_id="true">
+        URL must use https:// or http://localhost
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL_FORMAT" desc="Validation message for malformed custom web app url on the Nexus settings page" use_name_for_id="true">
+        Invalid URL format
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_INVALID_BASE_URL" desc="Validation message for invalid base URLs on the Nexus settings page" use_name_for_id="true">
+        Base URL must use http:// or https://
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_INVALID_BASE_URL_FORMAT" desc="Validation message for malformed base URLs on the Nexus settings page" use_name_for_id="true">
+        Invalid base URL format
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_LOAD_FAILED" desc="Status message shown when model loading fails on the Nexus settings page" use_name_for_id="true">
+        Failed to load models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_NO_MODELS" desc="Status message shown when no models are available for the current provider on the Nexus settings page" use_name_for_id="true">
+        No models available.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_OLLAMA_MODEL_HINT" desc="Helper text explaining how to load models for Ollama on the Nexus settings page" use_name_for_id="true">
+        Save the base URL to load models from your Ollama instance.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_AUTOMATIC_MODEL_HINT" desc="Helper text explaining that models load automatically from saved provider settings on the Nexus settings page" use_name_for_id="true">
+        Models load automatically from the current provider settings.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SAVE_PROVIDER_MODEL_HINT" desc="Helper text explaining that provider settings must be saved before models can be loaded on the Nexus settings page" use_name_for_id="true">
+        Save the provider settings to load available models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_CONNECTION_LABEL" desc="Heading for the connection section on the Nexus settings page" use_name_for_id="true">
+        Connection
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_CONNECTION_TEST_LABEL" desc="Heading for the connection test section on the Nexus settings page" use_name_for_id="true">
+        Connection test
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_VALIDATE_TITLE" desc="Title above the connection test action on the Nexus settings page" use_name_for_id="true">
+        Validate the current configuration
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_VALIDATE_DESCRIPTION" desc="Description above the connection test action on the Nexus settings page" use_name_for_id="true">
+        Save the current provider settings and test the selected model.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_READY" desc="Description shown for a configured provider on the Nexus settings page" use_name_for_id="true">
+        Current settings are ready to use.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED" desc="Description shown for a provider that still needs setup on the Nexus settings page" use_name_for_id="true">
+        Additional setup is required before this provider can connect.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SAVING_PROVIDER" desc="Status message shown while saving provider settings on the Nexus settings page" use_name_for_id="true">
+        Saving provider settings...
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_UPDATE_FAILED" desc="Status message shown when provider settings fail to save on the Nexus settings page" use_name_for_id="true">
+        Failed to update provider settings.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SELECT_PROVIDER" desc="Placeholder option shown before a model provider is selected on the Nexus settings page" use_name_for_id="true">
+        Select a provider
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE" desc="Heading for the provider connection section on the Nexus settings page" use_name_for_id="true">
+        Provider
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE" desc="Onboarding text shown before a provider is selected on the Nexus settings page" use_name_for_id="true">
+        Choose a provider, enter the connection details, and then verify to load models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS" desc="Primary button label used to verify a provider connection and fetch models on the Nexus settings page" use_name_for_id="true">
+        Verify &amp; Load Models
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_PROVIDER" desc="Secondary destructive action that clears the current provider configuration on the Nexus settings page" use_name_for_id="true">
+        Reset provider
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STORED_SECURELY" desc="Placeholder shown in the API key field when a saved key already exists on the Nexus settings page" use_name_for_id="true">
+        Stored securely
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED" desc="Helper text shown when an API key is already stored on the Nexus settings page" use_name_for_id="true">
+        Leave blank to keep the stored key.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_API_KEY_HELPER" desc="Helper text shown below the API key field on the Nexus settings page when no key is stored yet" use_name_for_id="true">
+        Enter the API key for this provider.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED" desc="Status title shown when no provider is configured on the Nexus settings page" use_name_for_id="true">
+        No provider configured
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER" desc="Status supporting text shown before a provider is selected on the Nexus settings page" use_name_for_id="true">
+        Select a provider to begin.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_VERIFYING" desc="Status title shown while verifying a saved provider configuration on the Nexus settings page" use_name_for_id="true">
+        Verifying saved configuration...
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS" desc="Status supporting text shown while loading provider models on the Nexus settings page" use_name_for_id="true">
+        Fetching available models...
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED" desc="Status title shown after connection settings change on the Nexus settings page" use_name_for_id="true">
+        Verification required
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED" desc="Status supporting text shown after connection settings change on the Nexus settings page" use_name_for_id="true">
+        Configuration changed. Verify to load models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CONNECTING" desc="Status title shown while a provider connection is being verified on the Nexus settings page" use_name_for_id="true">
+        Connecting...
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CONNECTED" desc="Status title shown after a provider connection is verified successfully on the Nexus settings page" use_name_for_id="true">
+        Connected successfully
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED" desc="Status title shown after a provider connection fails verification on the Nexus settings page" use_name_for_id="true">
+        Connection failed
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED" desc="Status chip text shown when no provider is configured on the Nexus settings page" use_name_for_id="true">
+        Not configured
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING" desc="Status chip text shown while a provider is being verified on the Nexus settings page" use_name_for_id="true">
+        Verifying
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING" desc="Status chip text shown when configuration changes need verification on the Nexus settings page" use_name_for_id="true">
+        Changes pending
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING" desc="Status chip text shown while connecting to a provider on the Nexus settings page" use_name_for_id="true">
+        Connecting
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED" desc="Status chip text shown after a provider connects successfully on the Nexus settings page" use_name_for_id="true">
+        Connected
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED" desc="Status chip text shown after a provider connection fails on the Nexus settings page" use_name_for_id="true">
+        Failed
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR" desc="Status detail shown when exactly one model was discovered on the Nexus settings page" use_name_for_id="true">
+        <ph name="COUNT">$1</ph> model found
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL" desc="Status detail shown when multiple models were discovered on the Nexus settings page" use_name_for_id="true">
+        <ph name="COUNT">$1</ph> models found
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED" desc="Mapped connection error shown when provider credentials are invalid on the Nexus settings page" use_name_for_id="true">
+        Unauthorized - check your API key
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN" desc="Mapped connection error shown when provider credentials are forbidden on the Nexus settings page" use_name_for_id="true">
+        Forbidden - this key cannot access the endpoint
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL" desc="Mapped connection error shown when a provider base URL is invalid on the Nexus settings page" use_name_for_id="true">
+        Invalid Base URL - enter a valid API endpoint
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE" desc="Mapped connection error shown when a provider endpoint cannot be reached on the Nexus settings page" use_name_for_id="true">
+        Endpoint unreachable - check the URL or your network
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT" desc="Mapped connection error shown when a provider request times out on the Nexus settings page" use_name_for_id="true">
+        Connection timed out - try again
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS" desc="Mapped connection error shown when provider verification succeeds but no models are returned on the Nexus settings page" use_name_for_id="true">
+        Connected, but no models were returned
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE" desc="Mapped connection error shown when the provider returns an unexpected response on the Nexus settings page" use_name_for_id="true">
+        Unexpected server response
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS" desc="Model metadata text shown when a model context window is displayed in thousands on the Nexus settings page" use_name_for_id="true">
+        <ph name="COUNT">$1</ph>k context
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT" desc="Model metadata text shown when a model context window is displayed on the Nexus settings page" use_name_for_id="true">
+        <ph name="COUNT">$1</ph> context
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS" desc="Model metadata badge text shown when a model supports tools on the Nexus settings page" use_name_for_id="true">
+        Tools
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION" desc="Model metadata badge text shown when a model supports vision on the Nexus settings page" use_name_for_id="true">
+        Vision
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE" desc="Inline validation text shown when no enabled models are selected on the Nexus settings page" use_name_for_id="true">
+        Enable at least one model to continue.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT" desc="Inline validation text shown when an enabled model still needs a default selection on the Nexus settings page" use_name_for_id="true">
+        Select a default model from the enabled models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY" desc="Inline validation text shown when a verified provider still needs a default model selection on the Nexus settings page" use_name_for_id="true">
+        Select a default model to continue.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED" desc="Inline validation text shown when the default model is not enabled on the Nexus settings page" use_name_for_id="true">
+        Default model must be one of the enabled models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE" desc="Inline warning text shown when a saved default model is no longer available on the Nexus settings page" use_name_for_id="true">
+        Selected default model is no longer available.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE" desc="Heading for the models section on the Nexus settings page" use_name_for_id="true">
+        Models
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION" desc="Helper text shown above model controls on the Nexus settings page" use_name_for_id="true">
+        Choose which models are available and which one is the default.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION" desc="Helper text shown above the default model picker on the Nexus settings page" use_name_for_id="true">
+        Choose the default model used for this provider. Open the list and type to filter the available models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL" desc="Subheading for the default model selector on the Nexus settings page" use_name_for_id="true">
+        Default model
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER" desc="Placeholder shown before a default model is selected in the Nexus settings page picker" use_name_for_id="true">
+        Select a model
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION" desc="Action label shown on the default model picker trigger in the Nexus settings page" use_name_for_id="true">
+        Browse
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER" desc="Helper text shown below the default model picker when no model is selected on the Nexus settings page" use_name_for_id="true">
+        Open the list, then type to filter the available models.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER" desc="Accessible label used for the dismiss target behind the default model picker popup on the Nexus settings page" use_name_for_id="true">
+        Close model picker
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL" desc="Visible label for the model filter input inside the default model picker popup on the Nexus settings page" use_name_for_id="true">
+        Filter models
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER" desc="Placeholder shown in the model filter input inside the default model picker popup on the Nexus settings page" use_name_for_id="true">
+        Type to filter models
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS" desc="Empty state shown when no models match the current filter in the Nexus settings page picker" use_name_for_id="true">
+        No models match this filter.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL" desc="Subheading for the enabled models selector on the Nexus settings page" use_name_for_id="true">
+        Enabled models
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA" desc="Accessible label used for a model enablement checkbox on the Nexus settings page" use_name_for_id="true">
+        Enable <ph name="MODEL_NAME">$1</ph>
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA" desc="Accessible label used for a default model radio option on the Nexus settings page" use_name_for_id="true">
+        Set <ph name="MODEL_NAME">$1</ph> as default model
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE" desc="Badge shown beside the selected default model in the Nexus settings page picker" use_name_for_id="true">
+        Selected
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE" desc="Heading for the summary section on the Nexus settings page" use_name_for_id="true">
+        Summary
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL" desc="Summary row label for the active provider on the Nexus settings page" use_name_for_id="true">
+        Provider
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL" desc="Summary row label for discovered model count on the Nexus settings page" use_name_for_id="true">
+        Models discovered
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL" desc="Summary row label for enabled model count on the Nexus settings page" use_name_for_id="true">
+        Models enabled
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL" desc="Summary row label for the default model on the Nexus settings page" use_name_for_id="true">
+        Default
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_NONE" desc="Fallback summary value shown when no provider is selected on the Nexus settings page" use_name_for_id="true">
+        None
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED" desc="Fallback summary value shown when no default model is selected on the Nexus settings page" use_name_for_id="true">
+        Not selected
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SAVE" desc="Primary button label used to save a verified provider configuration on the Nexus settings page" use_name_for_id="true">
+        Save
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED" desc="Inline validation text shown when the provider base URL is empty on the Nexus settings page" use_name_for_id="true">
+        Base URL is required.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED" desc="Inline validation text shown when the provider API key is empty on the Nexus settings page" use_name_for_id="true">
+        API key is required.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM" desc="Confirmation prompt shown before switching providers with unsaved changes on the Nexus settings page" use_name_for_id="true">
+        Switch providers and discard the current unsaved connection and model changes?
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SAVE_FAILED" desc="Inline error text shown when saving provider settings fails on the Nexus settings page" use_name_for_id="true">
+        Failed to save provider settings.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_SAVE_SUCCESS" desc="Toast message shown after provider settings are saved successfully on the Nexus settings page" use_name_for_id="true">
+        Provider settings saved.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_CONNECTION" desc="Button label used to clear the saved connection details for the current provider on the Nexus settings page" use_name_for_id="true">
+        Reset connection
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE" desc="Dialog title shown before resetting a provider connection on the Nexus settings page" use_name_for_id="true">
+        Reset <ph name="PROVIDER_NAME">$1</ph> connection?
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY" desc="Dialog body shown before resetting a provider connection on the Nexus settings page" use_name_for_id="true">
+        This clears the saved connection details for <ph name="PROVIDER_NAME">$1</ph>, removes the verified state, and restores the default values for this provider.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_COMPLETED" desc="Accessibility announcement after resetting a provider connection on the Nexus settings page" use_name_for_id="true">
+        <ph name="PROVIDER_NAME">$1</ph> connection reset.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_CONFIRM" desc="Confirmation prompt shown before resetting a provider on the Nexus settings page" use_name_for_id="true">
+        Reset <ph name="PROVIDER_NAME">$1</ph>?
+
+This removes the stored provider, saved endpoint, and saved model selections.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_RESET_FAILED" desc="Inline error text shown when resetting provider settings fails on the Nexus settings page" use_name_for_id="true">
+        Failed to reset provider settings.
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE" desc="Title for the default web app behavior row on the Nexus settings page" use_name_for_id="true">
+        Default behavior
+      </message>
+      <message name="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION" desc="Description for the default web app behavior row on the Nexus settings page" use_name_for_id="true">
+        Clear the custom URL and use the built-in OpenClaw web app.
       </message>
     </messages>
   </release>

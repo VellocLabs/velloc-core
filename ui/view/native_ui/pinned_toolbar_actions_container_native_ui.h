@@ -27,9 +27,6 @@ class PinnedToolbarActionsContainerNativeUI : public ViewNativeUI {
 
  protected:
   void OnPrepare() override;
-#if DCHECK_IS_ON()
-  bool LogInfo() const override;
-#endif
 };
 
 }  // namespace custom_browser::native_ui

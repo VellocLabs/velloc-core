@@ -1,7 +1,6 @@
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 
 #include <algorithm>
-#include <optional>
 #include <sstream>
 
 #include "base/auto_reset.h"
@@ -212,8 +211,6 @@ bool CustomBrowserUiPrefs::LoadUILayoutParams(const UIMode& mode) {
         } else {
           ui_layout_params_ptr_ = std::move(decoded);
           DCHECK(ui_mode_ == mode);
-          LOG(INFO) << "Successfully loaded Custom Browser UI prefs for mode "
-                    << mode_key;
         }
       }
     }

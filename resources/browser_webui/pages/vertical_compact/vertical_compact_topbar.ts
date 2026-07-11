@@ -33,9 +33,13 @@ export class VerticalCompactTopbar extends CrLitElement {
       width: auto;
     }
 
-    .caption {
+    .right-controls {
+      display: flex;
+      align-items: flex-start;
       flex: 0 0 auto;
-      justify-self: end;
+      align-self: flex-start;
+      gap: 0;
+      margin-inline-start: 100px;
     }
   `;
 
@@ -48,7 +52,10 @@ export class VerticalCompactTopbar extends CrLitElement {
         <pinned-downloads-button align-x="right"></pinned-downloads-button>
         <app-menu-button align-x="right"></app-menu-button>
       </div>
-      <caption-button-container class="caption" align-x="right"></caption-button-container>
+      <div class="right-controls">
+        <glic-nexus-button align-x="right"></glic-nexus-button>
+        <caption-button-container class="caption" align-x="right"></caption-button-container>
+      </div>
     `;
   }
 }

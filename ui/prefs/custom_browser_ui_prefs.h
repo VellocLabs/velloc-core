@@ -8,7 +8,6 @@
 #define CUSTOM_BROWSER_UI_PREFS_CUSTOM_BROWSER_UI_PREFS_H_
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>

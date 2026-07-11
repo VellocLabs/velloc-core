@@ -1,6 +1,7 @@
 #ifndef CUSTOM_BROWSER_UI_VIEW_NATIVE_UI_NATIVE_UI_UTILS_H_
 #define CUSTOM_BROWSER_UI_VIEW_NATIVE_UI_NATIVE_UI_UTILS_H_
 
+#include <memory>
 #include <string>
 
 class ToolbarButton;

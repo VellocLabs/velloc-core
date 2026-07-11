@@ -89,6 +89,7 @@ const LayoutOptionName = {
   COMPACT_SIDEBAR: 'compactSidebar',
   TOP_TABS: 'topTabs',
   COMPACT_TOP_TABS: 'compactTopTabs',
+  NEXUS: 'nexus',
 } as const;
 
 type LayoutOptionNameType =
@@ -99,6 +100,7 @@ const LayoutRadioToPrefValue = new Map<LayoutOptionNameType, number>([
   [LayoutOptionName.COMPACT_SIDEBAR, 2],
   [LayoutOptionName.TOP_TABS, 3],
   [LayoutOptionName.COMPACT_TOP_TABS, 4],
+  [LayoutOptionName.NEXUS, 5],
 ]);
 
 const PrefValueToLayoutRadio =
@@ -134,6 +136,8 @@ interface GetStartedStrings {
   layoutTopTabsDescription: string;
   layoutCompactTopTabsTitle: string;
   layoutCompactTopTabsDescription: string;
+  layoutNexusTitle: string;
+  layoutNexusDescription: string;
   newTabTitle: string;
   newTabDescription: string;
   newTabShowSearchLabel: string;
@@ -232,6 +236,11 @@ function getStrings(): GetStartedStrings {
         'customBrowserGetStartedLayoutCompactTopTabsDescription',
         'A slimmer top layout that leaves more room for what matters: the ' +
             'page.'),
+    layoutNexusTitle: getString(
+        'modeNexus', 'OpenClaw'),
+    layoutNexusDescription: getString(
+        'modeNexusDescription',
+        'Keep OpenClaw beside the active page in a dedicated workspace.'),
     newTabTitle: getString(
         'customBrowserGetStartedNewTabTitle', 'Step 3. Customize your New Tab'),
     newTabDescription: getString(
@@ -1173,6 +1182,12 @@ export class GetStartedPage extends CrLitElement {
         title: strings.layoutTopTabsTitle,
         tag: "Classic",
         description: strings.layoutTopTabsDescription,
+      },
+      {
+        name: LayoutOptionName.NEXUS,
+        title: strings.layoutNexusTitle,
+        tag: strings.badgeAdvanced,
+        description: strings.layoutNexusDescription,
       },
       // {
       //   name: LayoutOptionName.COMPACT_TOP_TABS,

@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/thumbnails/thumbnail_tracker.h"
 #include "chrome/browser/ui/webui/webui_load_timer.h"
 #include "chrome/common/webui_url_constants.h"
-#include "components/guest_contents/common/guest_contents.mojom.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/webui_config.h"
@@ -60,9 +59,6 @@ class CustomBrowserWebUI : public ui::MojoWebUIController,
   void BindInterface(
       mojo::PendingReceiver<color_change_listener::mojom::PageHandler>
           receiver);
-
-  void BindInterface(
-      mojo::PendingReceiver<guest_contents::mojom::GuestContentsHost> receiver);
 
   //   // Instantiates the implementor of the mojom::TabStripService mojo
   //   // interface passing the pending receiver that will be internally bound.

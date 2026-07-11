@@ -71,7 +71,6 @@ struct Tab {
   bool can_go_back;
   bool can_go_forward;
   bool can_reload;
-  int32 guest_contents_id;
 
   //unique identifier of the opener tab, if any.
   int32? opener_tab_id;

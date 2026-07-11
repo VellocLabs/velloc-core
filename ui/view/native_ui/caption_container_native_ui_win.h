@@ -48,7 +48,7 @@ class CaptionContainerNativeUI : public ViewNativeUI,
       view_observation_{this};
   ScopedViewState<BrowserCaptionButtonContainer> caption_button_container_;
   // Reparented TabStripActionContainer tracked with automatic state restore.
-  ScopedViewState<TabStripActionContainer> tab_strip_action_container_;
+  // ScopedViewState<TabStripActionContainer> tab_strip_action_container_;
 };
 
 }  // namespace custom_browser::native_ui

@@ -246,12 +246,10 @@ class TabsController {
   }
 
   private onTabRemoved(tabId: TabId) {
-   console.log('Tab removed:', tabId);
    this.deleteTab(tabId);
   }
 
   private onTabMoved(tabId: TabId, toIndex: number) {
-    console.log('Tab moved:', tabId, toIndex);
     const tab = this.tabById.get(tabId);
     if (!tab) {
       return;
@@ -438,7 +436,6 @@ class TabsController {
     }
     const pinned = [...this.pinnedTabIds];
     const unpinned = [...this.unpinnedTabIds];
-    console.log('tabs observers: pinned=', pinned.length, ' unpinned=',unpinned.length,{pinned, unpinned});
     for (const observer of this.tabsObservers) {
       observer.onTabsUpdated(pinned, unpinned);
     }

@@ -17,7 +17,6 @@
 #include "chrome/grit/custom_browser_resources_map.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/favicon_base/favicon_url_parser.h"
-#include "components/guest_contents/browser/guest_contents_host_impl.h"
 #include "components/prefs/pref_service.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/host_zoom_map.h"
@@ -27,7 +26,9 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "content/public/common/url_constants.h"
+#include "custom_browser/browser/nexus/settings/nexus_settings_handler.h"
 #include "custom_browser/common/product_version.h"
+#include "custom_browser/resources/grit/custom_browser_strings.h"
 #include "custom_browser/ui/mojom/browser_constants.mojom-forward.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
@@ -40,6 +41,132 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/webui/color_change_listener/color_change_handler.h"
 #include "ui/webui/webui_util.h"
+
+namespace {
+
+void AddNexusStrings(content::WebUIDataSource* html_source) {
+  static constexpr webui::LocalizedString kNexusStrings[] = {
+      {"customBrowserLoadingLabel", IDS_CUSTOM_BROWSER_LOADING},
+      {"customBrowserNexusProviderPageTitle",
+       IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE},
+      {"customBrowserNexusProviderDescription",
+       IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION},
+      {"customBrowserNexusProviderConnectionDescription",
+       IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION},
+      {"customBrowserNexusProviderLabel", IDS_NEXUS_SETTINGS_PROVIDER_LABEL},
+      {"customBrowserNexusNoProviders", IDS_NEXUS_SETTINGS_NO_PROVIDERS},
+      {"customBrowserNexusProviderOpenai", IDS_NEXUS_PROVIDER_OPENAI},
+      {"customBrowserNexusProviderAnthropic", IDS_NEXUS_PROVIDER_ANTHROPIC},
+      {"customBrowserNexusProviderGoogle", IDS_NEXUS_PROVIDER_GOOGLE},
+      {"customBrowserNexusProviderOllama", IDS_NEXUS_PROVIDER_OLLAMA},
+      {"customBrowserNexusBaseUrlLabel", IDS_NEXUS_SETTINGS_BASE_URL_LABEL},
+      {"customBrowserNexusBaseUrlPlaceholder",
+       IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER},
+      {"customBrowserNexusApiKeyLabel", IDS_NEXUS_SETTINGS_API_KEY_LABEL},
+      {"customBrowserNexusApiKeyPlaceholder",
+       IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER},
+      {"customBrowserNexusKeepStoredKey",
+       IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED},
+      {"customBrowserNexusApiKeyHelper", IDS_NEXUS_SETTINGS_API_KEY_HELPER},
+      {"customBrowserNexusVerifyLoadModels",
+       IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS},
+      {"customBrowserNexusSave", IDS_NEXUS_SETTINGS_SAVE},
+      {"customBrowserNexusUpdateFailed", IDS_NEXUS_SETTINGS_UPDATE_FAILED},
+      {"customBrowserNexusResetConnection",
+       IDS_NEXUS_SETTINGS_RESET_CONNECTION},
+      {"customBrowserNexusResetDialogTitle",
+       IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE},
+      {"customBrowserNexusResetDialogBody",
+       IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY},
+      {"customBrowserNexusResetCompleted",
+       IDS_NEXUS_SETTINGS_RESET_COMPLETED},
+      {"customBrowserNexusConnectionSectionTitle",
+       IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE},
+      {"customBrowserNexusModelsSectionTitle",
+       IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE},
+      {"customBrowserNexusModelLabel", IDS_NEXUS_SETTINGS_MODEL_LABEL},
+      {"customBrowserNexusProviderReady", IDS_NEXUS_SETTINGS_PROVIDER_READY},
+      {"customBrowserNexusProviderSetupRequired",
+       IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED},
+      {"customBrowserNexusStatusNotConfigured",
+       IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED},
+      {"customBrowserNexusStatusSelectProvider",
+       IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER},
+      {"customBrowserNexusStatusVerificationRequired",
+       IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED},
+      {"customBrowserNexusStatusConfigChanged",
+       IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED},
+      {"customBrowserNexusStatusConnecting",
+       IDS_NEXUS_SETTINGS_STATUS_CONNECTING},
+      {"customBrowserNexusStatusFetchingModels",
+       IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS},
+      {"customBrowserNexusStatusConnected",
+       IDS_NEXUS_SETTINGS_STATUS_CONNECTED},
+      {"customBrowserNexusStatusConnectionFailed",
+       IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED},
+      {"customBrowserNexusStatusChipNotConfigured",
+       IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED},
+      {"customBrowserNexusStatusChipChangesPending",
+       IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING},
+      {"customBrowserNexusStatusChipConnecting",
+       IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING},
+      {"customBrowserNexusStatusChipConnected",
+       IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED},
+      {"customBrowserNexusStatusChipFailed",
+       IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED},
+      {"customBrowserNexusStatusModelsFoundSingular",
+       IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR},
+      {"customBrowserNexusStatusModelsFoundPlural",
+       IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL},
+      {"customBrowserNexusBaseUrlRequired",
+       IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED},
+      {"customBrowserNexusApiKeyRequired",
+       IDS_NEXUS_SETTINGS_API_KEY_REQUIRED},
+      {"customBrowserNexusModelValidationSelectDefaultOnly",
+       IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY},
+      {"customBrowserNexusSaveFailed", IDS_NEXUS_SETTINGS_SAVE_FAILED},
+      {"customBrowserNexusSaveSuccess", IDS_NEXUS_SETTINGS_SAVE_SUCCESS},
+      {"customBrowserNexusErrorUnauthorized",
+       IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED},
+      {"customBrowserNexusErrorForbidden",
+       IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN},
+      {"customBrowserNexusErrorInvalidBaseUrl",
+       IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL},
+      {"customBrowserNexusErrorEndpointUnreachable",
+       IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE},
+      {"customBrowserNexusErrorTimeout", IDS_NEXUS_SETTINGS_ERROR_TIMEOUT},
+      {"customBrowserNexusErrorNoModels", IDS_NEXUS_SETTINGS_ERROR_NO_MODELS},
+      {"customBrowserNexusErrorUnexpectedResponse",
+       IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE},
+      {"customBrowserNexusOllamaNote", IDS_NEXUS_SETTINGS_OLLAMA_NOTE},
+      {"customBrowserNexusWarningTitle", IDS_NEXUS_WARNING_TITLE},
+      {"customBrowserNexusWarningIntro", IDS_NEXUS_WARNING_INTRO},
+      {"customBrowserNexusWarningBody1", IDS_NEXUS_WARNING_BODY_1},
+      {"customBrowserNexusWarningBody2", IDS_NEXUS_WARNING_BODY_2},
+      {"customBrowserNexusWarningBody3", IDS_NEXUS_WARNING_BODY_3},
+      {"customBrowserNexusWarningRecommendationsTitle",
+       IDS_NEXUS_WARNING_RECOMMENDATIONS_TITLE},
+      {"customBrowserNexusWarningRecommendation1",
+       IDS_NEXUS_WARNING_RECOMMENDATION_ENABLE_TRUSTED},
+      {"customBrowserNexusWarningRecommendation2",
+       IDS_NEXUS_WARNING_RECOMMENDATION_MINIMUM_PERMISSIONS},
+      {"customBrowserNexusWarningRecommendation3",
+       IDS_NEXUS_WARNING_RECOMMENDATION_AVOID_SENSITIVE_DATA},
+      {"customBrowserNexusWarningRecommendation4",
+       IDS_NEXUS_WARNING_RECOMMENDATION_REVIEW_PROVIDERS},
+      {"customBrowserNexusWarningRecommendation5",
+       IDS_NEXUS_WARNING_RECOMMENDATION_USE_SAFEGUARDS},
+      {"customBrowserNexusWarningSharedDevice",
+       IDS_NEXUS_WARNING_SHARED_DEVICE},
+      {"customBrowserNexusWarningAcknowledgment",
+       IDS_NEXUS_WARNING_ACKNOWLEDGMENT},
+      {"customBrowserNexusWarningContinue", IDS_NEXUS_WARNING_CONTINUE},
+      {"customBrowserCancel", IDS_CANCEL},
+  };
+  html_source->AddLocalizedStrings(kNexusStrings);
+}
+
+}  // namespace
 
 CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
     : ui::MojoWebUIController(web_ui, /* enable_chrome_send */ true),
@@ -94,6 +221,9 @@ CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
       {"newTabAccName", IDS_ACCNAME_NEWTAB},
   };
   html_source->AddLocalizedStrings(kStrings);
+  AddNexusStrings(html_source);
+
+  web_ui->AddMessageHandler(std::make_unique<settings::NexusSettingsHandler>());
 
   content::URLDataSource::Add(
       profile, std::make_unique<FaviconSource>(
@@ -121,11 +251,6 @@ void CustomBrowserWebUI::BindInterface(
   color_change_handler->Bind(std::move(receiver));
 }
 
-void CustomBrowserWebUI::BindInterface(
-    mojo::PendingReceiver<guest_contents::mojom::GuestContentsHost> receiver) {
-  guest_contents::GuestContentsHostImpl::Create(web_ui()->GetWebContents(),
-                                                std::move(receiver));
-}
 // void CustomBrowserWebUIConfig::BindInterface(
 //     mojo::PendingReceiver<tabs_api::mojom::TabStripService> receiver) {
 //   if (auto* tab_strip_service =

@@ -43,14 +43,6 @@ void NativeUI::Update(const NativeViewParams* layout_params) {
 }
 
 void NativeUI::CalculateBounds() {
-#if DCHECK_IS_ON()
-  if (LogInfo()) {
-    LOG(INFO) << "CalculateBounds - Start: view_class_name = "
-              << layout_params_->view_class_name.value_or("<unnamed>")
-              << " view_id = " << layout_params_->view_id.value_or("<unknown>");
-  }
-#endif
-
   const auto& params = *layout_params_->params;
   const gfx::Rect host = host_view_->GetLocalBounds();
   const int host_width = host.width();
@@ -93,20 +85,7 @@ void NativeUI::CalculateBounds() {
 
   auto host_bounds = gfx::Rect(x, y, width, height);
   bounds_ = CalculateAlignmentBounds(host_bounds);
-#if DCHECK_IS_ON()
-  if (LogInfo()) {
-    LOG(INFO) << "CalculateBounds - Complete: "
-              << " host bounds = " << host_bounds.ToString()
-              << " Final bounds = " << bounds_.ToString();
-  }
-#endif
 }
-
-#if DCHECK_IS_ON()
-bool NativeUI::LogInfo() const {
-  return false;
-}
-#endif
 
 gfx::Size NativeUI::GetPreferredSize(
     const views::SizeBounds& size_bounds) const {

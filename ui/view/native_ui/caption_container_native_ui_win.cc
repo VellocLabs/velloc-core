@@ -24,7 +24,7 @@
 #include "ui/wm/core/coordinate_conversion.h"
 
 namespace {
-constexpr int kActionAreaPadding = 0;
+// constexpr int kActionAreaPadding = 0;
 }  // namespace
 
 namespace custom_browser::native_ui {
@@ -42,7 +42,7 @@ CaptionContainerNativeUI::~CaptionContainerNativeUI() {
 void CaptionContainerNativeUI::OnPrepare() {
   InitializeCaptionButtonContainer(
       views::AsViewClass<BrowserCaptionButtonContainer>(view()));
-  AttachTabStripActionContainer();
+  // AttachTabStripActionContainer();
 }
 
 void CaptionContainerNativeUI::OnLayout() {
@@ -53,39 +53,39 @@ void CaptionContainerNativeUI::OnLayout() {
 
   // Position action container to the left of the caption container
   // in the frame view coordinate space.
-  TabStripActionContainer* tab_strip_action_container =
-      tab_strip_action_container_.view();
-  if (tab_strip_action_container && view()) {
-    const gfx::Rect caption_bounds = view()->bounds();
-    int container_w = tab_strip_action_container->GetPreferredSize().width();
-    if (container_w <= 0) {
-      container_w = tab_strip_action_container->bounds().width();
-    }
+  // TabStripActionContainer* tab_strip_action_container =
+  //     tab_strip_action_container_.view();
+  // if (tab_strip_action_container && view()) {
+  //   const gfx::Rect caption_bounds = view()->bounds();
+  //   int container_w = tab_strip_action_container->GetPreferredSize().width();
+  //   if (container_w <= 0) {
+  //     container_w = tab_strip_action_container->bounds().width();
+  //   }
 
-    const bool show_action_container =
-        is_visible && !caption_bounds.IsEmpty() && container_w > 0;
-    tab_strip_action_container->SetVisible(show_action_container);
-    if (!show_action_container) {
-      return;
-    }
+  //   const bool show_action_container =
+  //       is_visible && !caption_bounds.IsEmpty() && container_w > 0;
+  //   tab_strip_action_container->SetVisible(show_action_container);
+  //   if (!show_action_container) {
+  //     return;
+  //   }
 
-    container_w = tab_strip_action_container->GetPreferredSize().width();
-    if (container_w <= 0) {
-      container_w = tab_strip_action_container->bounds().width();
-    }
+  //   container_w = tab_strip_action_container->GetPreferredSize().width();
+  //   if (container_w <= 0) {
+  //     container_w = tab_strip_action_container->bounds().width();
+  //   }
 
-    const int container_x =
-        caption_bounds.x() - (container_w + kActionAreaPadding);
-    const int container_y = caption_bounds.y();
-    const int container_h = caption_bounds.height();
-    tab_strip_action_container->SetBounds(container_x, container_y, container_w,
-                                          container_h);
-    tab_strip_action_container->DeprecatedLayoutImmediately();
-  } else {
-    if (tab_strip_action_container) {
-      tab_strip_action_container->SetVisible(false);
-    }
-  }
+  //   const int container_x =
+  //       caption_bounds.x() - (container_w + kActionAreaPadding);
+  //   const int container_y = caption_bounds.y();
+  //   const int container_h = caption_bounds.height();
+  //   tab_strip_action_container->SetBounds(container_x, container_y, container_w,
+  //                                         container_h);
+  //   tab_strip_action_container->DeprecatedLayoutImmediately();
+  // } else {
+  //   if (tab_strip_action_container) {
+  //     tab_strip_action_container->SetVisible(false);
+  //   }
+  // }
 }
 
 void CaptionContainerNativeUI::OnViewIsDeleting(views::View* observed_view) {
@@ -142,33 +142,33 @@ CaptionContainerNativeUI::FindCaptionButtonContainer() const {
   return nullptr;
 }
 
-void CaptionContainerNativeUI::AttachTabStripActionContainer() {
-  if (tab_strip_action_container_) {
-    return;
-  }
-  views::View* frame_view = view()->parent();
-  if (!frame_view) {
-    return;
-  }
+// void CaptionContainerNativeUI::AttachTabStripActionContainer() {
+//   if (tab_strip_action_container_) {
+//     return;
+//   }
+//   views::View* frame_view = view()->parent();
+//   if (!frame_view) {
+//     return;
+//   }
 
-  auto* tab_strip_region_view = utils::FindTabStripRegionView(GetCustomBrowserView());
-  if (!tab_strip_region_view) {
-    return;
-  }
-  auto* horizontal_view =
-      static_cast<HorizontalTabStripRegionView*>(tab_strip_region_view);
+//   auto* tab_strip_region_view = utils::FindTabStripRegionView(GetCustomBrowserView());
+//   if (!tab_strip_region_view) {
+//     return;
+//   }
+//   auto* horizontal_view =
+//       static_cast<HorizontalTabStripRegionView*>(tab_strip_region_view);
 
- tab_strip_action_container_ =
-      horizontal_view->tab_strip_action_container_;
-  if (!tab_strip_action_container_) {
-    return;
-  }
-  tab_strip_action_container_.TemporarilyClearReference(
-          &horizontal_view->tab_strip_action_container_);
-  tab_strip_action_container_.SetParent(frame_view);
-  tab_strip_action_container_.EnsureLayer();
-  tab_strip_action_container_.SetFillsBoundsOpaquely(false);
-  tab_strip_action_container_.SetIgnoredByLayout(true);
-}
+//  tab_strip_action_container_ =
+//       horizontal_view->tab_strip_action_container_;
+//   if (!tab_strip_action_container_) {
+//     return;
+//   }
+//   tab_strip_action_container_.TemporarilyClearReference(
+//           &horizontal_view->tab_strip_action_container_);
+//   tab_strip_action_container_.SetParent(frame_view);
+//   tab_strip_action_container_.EnsureLayer();
+//   tab_strip_action_container_.SetFillsBoundsOpaquely(false);
+//   tab_strip_action_container_.SetIgnoredByLayout(true);
+// }
 
 }  // namespace custom_browser::native_ui

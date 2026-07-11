@@ -7,14 +7,15 @@ module custom_browser.mojom;
 import "custom_browser/ui/mojom/browser_constants.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 
-// 'sidebar' | 'compactsidebar' | 'standard' | 'compactstandard';
+// 'sidebar' | 'compactsidebar' | 'standard' | 'compactstandard' | 'nexus';
 enum UIMode {
   kFirst = 0,
   kSidebar = 1,
   kCompactSidebar = 2,
   kStandard = 3,
   kCompactStandard = 4,
-  kLast = 5
+  kNexus = 5,
+  kLast = 6
 };
 
 enum ChromeColorID {

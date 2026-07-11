@@ -3,6 +3,8 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "ui/gfx/geometry/rect.h"
@@ -52,9 +54,6 @@ class NativeUI {
  protected:
   virtual void OnPrepare();
   virtual void OnLayout() = 0;
-#if DCHECK_IS_ON()
-  virtual bool LogInfo() const;
-#endif
   virtual gfx::Size GetPreferredSize(
       const views::SizeBounds& size_bounds) const;
   void UpdateViewsVisibility();

@@ -1,0 +1,122 @@
+# Copyright 2026 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/chrome_build.gni")
+
+assert(enable_custom_browser)
+
+# Host-shell capability probe (PATH lookup + --version probe). Pure C++,
+# no Mojo, so it can be unit-tested without spinning up a service runner.
+source_set("shell_resolver") {
+  sources = [
+    "shell_resolver.cc",
+    "shell_resolver.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Platform-specific install hints used when a known tool is missing from
+# PATH. Pure C++ string tables; no I/O. Kept separate from the policy so
+# the policy unit tests can stay focused.
+source_set("install_hints") {
+  sources = [
+    "install_hints.cc",
+    "install_hints.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Pre-launch policy checks (allowlist, env sanitiser, cwd validator).
+# Used by the service impl AND its unit tests.
+source_set("safe_command_policy") {
+  sources = [
+    "safe_command_policy.cc",
+    "safe_command_policy.h",
+  ]
+
+  public_deps = [
+    ":install_hints",
+    ":shell_resolver",
+    "//base",
+  ]
+}
+
+# Cross-platform child-process runner (LaunchProcess + temp-file
+# capture + timeout-kill). Blocking; must run on a base::MayBlock()
+# thread.
+source_set("child_process_runner") {
+  sources = [
+    "child_process_runner.cc",
+    "child_process_runner.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# `nexus.mojom.NexusShellService` implementation. Slice 2: GetCapabilities
+# + Exec; streaming Spawn arrives in slice 4.
+source_set("nexus_shell_service") {
+  sources = [
+    "nexus_shell_service_impl.cc",
+    "nexus_shell_service_impl.h",
+  ]
+
+  public_deps = [
+    ":child_process_runner",
+    ":safe_command_policy",
+    ":shell_resolver",
+    "//base",
+    "//custom_browser/browser/nexus/mojom:mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
+# Glue that hands a `RunNexusShellService` factory to the upstream
+# `mojo::ServiceFactory`. Linked into chrome/utility once the upstream
+# hook lands; until then it is unreferenced but kept buildable so future
+# wiring is a one-liner.
+source_set("services") {
+  sources = [
+    "services.cc",
+    "services.h",
+  ]
+
+  public_deps = [
+    "//mojo/public/cpp/bindings",
+  ]
+
+  deps = [
+    ":nexus_shell_service",
+    "//custom_browser/browser/nexus/mojom:mojom",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [
+    "child_process_runner_unittest.cc",
+    "install_hints_unittest.cc",
+    "nexus_shell_service_impl_unittest.cc",
+    "safe_command_policy_unittest.cc",
+    "shell_resolver_unittest.cc",
+  ]
+
+  deps = [
+    ":child_process_runner",
+    ":install_hints",
+    ":nexus_shell_service",
+    ":safe_command_policy",
+    ":shell_resolver",
+    "//base",
+    "//base/test:test_support",
+    "//custom_browser/browser/nexus/mojom:mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+    "//testing/gtest",
+  ]
+}

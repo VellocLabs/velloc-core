@@ -107,12 +107,6 @@ PinnedToolbarActionsContainerNativeUI::GetActionIdFromClassName(
   return std::nullopt;
 }
 
-#if DCHECK_IS_ON()
-bool PinnedToolbarActionsContainerNativeUI::LogInfo() const {
-  return false;
-}
-#endif
-
 void PinnedToolbarActionsContainerNativeUI::OnPrepare() {
   ViewNativeUI::OnPrepare();
   auto* actions_container = static_cast<PinnedToolbarActionsContainer*>(view());

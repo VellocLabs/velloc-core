@@ -1,0 +1,230 @@
+# Copyright 2024 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/chrome_build.gni")
+
+assert(enable_custom_browser)
+
+# LLM types — header-only, no link-time deps beyond base.
+source_set("types") {
+  sources = [
+    "llm_types.cc",
+    "llm_types.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# LLM pref name constants (header-only).
+source_set("pref_names") {
+  sources = [ "llm_pref_names.h" ]
+}
+
+# Helpers for reading provider config Dicts from prefs. Shared between the
+# LLM host and the settings handler.
+source_set("provider_config") {
+  sources = [
+    "provider_config.cc",
+    "provider_config.h",
+  ]
+
+  deps = [
+    ":pref_names",
+    "//base",
+    "//components/prefs",
+  ]
+}
+
+# Pure text-flattening / JSON helpers extracted from nexus_llm_host.cc so
+# they can be unit tested in isolation. No dependencies beyond base::Value.
+source_set("text_helpers") {
+  sources = [
+    "llm_text_helpers.cc",
+    "llm_text_helpers.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Incremental line splitter used by provider stream parsers to turn byte
+# chunks into whole LF/CRLF-terminated lines. Zero dependencies, fully
+# unit-tested via llm_line_splitter_unittest.cc.
+source_set("line_splitter") {
+  sources = [
+    "llm_line_splitter.cc",
+    "llm_line_splitter.h",
+  ]
+}
+
+# LLM preference registration.
+source_set("pref_registration") {
+  sources = [
+    "llm_pref_registration.cc",
+    "llm_pref_registration.h",
+  ]
+
+  deps = [
+    ":pref_names",
+    "//base",
+    "//components/prefs",
+  ]
+}
+
+# Abstract LLM provider interface.
+source_set("provider") {
+  sources = [
+    "llm_provider.cc",
+    "llm_provider.h",
+  ]
+
+  public_deps = [
+    ":types",
+    "//base",
+  ]
+}
+
+# Provider factory — creates provider instances by ID.
+source_set("provider_factory") {
+  sources = [
+    "llm_provider_factory.cc",
+    "llm_provider_factory.h",
+  ]
+
+  public_deps = [
+    ":provider",
+    "//base",
+  ]
+
+  deps = [ ":providers" ]
+}
+
+# LLM broker — per-profile KeyedService for LLM routing.
+source_set("broker") {
+  sources = [
+    "llm_broker.cc",
+    "llm_broker.h",
+    "llm_broker_factory.cc",
+    "llm_broker_factory.h",
+  ]
+
+  public_deps = [
+    ":pref_names",
+    ":provider",
+    ":provider_factory",
+    ":types",
+    "//base",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
+    "//components/prefs",
+  ]
+
+  deps = [
+    ":pref_registration",
+    "//components/pref_registry",
+  ]
+}
+
+source_set("webui_host") {
+  sources = [
+    "nexus_llm_host.cc",
+    "nexus_llm_host.h",
+  ]
+
+  deps = [
+    ":broker",
+    ":provider_config",
+    ":text_helpers",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//components/prefs",
+    "//custom_browser/browser/nexus/mojom:mojom",
+  ]
+}
+
+# Individual provider implementations.
+source_set("openai_provider") {
+  sources = [
+    "providers/openai/openai_provider.cc",
+    "providers/openai/openai_provider.h",
+  ]
+
+  deps = [
+    ":line_splitter",
+    ":provider",
+    ":types",
+    "//base",
+    "//services/network/public/cpp",
+  ]
+}
+
+source_set("anthropic_provider") {
+  sources = [
+    "providers/anthropic/anthropic_provider.cc",
+    "providers/anthropic/anthropic_provider.h",
+  ]
+
+  deps = [
+    ":provider",
+    ":types",
+    "//base",
+    "//services/network/public/cpp",
+  ]
+}
+
+source_set("google_provider") {
+  sources = [
+    "providers/google/google_provider.cc",
+    "providers/google/google_provider.h",
+  ]
+
+  deps = [
+    ":provider",
+    ":types",
+    "//base",
+    "//services/network/public/cpp",
+  ]
+}
+
+source_set("ollama_provider") {
+  sources = [
+    "providers/ollama/ollama_provider.cc",
+    "providers/ollama/ollama_provider.h",
+  ]
+
+  deps = [
+    ":line_splitter",
+    ":provider",
+    ":types",
+    "//base",
+    "//services/network/public/cpp",
+  ]
+}
+
+# Group target for all provider implementations. OpenAI-compatible providers
+# (Kimi, MiniMax, Qwen, GLM) are created by `LlmProviderFactory` directly
+# from a config table using `OpenAiProvider`'s compat constructor.
+group("providers") {
+  public_deps = [
+    ":anthropic_provider",
+    ":google_provider",
+    ":ollama_provider",
+    ":openai_provider",
+  ]
+}
+
+# Aggregate LLM target — includes all LLM components.
+group("llm") {
+  public_deps = [
+    ":broker",
+    ":line_splitter",
+    ":pref_names",
+    ":pref_registration",
+    ":provider",
+    ":provider_config",
+    ":provider_factory",
+    ":providers",
+    ":text_helpers",
+    ":types",
+  ]
+}

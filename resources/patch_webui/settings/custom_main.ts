@@ -16,6 +16,9 @@ interface PatchEntry {
 }
 
 const GET_STARTED_PATH = '/getStarted';
+const initialPatchModules = new Map<string, string>([
+  [GET_STARTED_PATH, 'get_started_patch.js'],
+]);
 const windowWithInitialPath = window as Window & {
   customBrowserSettingsInitialPath?: string;
 };
@@ -29,8 +32,8 @@ const originalReplaceState = history.replaceState.bind(history);
 history.replaceState =
     ((...args: Parameters<History['replaceState']>) => {
       const url = args[2];
-      if (!blockedInitialReplace && initialPath === GET_STARTED_PATH &&
-          window.location.pathname === GET_STARTED_PATH && url === '/') {
+      if (!blockedInitialReplace && initialPatchModules.has(initialPath) &&
+          window.location.pathname === initialPath && url === '/') {
         blockedInitialReplace = true;
         return;
       }
@@ -63,11 +66,12 @@ function loadPatchModule(fileName: string): Promise<PatchModule> {
   return import(`./${fileName}`) as Promise<PatchModule>;
 }
 
-function loadGetStartedImmediatelyIfNeeded() {
-  if (window.location.pathname !== GET_STARTED_PATH) {
+function loadInitialPatchImmediatelyIfNeeded() {
+  const fileName = initialPatchModules.get(window.location.pathname);
+  if (!fileName) {
     return;
   }
-  loadPatchModule('get_started_patch.js').then(module => {
+  loadPatchModule(fileName).then(module => {
     module.attach();
   });
 }
@@ -150,4 +154,4 @@ function startObserver() {
 customElements.whenDefined('settings-ui')
     .then(() => requestAnimationFrame(startObserver));
 requestAnimationFrame(startObserver);
-loadGetStartedImmediatelyIfNeeded();
+loadInitialPatchImmediatelyIfNeeded();

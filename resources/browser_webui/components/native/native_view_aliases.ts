@@ -11,7 +11,17 @@ type Defaults = Partial<Pick<NativeViewHolder,
   vAlign?: LayoutAlignment;
   childViews?: any[];
   gap?: number;
+  visibility?: CSSStyleDeclaration['visibility'];
 };
+
+// BrowserCaptionButtonContainer reserves space for three Windows caption
+// buttons: 3 * 45 DIP plus 2 * 1 DIP visual spacing.
+const WINDOWS_CAPTION_BUTTON_AREA_WIDTH = 144;
+
+// TabStripActionContainer defaults to the startup GLIC button plus separator.
+// On Windows this is ~100 DIP in the default "Gemini" labeled state:
+// ~47 DIP text + 40 DIP button chrome + 12 DIP separator and margins.
+const TAB_STRIP_ACTION_CONTAINER_WIDTH = 158;
 
 function toCssLength(value: LengthValue): string {
   return typeof value === 'number' ? `${value}px` : value;
@@ -77,6 +87,10 @@ function applyDefaults(el: NativeViewHolder, defaults: Defaults, tagName: string
 
   if (defaults.height != null && !el.style.height) {
     el.style.height = toCssLength(defaults.height);
+  }
+
+  if(defaults.visibility != null && !el.style.visibility) {
+    el.style.visibility = defaults.visibility;
   }
 
   if (defaults.cornerRadius != null && !el.hasAttribute('corner-radius')) {
@@ -199,7 +213,20 @@ export const CustomBrowserAppMenuButton = defineNativeViewAlias(
 
 export const CustomBrowserCaptionButtonContainer = defineNativeViewAlias(
   'caption-button-container',
-  {viewClass: 'BrowserCaptionButtonContainer', width: 300, height: 39}
+  {viewClass: 'BrowserCaptionButtonContainer',
+   width: WINDOWS_CAPTION_BUTTON_AREA_WIDTH, height: 37}
+);
+
+export const CustomBrowserGlicButton = defineNativeViewAlias(
+  'glic-nexus-button',
+  {viewClass: 'TabStripActionContainer',
+   width: TAB_STRIP_ACTION_CONTAINER_WIDTH, height: 37}
+);
+
+export const CustomBrowserBrowserButton = defineNativeViewAlias(
+  'caption-browser-button',
+  {viewClass: 'TabStripActionContainer',
+   width: 46, height: 37}
 );
 
 export const CustomBrowserPinnedDownloadsButton = defineNativeViewAlias(
@@ -245,6 +272,18 @@ export const CustomBrowserMainContentsView = defineNativeViewAlias(
    alignY:"stretch",
    cornerRadius: 5
   }
+);
+
+export const CustomBrowserMainContentsViewHidden = defineNativeViewAlias(
+  'main-contents-view-hidden',
+  {viewClass: MAIN_CONTENTS_VIEW_NAME,
+   visibility: 'hidden',
+  }
+);
+
+export const CustomBrowserNexusViewContainer = defineNativeViewAlias(
+  'nexus-view-container',
+  {viewClass: 'nexus-view-container'}
 );
 
 export const CustomBrowserMainContentsNoBorderView = defineNativeViewAlias(

@@ -16,6 +16,7 @@ export class UiStore {
 
   private mode_: UIMode = UIMode.kSidebar;
   private leftPaneWidth_: null | number = null;
+  private nexusViewWidth_: null | number = null;
   private leftPaneLocked_ = false;
   private readonly observers_ = new Set<UiStoreObserver>();
 
@@ -33,6 +34,14 @@ export class UiStore {
       const stored = loadTimeData.getInteger(leftPaneWidthKey);
       if (stored > 0) {
         this.leftPaneWidth_ = stored;
+      }
+    }
+
+    const nexusViewWidthKey = IntKey[IntKey.kNexusViewWidth];
+    if (loadTimeData.valueExists(nexusViewWidthKey)) {
+      const stored = loadTimeData.getInteger(nexusViewWidthKey);
+      if (stored > 0) {
+        this.nexusViewWidth_ = stored;
       }
     }
 
@@ -64,6 +73,10 @@ export class UiStore {
     return this.leftPaneWidth_;
   }
 
+  get nexusViewWidth(): number | null {
+    return this.nexusViewWidth_;
+  }
+
   get leftPaneLocked(): boolean {
     return this.leftPaneLocked_;
   }
@@ -86,6 +99,17 @@ export class UiStore {
     this.leftPaneWidth_ = roundedWidth;
     BrowserApiProxyImpl.getInstance().saveIntPref(
         IntKey.kLeftPanelWidth, this.leftPaneWidth_);
+  }
+
+  setNexusViewWidth(width: number) {
+    const roundedWidth = Math.round(width);
+    if (!Number.isFinite(roundedWidth) || roundedWidth <= 0 ||
+        this.nexusViewWidth_ === roundedWidth) {
+      return;
+    }
+    this.nexusViewWidth_ = roundedWidth;
+    BrowserApiProxyImpl.getInstance().saveIntPref(
+        IntKey.kNexusViewWidth, this.nexusViewWidth_);
   }
 
   setLeftPaneLocked(locked: boolean) {

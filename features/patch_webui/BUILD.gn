@@ -1,19 +1,53 @@
-source_set("feature") {
+source_set("patch_resources") {
   sources = [
-    "register_hooks.cc",
-    "register_hooks.h",
+    "patch_resources.cc",
+    "patch_resources.h",
   ]
 
   deps = [
+    "//content/public/browser",
+    "//custom_browser/common",
+    "//custom_browser/resources:custom_browser_strings",
+    "//custom_browser/resources/patch_webui:resources",
+  ]
+}
+
+source_set("feature") {
+  sources = [
+    "extensions_hooks.cc",
+    "extensions_hooks.h",
+    "glic_hooks.cc",
+    "glic_hooks.h",
+    "navigation_hooks.cc",
+    "navigation_hooks.h",
+    "ntp_hooks.cc",
+    "ntp_hooks.h",
+    "register_hooks.cc",
+    "register_hooks.h",
+    "settings_hooks.cc",
+    "settings_hooks.h",
+  ]
+
+  deps = [
+    ":patch_resources",
     "//base",
+    "//chrome/app:generated_resources_grit",
+    "//chrome/app/theme:chrome_unscaled_resources_grit",
+    "//chrome/browser:browser_process",
+    "//chrome/browser/search",
     "//chrome/browser/search_engines",
+    "//chrome/browser/ui",
     "//chrome/common:channel_info",
     "//chrome/common:url_constants",
     "//components/strings:components_strings",
     "//components/version_info",
     "//content/public/browser",
+    "//custom_browser/browser/nexus:bridge",
+    "//custom_browser/browser/nexus:guest_config",
+    "//custom_browser/browser/nexus/mojom",
     "//custom_browser/chromium_hooks:hook_api",
-    "//custom_browser/common:common",
+    "//custom_browser/chromium_hooks:hook_core",
+    "//custom_browser/common",
     "//custom_browser/resources:custom_browser_strings",
     "//custom_browser/resources/patch_webui:resources",
   ]

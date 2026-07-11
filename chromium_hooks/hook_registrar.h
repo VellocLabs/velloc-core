@@ -15,15 +15,19 @@ class HookRegistrar {
  public:
   virtual ~HookRegistrar() = default;
 
-  virtual void AddWebUIDataSourceCreatedCallback(
+  virtual void AddWebUIDataSourceConfiguringCallback(
       std::string_view host_path,
-      WebUIDataSourceCreatedCallback cb) = 0;
-
-  virtual void AddLocalizedStringOverrideCallback(
-      LocalizedStringOverrideCallback cb) = 0;
+      WebUIDataSourceConfiguringCallback cb) = 0;
 
   virtual void AddNavigationThrottleProvider(
       NavigationThrottleProviderCallback provider) = 0;
+
+  virtual void AddWebUIRenderFrameBinderMapPopulator(
+      WebUIRenderFrameBinderMapPopulatorCallback cb) = 0;
+
+  virtual void AddRenderFrameInterfaceBinder(
+      std::string_view interface_name,
+      RenderFrameInterfaceBinderCallback cb) = 0;
 
   virtual void AddBrowserMainLifecycleHook(
       std::unique_ptr<BrowserMainLifecycleHook> hook) = 0;

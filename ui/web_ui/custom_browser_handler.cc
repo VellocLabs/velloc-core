@@ -41,7 +41,6 @@
 #include "chrome/browser/ui/webui/util/image_util.h"
 #include "chrome/browser/ui/webui/webui_util_desktop.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/guest_contents/browser/guest_contents_handle.h"
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/tab_groups/tab_group_color.h"
 #include "components/tab_groups/tab_group_id.h"
@@ -544,29 +543,6 @@ custom_browser::mojom::TabPtr CustomBrowserHandler::GetTabData(
     }
   }
   return tab_data;
-}
-
-int CustomBrowserHandler::GetOrCreateGuestIdForTab(
-    content::WebContents* active_contents) {
-  auto* guest_handle =
-      guest_contents::GuestContentsHandle::FromWebContents(active_contents);
-  if (!guest_handle) {
-    guest_handle = guest_contents::GuestContentsHandle::CreateForWebContents(
-        active_contents);
-    DCHECK(guest_handle);
-  }
-  // if (guest_handle->id() == guest_last_active_id_) {
-  //     return guest_last_active_id_;
-  // }
-
-  // // if (auto* last_guest_handle =
-  // guest_contents::GuestContentsHandle::FromID(guest_last_active_id_);
-  // last_guest_handle) {
-  // //    last_guest_handle->DetachFromOuterWebContents();
-  // // }
-  // guest_last_active_id_ = guest_handle->id();
-  return static_cast<int>(
-      guest_handle->id().GetLowForSerialization() & 0x7FFFFFFF);
 }
 
 custom_browser::mojom::TabGroupVisualDataPtr

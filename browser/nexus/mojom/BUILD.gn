@@ -1,0 +1,14 @@
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojom") {
+  sources = [
+    "nexus_bridge_bootstrap.mojom",
+    "nexus_llm.mojom",
+    "nexus_shell.mojom",
+  ]
+  public_deps = [
+    "//mojo/public/mojom/base",
+    "//sandbox/policy/mojom",
+  ]
+  webui_module_path = "/"
+}

@@ -22,7 +22,8 @@ class CustomBrowserViewLayout : public BrowserViewTabbedLayoutImpl {
                           BrowserViewLayoutViews views);
   ~CustomBrowserViewLayout() override;
 
-  void LayoutContentsContainerView(gfx::Rect& contents_container_bounds);
+  void LayoutContentsContainerView(gfx::Rect& contents_container_bounds,
+                                   bool visible);
  protected:
   CustomBrowserView* GetCustomBrowserView() const;
   NativeUIContainerView* GetNativeUIContainerView() const;

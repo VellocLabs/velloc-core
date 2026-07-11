@@ -1,0 +1,231 @@
+# Copyright 2024 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/chrome_build.gni")
+import("//testing/test.gni")
+
+assert(enable_custom_browser)
+
+source_set("fs") {
+  sources = [
+    "fs/nexus_fs_host.cc",
+    "fs/nexus_fs_host.h",
+  ]
+
+  deps = [
+    "//base",
+    "//mojo/public/cpp/base",
+  ]
+}
+
+source_set("bridge") {
+  sources = [
+    "fs/nexus_fs_bridge_adapter.cc",
+    "fs/nexus_fs_bridge_adapter.h",
+    "llm/nexus_llm_bridge_adapter.cc",
+    "llm/nexus_llm_bridge_adapter.h",
+    "llm/nexus_llm_bridge_support.cc",
+    "llm/nexus_llm_bridge_support.h",
+    "nexus_bridge_capability_handler.cc",
+    "nexus_bridge_capability_handler.h",
+    "nexus_bridge_bootstrap_host.cc",
+    "nexus_bridge_bootstrap_host.h",
+    "nexus_bridge_port_service.cc",
+    "nexus_bridge_port_service.h",
+    "nexus_bridge_response_delegate.h",
+    "nexus_bridge_support.cc",
+    "nexus_bridge_support.h",
+    "nexus_features.cc",
+    "nexus_features.h",
+    "nexus_host_manifest.cc",
+    "nexus_host_manifest.h",
+    "nexus_message_port_endpoint.cc",
+    "nexus_message_port_endpoint.h",
+    "process/nexus_process_bridge_adapter.cc",
+    "process/nexus_process_bridge_adapter.h",
+    "process/nexus_shell_service_launcher.cc",
+    "process/nexus_shell_service_launcher.h",
+    "ui/nexus_ui_bridge_adapter.cc",
+    "ui/nexus_ui_bridge_adapter.h",
+  ]
+
+  deps = [
+    ":fs",
+    "mojom",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//content/public/browser",
+    "//custom_browser/browser/nexus/llm:webui_host",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
+
+source_set("guest_config") {
+  sources = [
+    "nexus_guest_config.cc",
+    "nexus_guest_config.h",
+  ]
+
+  public_deps = [
+    ":nexus_webui_config",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//content/public/common",
+    "//custom_browser/browser/nexus/llm:pref_names",
+    "//url",
+  ]
+
+  deps = [
+    "//components/prefs",
+    "//net",
+  ]
+}
+
+# Registers chrome://nexus as a WebUI host (T011a).
+source_set("nexus_webui_config") {
+  sources = [
+    "nexus_webui_config.cc",
+    "nexus_webui_config.h",
+  ]
+
+  deps = [ "//base" ]
+}
+
+# Nexus toolbar button — placed next to the GLIC button (T011b).
+source_set("nexus_toolbar_button") {
+  sources = [
+    "nexus_toolbar_button.cc",
+    "nexus_toolbar_button.h",
+  ]
+
+  deps = [ "//base" ]
+}
+
+# Per-domain permission manager for Nexus capabilities (T012).
+source_set("permissions") {
+  sources = [
+    "permissions/nexus_permission_manager.cc",
+    "permissions/nexus_permission_manager.h",
+  ]
+
+  deps = [
+    "//base",
+    "//url",
+  ]
+}
+
+# Per-profile domain sandbox manager (T013).
+source_set("domain") {
+  sources = [
+    "domain/domain_sandbox_manager.cc",
+    "domain/domain_sandbox_manager.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/keyed_service/core",
+    "//crypto",
+    "//url",
+  ]
+}
+
+# Session types (header-only for now).
+source_set("session_types") {
+  sources = [ "session/session_types.h" ]
+
+  deps = [
+    "//base",
+    "//url",
+  ]
+}
+
+# Settings WebUI handler for chrome://settings/nexus (T026).
+source_set("nexus_settings_handler") {
+  sources = [
+    "settings/nexus_settings_handler.cc",
+    "settings/nexus_settings_handler.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/webui/settings",
+    "//content/public/browser",
+    "//custom_browser/browser/nexus/llm",
+  ]
+}
+
+# Lightweight tests that only need base + prefs + gtest. Safe to put in a
+# small standalone test binary — no TestingProfile / BrowserTaskEnvironment
+# transitively pull in all of //chrome/browser.
+source_set("unit_tests_lite") {
+  testonly = true
+
+  sources = [
+    "domain/domain_sandbox_manager_unittest.cc",
+    "llm/llm_line_splitter_unittest.cc",
+    "llm/llm_provider_factory_unittest.cc",
+    "llm/llm_text_helpers_unittest.cc",
+    "llm/llm_types_unittest.cc",
+    "llm/provider_config_unittest.cc",
+    "permissions/nexus_permission_manager_unittest.cc",
+  ]
+
+  deps = [
+    ":domain",
+    ":permissions",
+    "//base/test:test_support",
+    "//components/prefs",
+    "//components/prefs:test_support",
+    "//custom_browser/browser/nexus/llm:line_splitter",
+    "//custom_browser/browser/nexus/llm:pref_names",
+    "//custom_browser/browser/nexus/llm:provider",
+    "//custom_browser/browser/nexus/llm:provider_config",
+    "//custom_browser/browser/nexus/llm:provider_factory",
+    "//custom_browser/browser/nexus/llm:text_helpers",
+    "//custom_browser/browser/nexus/llm:types",
+    "//services/network/public/cpp",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [
+    "fs/nexus_fs_host_unittest.cc",
+    "llm/nexus_llm_bridge_support_unittest.cc",
+    "nexus_guest_config_unittest.cc",
+  ]
+
+  deps = [
+    ":bridge",
+    ":fs",
+    ":guest_config",
+    ":unit_tests_lite",
+    "//base/test:test_support",
+    "//chrome/test:test_support",
+    "//components/prefs",
+    "//components/sync_preferences:test_support",
+    "//custom_browser/browser/nexus/llm:pref_registration",
+    "//testing/gtest",
+  ]
+}
+
+# Standalone test binary for the lightweight nexus unit tests. Run with:
+#   autoninja -C out/Debug custom_browser_nexus_unittests
+#   out/Debug/custom_browser_nexus_unittests
+test("custom_browser_nexus_unittests") {
+  deps = [
+    ":unit_tests_lite",
+    "//base/test:run_all_unittests",
+    "//services/network/public/mojom",
+    "//testing/gtest",
+  ]
+}

@@ -126,8 +126,6 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
   void ExecuteBrowserCommand(
       custom_browser::mojom::BrowserCommandID command_id) override;
 
-  int GetOrCreateGuestIdForTab(content::WebContents* active_contents);
-
   mojo::Receiver<custom_browser::mojom::BrowserHandler> receiver_;
   mojo::Remote<custom_browser::mojom::Browser> page_browser_;
 

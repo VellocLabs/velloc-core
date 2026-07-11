@@ -1,13 +1,11 @@
 #include "custom_browser/ui/view/native_ui/main_contents_native_ui.h"
 
-#include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
-#include "chrome/browser/ui/views/frame/layout/browser_view_layout.h"
+#include <optional>
+
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
 #include "custom_browser/ui/view/native_ui/draw_corner_overlay.h"
-#include "custom_browser/ui/view/native_ui/native_ui_factory_registry.h"
 #include "custom_browser/ui/view/webui_color_resolver.h"
-
 
 namespace custom_browser::native_ui {
 
@@ -38,7 +36,7 @@ void MainContentsNativeUI::OnLayout() {
   }
   GetCustomBrowserView()
       ->GetCustomBrowserViewLayout()
-      ->LayoutContentsContainerView(bounds_);
+      ->LayoutContentsContainerView(bounds_, visible());
 }
 
 void MainContentsNativeUI::EnsureOverlay(const ui::ColorId& color_id,

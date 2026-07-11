@@ -236,7 +236,7 @@ void CustomBrowserView::UpdatePositionArea(const gfx::Point& location) {
   info.position = location;
   if (WidgetOwnedByAnchorContainsPoint(location)) {
     info.area = MouseMovePositionArea::kWidgetOwnedArea;
-  } else if (contents_container()->bounds().Contains(location)) {
+  } else if (contents_container()->bounds().Contains(location) && contents_container()->GetVisible()) {
     auto* contents_container_view = GetActiveContentsContainerView();
     views::WebView* devtools_view =
         contents_container_view ? contents_container_view->devtools_web_view()

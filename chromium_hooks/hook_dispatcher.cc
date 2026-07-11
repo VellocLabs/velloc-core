@@ -7,17 +7,24 @@
 #include <vector>
 
 #include "base/no_destructor.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "custom_browser/chromium_hooks/hook_callbacks.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/chromium_hooks/hook_types.h"
+#include "mojo/public/cpp/bindings/generic_pending_receiver.h"
 
 namespace custom_browser {
 
 namespace {
 
-struct WebUIDataSourceCallbackEntry {
+struct WebUIDataSourceConfiguringCallbackEntry {
   std::string host_path;
-  WebUIDataSourceCreatedCallback callback;
+  WebUIDataSourceConfiguringCallback callback;
+};
+
+struct RenderFrameInterfaceBinderEntry {
+  std::string interface_name;
+  RenderFrameInterfaceBinderCallback callback;
 };
 
 class HookRegistryImpl final : public HookRegistrar {
@@ -25,20 +32,27 @@ class HookRegistryImpl final : public HookRegistrar {
   HookRegistryImpl() = default;
   ~HookRegistryImpl() override = default;
 
-  void AddWebUIDataSourceCreatedCallback(
+  void AddWebUIDataSourceConfiguringCallback(
       std::string_view host_path,
-      WebUIDataSourceCreatedCallback cb) override {
-    webui_callbacks_.push_back({std::string(host_path), std::move(cb)});
-  }
-
-  void AddLocalizedStringOverrideCallback(
-      LocalizedStringOverrideCallback cb) override {
-    localized_string_callbacks_.push_back(std::move(cb));
+      WebUIDataSourceConfiguringCallback cb) override {
+    configuring_callbacks_.push_back({std::string(host_path), std::move(cb)});
   }
 
   void AddNavigationThrottleProvider(
       NavigationThrottleProviderCallback provider) override {
     nav_providers_.push_back(std::move(provider));
+  }
+
+  void AddWebUIRenderFrameBinderMapPopulator(
+      WebUIRenderFrameBinderMapPopulatorCallback cb) override {
+    webui_render_frame_binder_map_populators_.push_back(std::move(cb));
+  }
+
+  void AddRenderFrameInterfaceBinder(
+      std::string_view interface_name,
+      RenderFrameInterfaceBinderCallback cb) override {
+    render_frame_interface_binders_.push_back(
+        {std::string(interface_name), std::move(cb)});
   }
 
   void AddBrowserMainLifecycleHook(
@@ -51,15 +65,19 @@ class HookRegistryImpl final : public HookRegistrar {
     bubble_anchor_rect_override_ = std::move(cb);
   }
 
-  const std::vector<WebUIDataSourceCallbackEntry>& webui_callbacks() const {
-    return webui_callbacks_;
-  }
-  const std::vector<LocalizedStringOverrideCallback>&
-  localized_string_callbacks() const {
-    return localized_string_callbacks_;
+  const std::vector<WebUIDataSourceConfiguringCallbackEntry>& configuring_callbacks() const {
+    return configuring_callbacks_;
   }
   const std::vector<NavigationThrottleProviderCallback>& nav_providers() const {
     return nav_providers_;
+  }
+  const std::vector<WebUIRenderFrameBinderMapPopulatorCallback>&
+  webui_render_frame_binder_map_populators() const {
+    return webui_render_frame_binder_map_populators_;
+  }
+  const std::vector<RenderFrameInterfaceBinderEntry>&
+  render_frame_interface_binders() const {
+    return render_frame_interface_binders_;
   }
   const std::vector<std::unique_ptr<BrowserMainLifecycleHook>>& main_hooks()
       const {
@@ -70,9 +88,11 @@ class HookRegistryImpl final : public HookRegistrar {
   }
 
  private:
-  std::vector<WebUIDataSourceCallbackEntry> webui_callbacks_;
-  std::vector<LocalizedStringOverrideCallback> localized_string_callbacks_;
+  std::vector<WebUIDataSourceConfiguringCallbackEntry> configuring_callbacks_;
   std::vector<NavigationThrottleProviderCallback> nav_providers_;
+  std::vector<WebUIRenderFrameBinderMapPopulatorCallback>
+      webui_render_frame_binder_map_populators_;
+  std::vector<RenderFrameInterfaceBinderEntry> render_frame_interface_binders_;
   std::vector<std::unique_ptr<BrowserMainLifecycleHook>> main_hooks_;
   BubbleAnchorRectOverrideCallback bubble_anchor_rect_override_;
 };
@@ -88,31 +108,15 @@ HookRegistrar* GetHookRegistrar() {
   return &GetRegistry();
 }
 
-void OnWebUIDataSourceCreated(content::BrowserContext* browser_context,
-                              std::string_view host,
-                              content::WebUIDataSource* data_source) {
-  for (const auto& entry : GetRegistry().webui_callbacks()) {
+void OnWebUIConfiguringLocalResource(content::WebUI* web_ui,
+                                     content::WebUIDataSource* data_source) {
+  std::string host = data_source->GetSource();
+  for (const auto& entry : GetRegistry().configuring_callbacks()) {
     if (entry.host_path != host) {
       continue;
     }
-    entry.callback.Run(browser_context, data_source);
+    entry.callback.Run(web_ui, data_source);
   }
-}
-
-void NotifyWebUIDataSourceCreated(content::BrowserContext* browser_context,
-                                  std::string_view host,
-                                  content::WebUIDataSource* data_source) {
-  OnWebUIDataSourceCreated(browser_context, host, data_source);
-}
-
-int OnAddLocalizedString(content::WebUIDataSource* data_source,
-                         std::string_view name,
-                         int ids) {
-  int resolved_ids = ids;
-  for (const auto& cb : GetRegistry().localized_string_callbacks()) {
-    resolved_ids = cb.Run(data_source, name, resolved_ids);
-  }
-  return resolved_ids;
 }
 
 void AppendNavigationThrottles(
@@ -120,6 +124,36 @@ void AppendNavigationThrottles(
   for (const auto& provider : GetRegistry().nav_providers()) {
     provider.Run(registry);
   }
+}
+
+void PopulateWebUIRenderFrameBinders(
+    mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
+  if (!map) {
+    return;
+  }
+
+  for (const auto& populator :
+       GetRegistry().webui_render_frame_binder_map_populators()) {
+    populator.Run(map);
+  }
+}
+
+bool TryBindRenderFrameInterface(content::RenderFrameHost* render_frame_host,
+                                 mojo::GenericPendingReceiver receiver) {
+  if (!receiver.is_valid() || !receiver.interface_name()) {
+    return false;
+  }
+
+  for (const auto& entry : GetRegistry().render_frame_interface_binders()) {
+    if (entry.interface_name != *receiver.interface_name()) {
+      continue;
+    }
+    if (entry.callback.Run(render_frame_host, &receiver)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void RunBrowserMainPreCreateThreadsHooks() {

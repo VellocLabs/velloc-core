@@ -22,7 +22,10 @@ component("hook_core") {
 
   public_deps = [ "//base" ]
 
-  deps = [ ":hook_api" ]
+  deps = [
+    ":hook_api",
+    "//mojo/public/cpp/bindings",
+  ]
 
   defines = [ "IS_CUSTOM_BROWSER_HOOKS_IMPL=1" ]
 }

@@ -2,15 +2,12 @@
 #define CUSTOM_BROWSER_UI_VIEW_MAIN_CONTENTS_NATIVE_UI_H_
 
 #include <memory>
-#include <optional>
 #include <string_view>
 
 #include "custom_browser/ui/mojom/browser_constants.mojom-forward.h"
 #include "custom_browser/ui/view/native_ui/native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui_registration_macros.h"
 #include "ui/color/color_id.h"
-
-class BookmarkBarView;
 
 namespace custom_browser::native_ui {
 

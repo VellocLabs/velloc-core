@@ -1,0 +1,151 @@
+module nexus.mojom;
+
+import "mojo/public/mojom/base/values.mojom";
+
+enum NexusLlmRole {
+  kSystem,
+  kUser,
+  kAssistant,
+  kTool,
+};
+
+enum NexusLlmContentPartType {
+  kText,
+  kImage,
+  kThinking,
+  kRedactedThinking,
+  kToolUse,
+  kToolResult,
+};
+
+enum NexusLlmFinishReason {
+  kStop,
+  kLength,
+  kContentFilter,
+  kToolCalls,
+  kError,
+  kOther,
+  kUnknown,
+};
+
+enum NexusLlmStreamEventType {
+  kMessageStart,
+  kTextDelta,
+  kReasoningDelta,
+  kToolCallStart,
+  kToolCallDelta,
+  kToolCall,
+  kFinish,
+  kError,
+};
+
+struct NexusLlmSelection {
+  string provider_id;
+  string model_id;
+};
+
+struct NexusLlmModel {
+  string id;
+  string label;
+  bool enabled;
+  bool supports_streaming;
+  bool supports_tools;
+  string? default_thinking_tier;
+  array<string> available_thinking_tiers;
+};
+
+struct NexusLlmProvider {
+  string id;
+  string label;
+  string icon_svg;
+  bool enabled;
+  string? default_model_id;
+  array<NexusLlmModel> models;
+};
+
+struct NexusLlmCatalog {
+  array<NexusLlmProvider> providers;
+  NexusLlmSelection? default_selection;
+  map<string, string> raw_catalogs;
+};
+
+struct NexusLlmUsage {
+  int32 prompt_tokens;
+  int32 completion_tokens;
+  int32 cache_read_input_tokens;
+  int32 cache_creation_input_tokens;
+};
+
+struct NexusLlmTool {
+  string name;
+  string? description;
+  mojo_base.mojom.DictionaryValue input_schema;
+};
+
+struct NexusLlmContentPart {
+  NexusLlmContentPartType type;
+  string? text;
+  string? image;
+  string? mime_type;
+  string? signature;
+  string? tool_use_id;
+  string? name;
+  mojo_base.mojom.Value? input;
+  mojo_base.mojom.Value? result;
+  bool? is_error;
+};
+
+struct NexusLlmMessage {
+  NexusLlmRole role;
+  array<NexusLlmContentPart> content;
+};
+
+struct NexusLlmRequestParams {
+  array<NexusLlmMessage> messages;
+  mojo_base.mojom.Value? system_prompt;
+  mojo_base.mojom.DictionaryValue? user_context;
+  mojo_base.mojom.DictionaryValue? system_context;
+  string? provider_id;
+  string? model_id;
+  int32? max_output_tokens;
+  mojo_base.mojom.DictionaryValue? provider_body_extension;
+  array<NexusLlmTool> tools;
+  mojo_base.mojom.DictionaryValue? tool_use_context;
+};
+
+struct NexusLlmAssistantMessage {
+  array<NexusLlmContentPart> content;
+  string? model_id;
+  NexusLlmFinishReason finish_reason;
+  NexusLlmUsage usage;
+};
+
+struct NexusLlmCallResult {
+  NexusLlmAssistantMessage message;
+};
+
+struct NexusLlmStreamEvent {
+  NexusLlmStreamEventType type;
+  string? model_id;
+  string? text_delta;
+  string? tool_use_id;
+  string? name;
+  string? args_text_delta;
+  mojo_base.mojom.Value? input;
+  NexusLlmFinishReason? finish_reason;
+  NexusLlmUsage? usage;
+  string? error_message;
+};
+
+struct NexusLlmStreamReadResult {
+  array<NexusLlmStreamEvent> events;
+  bool done;
+};
+
+// NOTE: This file is "data types only" — the LLM bridge is dispatched via
+// the standard NexusBridgePortService capability handler pattern (same as
+// fs/* — see nexus_llm_bridge_adapter.cc), not via a Mojo interface. The
+// structs above are used as typed value carriers in C++ (the
+// mojom-generated *Ptr types) and as the on-the-wire JSON shape posted
+// over the bridge to nexus_web. There is intentionally no `interface`
+// declaration here.

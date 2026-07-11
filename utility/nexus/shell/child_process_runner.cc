@@ -21,7 +21,10 @@
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
 
+#include "base/process/environment_internal.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/scoped_process_information.h"
+#include "base/win/startup_information.h"
 #elif BUILDFLAG(IS_POSIX)
 #include <fcntl.h>
 #include <signal.h>
@@ -111,6 +114,115 @@ base::win::ScopedHandle OpenNulForChildRead() {
   return base::win::ScopedHandle(raw);
 }
 
+// Opens an inheritable read handle on an existing temp file. Used to feed
+// `ChildProcessRequest::stdin_data` (already written to that file) into the
+// child's stdin. Mirrors OpenWindowsFileForChildWrite but read-only.
+base::win::ScopedHandle OpenWindowsFileForChildRead(
+    const base::FilePath& path) {
+  SECURITY_ATTRIBUTES sa{};
+  sa.nLength = sizeof(sa);
+  sa.bInheritHandle = TRUE;
+  sa.lpSecurityDescriptor = nullptr;
+
+  HANDLE raw = ::CreateFileW(
+      path.value().c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+      &sa, OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+  if (raw == INVALID_HANDLE_VALUE) {
+    return base::win::ScopedHandle();
+  }
+  return base::win::ScopedHandle(raw);
+}
+
+// Launches the child with CREATE_NO_WINDOW so console programs (bash.exe,
+// pwsh.exe, powershell.exe, cmd.exe) never flash a console window on screen.
+//
+// `base::LaunchProcess` only honours `start_hidden`, which maps to
+// STARTF_USESHOWWINDOW + SW_HIDE. For a *freshly allocated* console — which
+// is exactly what happens when a windowless utility process spawns a console
+// app — SW_HIDE is unreliable: conhost still flickers a window before the
+// hide takes effect. CREATE_NO_WINDOW is the documented, reliable way to run
+// the console child with no window at all, but `base::LaunchOptions` exposes
+// no creation-flags field. Rather than patch upstream `base`, we reproduce
+// its Windows CreateProcess path here (handle-list inheritance via
+// STARTUPINFOEX, cleared+overridden Unicode environment) and add the missing
+// flag.
+//
+// `cwd`/`env` follow `clear_environment = true` semantics (only `env` is
+// visible to the child), matching the POSIX path and the original
+// `base::LaunchProcess` call this replaces. When `inherit_environment` is
+// true, `env` is ignored and the child inherits the parent's environment
+// (used by the `--version` probe). Returns an invalid Process on failure; the
+// three stdio handles remain owned by the caller's ScopedHandles (the OS
+// duplicates them into the child).
+base::Process LaunchChildWithoutWindow(const base::CommandLine& cmdline,
+                                       const base::FilePath& cwd,
+                                       const base::EnvironmentMap& env,
+                                       bool inherit_environment,
+                                       HANDLE stdin_handle,
+                                       HANDLE stdout_handle,
+                                       HANDLE stderr_handle) {
+  std::vector<HANDLE> handles_to_inherit = {stdin_handle, stdout_handle,
+                                            stderr_handle};
+
+  base::win::StartupInformation startup_info_wrapper;
+  STARTUPINFOW* startup_info = startup_info_wrapper.startup_info();
+
+  // One extended attribute: the explicit handle-inheritance list, so the
+  // child inherits only our three stdio handles and nothing else.
+  if (!startup_info_wrapper.InitializeProcThreadAttributeList(
+          /*attribute_count=*/1)) {
+    PLOG(ERROR) << "[NexusShellService] InitializeProcThreadAttributeList "
+                   "failed";
+    return base::Process();
+  }
+  for (HANDLE handle : handles_to_inherit) {
+    ::SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+  }
+  if (!startup_info_wrapper.UpdateProcThreadAttribute(
+          PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles_to_inherit.data(),
+          handles_to_inherit.size() * sizeof(HANDLE))) {
+    PLOG(ERROR) << "[NexusShellService] UpdateProcThreadAttribute failed";
+    return base::Process();
+  }
+
+  startup_info->dwFlags |= STARTF_USESHOWWINDOW;
+  startup_info->wShowWindow = SW_HIDE;
+  startup_info->dwFlags |= STARTF_USESTDHANDLES;
+  startup_info->hStdInput = stdin_handle;
+  startup_info->hStdOutput = stdout_handle;
+  startup_info->hStdError = stderr_handle;
+
+  // Clear the parent's environment and apply `env`, mirroring
+  // base::LaunchProcess with clear_environment = true. When inheriting, pass a
+  // null environment block so the child gets the parent's environment.
+  DWORD flags = CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
+  base::NativeEnvironmentString env_block;
+  LPVOID environment = nullptr;
+  if (!inherit_environment) {
+    static const wchar_t kEmptyEnvironment[] = {0};
+    env_block = base::internal::AlterEnvironment(kEmptyEnvironment, env);
+    environment = env_block.data();
+    flags |= CREATE_UNICODE_ENVIRONMENT;
+  }
+
+  // CreateProcessW may write to lpCommandLine, so hand it a mutable buffer.
+  std::wstring writable_cmdline = cmdline.GetCommandLineString();
+
+  LPCWSTR current_directory = cwd.empty() ? nullptr : cwd.value().c_str();
+
+  PROCESS_INFORMATION temp_process_info = {};
+  if (!::CreateProcessW(/*lpApplicationName=*/nullptr, writable_cmdline.data(),
+                        /*lpProcessAttributes=*/nullptr,
+                        /*lpThreadAttributes=*/nullptr,
+                        /*bInheritHandles=*/TRUE, flags, environment,
+                        current_directory, startup_info, &temp_process_info)) {
+    PLOG(ERROR) << "[NexusShellService] CreateProcessW failed";
+    return base::Process();
+  }
+  base::win::ScopedProcessInformation process_info(temp_process_info);
+  return base::Process(process_info.TakeProcessHandle());
+}
+
 #elif BUILDFLAG(IS_POSIX)
 
 // Opens a writable, inheritable fd. The caller is responsible for
@@ -131,6 +243,16 @@ base::ScopedFD OpenPosixFileForChildWrite(const base::FilePath& path) {
 
 base::ScopedFD OpenDevNullForChildRead() {
   int fd = ::open("/dev/null", O_RDONLY);
+  if (fd < 0) {
+    return base::ScopedFD();
+  }
+  return base::ScopedFD(fd);
+}
+
+// Opens a read-only, inheritable fd on an existing temp file holding the
+// child's stdin bytes. Mirrors OpenPosixFileForChildWrite but read-only.
+base::ScopedFD OpenPosixFileForChildRead(const base::FilePath& path) {
+  int fd = ::open(path.value().c_str(), O_RDONLY);
   if (fd < 0) {
     return base::ScopedFD();
   }
@@ -224,6 +346,27 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
     return outcome;
   }
 
+  // Optional stdin: write the request bytes to a temp file the child reads
+  // from. Empty `stdin_data` leaves `stdin_path` empty, preserving the
+  // NUL / /dev/null behaviour below. We delete `stdin_path` on every exit
+  // path alongside the stdout/stderr temp files.
+  base::FilePath stdin_path;
+  if (!request.stdin_data.empty()) {
+    if (!base::CreateTemporaryFile(&stdin_path) ||
+        !base::WriteFile(stdin_path, request.stdin_data)) {
+      base::DeleteFile(stdout_path);
+      base::DeleteFile(stderr_path);
+      if (!stdin_path.empty()) {
+        base::DeleteFile(stdin_path);
+      }
+      outcome.launched = false;
+      outcome.launch_error_code = "LAUNCH_FAILED";
+      outcome.launch_error_message =
+          "Could not create temp file for child stdin";
+      return outcome;
+    }
+  }
+
   base::CommandLine cmdline(request.exe);
   for (const std::string& arg : request.args) {
     cmdline.AppendArg(arg);
@@ -232,10 +375,14 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
   base::LaunchOptions options;
   options.current_directory = request.cwd;
   options.environment = request.env;
-  options.clear_environment = true;
+  // Inherit-environment requests (the `--version` probe) leave the parent
+  // environment intact; everything else runs with a cleared, curated env.
+  options.clear_environment = !request.inherit_environment;
 
 #if BUILDFLAG(IS_WIN)
-  base::win::ScopedHandle stdin_handle = OpenNulForChildRead();
+  base::win::ScopedHandle stdin_handle =
+      stdin_path.empty() ? OpenNulForChildRead()
+                         : OpenWindowsFileForChildRead(stdin_path);
   base::win::ScopedHandle stdout_handle =
       OpenWindowsFileForChildWrite(stdout_path);
   base::win::ScopedHandle stderr_handle =
@@ -244,6 +391,9 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
       !stderr_handle.is_valid()) {
     base::DeleteFile(stdout_path);
     base::DeleteFile(stderr_path);
+    if (!stdin_path.empty()) {
+      base::DeleteFile(stdin_path);
+    }
     outcome.launched = false;
     outcome.launch_error_code = "LAUNCH_FAILED";
     outcome.launch_error_message =
@@ -259,13 +409,18 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
   options.handles_to_inherit.push_back(stdout_handle.get());
   options.handles_to_inherit.push_back(stderr_handle.get());
 #elif BUILDFLAG(IS_POSIX)
-  base::ScopedFD stdin_fd = OpenDevNullForChildRead();
+  base::ScopedFD stdin_fd =
+      stdin_path.empty() ? OpenDevNullForChildRead()
+                         : OpenPosixFileForChildRead(stdin_path);
   base::ScopedFD stdout_fd = OpenPosixFileForChildWrite(stdout_path);
   base::ScopedFD stderr_fd = OpenPosixFileForChildWrite(stderr_path);
   if (!stdin_fd.is_valid() || !stdout_fd.is_valid() ||
       !stderr_fd.is_valid()) {
     base::DeleteFile(stdout_path);
     base::DeleteFile(stderr_path);
+    if (!stdin_path.empty()) {
+      base::DeleteFile(stdin_path);
+    }
     outcome.launched = false;
     outcome.launch_error_code = "LAUNCH_FAILED";
     outcome.launch_error_message =
@@ -292,7 +447,17 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
 #endif
 
   const base::TimeTicks spawn_start = base::TimeTicks::Now();
+#if BUILDFLAG(IS_WIN)
+  // Launch via CREATE_NO_WINDOW (see LaunchChildWithoutWindow) so the console
+  // child never flashes a window. `options.start_hidden`/handles above are
+  // unused on this path but left intact to document the intended stdio wiring
+  // and keep the POSIX branch (which does use `options`) unchanged.
+  base::Process process = LaunchChildWithoutWindow(
+      cmdline, request.cwd, request.env, request.inherit_environment,
+      stdin_handle.get(), stdout_handle.get(), stderr_handle.get());
+#else
   base::Process process = base::LaunchProcess(cmdline, options);
+#endif
 
 #if BUILDFLAG(IS_WIN)
   // The handles have been duplicated into the child by the OS at this
@@ -318,10 +483,13 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
   if (!process.IsValid()) {
     base::DeleteFile(stdout_path);
     base::DeleteFile(stderr_path);
+    if (!stdin_path.empty()) {
+      base::DeleteFile(stdin_path);
+    }
     outcome.launched = false;
     outcome.launch_error_code = "LAUNCH_FAILED";
     outcome.launch_error_message =
-        "base::LaunchProcess failed for " + request.exe.AsUTF8Unsafe();
+        "Failed to launch child process " + request.exe.AsUTF8Unsafe();
     return outcome;
   }
 
@@ -391,6 +559,9 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
 
   base::DeleteFile(stdout_path);
   base::DeleteFile(stderr_path);
+  if (!stdin_path.empty()) {
+    base::DeleteFile(stdin_path);
+  }
 
   return outcome;
 }

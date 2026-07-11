@@ -78,7 +78,7 @@ class FileTool : public ToolBase,
   // Cancels in-flight reply lambdas via the weak-ptr factory so
   // anything queued on `base::ThreadPool` quietly drops on completion
   // instead of resolving a stale `ToolCallback`. Idempotent.
-  void OnStop(const std::string& reason) override;
+  void OnStop(OnStopReason reason) override;
 
   // Overrides of generated::FileToolBase virtuals. The codegen
   // dispatcher PostTasks these onto a base::ThreadPool worker before
@@ -129,6 +129,12 @@ class FileTool : public ToolBase,
     bool ok = false;
     std::string error_code;
     std::string error_message;
+    // When non-empty, the OnDone trampoline forwards `message` as a
+    // plain-string result to the bridge — the model sees CC-style
+    // prose like "File created successfully at: <path>". Otherwise
+    // `payload` is forwarded as a Dict (legacy / structured-telemetry
+    // path). Exactly one of the two should be populated on success.
+    std::string message;
     base::DictValue payload;
   };
 
@@ -143,6 +149,12 @@ class FileTool : public ToolBase,
     bool ok = false;
     std::string error_code;
     std::string error_message;
+    // When non-empty, the OnDone trampoline forwards `message` as a
+    // plain-string result to the bridge — the model sees CC-style
+    // prose like "File created successfully at: <path>". Otherwise
+    // `payload` is forwarded as a Dict (legacy / structured-telemetry
+    // path). Exactly one of the two should be populated on success.
+    std::string message;
     base::DictValue payload;
   };
 
@@ -157,6 +169,12 @@ class FileTool : public ToolBase,
     bool ok = false;
     std::string error_code;
     std::string error_message;
+    // When non-empty, the OnDone trampoline forwards `message` as a
+    // plain-string result to the bridge — the model sees CC-style
+    // prose like "File created successfully at: <path>". Otherwise
+    // `payload` is forwarded as a Dict (legacy / structured-telemetry
+    // path). Exactly one of the two should be populated on success.
+    std::string message;
     base::DictValue payload;
   };
 
@@ -171,6 +189,12 @@ class FileTool : public ToolBase,
     bool ok = false;
     std::string error_code;
     std::string error_message;
+    // When non-empty, the OnDone trampoline forwards `message` as a
+    // plain-string result to the bridge — the model sees CC-style
+    // prose like "File created successfully at: <path>". Otherwise
+    // `payload` is forwarded as a Dict (legacy / structured-telemetry
+    // path). Exactly one of the two should be populated on success.
+    std::string message;
     base::DictValue payload;
   };
 

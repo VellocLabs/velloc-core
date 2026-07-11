@@ -971,20 +971,40 @@ base::ListValue AnthropicProvider::TranslateContentParts(
     } else if (*type == "tool-call") {
       const auto* id = part->FindString("toolCallId");
       const auto* name = part->FindString("toolName");
-      const auto* args_str = part->FindString("args");
 
       base::DictValue d;
       d.Set("type", "tool_use");
       d.Set("id", id ? *id : std::string());
       d.Set("name", name ? *name : std::string());
 
-      if (args_str) {
-        auto parsed_args =
-            base::JSONReader::ReadDict(*args_str, base::JSON_PARSE_RFC);
-        if (parsed_args)
-          d.Set("input", std::move(*parsed_args));
-        else
+      // The `args` field can arrive in two shapes depending on which JS
+      // code path produced the message:
+      //   - As a dict (the canonical shape from
+      //     `serializeMessageForBridge` in `query/deps.ts`, lines 454-465 —
+      //     `args` is the raw object as the model produced it).
+      //   - As a JSON-encoded string (legacy paths that pre-serialize, or
+      //     replay from disk where some serializers stringify args).
+      // Previously this code only handled the string case (FindString),
+      // so the canonical dict shape silently fell through to an empty
+      // input{}. That leaked empty tool_use blocks into Anthropic history
+      // — the model saw its own past Write/Edit calls with no arguments
+      // and retried them ("my content was dropped"), producing the
+      // Write-retry loop observed with claude-sonnet-4-6. Handle both
+      // shapes; only fall back to empty input{} as a last resort.
+      if (const base::Value* args_val = part->Find("args")) {
+        if (args_val->is_dict()) {
+          d.Set("input", args_val->GetDict().Clone());
+        } else if (args_val->is_string()) {
+          auto parsed = base::JSONReader::ReadDict(args_val->GetString(),
+                                                    base::JSON_PARSE_RFC);
+          if (parsed) {
+            d.Set("input", std::move(*parsed));
+          } else {
+            d.Set("input", base::DictValue());
+          }
+        } else {
           d.Set("input", base::DictValue());
+        }
       } else {
         d.Set("input", base::DictValue());
       }
@@ -998,12 +1018,74 @@ base::ListValue AnthropicProvider::TranslateContentParts(
       d.Set("tool_use_id",
             tool_call_id ? *tool_call_id : std::string());
 
-      if (const auto* result_str = part->FindString("result")) {
-        d.Set("content", *result_str);
-      } else if (const auto* result_val = part->Find("result")) {
-        std::string json_str;
-        base::JSONWriter::Write(*result_val, &json_str);
-        d.Set("content", json_str);
+      // Anthropic's spec accepts `content` as either a bare string OR a
+      // list of content blocks. Both are valid; we emit the bare-string
+      // form to match Claude Code's wire shape and Anthropic's own SDK
+      // examples for text-only tool results. The list-of-blocks form is
+      // the canonical shape only when the result is multimodal (mixes
+      // text and image blocks) — using it for a single-text payload
+      // sends a thin payload over a rich-payload envelope, which
+      // empirically didn't help the retry-spiral problem it was added
+      // to fix. The real culprit was ambiguous result strings (e.g.
+      // FileTool's old "function is executed successfully, file is
+      // created and the content is updated too" wording that didn't
+      // confirm bytes-on-disk); the fix lives in the per-tool result
+      // builders (see process_tool.cc / file_tool.cc), not in this
+      // envelope shape. See D7 entry in
+      // C:\Users\myyyb\.claude\plans\compare-the-cc-and-staged-reddy.md
+      // for the full history of this iteration.
+      // Multimodal tool result: when `result` is a list of content blocks
+      // (a BrowserScreenshot emits [{type:text},{type:image}]), use
+      // Anthropic's list-of-blocks `content` form so the image is sent as
+      // a real image block. Anthropic accepts text + image blocks inside
+      // tool_result.content. Text-only results keep the bare-string form.
+      if (const base::ListValue* result_list = part->FindList("result")) {
+        base::ListValue blocks;
+        for (const auto& block_val : *result_list) {
+          const base::DictValue* block = block_val.GetIfDict();
+          if (!block) {
+            continue;
+          }
+          const std::string* btype = block->FindString("type");
+          if (!btype) {
+            continue;
+          }
+          if (*btype == "text") {
+            base::DictValue tb;
+            tb.Set("type", "text");
+            tb.Set("text", block->FindString("text")
+                               ? *block->FindString("text")
+                               : std::string());
+            blocks.Append(std::move(tb));
+          } else if (*btype == "image") {
+            const std::string* img = block->FindString("image");
+            const std::string* mime = block->FindString("mimeType");
+            base::DictValue img_source;
+            if (img && (img->starts_with("http://") ||
+                        img->starts_with("https://"))) {
+              img_source.Set("type", "url");
+              img_source.Set("url", *img);
+            } else {
+              img_source.Set("type", "base64");
+              img_source.Set("media_type",
+                             mime ? *mime : std::string("image/jpeg"));
+              img_source.Set("data", img ? *img : std::string());
+            }
+            base::DictValue ib;
+            ib.Set("type", "image");
+            ib.Set("source", std::move(img_source));
+            blocks.Append(std::move(ib));
+          }
+        }
+        d.Set("content", std::move(blocks));
+      } else {
+        std::string content_text;
+        if (const auto* result_str = part->FindString("result")) {
+          content_text = *result_str;
+        } else if (const auto* result_val = part->Find("result")) {
+          base::JSONWriter::Write(*result_val, &content_text);
+        }
+        d.Set("content", std::move(content_text));
       }
 
       if (auto is_error = part->FindBool("isError"))

@@ -28,6 +28,29 @@ export interface ProviderInfo {
   models: ModelInfo[];
   name: string;
   type: 'cloud'|'local'|'proxy';
+  // Auth style. 'oauth' providers (e.g. ChatGPT Plus/Pro) render a "Sign in"
+  // card instead of base-url/api-key fields. Absent means 'api_key'.
+  authMode?: 'oauth'|'api_key';
+  // OAuth connection status (only meaningful when authMode === 'oauth').
+  connected?: boolean;
+  connectedEmail?: string;
+}
+
+// Result of beginProviderOAuth. PKCE providers return {flow:'pkce', started};
+// device-code providers (GitHub Copilot, Qwen Code) return the user code +
+// verification URL to display.
+export interface BeginProviderOAuthResult {
+  flow?: 'pkce'|'device-code';
+  started?: boolean;
+  userCode?: string;
+  verificationUri?: string;
+  expiresIn?: number;
+}
+
+// Result of getProviderOAuthStatus.
+export interface ProviderOAuthStatus {
+  connected: boolean;
+  connectedEmail?: string;
 }
 
 export interface ProviderResult {

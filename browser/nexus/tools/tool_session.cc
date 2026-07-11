@@ -25,12 +25,12 @@ ToolSession::~ToolSession() {
   // Defensive cascade — if the session is destructed without an
   // explicit OnStop having run first (e.g. profile shutdown bypasses
   // the bridge layer), each category still gets a final notification.
-  OnStop("destructor");
+  OnStop(OnStopReason::kDestructor);
 }
 
-void ToolSession::OnStop(const std::string& reason) {
+void ToolSession::OnStop(OnStopReason reason) {
   LOG(INFO) << "[ToolSession] OnStop session=" << session_key_
-            << " reason=" << reason;
+            << " reason=" << OnStopReasonToString(reason);
   browser_tool_.OnStop(reason);
   file_tool_.OnStop(reason);
   process_tool_.OnStop(reason);

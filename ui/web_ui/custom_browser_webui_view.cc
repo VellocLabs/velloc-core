@@ -4,6 +4,7 @@
 
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
+#include "base/logging.h"
 #include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
 #include "base/process/process_handle.h"
@@ -22,8 +23,8 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
-#include "chrome/browser/ui/views/tabs/tab_group_editor_bubble_view.h"
-#include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_util.h"
+#include "chrome/browser/ui/views/tabs/groups/tab_group_editor_bubble_view.h"
+#include "custom_browser/ui/web_ui/tab_strip_ui_util.h"
 #include "chrome/common/webui_url_constants.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/eye_dropper_listener.h"
@@ -84,7 +85,26 @@ CustomBrowserWebUIView::CustomBrowserWebUIView(
   // fired.
   web_view_->GetWebContents()->WasHidden();
 
-  web_view_->set_allow_accelerators(true);
+  // NOTE: Do NOT enable `set_allow_accelerators(true)` here.
+  //
+  // This view was adapted from Chromium's WebUITabStripContainerView, which
+  // enables it because a tab-strip toolbar has no editable fields and wants
+  // browser accelerators (and arrow-key focus traversal) handled by the
+  // views FocusManager before the page.
+  //
+  // The Nexus panel is the opposite: it's a full interactive UI with text
+  // inputs. With `allow_accelerators_ = true`,
+  // WebView::SkipDefaultKeyEventProcessing only returns true for Tab, so
+  // EVERY other key — including arrow keys — is routed to the FocusManager
+  // before the web content. The FocusManager then consumes arrow keydowns
+  // for focus traversal, so they never reach the page and the text caret
+  // can't move (focus jumps to a neighboring control instead).
+  //
+  // Leaving it at the default (false) makes SkipDefaultKeyEventProcessing
+  // return IsWebContentsAlive() — the page receives keys first (caret moves
+  // normally), and any key the page does NOT consume still bubbles back and
+  // is treated as a browser accelerator. That is the standard tab-contents
+  // model and is what an interactive panel needs.
 
   SetLayoutManager(std::make_unique<views::FillLayout>());
   InitializeWebView();

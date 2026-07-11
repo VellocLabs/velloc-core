@@ -16,7 +16,9 @@
 #include "base/process/launch.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
+#include "custom_browser/utility/nexus/shell/child_process_runner.h"
 
 namespace nexus {
 
@@ -24,12 +26,13 @@ namespace {
 
 constexpr size_t kMaxVersionLength = 256;
 
-// Hard cap to keep `--version` from hanging the resolver indefinitely if a
-// misbehaving binary refuses to exit. base::GetAppOutput itself does not
-// expose a timeout, but utility-process bring-up is fast in practice; if
-// this becomes a problem we will switch to base::LaunchProcess + a timed
-// WaitForExitWithTimeout in a follow-up slice.
 constexpr char kVersionFlag[] = "--version";
+
+// Hard caps for the `--version` probe. It runs through `RunChildProcess`
+// (same no-window launch path as Exec, so the probe never flashes a console
+// window on Windows), which enforces the timeout and output cap.
+constexpr int kVersionProbeTimeoutMs = 5000;
+constexpr uint32_t kVersionProbeMaxOutputBytes = 64 * 1024;
 
 #if BUILDFLAG(IS_WIN)
 constexpr char kPathSeparator = ';';
@@ -183,14 +186,24 @@ std::string ShellResolver::ProbeVersion(const base::FilePath& exe) {
   }
 #endif
 
-  base::CommandLine cmd(exe);
-  cmd.AppendArg(kVersionFlag);
+  // Run the probe through the shared child-process runner instead of
+  // base::GetAppOutput so it launches with CREATE_NO_WINDOW on Windows (no
+  // console window flashing on screen) and honours a timeout. The probe needs
+  // the host PATH / DLL search paths, so it inherits the parent environment.
+  ChildProcessRequest req;
+  req.exe = exe;
+  req.args = {kVersionFlag};
+  req.inherit_environment = true;
+  req.timeout = base::Milliseconds(kVersionProbeTimeoutMs);
+  req.max_output_bytes = kVersionProbeMaxOutputBytes;
 
-  std::string raw_output;
-  if (!base::GetAppOutput(cmd, &raw_output) || raw_output.empty()) {
+  ChildProcessOutcome outcome = RunChildProcess(req);
+  if (!outcome.launched || outcome.timed_out || outcome.stdout_bytes.empty()) {
     return std::string();
   }
 
+  std::string raw_output(outcome.stdout_bytes.begin(),
+                         outcome.stdout_bytes.end());
   std::string_view first_line(raw_output);
   const size_t newline = first_line.find_first_of("\r\n");
   if (newline != std::string_view::npos) {

@@ -146,8 +146,6 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
   }
 
   // Lay out contents-height side panel.
-  bool show_leading_separator = false;
-  bool show_trailing_separator = false;
   bool contents_height_side_panel_leading = false;
   int min_contents_width = kContentsContainerMinimumWidth;
 
@@ -156,9 +154,9 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
   // TODO(max):views::Separator::kThickness
   const int contents_height_side_panel_top = params.visual_client_area.y();
 
-  if (IsParentedTo(views().contents_height_side_panel, views().browser_view)) {
+  if (IsParentedTo(views().side_panel, views().browser_view)) {
     const SidePanel* const contents_height_side_panel =
-        views().contents_height_side_panel;
+        views().side_panel;
     int contents_height_side_panel_width = 0;
     int contents_height_side_panel_visible_width = 0;
     const bool is_right_aligned = contents_height_side_panel->IsRightAligned();
@@ -168,8 +166,6 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
       // Side panel implies a separator, which means we have to give a little
       // more room for the contents.
       min_contents_width += views::Separator::kThickness;
-      show_leading_separator = contents_height_side_panel_leading;
-      show_trailing_separator = !contents_height_side_panel_leading;
 
       // Maximum width is the lesser of preferred width and the largest width
       // that doesn't shrink the contents pane past its own minimum size.
@@ -204,19 +200,18 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
         params.visual_client_area.bottom() - contents_height_side_panel_top);
     const std::optional<bool> side_panel_visibility =
         visible ? std::nullopt : std::optional<bool>(false);
-    SetViewBoundAndVisibility(views().contents_height_side_panel,
+    SetViewBoundAndVisibility(views().side_panel,
                               contents_height_side_panel_bounds,
                               side_panel_visibility);
     params.InsetHorizontal(contents_height_side_panel_visible_width,
                            contents_height_side_panel_leading);
   }
 
-  // Show separators in multi-contents view. Note that the multi-contents
-  // view is inside the main container so doesn't need to be laid out.
-  views().multi_contents_view->SetShouldShowLeadingSeparator(
-      show_leading_separator);
-  views().multi_contents_view->SetShouldShowTrailingSeparator(
-      show_trailing_separator);
+  // custom-browser: Chromium 149 removed MultiContentsView's public
+  // SetShouldShowLeading/TrailingSeparator(); the contents separator is now
+  // managed internally by MultiContentsView (see browser_view_layout.h), so the
+  // manual leading/trailing control that existed in the 146 baseline is dropped.
+  // TODO(custom-browser): verify the side-panel/contents separator UI on 149.
 
   // Lay out contents container. The contents container contains the multi-
   // contents view when multi-contents are enabled. The checks here are to

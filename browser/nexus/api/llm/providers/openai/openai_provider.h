@@ -18,6 +18,7 @@
 
 namespace network {
 class SimpleURLLoader;
+struct ResourceRequest;
 }  // namespace network
 
 namespace nexus {
@@ -36,6 +37,19 @@ class OpenAiProvider : public LlmProvider {
       std::string provider_id,
       std::string display_name,
       std::string default_base_url);
+
+  // Full constructor. `uses_responses_api` selects the /responses endpoint
+  // and event-driven SSE parser (vs /chat/completions). `extra_headers` are
+  // added to every inference request. Used by the OAuth-backed ChatGPT
+  // Plus/Pro provider, which speaks the Responses API against the Codex
+  // backend with `originator` / `OpenAI-Beta` headers.
+  OpenAiProvider(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      std::string provider_id,
+      std::string display_name,
+      std::string default_base_url,
+      bool uses_responses_api,
+      std::map<std::string, std::string> extra_headers);
 
   ~OpenAiProvider() override;
 
@@ -69,6 +83,10 @@ class OpenAiProvider : public LlmProvider {
   class StreamConsumer;
   struct StreamContext;
 
+  // Adds `extra_headers_` and (when set) the `ChatGPT-Account-Id` header to an
+  // outgoing inference request. No-op for providers without either.
+  void ApplyExtraHeaders(network::ResourceRequest* request) const;
+
   base::DictValue BuildRequestBody(const base::DictValue& call_options,
                                      bool stream) const;
   base::ListValue TranslateMessages(const base::ListValue& prompt) const;
@@ -80,11 +98,17 @@ class OpenAiProvider : public LlmProvider {
 
   // Responses API path — OpenAI now recommends /v1/responses as the
   // canonical endpoint for text generation (chat-completions remains for
-  // backwards compatibility, but reasoning models require this path). All
-  // requests against `provider_id_ == "openai"` route through here.
-  // OpenAI-compatible providers (Kimi, MiniMax, Qwen, GLM, …) stay on
-  // /v1/chat/completions because their servers don't implement /responses.
-  bool IsOpenAiNative() const;
+  // backwards compatibility, but reasoning models require this path).
+  // Whether a request takes this path is decided by `uses_responses_api_`
+  // (true for the native `openai` provider and the OAuth `chatgpt-pro`
+  // provider). OpenAI-compatible providers (Kimi, MiniMax, Qwen, GLM, …)
+  // stay on /v1/chat/completions because their servers don't implement
+  // /responses.
+  // True when this provider targets the ChatGPT subscription (Codex) backend
+  // (`chatgpt.com/backend-api/codex`), which needs a stricter Responses body
+  // than the public /v1/responses API.
+  bool IsCodexBackend() const;
+
   base::DictValue BuildResponsesApiRequestBody(
       const base::DictValue& call_options, bool stream) const;
   base::ListValue TranslateMessagesToResponsesInput(
@@ -119,6 +143,16 @@ class OpenAiProvider : public LlmProvider {
   std::string configured_model_;
   std::vector<ModelInfo> fetched_models_;
   std::string last_raw_catalog_json_;
+
+  // True → route requests through the OpenAI Responses API (/responses) and
+  // its event-driven SSE parser. Set per-provider in the constructor.
+  const bool uses_responses_api_;
+  // Extra headers added to every inference request (e.g. originator,
+  // OpenAI-Beta for the ChatGPT Codex backend).
+  const std::map<std::string, std::string> extra_headers_;
+  // OAuth account id sent as the `ChatGPT-Account-Id` header. Set via
+  // Configure(); empty for non-OAuth providers.
+  std::string account_id_;
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::unique_ptr<network::SimpleURLLoader> models_loader_;

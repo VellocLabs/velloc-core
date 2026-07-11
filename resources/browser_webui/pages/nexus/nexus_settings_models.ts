@@ -10,6 +10,7 @@ import {
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {
+  type BeginProviderOAuthResult,
   DEFAULT_BASE_URLS,
   getBaseUrlValidationMessage,
   getProviderDisplayName,
@@ -17,6 +18,7 @@ import {
   getStringF,
   hasDefaultBaseUrl,
   type ModelInfo,
+  type ProviderOAuthStatus,
   paneStyles,
   type ProviderConfigUpdates,
   type ProviderInfo,
@@ -50,6 +52,47 @@ export class NexusSettingsModelsElement extends CrLitElement {
         height: 20px;
         width: 20px;
         flex: none;
+      }
+
+      /* The provider dropdown is absolutely positioned; the shared
+         .section-card clips with overflow:hidden, which cut the dropdown off.
+         Allow it to overflow, and reserve enough panel height so the dropdown
+         is fully visible even when the rest of the card is short (e.g. an
+         unconnected OAuth provider). */
+      .section-card {
+        overflow: visible;
+      }
+
+      .settings-page-section {
+        min-height: 340px;
+      }
+
+      .oauth-status {
+        align-items: center;
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .oauth-account {
+        color: var(--cr-secondary-text-color, var(--text-secondary));
+        font-size: 13px;
+      }
+
+      .device-code-box {
+        margin-bottom: 12px;
+      }
+
+      .device-code {
+        background: var(--cr-hover-background-color, rgba(0, 0, 0, 0.06));
+        border-radius: 8px;
+        display: inline-block;
+        font-family: monospace;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        padding: 6px 12px;
+        user-select: all;
       }
 
       .custom-select {
@@ -107,7 +150,7 @@ export class NexusSettingsModelsElement extends CrLitElement {
         border-radius: 12px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
         z-index: 100;
-        max-height: 260px;
+        max-height: 390px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
@@ -208,11 +251,43 @@ export class NexusSettingsModelsElement extends CrLitElement {
   private selectedProviderId_ = '';
   private statusMode_: SettingsStatus = 'idle';
   private verifyToken_ = 0;
+  // OAuth ("Sign in") flow state.
+  private oauthConnecting_ = false;
+  private oauthPollTimer_ = 0;
+  // Device-code flow (GitHub Copilot, Qwen Code): the code the user must enter
+  // and where to enter it.
+  private oauthDeviceCode_ = '';
+  private oauthVerificationUri_ = '';
 
   // --- Lifecycle ---------------------------------------------------
 
-  override firstUpdated() {
+  // Re-check provider status when the settings page becomes visible/focused
+  // again — e.g. after the user completes an OAuth sign-in in a separate
+  // window and returns here. Simple and robust; complements the post-sign-in
+  // poll so the "Connected" state shows without needing to reopen settings.
+  private readonly onSettingsVisible_ = () => {
+    if (typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible') {
+      return;
+    }
+    if (this.loading_ || this.resetting_ || this.hasPendingProviderChanges_) {
+      return;
+    }
     void this.loadProviders_();
+  };
+
+  override connectedCallback() {
+    super.connectedCallback();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onSettingsVisible_);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', this.onSettingsVisible_);
+    }
+  }
+
+  override firstUpdated() {
+    void this.loadProviders_().then(() => this.maybeAutoConnectOAuth_());
   }
 
   override disconnectedCallback() {
@@ -220,6 +295,16 @@ export class NexusSettingsModelsElement extends CrLitElement {
     if (this.debounceTimer_) {
       clearTimeout(this.debounceTimer_);
       this.debounceTimer_ = 0;
+    }
+    if (this.oauthPollTimer_) {
+      clearTimeout(this.oauthPollTimer_);
+      this.oauthPollTimer_ = 0;
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onSettingsVisible_);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', this.onSettingsVisible_);
     }
     this.verifyToken_++;
   }
@@ -232,12 +317,33 @@ export class NexusSettingsModelsElement extends CrLitElement {
         null;
   }
 
+  private isOAuthProvider_(provider: ProviderInfo): boolean {
+    return provider.authMode === 'oauth';
+  }
+
+  // Some OAuth providers reuse another provider's brand icon rather than
+  // shipping a dedicated SVG asset.
+  private providerIconId_(provider: {id: string}): string {
+    switch (provider.id) {
+      case 'chatgpt-pro':
+        return 'openai';
+      case 'qwen-code':
+        return 'qwen';
+      case 'github-copilot':
+        return 'githubcopilot';
+      default:
+        return provider.id;
+    }
+  }
+
   private supportsBaseUrl_(provider: ProviderInfo): boolean {
-    return hasDefaultBaseUrl(provider.id);
+    // OAuth providers have no user-editable base URL.
+    return !this.isOAuthProvider_(provider) && hasDefaultBaseUrl(provider.id);
   }
 
   private requiresApiKey_(provider: ProviderInfo): boolean {
-    return provider.type === 'cloud';
+    // OAuth providers authenticate via sign-in, not an API key.
+    return !this.isOAuthProvider_(provider) && provider.type === 'cloud';
   }
 
   private getProviderNote_(provider: ProviderInfo): string {
@@ -440,13 +546,22 @@ export class NexusSettingsModelsElement extends CrLitElement {
         '';
     this.apiKey_ = '';
     this.hasStoredApiKey_ = !!provider.hasStoredApiKey;
-    this.modelOptions_ = provider.isConfigured ? [...provider.models] : [];
     this.hasPendingProviderChanges_ = false;
     this.errorCode_ = '';
     this.errorMessage_ = '';
     this.providerActionError_ = '';
     this.resetDialogOpen_ = false;
-    this.statusMode_ = provider.isConfigured ? 'ready' : 'idle';
+    this.oauthConnecting_ = false;
+
+    if (this.isOAuthProvider_(provider)) {
+      // OAuth providers are "ready" once connected; their models come from the
+      // curated catalog regardless of an in-memory api_key.
+      this.modelOptions_ = provider.connected ? [...provider.models] : [];
+      this.statusMode_ = provider.connected ? 'ready' : 'idle';
+    } else {
+      this.modelOptions_ = provider.isConfigured ? [...provider.models] : [];
+      this.statusMode_ = provider.isConfigured ? 'ready' : 'idle';
+    }
     this.requestUpdate();
   }
 
@@ -511,6 +626,11 @@ export class NexusSettingsModelsElement extends CrLitElement {
     const provider = this.getCurrentProvider_();
     if (!provider || this.loading_ || this.resetting_ ||
         this.statusMode_ === 'verifying') {
+      return;
+    }
+
+    // OAuth providers verify by signing in, not by probing /v1/models.
+    if (this.isOAuthProvider_(provider)) {
       return;
     }
 
@@ -644,8 +764,149 @@ export class NexusSettingsModelsElement extends CrLitElement {
     const provider = this.providers_.find(item => item.id === providerId);
     if (!provider) return;
     this.applyProviderSelection_(provider);
-    // Always auto-verify on provider switch
-    this.scheduleAutoVerify_();
+    // On open: API-key providers auto-verify; a connected OAuth provider runs
+    // the equivalent connect test (re-fetch models). A not-yet-connected OAuth
+    // provider just shows its "Sign in" card.
+    if (this.isOAuthProvider_(provider)) {
+      if (provider.connected) {
+        void this.refreshOAuthModels_();
+      }
+    } else {
+      this.scheduleAutoVerify_();
+    }
+  }
+
+  private async onSignInClick_() {
+    const provider = this.getCurrentProvider_();
+    if (!provider || this.oauthConnecting_) {
+      return;
+    }
+    this.oauthConnecting_ = true;
+    this.providerActionError_ = '';
+    this.oauthDeviceCode_ = '';
+    this.oauthVerificationUri_ = '';
+    this.requestUpdate();
+
+    let result: BeginProviderOAuthResult;
+    try {
+      result = await sendWithPromise('beginProviderOAuth', provider.id) as
+          BeginProviderOAuthResult;
+    } catch (error) {
+      console.error('Failed to start Nexus provider OAuth:', error);
+      this.oauthConnecting_ = false;
+      this.providerActionError_ = getString(
+          'customBrowserNexusOAuthStartFailed', 'Could not start sign-in.');
+      this.requestUpdate();
+      return;
+    }
+
+    // Device-code providers return a code + URL to display while we poll.
+    if (result.flow === 'device-code' && result.userCode) {
+      this.oauthDeviceCode_ = result.userCode;
+      this.oauthVerificationUri_ = result.verificationUri || '';
+      this.requestUpdate();
+    }
+
+    // Poll until tokens are stored (loopback redirect captured, or the device
+    // code is authorized).
+    const deadline = Date.now() +
+        (result.expiresIn && result.expiresIn > 0 ? result.expiresIn * 1000
+                                                   : 120000);
+    this.pollOAuthStatus_(provider.id, deadline);
+  }
+
+  private pollOAuthStatus_(providerId: string, deadlineMs: number) {
+    if (this.oauthPollTimer_) {
+      clearTimeout(this.oauthPollTimer_);
+      this.oauthPollTimer_ = 0;
+    }
+    if (Date.now() > deadlineMs) {
+      this.oauthConnecting_ = false;
+      this.oauthDeviceCode_ = '';
+      this.oauthVerificationUri_ = '';
+      this.requestUpdate();
+      return;
+    }
+
+    void (async () => {
+      try {
+        const status = await sendWithPromise(
+                           'getProviderOAuthStatus', providerId) as
+            ProviderOAuthStatus;
+        if (status.connected) {
+          this.oauthConnecting_ = false;
+          this.oauthDeviceCode_ = '';
+          this.oauthVerificationUri_ = '';
+          await this.loadProviders_();
+          // Run the connect test now that we're authenticated so the model
+          // list populates immediately after sign-in.
+          this.maybeAutoConnectOAuth_();
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to poll Nexus OAuth status:', error);
+      }
+      this.oauthPollTimer_ =
+          window.setTimeout(() => this.pollOAuthStatus_(providerId, deadlineMs),
+                            2000);
+    })();
+  }
+
+  // Connect test for a connected OAuth provider: re-fetch the model list from
+  // the backend (the fetch doubles as a connectivity check), mirroring how
+  // API-key providers auto-verify when opened. Updates the status card and
+  // the cached model list.
+  private async refreshOAuthModels_() {
+    const provider = this.getCurrentProvider_();
+    if (!provider || !this.isOAuthProvider_(provider) || !provider.connected) {
+      return;
+    }
+
+    const verifyToken = ++this.verifyToken_;
+    this.errorCode_ = '';
+    this.errorMessage_ = '';
+    this.providerActionError_ = '';
+    this.statusMode_ = 'verifying';
+    this.announce_(
+        getString('customBrowserNexusStatusConnecting', 'Connecting…'));
+    this.requestUpdate();
+
+    try {
+      const result = await sendWithPromise(
+                         'refreshProviderModels', provider.id) as
+          {success?: boolean, models?: ModelInfo[], error?: string};
+      if (verifyToken !== this.verifyToken_) return;
+
+      if (result.success === false) {
+        this.setStatusError_(
+            getString('customBrowserNexusErrorUnexpectedResponse'));
+        this.requestUpdate();
+        return;
+      }
+
+      const models = Array.isArray(result.models) ? result.models : [];
+      this.modelOptions_ = models;
+      this.statusMode_ = 'ready';
+      this.updateProviderRecord_(provider.id, {models});
+      this.announce_(
+          getString('customBrowserNexusStatusConnected', 'Connected'));
+      this.requestUpdate();
+    } catch (error) {
+      console.error('Failed to refresh Nexus OAuth models:', error);
+      if (verifyToken !== this.verifyToken_) return;
+      this.setStatusError_(
+          getString('customBrowserNexusErrorUnexpectedResponse'));
+      this.requestUpdate();
+    }
+  }
+
+  // If the currently selected provider is a connected OAuth provider, run the
+  // connect test. Called when the provider page is opened.
+  private maybeAutoConnectOAuth_() {
+    const provider = this.getCurrentProvider_();
+    if (provider && this.isOAuthProvider_(provider) && provider.connected) {
+      void this.refreshOAuthModels_();
+    }
   }
 
   private onBaseUrlInput_(event: Event) {
@@ -777,7 +1038,7 @@ export class NexusSettingsModelsElement extends CrLitElement {
                       aria-labelledby="providerSelectLabel"
                       @click=${this.toggleProviderDropdown_}>
                     ${provider ? html`
-                      <img src="/components/nexus/${provider.id}.svg" class="provider-option-icon" alt="">
+                      <img src="/components/nexus/${this.providerIconId_(provider)}.svg" class="provider-option-icon" alt="">
                       <span>${getProviderDisplayName(provider)}</span>
                     ` : html`<span>Select provider...</span>`}
                     <div class="chevron"></div>
@@ -790,7 +1051,7 @@ export class NexusSettingsModelsElement extends CrLitElement {
                             role="option"
                             aria-selected=${providerOption.id === this.selectedProviderId_}
                             @click=${() => this.selectProvider_(providerOption.id)}>
-                          <img src="/components/nexus/${providerOption.id}.svg" class="provider-option-icon" alt="">
+                          <img src="/components/nexus/${this.providerIconId_(providerOption)}.svg" class="provider-option-icon" alt="">
                           <span>${getProviderDisplayName(providerOption)}</span>
                         </div>
                       `)}
@@ -798,6 +1059,67 @@ export class NexusSettingsModelsElement extends CrLitElement {
                   ` : nothing}
                 </div>
               </div>
+
+              ${provider && this.isOAuthProvider_(provider) ? html`
+                <div class="field">
+                  <div class="oauth-status">
+                    ${provider.connected ? html`
+                      <span class="status-chip success">
+                        ${getString(
+                            'customBrowserNexusStatusChipConnected',
+                            'Connected')}
+                      </span>
+                      <span class="oauth-account">
+                        ${provider.connectedEmail ||
+                            getString(
+                                'customBrowserNexusOAuthSignedIn',
+                                'Signed in')}
+                      </span>
+                    ` : html`
+                      <span class="status-chip warning">
+                        ${getString(
+                            'customBrowserNexusOAuthNotConnected',
+                            'Not connected')}
+                      </span>
+                    `}
+                  </div>
+                  ${!provider.connected ? html`
+                    <div class="button-row">
+                      <cr-button class="action-button"
+                          ?disabled=${this.oauthConnecting_}
+                          @click=${this.onSignInClick_}>
+                        ${this.oauthConnecting_ ?
+                            getString(
+                                'customBrowserNexusOAuthConnecting',
+                                'Waiting for sign-in…') :
+                            getStringF(
+                                'customBrowserNexusOAuthSignIn',
+                                'Sign in with $1',
+                                getProviderDisplayName(provider))}
+                      </cr-button>
+                    </div>
+                  ` : nothing}
+                  ${this.oauthConnecting_ && this.oauthDeviceCode_ ? html`
+                    <div class="device-code-box">
+                      <p class="helper-text">
+                        ${getString(
+                            'customBrowserNexusDeviceCodeInstructions',
+                            'Enter this code on the authorization page that ' +
+                                'just opened:')}
+                      </p>
+                      <code class="device-code">${this.oauthDeviceCode_}</code>
+                      ${this.oauthVerificationUri_ ? html`
+                        <p class="helper-text">${this.oauthVerificationUri_}</p>
+                      ` : nothing}
+                    </div>
+                  ` : nothing}
+                  <p class="helper-text">
+                    ${getString(
+                        'customBrowserNexusOAuthHelper',
+                        'Use your existing subscription — no API key needed.')}
+                  </p>
+                </div>
+              ` : nothing}
 
               ${provider && this.supportsBaseUrl_(provider) ? html`
                 <div class="field">
@@ -837,6 +1159,9 @@ export class NexusSettingsModelsElement extends CrLitElement {
               ` : nothing}
             </div>
 
+            ${provider && this.isOAuthProvider_(provider) && !provider.connected
+                ? nothing
+                : html`
             <div class="card-row block">
               <div class="status-card">
                 <div class="status-header">
@@ -851,6 +1176,7 @@ export class NexusSettingsModelsElement extends CrLitElement {
                     nothing}
               </div>
             </div>
+            `}
 
             ${this.providerActionError_ ? html`
               <div class="card-row block">

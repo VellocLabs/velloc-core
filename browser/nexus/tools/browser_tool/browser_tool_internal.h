@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "base/functional/callback.h"
 #include "base/memory/ref_counted.h"
@@ -31,13 +32,19 @@
 #include "chrome/common/actor.mojom-forward.h"
 #include "components/optimization_guide/proto/features/actions_data.pb.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
+#include "custom_browser/browser/nexus/tools/tool_base.h"
 
 class Browser;
 class Profile;
 
 namespace actor {
-class EnterprisePolicyUrlChecker;
+class EnterprisePolicyChecker;
+struct ActionResultWithLatencyInfo;
 }
+
+namespace nexus {
+class BrowserTool;
+}  // namespace nexus
 
 namespace nexus::browser_tool_internal {
 
@@ -108,15 +115,61 @@ class PausableToolCallbackHolder
 // ones called from at least two of the split files.
 // =============================================================================
 
-// Production EnterprisePolicyUrlChecker getter. Used by EnsureTaskCreated.
-const actor::EnterprisePolicyUrlChecker* GetPolicyChecker(Profile* profile);
+// Production EnterprisePolicyChecker getter. Used by EnsureTaskCreated.
+const actor::EnterprisePolicyChecker* GetPolicyChecker(Profile* profile);
 
 // Map ActionResultCode → "actor_error_<N>: <human description>".
 // Used by OnActionsResultBuilt + the read_page / find_text completions.
 std::string DescribeActorError(actor::mojom::ActionResultCode code);
 
-// Map an OnStop reason string to actor::ActorTask::StoppedReason.
-actor::ActorTask::StoppedReason MapStopReason(const std::string& reason);
+// Tool-aware variant of `DescribeActorError`. Overrides the description
+// for `(action_name, code)` combinations where the generic message would
+// mislead the model.
+//
+// Specifically: when a scroll-tool (`scroll_to` / `scroll`) itself
+// returns `kElementOffscreen`, the standard message ("prepend a
+// scroll_to action targeting that index, then retry") is wrong — the
+// model would just re-issue the same scroll_to and loop. Upstream
+// Chromium's `ToolBase::EnsureTargetInView`
+// (`chrome/renderer/actor/tool_base.cc:224-258`) calls
+// `Element.ScrollIntoViewIfNeeded()`, which silently does nothing when
+// the target is clipped by an `overflow:hidden` ancestor (common in
+// card-style search-result carousels). The post-scroll validation then
+// still sees empty `VisibleBoundsInWidget()` and re-emits
+// `kElementOffscreen`. CLAUDE.md restricts upstream edits, so this
+// helper rewrites the error message at the bridge boundary instead —
+// telling the model to switch tactics (BrowserFindText, or pick a
+// different element) rather than retry the same call.
+//
+// For any combination this helper doesn't special-case, it delegates
+// straight to `DescribeActorError(code)` — keeping behavior identical
+// for click/input/etc. paths where the original "scroll first" advice
+// is correct.
+std::string DescribeActorErrorForTool(std::string_view action_name,
+                                       actor::mojom::ActionResultCode code);
+
+// Reduce a per-action result vector to one overall `ActionResultCode`.
+//
+// Chromium 149 (crrev "149") removed the standalone `result_code` /
+// `index_of_failed_action` arguments from the `PerformActions` completion
+// callback and `BuildActionsResultWithObservations`, folding them into the
+// per-action `action_results` vector. This delegates to upstream's own
+// canonical reducer, `actor::ExtractErrorResult` (see
+// `chrome/common/actor/action_result.h`): the FIRST non-OK action's code
+// wins, else `kOk`. That is exactly the rule the actor framework itself
+// uses to surface an overall error, and it matches the engine's
+// stop-at-first-failure execution — so it is correct for both the
+// single-action requests Nexus issues today (click / navigate / scroll /
+// …) and the multi-action `fill_form` batch (which the engine halts at the
+// first failing field). Using the upstream helper rather than a local copy
+// keeps the two in lockstep across future core upgrades.
+actor::mojom::ActionResultCode OverallActorResultCode(
+    const std::vector<actor::ActionResultWithLatencyInfo>& action_results);
+
+// Map a typed `OnStopReason` to `actor::ActorTask::StoppedReason`.
+// Exhaustive over the enum so any new reason added to OnStopReason
+// forces an explicit decision here.
+actor::ActorTask::StoppedReason ToActorStoppedReason(OnStopReason reason);
 
 // Most-recently-active Browser whose Profile matches `profile`, or
 // nullptr.
@@ -125,17 +178,53 @@ Browser* GetActiveBrowserForProfile(Profile* profile);
 // SessionID (int32) of the active window, or std::nullopt.
 std::optional<int32_t> GetActiveWindowSessionId(Profile* profile);
 
+// Resolves the SessionID of the window a newly created agent tab should be
+// placed in, honoring the `nexus.browser_tools_separate_window` pref:
+//   * pref off (default) — the active window (same as
+//     GetActiveWindowSessionId).
+//   * pref on            — a dedicated separate window, reused across calls
+//     and created on demand if one does not yet exist for the profile.
+// Returns std::nullopt when no suitable window is available / could be
+// created.
+std::optional<int32_t> ResolveCreateTabWindowSessionId(Profile* profile);
+
 // `tabs::TabHandle::raw_value()` of the active tab, or std::nullopt.
 std::optional<int32_t> GetActiveTabHandleId(Profile* profile);
 
+// Session-scoped variant: returns the most-recently-active tab among
+// the session's own tabs (per `NexusSessionTabTag`), or the first tab
+// owned by the session if no last-active is recorded. Returns
+// std::nullopt when the session owns no tabs.
+//
+// Reads session-tab state from the BrowserTool member fields (the
+// pre-refactor profile-scoped registry has been removed). When
+// `browser_tool` is null OR the feature flag is off, falls back to
+// `GetActiveTabHandleId`.
+std::optional<int32_t> GetSessionScopedActiveTabHandleId(
+    ::nexus::BrowserTool* browser_tool);
+
 // Resolves the explicit-or-active tab id for a tool method; rejects
-// `done` with `no_active_tab` and returns std::nullopt on miss.
-// Caller MUST early-return on miss (don't read or move `done`
-// afterward).
-std::optional<int32_t> ResolveTabIdOrReject(std::optional<int> explicit_tab_id,
-                                            Profile* profile,
-                                            std::string_view tool_name,
-                                            ::nexus::ToolCallback& done);
+// `done` with `no_active_tab` / `no_session_tab` / `tab_not_in_session`
+// and returns std::nullopt on miss. Caller MUST early-return on miss
+// (don't read or move `done` afterward).
+//
+// `browser_tool` enables the per-session enforcement when non-null AND
+// `kSessionScopedTabs` is on:
+//   * explicit tab_id present → checks `NexusSessionTabTag` matches
+//     the BrowserTool's session_key; rejects with `tab_not_in_session`
+//     otherwise.
+//   * explicit tab_id absent → resolves via
+//     `GetSessionScopedActiveTabHandleId(browser_tool)`; rejects with
+//     `no_session_tab` if the session owns no tabs.
+// A null `browser_tool` (or the flag off) falls back to the legacy
+// behavior — explicit id passes through, no id falls back to
+// `GetActiveTabHandleId`.
+std::optional<int32_t> ResolveTabIdOrReject(
+    std::optional<int> explicit_tab_id,
+    Profile* profile,
+    std::string_view tool_name,
+    ::nexus::ToolCallback& done,
+    ::nexus::BrowserTool* browser_tool = nullptr);
 
 // Prepend an ActivateTab proto action to `actions` if `target_tab_id`
 // isn't already the active tab. No-op when already-active or when the

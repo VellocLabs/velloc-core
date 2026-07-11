@@ -4,6 +4,7 @@
 #include <unordered_set>
 
 #include "base/check.h"
+#include "base/logging.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/native_ui/native_ui_utils.h"

@@ -96,7 +96,38 @@ source_set("provider_factory") {
     "//base",
   ]
 
-  deps = [ ":providers" ]
+  deps = [
+    ":oauth",
+    ":providers",
+  ]
+}
+
+# OAuth subsystem for subscription-backed providers (ChatGPT Plus/Pro, …).
+# Providers map + token store + PKCE/refresh manager. Intentionally free of
+# any dependency on the broker/provider layer so the broker can own it
+# without a cycle. The navigation throttle that captures the loopback
+# redirect lives in a separate target (see :oauth_throttle).
+source_set("oauth") {
+  sources = [
+    "oauth/oauth_manager.cc",
+    "oauth/oauth_manager.h",
+    "oauth/oauth_providers.cc",
+    "oauth/oauth_providers.h",
+    "oauth/oauth_token_store.cc",
+    "oauth/oauth_token_store.h",
+    "oauth/oauth_url_opener.cc",
+    "oauth/oauth_url_opener.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [
+    ":pref_names",
+    "//components/prefs",
+    "//crypto",
+    "//services/network/public/cpp",
+    "//url",
+  ]
 }
 
 # LLM broker — per-profile KeyedService for LLM routing.
@@ -109,6 +140,7 @@ source_set("broker") {
   ]
 
   public_deps = [
+    ":oauth",
     ":pref_names",
     ":provider",
     ":provider_factory",
@@ -133,6 +165,7 @@ source_set("webui_host") {
 
   deps = [
     ":broker",
+    ":oauth",
     ":provider_config",
     ":text_helpers",
     "//base",
@@ -218,6 +251,7 @@ group("llm") {
   public_deps = [
     ":broker",
     ":line_splitter",
+    ":oauth",
     ":pref_names",
     ":pref_registration",
     ":provider",

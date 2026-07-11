@@ -8,9 +8,32 @@ ToolBase::ToolBase(ToolSession* session, Profile* profile,
 
 ToolBase::~ToolBase() = default;
 
-void ToolBase::OnStop(const std::string& /*reason*/) {
+void ToolBase::OnStop(OnStopReason /*reason*/) {
   // Default no-op. Subclasses that own per-session state override this
   // (e.g. BrowserTool::OnStop stops its actor::TaskId).
+}
+
+OnStopReason ParseOnStopReason(std::string_view reason,
+                                OnStopReason fallback) {
+  if (reason == "completed") return OnStopReason::kCompleted;
+  if (reason == "user_stopped") return OnStopReason::kUserStopped;
+  if (reason == "session_deleted") return OnStopReason::kSessionDeleted;
+  if (reason == "disconnected") return OnStopReason::kDisconnected;
+  if (reason == "shutdown") return OnStopReason::kShutdown;
+  if (reason == "destructor") return OnStopReason::kDestructor;
+  return fallback;
+}
+
+std::string_view OnStopReasonToString(OnStopReason reason) {
+  switch (reason) {
+    case OnStopReason::kCompleted: return "completed";
+    case OnStopReason::kUserStopped: return "user_stopped";
+    case OnStopReason::kSessionDeleted: return "session_deleted";
+    case OnStopReason::kDisconnected: return "disconnected";
+    case OnStopReason::kShutdown: return "shutdown";
+    case OnStopReason::kDestructor: return "destructor";
+  }
+  return "unknown";
 }
 
 }  // namespace nexus

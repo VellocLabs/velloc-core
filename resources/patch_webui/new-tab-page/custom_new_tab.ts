@@ -786,7 +786,7 @@ function ensureSetupListGetStartedItem(setupList: HTMLElement) {
         getString(SETUP_LIST_ACTION_KEY));
     item.setAttribute('promo-id', SETUP_LIST_PROMO_ID);
     item.addEventListener('ntp-promo-click', event => {
-      const promoEvent = event as CustomEvent;
+      const promoEvent = event as CustomEvent<unknown>;
       if (promoEvent.detail !== SETUP_LIST_PROMO_ID) {
         return;
       }

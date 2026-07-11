@@ -10,6 +10,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "custom_browser/browser/nexus/nexus_bridge_port_service.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
+#include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
 #include "custom_browser/browser/nexus/nexus_host_manifest.h"
 #include "url/origin.h"
 
@@ -55,7 +56,8 @@ void NexusBridgeBootstrapHost::GuestReady() {
   // minimal — capabilities + transferred ports.
   content::MessagePortProvider::PostMessageToFrame(
       render_frame_host_->GetPage(), &host_origin, &host_origin,
-      bridge_support::Utf8Payload(BuildNexusBridgeBootstrapMessage()),
+      bridge_support::Utf8Payload(
+          BuildNexusBridgeBootstrapMessage(GetAgentConfig(profile_))),
       std::move(ports));
   LOG(INFO) << "[NexusTrace][BootstrapHost] Posted bootstrap message + 2 "
             << "ports to host page (hostedTools fetched via catalog API)";

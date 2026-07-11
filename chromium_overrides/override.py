@@ -5,7 +5,6 @@ import subprocess
 import sys
 from typing import Optional
 
-
 def _create_symlink(source_path: str, target_path: str, *, target_is_directory: bool = True):
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
     source = os.path.abspath(source_path)
@@ -66,11 +65,15 @@ def _link_file(source_file: str, target_file: str, *, src_root: Optional[str] = 
 def _link_directory_tree(source_dir: str, override_root: str, target_root: str):
     rel = os.path.relpath(source_dir, override_root)
     target_dir = target_root if rel == "." else os.path.join(target_root, rel)
-    if os.path.exists(target_dir):
+    if os.path.lexists(target_dir):
         if os.path.islink(target_dir):
             # Skip directories already symlinked to the override source.
             if os.path.realpath(target_dir) == os.path.realpath(source_dir):
                 return
+            # Stale or mismatched symlink — remove and re-link.
+            os.unlink(target_dir)
+            _create_symlink(source_dir, target_dir)
+            return
         if not os.path.isdir(target_dir):
             print(f"Skipping override for '{target_dir}'; an existing file is blocking the directory.")
             return

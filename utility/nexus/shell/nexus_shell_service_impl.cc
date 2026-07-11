@@ -126,7 +126,13 @@ void NexusShellServiceImpl::EnsureResolveStarted() {
   resolve_in_flight_ = true;
 
   base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock()},
+      FROM_HERE,
+      // WithBaseSyncPrimitives() is required because ShellResolver::Resolve
+      // now runs the `--version` probe through RunChildProcess, which calls
+      // base::Process::WaitForExitWithTimeout — Chromium classifies the
+      // child-process wait as a "base sync primitive" and DCHECKs if the task
+      // wasn't declared to allow it (same reason as the Exec path below).
+      {base::MayBlock(), base::WithBaseSyncPrimitives()},
       base::BindOnce(&ShellResolver::Resolve),
       base::BindOnce(&NexusShellServiceImpl::OnResolved,
                      weak_factory_.GetWeakPtr()));
@@ -241,6 +247,7 @@ void NexusShellServiceImpl::RunExec(mojom::ShellSpawnOptionsPtr options,
   request.exe = decision.resolved_path;
   request.args = std::move(final_args);
   request.cwd = options->cwd;
+  request.stdin_data = options->stdin_data;
 
   std::vector<EnvOverride> env_overrides;
   env_overrides.reserve(options->env.size());
@@ -258,7 +265,15 @@ void NexusShellServiceImpl::RunExec(mojom::ShellSpawnOptionsPtr options,
 
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
-      {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+      // WithBaseSyncPrimitives() is required because RunChildProcess
+      // (via child_process_runner.cc) calls
+      // base::Process::WaitForExitWithTimeout — Chromium classifies the
+      // child-process wait as a "base sync primitive" and DCHECKs at
+      // base/threading/thread_restrictions.cc:166 if the task wasn't
+      // declared to allow it. Without this trait, every Bash invocation
+      // crashes the utility process on first wait.
+      {base::MayBlock(), base::WithBaseSyncPrimitives(),
+       base::TaskPriority::USER_VISIBLE,
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
       base::BindOnce(&RunChildProcess, std::move(request)),
       base::BindOnce(

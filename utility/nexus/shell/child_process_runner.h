@@ -40,6 +40,20 @@ struct ChildProcessRequest {
   // PATH or HOME means the child won't see them.
   base::EnvironmentMap env;
 
+  // When true, the child inherits the parent (utility-process) environment
+  // instead of running with the cleared `env` above. Used by the lightweight
+  // `--version` capability probe, which needs the host PATH / DLL search
+  // paths just like the `base::GetAppOutput` call it replaced. The Exec path
+  // leaves this false and relies on the curated `env`.
+  bool inherit_environment = false;
+
+  // Bytes written to the child's stdin (then the stream is closed). Empty
+  // means the child gets an empty stdin (NUL / /dev/null), preserving the
+  // prior behaviour. Delivered via a temp file the child reads from — same
+  // pattern as the stdout/stderr capture files, just opened read-only — so
+  // the parent never has to pump a pipe concurrently with the wait.
+  std::string stdin_data;
+
   // Wall-clock timeout. Already clamped by `SafeCommandPolicy`.
   base::TimeDelta timeout;
 

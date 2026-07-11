@@ -3,12 +3,17 @@
 #include <utility>
 
 #include "base/files/file_path.h"
+#include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
+#include "custom_browser/browser/nexus/tools/tool_base.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "custom_browser/browser/nexus/tools/tools_adapter.h"
 
@@ -64,9 +69,33 @@ NexusSessionBridgeAdapter::NexusSessionBridgeAdapter(
   // action: drop a *.api.json under api/declarations/session/, add a
   // Handle*OnUI() override here. The codegen wires the dispatch
   // automatically.
+
+  // Observe the unified agent-config pref so settings changes are pushed
+  // live to the guest. The fixed transport (`session.applyAgentConfig`
+  // carrying the whole dict) never changes as settings are added.
+  if (profile_ && profile_->GetPrefs()) {
+    pref_change_registrar_.Init(profile_->GetPrefs());
+    pref_change_registrar_.Add(
+        prefs::kNexusAgentConfig,
+        base::BindRepeating(&NexusSessionBridgeAdapter::PushAgentConfig,
+                            base::Unretained(this)));
+  }
 }
 
 NexusSessionBridgeAdapter::~NexusSessionBridgeAdapter() = default;
+
+void NexusSessionBridgeAdapter::PushAgentConfig() {
+  // Mirror the TS-side `session.applyAgentConfig` event envelope; the
+  // transport wraps this as {claudeBridge:true, direction:"event", ...}.
+  Dict route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "session");
+  route.Set("action", "applyAgentConfig");
+
+  Dict payload;
+  payload.Set("config", GetAgentConfig(profile_));
+  SendEvent(route, base::Value(std::move(payload)));
+}
 
 void NexusSessionBridgeAdapter::HandlePublishStatusOnUI(
     ::nexus::generated::PublishStatusInput input,
@@ -96,10 +125,23 @@ void NexusSessionBridgeAdapter::HandleOnStopOnUI(
   const std::string session_key =
       SessionKeyFromExecutionContext(input.executionContext, input.sessionId);
 
-  std::string reason = "user_stopped";
-  if (input.reason.has_value() && !input.reason->empty()) {
-    reason = *input.reason;
-  }
+  // Recognized reason values are enumerated in
+  // `custom_browser/browser/nexus/tools/tool_base.h::OnStopReason`.
+  // `ParseOnStopReason` falls back to kUserStopped for empty /
+  // unrecognized strings (the JS guest historically allowed missing
+  // reason; the safe default preserves that contract).
+  //
+  // `kSessionDeleted` is the only reason that erases the ToolSession
+  // from `ToolsAdapter::sessions_` and (consequently) destroys the
+  // BrowserTool, which closes the session's tagged tabs. The JS guest
+  // must pass that exact string when wiring sidebar delete; every
+  // other reason leaves the ToolSession warm so the next turn reuses
+  // it.
+  const std::string_view reason_view =
+      input.reason.has_value() ? std::string_view(*input.reason)
+                                : std::string_view();
+  const OnStopReason reason =
+      ParseOnStopReason(reason_view, OnStopReason::kUserStopped);
 
   // Was the session live before this call? Useful for the JS caller to
   // distinguish "actually stopped something" from "no-op (session

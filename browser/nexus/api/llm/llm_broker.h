@@ -25,6 +25,7 @@ class SharedURLLoaderFactory;
 namespace nexus {
 
 class LlmProvider;
+class NexusOAuthManager;
 
 // Per-profile service that owns all LlmProvider instances and routes inference
 // requests to the currently active provider.
@@ -50,6 +51,14 @@ class LlmBroker : public KeyedService {
     // the user switched sessions, or the current session's selection /
     // other status fields changed.
     virtual void OnSessionStatusChanged(const base::DictValue& status) {}
+
+    // Fired after a provider's model list is (re)discovered from its backend,
+    // regardless of which code path triggered the fetch (guest catalog refresh,
+    // login, or a settings connect test). Lets the WebUI rebuild the topbar
+    // quick-switch popup once async discovery lands — notably for OAuth
+    // providers (chatgpt-pro) whose models are fetched lazily after cold boot,
+    // which would otherwise stay hidden until the user opened settings.
+    virtual void OnProviderModelsRefreshed(const std::string& provider_id) {}
   };
 
   LlmBroker(
@@ -157,6 +166,10 @@ class LlmBroker : public KeyedService {
   // Returns a raw pointer to the provider with |provider_id|, or nullptr.
   LlmProvider* GetProvider(const std::string& provider_id) const;
 
+  // OAuth lifecycle for subscription-backed providers (ChatGPT Plus/Pro, …).
+  // Owned by the broker so it shares the profile's prefs + URL loader factory.
+  NexusOAuthManager* oauth_manager() const { return oauth_manager_.get(); }
+
   // --- Configuration ---
 
   // Applies configuration to a provider (API key, base URL, model, etc.).
@@ -197,8 +210,28 @@ class LlmBroker : public KeyedService {
   void InitializeProviders();
   void LoadProviderConfigs();
 
+  // Invoked by the OAuth manager after tokens are persisted; reconfigures the
+  // matching in-memory provider from prefs so IsConfigured() reflects the new
+  // credentials immediately.
+  void OnOAuthTokensSaved(const std::string& provider_id);
+
   void OnCatalogRefreshed(const std::string& provider_id,
                           std::vector<ModelInfo> models);
+
+  // OAuth providers need a backend-ready token before model discovery: the
+  // stored token may be expired (chatgpt-pro/qwen) or not directly usable
+  // (github-copilot's GitHub token must be exchanged for a Copilot session
+  // token). RefreshModels routes OAuth providers through EnsureFreshToken →
+  // OnEnsureTokenBeforeRefresh (applies the token) → FetchModelsWithPersist,
+  // so every discovery path (cold-boot guest catalog, settings connect test)
+  // hits the backend with a valid bearer.
+  void OnEnsureTokenBeforeRefresh(const std::string& provider_id,
+                                  FetchModelsCallback callback,
+                                  bool ok,
+                                  std::string access_token,
+                                  std::string account_id);
+  void FetchModelsWithPersist(const std::string& provider_id,
+                              FetchModelsCallback callback);
 
   raw_ptr<PrefService> prefs_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
@@ -206,6 +239,8 @@ class LlmBroker : public KeyedService {
   // Keyed by provider ID.
   std::map<std::string, std::unique_ptr<LlmProvider>> providers_;
   std::string active_provider_id_;
+
+  std::unique_ptr<NexusOAuthManager> oauth_manager_;
 
   // In-memory mirrors of the prefs-backed caches. Populated lazily from
   // prefs on first access and overwritten by SetTsModelCatalog /

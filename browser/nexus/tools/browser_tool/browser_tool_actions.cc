@@ -1,7 +1,9 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
 
+#include <memory>
 #include <utility>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/escape.h"
@@ -15,13 +17,23 @@
 #include "chrome/browser/actor/actor_task_metadata.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/actor.mojom.h"
+#include "components/download/public/common/download_interrupt_reasons.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/download_manager.h"
 #include "content/public/browser/media_session.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/download_capture.h"
+#include "custom_browser/browser/nexus/tools/tool_session.h"
+#include "custom_browser/browser/nexus/upload/nexus_file_chooser_interceptor.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/cpp/media_position.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
+#include "url/gurl.h"
 
 // Phase 9c-final split — this TU holds:
 //   * the 20 LLM-facing `Run<Name>OnUI` tool method bodies (was 24
@@ -53,6 +65,36 @@ using namespace browser_tool_internal;  // NOLINT(build/namespaces)
 namespace {
 
 namespace apc = optimization_guide::proto;
+
+// Traffic annotation for URL-mode BrowserDownload. Click-mode downloads
+// are page-initiated and carry the page's own annotation; only the
+// programmatic `DownloadManager::DownloadUrl` path needs one here.
+constexpr net::NetworkTrafficAnnotationTag kDownloadTrafficAnnotation =
+    net::DefineNetworkTrafficAnnotation("nexus_browser_download", R"(
+      semantics {
+        sender: "Nexus AI Agent Platform"
+        description:
+          "When the user's AI agent runs the BrowserDownload tool with a "
+          "direct URL, the browser fetches that file using the active tab's "
+          "session (cookies/credentials) and saves it into the agent's local "
+          "workspace so the agent can read it."
+        trigger:
+          "The agent explicitly invokes the BrowserDownload tool with a url."
+        data:
+          "The requested URL and the active tab's cookies/credentials for "
+          "that site."
+        destination: WEBSITE
+      }
+      policy {
+        cookies_allowed: YES
+        cookies_store: "user"
+        setting:
+          "Controlled by the Nexus agent feature; only fires on an explicit "
+          "agent tool call."
+        policy_exception_justification:
+          "Downloads are initiated only by explicit agent tool calls, "
+          "mirroring a user clicking a download link."
+      })");
 
 // =============================================================================
 // File-local helpers used by `read_page` / `find_text` / `read_element`
@@ -273,8 +315,13 @@ void BrowserTool::RunCreateTabAction(std::string url,
   // ---- New-tab path ----------------------------------------------------
   // CreateTabAction.window_id is required by `CreateCreateTabRequest`
   // (`!action.has_window_id()` returns nullptr → "failed to build
-  // ToolRequest"), so resolve the active window's SessionID up front.
-  std::optional<int32_t> active_window = GetActiveWindowSessionId(profile);
+  // ToolRequest"), so resolve the target window's SessionID up front.
+  // ResolveCreateTabWindowSessionId honors the
+  // `nexus.browser_tools_separate_window` pref: when off it returns the
+  // active (Nexus) window; when on it returns a dedicated agent window,
+  // creating one on demand.
+  std::optional<int32_t> active_window =
+      ResolveCreateTabWindowSessionId(profile);
   if (!active_window.has_value()) {
     std::move(done).Reject(
         "no_active_window",
@@ -341,9 +388,13 @@ void BrowserTool::OnCreateTabActionDone(
     std::string action_name,
     actor::ActorTask::TabHandleSet tabs_before,
     base::TimeTicks /*start_time*/,
-    actor::mojom::ActionResultCode result_code,
-    std::optional<size_t> /*index_of_failed_action*/,
-    std::vector<actor::ActionResultWithLatencyInfo> /*action_results*/) {
+    std::vector<actor::ActionResultWithLatencyInfo> action_results) {
+  // 149 folded the standalone result_code / index_of_failed_action out of
+  // PerformActionsCallback into the per-action `action_results` vector;
+  // reduce it via upstream's canonical helper (first non-OK wins). This
+  // CreateTab request is single-action, so the result is just its code.
+  const actor::mojom::ActionResultCode result_code =
+      OverallActorResultCode(action_results);
   if (!actor::IsOk(result_code)) {
     std::move(done).Reject(
         "create_tab_failed",
@@ -395,6 +446,14 @@ void BrowserTool::OnCreateTabActionDone(
     return;
   }
 
+  // Bind the new tab to this Nexus session before issuing the navigate.
+  // BrowserTool::BindTabToSession attaches the WebContents tag (source
+  // of truth), adds the tab to this session's tab group (creating the
+  // group lazily on the first session tab), records membership in
+  // `session_tabs_`, and marks it as last-active. No-op when the
+  // feature flag is off or the session key is empty.
+  BindTabToSession(*new_tab);
+
   // Stage 2 — navigate the new tab, then settle. Reuse `RunActorAction`
   // so the standard observation pipeline
   // (BuildActionsResultWithObservations → element-registry refresh →
@@ -421,7 +480,10 @@ void BrowserTool::OnCreateTabActionDone(
   wait->set_wait_time_ms(2000);
   wait->set_observe_tab_id(new_tab->raw_value());
 
-  RunActorAction(std::move(nav_actions), action_name, std::move(done));
+  // The freshly-created tab IS the working tab for this stage-2
+  // navigate — emit its full elements in the observation.
+  RunActorAction(std::move(nav_actions), action_name, std::move(done),
+                  new_tab->raw_value());
 }
 
 // =============================================================================
@@ -437,6 +499,12 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
                                      std::string_view action_name,
                                      ToolCallback done,
                                      ObservationCompletion completion) {
+  // Observation-only actions still operate on a specific tab — record
+  // it as the most-recent worked-on tab so a subsequent tab-less call
+  // can default to it via `LastWorkTab()` when Chrome's foreground
+  // tab isn't session-owned. Mirrors `RunActorAction`.
+  RecordWorkTab(tabs::TabHandle(tab_id_value));
+
   // Same per-action budget the actor-driven path uses — observation-
   // only actions (screenshot, read_page, find_text) also dispatch
   // through the actor framework and can hang on a stalled APC fetch.
@@ -498,13 +566,17 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   }
 
   base::TimeTicks start_time = base::TimeTicks::Now();
+  // 149 dropped the standalone result_code / index_of_failed_action
+  // params (now folded into per-action `action_results`) and added a
+  // trailing screenshot_collection_options. This call site has no prior
+  // action results to forward (the create-tab navigate already settled),
+  // so pass an empty vector and no screenshot options.
   actor::BuildActionsResultWithObservations(
       *profile, start_time,
-      actor::mojom::ActionResultCode::kOk,
-      /*index_of_failed_action=*/std::nullopt,
       /*action_results=*/{},
       *task,
       /*skip_async_observation_information=*/false,
+      /*screenshot_collection_options=*/std::nullopt,
       base::BindOnce(std::move(completion), std::move(done),
                      std::string(action_name)));
 }
@@ -522,7 +594,7 @@ void BrowserTool::RunScreenshotOnUI(::nexus::generated::ScreenshotInput input,
   // currently-active tab. Cross-tab screenshots require BrowserActivateTab
   // first.
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "screenshot", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "screenshot", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -545,7 +617,7 @@ void BrowserTool::RunReadPageOnUI(::nexus::generated::ReadPageInput input,
   // actor framework's APC fetch is always full-page either way), so
   // collapsing to a single mode is a no-op behavior change.
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "read_page", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "read_page", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -577,12 +649,33 @@ void BrowserTool::RunNavigateOnUI(::nexus::generated::NavigateInput input,
     return;
   }
 
+  // First-tab auto-promotion. On a fresh Nexus session the session owns
+  // no tabs yet, so `ResolveTabIdOrReject` below would reject with
+  // `no_session_tab` and tell the model to "open one with
+  // navigate(new_tab=true) or search first". The model often misses
+  // that hint on its very first action (it just says "navigate to the
+  // job board" without thinking about whether a tab exists). Rather
+  // than burn a turn on a guaranteed-to-fail dispatch, transparently
+  // route the call through the new-tab path when there's no in-place
+  // tab to land on. The model's intent — "land on URL X" — is honored
+  // either way, and the rejection branch stays as a safety net for the
+  // truly-impossible case (e.g. the feature flag is on AND the session
+  // had tabs but they were all closed mid-turn).
+  if (CollectSessionTabs().empty()) {
+    LOG(INFO) << "[BrowserTool] navigate: session owns no tabs; "
+                 "auto-promoting to new_tab=true";
+    RunCreateTabAction(std::move(input.url),
+                       /*action_name=*/"navigate",
+                       std::move(done));
+    return;
+  }
+
   // ---- In-place navigation on the active tab ---------------------------
   // The actor's CreateNavigateRequest rejects if `tab_id` is unset
   // (`tab_handle == TabHandle::Null()`), so we must resolve the active
   // tab handle and emit it explicitly.
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "navigate", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "navigate", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -590,21 +683,209 @@ void BrowserTool::RunNavigateOnUI(::nexus::generated::NavigateInput input,
   apc::NavigateAction* navigate = actions.add_actions()->mutable_navigate();
   navigate->mutable_url()->assign(input.url);
   navigate->set_tab_id(*resolved_tab_id);
-  RunActorAction(std::move(actions), "navigate", std::move(done));
+  RunActorAction(std::move(actions), "navigate", std::move(done),
+                  *resolved_tab_id);
+}
+
+void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
+                                  ToolCallback done) {
+  // Exactly one of index|url. (index = click to trigger a download whose
+  // URL we can't see; url = direct download using the page's session.)
+  const bool has_index = input.index.has_value();
+  const bool has_url = input.url.has_value() && !input.url->empty();
+  if (has_index == has_url) {
+    std::move(done).Reject(
+        "invalid_args",
+        "BrowserDownload needs EXACTLY ONE of `index` (click an element to "
+        "trigger a download) or `url` (download a direct URL).");
+    return;
+  }
+
+  // Downloads land in the session workspace's `downloads/` folder so the
+  // file tools (which sandbox to the session cwd) can read them.
+  ::nexus::ToolSession* session = GetSession();
+  const base::FilePath cwd = session ? session->cwd() : base::FilePath();
+  if (cwd.empty()) {
+    std::move(done).Reject(
+        "no_workspace",
+        "no workspace directory is configured for this session; cannot save "
+        "the download.");
+    return;
+  }
+  const base::FilePath dest_dir = cwd.Append(FILE_PATH_LITERAL("downloads"));
+
+  content::DownloadManager* manager =
+      GetProfile() ? GetProfile()->GetDownloadManager() : nullptr;
+  if (!manager) {
+    std::move(done).Reject("download_failed",
+                           "the browser download manager is unavailable.");
+    return;
+  }
+
+  // Bound the wait on completion by the per-action budget; DownloadCapture
+  // returns an in-progress result (rather than blocking) if a large file
+  // is still streaming when this elapses.
+  const base::TimeDelta budget = action_timeout_;
+
+  // Optional caller filename — basename only, to block path traversal.
+  std::optional<std::string> filename;
+  if (input.filename && !input.filename->empty()) {
+    filename = base::FilePath::FromUTF8Unsafe(*input.filename)
+                   .BaseName()
+                   .AsUTF8Unsafe();
+  }
+
+  if (has_url) {
+    // Associate the download with the active tab so its cookies/auth apply
+    // (the whole point of an in-browser download vs. a bare fetch).
+    std::optional<int32_t> tab_id =
+        ResolveTabIdOrReject(std::nullopt, GetProfile(), "download", done, this);
+    if (!tab_id.has_value()) {
+      return;
+    }
+    tabs::TabInterface* tab = tabs::TabHandle(*tab_id).Get();
+    content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+    content::RenderFrameHost* rfh =
+        contents ? contents->GetPrimaryMainFrame() : nullptr;
+    if (!rfh) {
+      std::move(done).Reject(
+          "no_active_tab",
+          "no active page to download from; open a page first, or use index "
+          "mode to click a download control.");
+      return;
+    }
+    GURL url(*input.url);
+    if (!url.is_valid()) {
+      std::move(done).Reject("invalid_args",
+                             base::StrCat({"not a valid URL: ", *input.url}));
+      return;
+    }
+    // Force the target into the workspace so it streams straight there (no
+    // post-completion move, no "Save As" prompt). Derive a name from the
+    // URL when the caller didn't supply one.
+    std::string name = filename.value_or(url.ExtractFileName());
+    if (name.empty()) {
+      name = "download";
+    }
+    filename = name;
+    const base::FilePath dest =
+        dest_dir.Append(base::FilePath::FromUTF8Unsafe(name));
+
+    std::unique_ptr<download::DownloadUrlParameters> params =
+        rfh->CreateDownloadUrlParameters(url, kDownloadTrafficAnnotation);
+    params->set_file_path(dest);
+    params->set_prompt(false);
+
+    scoped_refptr<DownloadCapture> capture = DownloadCapture::Create(
+        manager, dest_dir, std::move(filename), budget, std::move(done));
+    params->set_callback(base::BindOnce(
+        [](scoped_refptr<DownloadCapture> cap, download::DownloadItem* item,
+           download::DownloadInterruptReason reason) {
+          cap->BindStartedItem(
+              item, reason == download::DOWNLOAD_INTERRUPT_REASON_NONE);
+        },
+        capture));
+    manager->DownloadUrl(std::move(params),
+                         /*blob_url_loader_factory=*/nullptr);
+    return;
+  }
+
+  // index mode: arm the capture, then click the element to trigger the
+  // download. The click's own post-action observation is discarded (sink
+  // callback) — DownloadCapture resolves the model's `done` when the
+  // download the click produces completes (or the budget elapses, or no
+  // download starts within the arm window).
+  const NodeRegistry::Entry* entry =
+      LookupNode(*input.index, std::nullopt, done, "download");
+  if (!entry) {
+    return;
+  }
+
+  scoped_refptr<DownloadCapture> capture = DownloadCapture::Create(
+      manager, dest_dir, std::move(filename), budget, std::move(done));
+  // 15s window for the click to actually start a download (covers the
+  // actor round-trip + the page's navigation/JS that kicks it off).
+  capture->ArmForClickCapture(base::Seconds(15));
+
+  apc::Actions actions;
+  apc::ClickAction* click = actions.add_actions()->mutable_click();
+  click->mutable_target()->set_content_node_id(*input.index);
+  click->mutable_target()
+      ->mutable_document_identifier()
+      ->set_serialized_token(entry->document_id);
+  click->set_tab_id(entry->tab_id);
+  click->set_click_type(apc::ClickAction::LEFT);
+  click->set_click_count(apc::ClickAction::SINGLE);
+  RunActorAction(std::move(actions), "download", ToolCallback(),
+                 entry->tab_id);
+}
+
+void BrowserTool::RunUploadOnUI(::nexus::generated::UploadInput input,
+                                ToolCallback done) {
+  // The file <input> (or the control that opens the picker). Its home tab
+  // is the upload target.
+  const NodeRegistry::Entry* entry =
+      LookupNode(input.index, std::nullopt, done, "upload");
+  if (!entry) {
+    return;
+  }
+
+  // Resolve the local file path: absolute used as-is; relative resolves
+  // against the session workspace (same sandbox the file tools use).
+  base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
+  if (!path.IsAbsolute()) {
+    ::nexus::ToolSession* session = GetSession();
+    const base::FilePath cwd = session ? session->cwd() : base::FilePath();
+    if (cwd.empty()) {
+      std::move(done).Reject(
+          "no_workspace",
+          "no workspace directory is configured; pass an absolute file_path.");
+      return;
+    }
+    path = cwd.Append(path);
+  }
+
+  tabs::TabInterface* tab = tabs::TabHandle(entry->tab_id).Get();
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+  if (!contents) {
+    std::move(done).Reject("no_active_tab",
+                           "the target tab is no longer available.");
+    return;
+  }
+
+  // Stage the file for the next chooser on this tab, then click the input.
+  // The guarded hook in Browser::RunFileChooser answers the chooser the
+  // click opens with `path` (no native dialog). The click's post-action
+  // observation flows back to the model so it can confirm the attachment.
+  // NOTE: existence isn't checked here (UI thread); a missing file simply
+  // yields a failed attachment the model can see in the next observation.
+  NexusPendingUpload::Arm(contents, {path});
+
+  apc::Actions actions;
+  apc::ClickAction* click = actions.add_actions()->mutable_click();
+  click->mutable_target()->set_content_node_id(input.index);
+  click->mutable_target()
+      ->mutable_document_identifier()
+      ->set_serialized_token(entry->document_id);
+  click->set_tab_id(entry->tab_id);
+  click->set_click_type(apc::ClickAction::LEFT);
+  click->set_click_count(apc::ClickAction::SINGLE);
+  RunActorAction(std::move(actions), "upload", std::move(done), entry->tab_id);
 }
 
 void BrowserTool::RunBackOnUI(::nexus::generated::BackInput input,
                               ToolCallback done) {
   // Phase 13: schema dropped tab_id; always act on the active tab.
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "back", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "back", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
   apc::Actions actions;
   apc::HistoryBackAction* back = actions.add_actions()->mutable_back();
   back->set_tab_id(*resolved_tab_id);
-  RunActorAction(std::move(actions), "back", std::move(done));
+  RunActorAction(std::move(actions), "back", std::move(done),
+                  *resolved_tab_id);
 }
 
 // Phase 13: `RunForwardOnUI` retired alongside the `forward` tool. The
@@ -618,7 +899,7 @@ void BrowserTool::RunCloseTabOnUI(::nexus::generated::CloseTabInput input,
   // activate_tab). Both intentionally let the model target a non-active
   // tab — closing a background popup is the canonical use.
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(input.tab_id, GetProfile(), "close_tab", done);
+      ResolveTabIdOrReject(input.tab_id, GetProfile(), "close_tab", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -626,7 +907,12 @@ void BrowserTool::RunCloseTabOnUI(::nexus::generated::CloseTabInput input,
   apc::CloseTabAction* close_tab =
       actions.add_actions()->mutable_close_tab();
   close_tab->set_tab_id(*resolved_tab_id);
-  RunActorAction(std::move(actions), "close_tab", std::move(done));
+  // No working_tab_id — the targeted tab is being closed. Post-close
+  // observation surfaces every surviving session-owned tab as basics
+  // only. The next tab-less call falls back to LastWorkTab() if the
+  // closed tab was the recorded one, or to first session-owned tab.
+  RunActorAction(std::move(actions), "close_tab", std::move(done),
+                  std::nullopt);
 }
 
 void BrowserTool::RunActivateTabOnUI(::nexus::generated::ActivateTabInput input,
@@ -634,11 +920,25 @@ void BrowserTool::RunActivateTabOnUI(::nexus::generated::ActivateTabInput input,
   // ActivateTabInput.tab_id is required (bare int32_t, not optional);
   // the codegen-emitted Extract() rejects a missing key with
   // `invalid_args` before this body runs (see activate_tab.gen.h).
+  //
+  // Route through ResolveTabIdOrReject so the per-session check
+  // (kSessionScopedTabs) gets applied uniformly — without it, the LLM
+  // could activate a tab from another session simply by knowing its id.
+  std::optional<int32_t> resolved_tab_id =
+      ResolveTabIdOrReject(input.tab_id, GetProfile(), "activate_tab", done, this);
+  if (!resolved_tab_id.has_value()) {
+    return;
+  }
+  // No stored "last active tab" — after this ActivateTabAction dispatches,
+  // Chrome's `GetActiveTabHandleId(profile)` will return *resolved_tab_id
+  // on the next call, which is what tab-less tool calls fall back to via
+  // `GetSessionScopedActiveTabHandleId`.
   apc::Actions actions;
   apc::ActivateTabAction* activate_tab =
       actions.add_actions()->mutable_activate_tab();
-  activate_tab->set_tab_id(input.tab_id);
-  RunActorAction(std::move(actions), "activate_tab", std::move(done));
+  activate_tab->set_tab_id(*resolved_tab_id);
+  RunActorAction(std::move(actions), "activate_tab", std::move(done),
+                  *resolved_tab_id);
 }
 
 // Phase 13: `RunWaitOnUI` retired alongside the `wait` tool. The
@@ -668,7 +968,8 @@ void BrowserTool::RunClickOnUI(::nexus::generated::ClickInput input,
   click->set_tab_id(entry->tab_id);
   click->set_click_type(apc::ClickAction::LEFT);
   click->set_click_count(apc::ClickAction::SINGLE);
-  RunActorAction(std::move(actions), "click", std::move(done));
+  RunActorAction(std::move(actions), "click", std::move(done),
+                  entry->tab_id);
 }
 
 void BrowserTool::RunInputOnUI(::nexus::generated::InputInput input,
@@ -694,7 +995,8 @@ void BrowserTool::RunInputOnUI(::nexus::generated::InputInput input,
   // as the contract for input.
   type->set_mode(apc::TypeAction::DELETE_EXISTING);
   type->set_follow_by_enter(input.submit.value_or(false));
-  RunActorAction(std::move(actions), "input", std::move(done));
+  RunActorAction(std::move(actions), "input", std::move(done),
+                  entry->tab_id);
 }
 
 void BrowserTool::RunSelectOnUI(::nexus::generated::SelectInput input,
@@ -714,7 +1016,8 @@ void BrowserTool::RunSelectOnUI(::nexus::generated::SelectInput input,
       ->set_serialized_token(entry->document_id);
   select->set_tab_id(entry->tab_id);
   select->set_value(std::move(input.value));
-  RunActorAction(std::move(actions), "select", std::move(done));
+  RunActorAction(std::move(actions), "select", std::move(done),
+                  entry->tab_id);
 }
 
 void BrowserTool::RunHoverOnUI(::nexus::generated::HoverInput input,
@@ -732,7 +1035,8 @@ void BrowserTool::RunHoverOnUI(::nexus::generated::HoverInput input,
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
   move->set_tab_id(entry->tab_id);
-  RunActorAction(std::move(actions), "hover", std::move(done));
+  RunActorAction(std::move(actions), "hover", std::move(done),
+                  entry->tab_id);
 }
 
 void BrowserTool::RunDragAndDropOnUI(::nexus::generated::DragAndDropInput input,
@@ -778,7 +1082,8 @@ void BrowserTool::RunDragAndDropOnUI(::nexus::generated::DragAndDropInput input,
       ->mutable_document_identifier()
       ->set_serialized_token(to_entry->document_id);
   drag->set_tab_id(from_entry->tab_id);
-  RunActorAction(std::move(actions), "drag_and_drop", std::move(done));
+  RunActorAction(std::move(actions), "drag_and_drop", std::move(done),
+                  from_entry->tab_id);
 }
 
 void BrowserTool::RunScrollToOnUI(::nexus::generated::ScrollToInput input,
@@ -798,7 +1103,8 @@ void BrowserTool::RunScrollToOnUI(::nexus::generated::ScrollToInput input,
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
   scroll_to->set_tab_id(entry->tab_id);
-  RunActorAction(std::move(actions), "scroll_to", std::move(done));
+  RunActorAction(std::move(actions), "scroll_to", std::move(done),
+                  entry->tab_id);
 }
 
 void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
@@ -832,7 +1138,7 @@ void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
     // tab_id on every ScrollAction even with no node target. Always
     // resolve to the active tab.
     std::optional<int32_t> resolved =
-        ResolveTabIdOrReject(std::nullopt, GetProfile(), "scroll", done);
+        ResolveTabIdOrReject(std::nullopt, GetProfile(), "scroll", done, this);
     if (!resolved.has_value()) {
       return;
     }
@@ -876,7 +1182,8 @@ void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
   }
 
   scroll->set_distance(pixel_distance);
-  RunActorAction(std::move(actions), "scroll", std::move(done));
+  RunActorAction(std::move(actions), "scroll", std::move(done),
+                  resolved_tab_id);
 }
 
 void BrowserTool::RunSearchOnUI(::nexus::generated::SearchInput input,
@@ -954,7 +1261,7 @@ void BrowserTool::RunDoneOnUI(::nexus::generated::DoneInput input,
 void BrowserTool::RunMediaControlOnUI(
     ::nexus::generated::MediaControlInput input, ToolCallback done) {
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "media_control", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "media_control", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -992,7 +1299,8 @@ void BrowserTool::RunMediaControlOnUI(
                       input.action, "\""}));
     return;
   }
-  RunActorAction(std::move(actions), "media_control", std::move(done));
+  RunActorAction(std::move(actions), "media_control", std::move(done),
+                  *resolved_tab_id);
 }
 
 void BrowserTool::RunMediaStateOnUI(::nexus::generated::MediaStateInput input,
@@ -1003,7 +1311,7 @@ void BrowserTool::RunMediaStateOnUI(::nexus::generated::MediaStateInput input,
   //
   // Phase 13: dropped tab_id from the schema; always reads the active tab.
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "media_state", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "media_state", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -1127,7 +1435,7 @@ void BrowserTool::RunFindTextOnUI(::nexus::generated::FindTextInput input,
   // Phase 13: dropped tab_id (always active tab) and max_results
   // (fixed server-side cap).
   std::optional<int32_t> resolved_tab_id =
-      ResolveTabIdOrReject(std::nullopt, GetProfile(), "find_text", done);
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "find_text", done, this);
   if (!resolved_tab_id.has_value()) {
     return;
   }
@@ -1152,13 +1460,21 @@ void BrowserTool::OnReadPageObservationBuilt(
     ToolCallback done,
     std::string action_name,
     base::TimeTicks /*start_time*/,
-    actor::mojom::ActionResultCode result_code,
-    std::optional<size_t> /*index_of_failed_action*/,
-    std::vector<actor::ActionResultWithLatencyInfo> /*action_results*/,
+    std::vector<actor::ActionResultWithLatencyInfo> action_results,
     actor::TaskId /*task_id*/,
     bool /*skip_async_observation_information*/,
+    std::optional<page_content_annotations::ScreenshotOptions::
+                      ScreenshotCollectionOptions>
+    /*screenshot_collection_options*/,
     std::unique_ptr<apc::ActionsResult> result_proto,
     std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> /*journal*/) {
+  // 149 folded the standalone result_code / index_of_failed_action into
+  // the per-action `action_results` vector; reduce it via upstream's
+  // canonical helper (first non-OK wins). Observation-only paths
+  // (read_page / find_text) dispatch no actions, so this is kOk unless the
+  // framework reports an observation-time failure.
+  const actor::mojom::ActionResultCode result_code =
+      OverallActorResultCode(action_results);
   // Node registry accumulates across observations — see comment in
   // OnActionsResultBuilt. BuildObservationDict below registers the
   // new observation's nodes; prior nodes that didn't reappear remain
@@ -1169,7 +1485,8 @@ void BrowserTool::OnReadPageObservationBuilt(
   result.Set("scope", scope);
   if (!actor::IsOk(result_code)) {
     result.Set("ok", false);
-    result.Set("result", DescribeActorError(result_code));
+    result.Set("result",
+                DescribeActorErrorForTool(action_name, result_code));
     std::move(done).Resolve(std::move(result));
     return;
   }
@@ -1257,19 +1574,28 @@ void BrowserTool::OnFindTextObservationBuilt(
     ToolCallback done,
     std::string action_name,
     base::TimeTicks /*start_time*/,
-    actor::mojom::ActionResultCode result_code,
-    std::optional<size_t> /*index_of_failed_action*/,
-    std::vector<actor::ActionResultWithLatencyInfo> /*action_results*/,
+    std::vector<actor::ActionResultWithLatencyInfo> action_results,
     actor::TaskId /*task_id*/,
     bool /*skip_async_observation_information*/,
+    std::optional<page_content_annotations::ScreenshotOptions::
+                      ScreenshotCollectionOptions>
+    /*screenshot_collection_options*/,
     std::unique_ptr<apc::ActionsResult> result_proto,
     std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> /*journal*/) {
+  // 149 folded the standalone result_code / index_of_failed_action into
+  // the per-action `action_results` vector; reduce it via upstream's
+  // canonical helper (first non-OK wins). Observation-only paths
+  // (read_page / find_text) dispatch no actions, so this is kOk unless the
+  // framework reports an observation-time failure.
+  const actor::mojom::ActionResultCode result_code =
+      OverallActorResultCode(action_results);
   base::DictValue result;
   result.Set("action", action_name);
   result.Set("query", query);
   if (!actor::IsOk(result_code)) {
     result.Set("ok", false);
-    result.Set("result", DescribeActorError(result_code));
+    result.Set("result",
+                DescribeActorErrorForTool(action_name, result_code));
     std::move(done).Resolve(std::move(result));
     return;
   }
@@ -1543,11 +1869,8 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::FillFormInput input,
   // The flag is accepted from the schema for forward compatibility.
   (void)input.stop_on_error;
 
-  // Suppress "unused variable" on target_tab_id — populated for clarity
-  // but the actor framework discovers the tab via each action's tab_id.
-  (void)target_tab_id;
-
-  RunActorAction(std::move(actions), "fill_form", std::move(done));
+  RunActorAction(std::move(actions), "fill_form", std::move(done),
+                  target_tab_id);
 }
 
 }  // namespace nexus

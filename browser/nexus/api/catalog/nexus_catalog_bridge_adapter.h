@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/api/catalog/catalog_api.gen.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
@@ -13,6 +14,14 @@ class MessagePortDescriptor;
 namespace nexus {
 
 class NexusBridgeResponseDelegate;
+
+// Which host shells resolved on PATH. Computed off the UI thread (PATH
+// stats are blocking I/O) and used to gate the Bash / PowerShell tools out
+// of the listHostedTools response on hosts that can't run them.
+struct CatalogShellAvailability {
+  bool bash = false;
+  bool pwsh = false;
+};
 
 // Concrete adapter implementing the generated `CatalogApiBase` virtuals.
 //
@@ -59,6 +68,13 @@ class NexusCatalogBridgeAdapter
       ::nexus::generated::ListPromptSectionsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+
+  // UI-thread continuation of HandleListHostedToolsOnUI: filters the static
+  // catalog by the off-thread-resolved shell availability and replies.
+  void ReplyWithFilteredCatalog(::nexus::BridgeResponseCallback done,
+                                CatalogShellAvailability availability);
+
+  base::WeakPtrFactory<NexusCatalogBridgeAdapter> weak_ptr_factory_{this};
 };
 
 }  // namespace nexus

@@ -14,6 +14,7 @@
 #include "custom_browser/browser/nexus/api/catalog/nexus_catalog_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
 #include "custom_browser/browser/nexus/tools/tools_adapter.h"
@@ -67,12 +68,26 @@ Dict BuildSuccessResponse(const std::string& id,
 NexusBridgePortService::NexusBridgePortService(Profile* profile) {
   base::FilePath cwd;
   if (profile && profile->GetPath().IsAbsolute()) {
-    cwd = profile->GetPath();
+    // Anchor the runtime cwd at the product root (the parent of the
+    // chromium user-data-dir), not at the profile dir. `profile->GetPath()`
+    // is `<user-data-dir>/<profile>`; `.DirName()` drops the profile name,
+    // and a second `.DirName()` drops the user-data-dir name, landing on
+    // the install root (e.g. `C:\Users\<u>\AppData\Local\Velloc\`). The
+    // guest then resolves the `.nexus` storage path (skills, sessions,
+    // memory, mcp config) under that root — shared across all chromium
+    // profiles — instead of burying it under `User Data\Default`.
+    cwd = profile->GetPath().DirName().DirName();
   }
 
   fs_adapter_ = std::make_unique<NexusFsBridgeAdapter>(this, cwd);
   llm_adapter_ = std::make_unique<NexusLlmBridgeAdapter>(this, profile);
   ui_adapter_ = std::make_unique<NexusUiBridgeAdapter>(this, profile);
+  // V1 WebFetch: acquires its SharedURLLoaderFactory from `profile`
+  // (default storage partition's browser-process loader), so the
+  // egress path matches the LLM providers'. See
+  // api/network/nexus_network_bridge_adapter.cc for details.
+  network_adapter_ =
+      std::make_unique<NexusNetworkBridgeAdapter>(this, profile);
   catalog_adapter_ = std::make_unique<NexusCatalogBridgeAdapter>(this);
   // The `browser` capability is the single dispatch surface for the
   // macro-DSL-declared tool catalog (see `ToolCatalog::Get()`).
@@ -90,6 +105,7 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
       this, profile, tools_adapter_.get());
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
+  RegisterCapability("network", network_adapter_.get());
   RegisterCapability("session", session_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());
@@ -224,9 +240,9 @@ void NexusBridgePortService::DispatchRequest(
     return;
   }
 
-  LOG(INFO) << "[NexusTrace][PortService] Dispatching route "
-            << *route_namespace << "/" << *capability << "/" << *action
-            << " request_id=" << *id;
+  // LOG(INFO) << "[NexusTrace][PortService] Dispatching route "
+  //           << *route_namespace << "/" << *capability << "/" << *action
+  //           << " request_id=" << *id;
   if (!capability_it->second->Dispatch(*action, *id, *route, payload,
                                        std::move(ports))) {
     SendErrorResponse(*id, *route, "NOT_IMPLEMENTED",

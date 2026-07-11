@@ -1,9 +1,11 @@
 #include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
 
+#include <map>
 #include <utility>
 
 #include "base/logging.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_provider.h"
 #include "custom_browser/browser/nexus/api/llm/providers/google/google_provider.h"
 #include "custom_browser/browser/nexus/api/llm/providers/ollama/ollama_provider.h"
@@ -19,7 +21,10 @@ namespace {
 // so alphabetical map ordering doesn't leak through.
 constexpr const char* kProviderIds[] = {
     "openai",
+    "chatgpt-pro",
     "anthropic",
+    "github-copilot",
+    "qwen-code",
     "google",
     "glm",
     "minimax",
@@ -52,6 +57,57 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) {
   if (provider_id == "openai")
     return std::make_unique<OpenAiProvider>(url_loader_factory);
+
+  // ChatGPT Plus/Pro (OAuth subscription). Reuses OpenAiProvider's Responses
+  // API path against the ChatGPT Codex backend, with the originator /
+  // OpenAI-Beta headers that backend expects. The OAuth access token is
+  // supplied as the api_key via Configure() (see NexusOAuthManager).
+  if (provider_id == "chatgpt-pro") {
+    const OAuthProviderConfig* config = GetOAuthProviderConfig(provider_id);
+    if (!config) {
+      DLOG(ERROR) << "Missing OAuth config for chatgpt-pro";
+      return nullptr;
+    }
+    std::map<std::string, std::string> extra_headers = {
+        {"originator", "browseros"},
+        {"OpenAI-Beta", "responses=experimental"},
+    };
+    return std::make_unique<OpenAiProvider>(
+        url_loader_factory, config->id, config->display_name,
+        config->backend_base_url, /*uses_responses_api=*/true,
+        std::move(extra_headers));
+  }
+
+  // GitHub Copilot + Qwen Code (OAuth device-code). Both speak OpenAI-style
+  // chat/completions against their own base URL; the OAuth access token is
+  // supplied as the api_key via Configure(). Copilot needs a couple of extra
+  // request headers (mirrors BrowserOS's copilot-fetch).
+  if (provider_id == "github-copilot" || provider_id == "qwen-code") {
+    const OAuthProviderConfig* config = GetOAuthProviderConfig(provider_id);
+    if (!config) {
+      DLOG(ERROR) << "Missing OAuth config for " << provider_id;
+      return nullptr;
+    }
+    std::map<std::string, std::string> extra_headers;
+    if (provider_id == "github-copilot") {
+      // api.githubcopilot.com rejects requests without an integration id and
+      // editor version (403). These mirror the GitHub Copilot Chat client so
+      // both /models discovery and chat/completions are accepted. The bearer
+      // is the short-lived Copilot token minted by NexusOAuthManager from the
+      // GitHub OAuth token (see EnsureCopilotToken).
+      extra_headers = {
+          {"Copilot-Integration-Id", "vscode-chat"},
+          {"Editor-Version", "vscode/1.96.0"},
+          {"Editor-Plugin-Version", "copilot-chat/0.23.0"},
+          {"Openai-Intent", "conversation-edits"},
+          {"x-initiator", "user"},
+      };
+    }
+    return std::make_unique<OpenAiProvider>(
+        url_loader_factory, config->id, config->display_name,
+        config->backend_base_url, /*uses_responses_api=*/false,
+        std::move(extra_headers));
+  }
 
   if (provider_id == "anthropic")
     return std::make_unique<AnthropicProvider>(url_loader_factory);

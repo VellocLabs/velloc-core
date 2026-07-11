@@ -10,12 +10,12 @@ import {
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {
-  browserModeIcon,
   cpuIcon,
   cubeIcon,
   infoIcon,
   keyboardIcon,
   shieldIcon,
+  wrenchIcon,
 } from './nexus_icons.js';
 import {
   getString,
@@ -153,7 +153,7 @@ export class NexusSettingsElement extends CrLitElement {
       font: inherit;
       font-size: 14px;
       font-weight: 500;
-      line-height: 14px;
+      line-height: 20px;
       margin-inline-end: 2px;
       margin-inline-start: 1px;
       min-height: 40px;
@@ -308,9 +308,8 @@ export class NexusSettingsElement extends CrLitElement {
       },
       {
         id: 'tools',
-        icon: browserModeIcon,
-        title: getString(
-            'customBrowserNexusToolsPageTitle', 'Tools · Browser'),
+        icon: wrenchIcon,
+        title: getString('customBrowserNexusToolsNavTitle', 'Tools'),
       },
       {
         id: 'shortcuts',

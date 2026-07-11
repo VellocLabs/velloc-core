@@ -2,6 +2,13 @@
 
 namespace nexus {
 
+ModelInfo::ModelInfo() = default;
+ModelInfo::ModelInfo(const ModelInfo&) = default;
+ModelInfo::ModelInfo(ModelInfo&&) = default;
+ModelInfo& ModelInfo::operator=(const ModelInfo&) = default;
+ModelInfo& ModelInfo::operator=(ModelInfo&&) = default;
+ModelInfo::~ModelInfo() = default;
+
 ProviderInfo::ProviderInfo() = default;
 ProviderInfo::ProviderInfo(const ProviderInfo&) = default;
 ProviderInfo& ProviderInfo::operator=(const ProviderInfo&) = default;

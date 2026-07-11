@@ -9,11 +9,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_action_container.h"
-#include "components/prefs/pref_service.h"
 #include "custom_browser/common/branding_constants.h"
-#include "custom_browser/common/pref_names.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/color/color_id.h"
 #include "ui/events/event.h"
@@ -51,8 +50,9 @@ bool ShouldShowNexusModeButton(custom_browser::mojom::UIMode mode) {
     case UIMode::kSidebar:
     case UIMode::kCompactSidebar:
     case UIMode::kStandard:
-    case UIMode::kNexus:
       return true;
+    // kNexus intentionally hidden: the dedicated nexus window does not show the
+    // toggle button.
     default:
       return false;
   }
@@ -110,11 +110,8 @@ NexusModeButton::NexusModeButton(CustomBrowserView* custom_browser_view)
   SetProperty(views::kCrossAxisAlignmentKey, views::LayoutAlignment::kCenter);
 
   const custom_browser::mojom::UIMode initial_mode =
-      browser_ui_prefs_->pref_mode();
+      browser_ui_prefs_->current_mode();
   current_ui_mode_ = initial_mode;
-  if (initial_mode != custom_browser::mojom::UIMode::kNexus) {
-    last_non_nexus_mode_ = initial_mode;
-  }
   UpdateForMode(initial_mode);
   SetVisible(ShouldShowNexusModeButton(initial_mode));
   UpdateBackground();
@@ -156,10 +153,6 @@ void NexusModeButton::EnsureAttached() {
 
 void NexusModeButton::OnUIModeChanged(custom_browser::mojom::UIMode ui_mode) {
   current_ui_mode_ = ui_mode;
-  if (ui_mode != custom_browser::mojom::UIMode::kNexus) {
-    last_non_nexus_mode_ = ui_mode;
-  }
-
   EnsureAttached();
   ApplyModeState(ui_mode);
 }
@@ -195,23 +188,31 @@ void NexusModeButton::ToggleMode(const ui::Event& event) {
   }
 
   using custom_browser::mojom::UIMode;
-  const UIMode current_mode =
-      current_ui_mode_.value_or(browser_ui_prefs_->pref_mode());
-  const UIMode target_mode = current_mode == UIMode::kNexus
-                                 ? GetBrowserModeForToggle()
-                                 : UIMode::kNexus;
+  Profile* profile = custom_browser_view_->browser()->profile();
 
-  if (current_mode != UIMode::kNexus) {
-    last_non_nexus_mode_ = current_mode;
+  if (browser_ui_prefs_->current_mode() == UIMode::kNexus) {
+    // Inside the nexus window: leave toward a normal browser window.
+    window_util::OpenOrFocusNormalWindow(profile);
+  } else {
+    // On a browser window: go to the (singleton) nexus window.
+    window_util::OpenOrFocusNexusWindow(profile);
   }
-
-  custom_browser_view_->browser()->profile()->GetPrefs()->SetInteger(
-      kCustomUIModePrefPath, static_cast<int>(target_mode));
 }
 
 void NexusModeButton::ApplyModeState(custom_browser::mojom::UIMode ui_mode) {
   UpdateForMode(ui_mode);
-  SetVisible(ShouldShowNexusModeButton(ui_mode));
+
+  const bool should_show = ShouldShowNexusModeButton(ui_mode);
+  const bool visibility_changed = (GetVisible() != should_show);
+  SetVisible(should_show);
+
+  // The button is a FlexLayout child of TabStripActionContainer. When its
+  // visibility flips, propagate a preferred-size change so the container (and
+  // the tab strip region above it) recomputes its width — reclaiming the space
+  // when hidden, making room when shown, instead of leaving a gap.
+  if (visibility_changed) {
+    PreferredSizeChanged();
+  }
 
   auto* tab_strip_action_container = GetParentTabStripActionContainer(this);
   if (!tab_strip_action_container) {
@@ -260,21 +261,6 @@ void NexusModeButton::UpdateBackground() {
   }
 
   SetBackground(nullptr);
-}
-
-custom_browser::mojom::UIMode NexusModeButton::GetBrowserModeForToggle() const {
-  using custom_browser::mojom::UIMode;
-  if (last_non_nexus_mode_ && *last_non_nexus_mode_ != UIMode::kNexus) {
-    return *last_non_nexus_mode_;
-  }
-
-  const UIMode pref_mode =
-      browser_ui_prefs_ ? browser_ui_prefs_->pref_mode() : UIMode::kSidebar;
-  if (pref_mode != UIMode::kNexus) {
-    return pref_mode;
-  }
-
-  return UIMode::kSidebar;
 }
 
 BEGIN_METADATA(NexusModeButton)

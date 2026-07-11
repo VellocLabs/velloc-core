@@ -247,4 +247,38 @@ void NexusFsBridgeAdapter::HandleExistsOnThreadPool(
   std::move(done).Success(Value(result.exists));
 }
 
+void NexusFsBridgeAdapter::HandleRealpathOnThreadPool(
+    ::nexus::generated::RealpathInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  NexusFsHost::RealpathResult result = fs_host_->Realpath(input.path);
+  if (!result.success) {
+    std::move(done).Error(
+        "FS_ERROR", !result.error.empty() ? result.error : "Realpath failed");
+    return;
+  }
+  Dict envelope;
+  envelope.Set("path", result.path);
+  std::move(done).Success(Value(std::move(envelope)));
+}
+
+void NexusFsBridgeAdapter::HandleSystemInfoOnThreadPool(
+    ::nexus::generated::SystemInfoInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // SystemInfo reads base::SysInfo and env vars synchronously on the
+  // current thread (thread_pool with MayBlock via the declared
+  // runtime.thread). All three fields are best-effort strings; empty
+  // means "unknown" and the guest drops the corresponding line from
+  // its `# Environment` block. The dict is always returned (never
+  // .Error) so the guest doesn't have to differentiate "host failed"
+  // from "host has no info" — both look the same to the prompt.
+  NexusFsHost::SystemInfoResult result = fs_host_->SystemInfo();
+  Dict envelope;
+  envelope.Set("platform", result.platform);
+  envelope.Set("osVersion", result.os_version);
+  envelope.Set("shell", result.shell);
+  std::move(done).Success(Value(std::move(envelope)));
+}
+
 }  // namespace nexus

@@ -7,6 +7,7 @@
 #include "base/base64.h"
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
@@ -14,7 +15,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -167,7 +167,11 @@ void CustomBrowserUiPrefs::EnableLayoutsSaving(bool enable) {
 
 // static
 UIMode CustomBrowserUiPrefs::GetUIModeFromPref(PrefService* prefs) {
-  return static_cast<UIMode>(prefs->GetInteger(kCustomUIModePrefPath));
+  // kNexus is a runtime-only, per-window mode and is never the persisted
+  // current mode. Clamp any stale/legacy kNexus value to a browser mode so
+  // browser windows and the WebUI data source never inherit it.
+  UIMode mode = static_cast<UIMode>(prefs->GetInteger(kCustomUIModePrefPath));
+  return mode == UIMode::kNexus ? UIMode::kSidebar : mode;
 }
 
 UIMode CustomBrowserUiPrefs::pref_mode() const {
@@ -179,11 +183,11 @@ UIMode CustomBrowserUiPrefs::current_mode() const {
 }
 
 void CustomBrowserUiPrefs::RestoreFromPrefs() {
-  LoadUILayoutParams(pref_mode());
+  LoadUILayoutParams(initial_mode_override_.value_or(pref_mode()));
 }
 
 GURL CustomBrowserUiPrefs::BuildInitUrl() {
-  LoadUILayoutParams(pref_mode());
+  LoadUILayoutParams(initial_mode_override_.value_or(pref_mode()));
   return GURL(custom_browser::kChromeUICustomBrowserURL);
 }
 
@@ -313,6 +317,11 @@ void CustomBrowserUiPrefs::UpdateUIMode(UIMode mode) {
 }
 
 void CustomBrowserUiPrefs::OnModePrefChanged() {
+  // The nexus window is pinned to kNexus and must not follow the shared
+  // browser-mode pref that other windows broadcast through.
+  if (current_mode() == UIMode::kNexus) {
+    return;
+  }
   if (pref_mode() == current_mode()) {
     return;
   }

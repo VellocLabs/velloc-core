@@ -1,6 +1,7 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_H_
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -9,6 +10,8 @@
 #include <memory>
 
 #include "base/callback_list.h"
+#include "base/containers/flat_map.h"
+#include "base/containers/flat_set.h"
 #include "base/functional/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -21,6 +24,9 @@
 #include "chrome/common/actor/task_id.h"
 #include "components/optimization_guide/proto/features/actions_data.pb.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
+#include "components/page_content_annotations/content/page_context_fetcher.h"
+#include "components/tab_groups/tab_group_id.h"
+#include "components/tabs/public/tab_interface.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/node_registry.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
@@ -84,10 +90,61 @@ class BrowserTool : public ToolBase,
   // tools/codegen/generate.py + declarations/browser_tool/.
   static void DefineTools(ToolRegistry& registry);
 
-  // Notification override — stops the per-session actor task. Called
-  // by the cascade through `ToolSession::OnStop(reason)`. Idempotent:
-  // safe to call more than once.
-  void OnStop(const std::string& reason) override;
+  // Notification override — stops the per-session actor task and
+  // clears the node registry. Called by the cascade through
+  // `ToolSession::OnStop(reason)`. Idempotent: safe to call more than
+  // once.
+  //
+  // Note: this does NOT close the session's tabs. Tab teardown is
+  // attached to `~BrowserTool` instead — the "tabs close with the
+  // panel" UX maps onto the destructor running whenever ToolsAdapter
+  // erases the session (kSessionDeleted) or the adapter itself dies
+  // (panel close → port-service teardown).
+  void OnStop(OnStopReason reason) override;
+
+  // Tab bookkeeping API. Used by `RunCreateTabAction` to bind a
+  // freshly-created tab to this session and by
+  // `GetSessionScopedActiveTabHandleId` / `ResolveTabIdOrReject` (free
+  // helpers in browser_tool_internal.h) to enumerate session-owned
+  // tabs and read the last-worked-on tab.
+  //
+  // Inlined from the pre-refactor profile-scoped
+  // `NexusSessionTabGroupRegistry`. The registry's purpose — bridge
+  // BrowserTool lifetimes across per-turn OnStop / re-create cycles —
+  // disappeared once ToolsAdapter stopped erasing on kCompleted /
+  // kUserStopped; the state now belongs to BrowserTool itself.
+
+  // Attach the session tag to the WebContents and add the tab to this
+  // session's tab group (creating the group lazily on the first
+  // session tab). Records the handle in `session_tabs_` for shutdown
+  // teardown. No-op if the feature flag is off or the session key is
+  // empty.
+  //
+  // Does NOT touch `last_work_tab_` — creating a tab isn't the same
+  // as the LLM having worked on it. `RecordWorkTab` is called from
+  // `RunActorAction` / `RunTabObservation` once an actual tool action
+  // dispatches against the tab.
+  void BindTabToSession(tabs::TabHandle handle);
+
+  // Walks every Browser for this session's profile and returns the
+  // handles of every tab whose NexusSessionTabTag matches this
+  // session's key. The tag (not `session_tabs_`) is authoritative —
+  // a tab the user manually dragged out of the group is still
+  // session-owned. The flat-set member is a fast-path index for
+  // common operations and is reconciled with the tag on shutdown.
+  std::vector<tabs::TabHandle> CollectSessionTabs() const;
+
+  // Returns the most-recent tab that a tool actually operated on for
+  // this session, IF the handle is still alive AND still carries this
+  // session's tag. Otherwise nullopt.
+  //
+  // Used by `GetSessionScopedActiveTabHandleId` as a fallback after
+  // Chrome's active tab — answers "the LLM was last working on tab X;
+  // it's calling a tab-less tool, so X is the natural default" when
+  // the user's foreground tab isn't session-owned. Rename from the
+  // earlier `last_active_tab_` clarifies the semantic: this records
+  // *work*, not creation or activation.
+  std::optional<tabs::TabHandle> LastWorkTab() const;
 
   // Per-action wall-clock budget propagated from `ToolSession`.
   // Read by `RunActorAction` / `RunTabObservation` to wrap every
@@ -195,6 +252,23 @@ class BrowserTool : public ToolBase,
   // base::DictValue into a typed FieldOp inside browser_tool.cc.
   void RunFillFormOnUI(::nexus::generated::FillFormInput input,
                    ToolCallback done) override;
+  // BrowserDownload. Two modes (exactly one of index|url): `index` clicks
+  // an element to trigger a download and captures whatever the click
+  // produces (handles blob:/POST/Content-Disposition/JS downloads with no
+  // obtainable URL); `url` downloads a direct URL using the active tab's
+  // session. Saves into `<cwd>/downloads/` and resolves via DownloadCapture
+  // (bounded wait + in-progress reporting for large files). See
+  // download_capture.{h,cc}.
+  void RunDownloadOnUI(::nexus::generated::DownloadInput input,
+                   ToolCallback done) override;
+  // BrowserUpload. Arms `NexusPendingUpload` for the target tab with the
+  // resolved local file path, then clicks the file <input> via the actor;
+  // the chooser the click opens is answered by the guarded hook in
+  // Browser::RunFileChooser. The model gets the post-click observation
+  // (which should show the attached filename). See
+  // upload/nexus_file_chooser_interceptor.{h,cc}.
+  void RunUploadOnUI(::nexus::generated::UploadInput input,
+                   ToolCallback done) override;
 
  private:
   // ----------------------------------------------------------------
@@ -237,9 +311,19 @@ class BrowserTool : public ToolBase,
   // `BuildActionsResultWithObservations` → `OnActionsResultBuilt`,
   // which walks the result proto and resolves `done` with the
   // SimpleObservation JSON.
+  //
+  // `working_tab_id` is the tab this call is operating on (explicit
+  // input arg or resolved via `ResolveTabIdOrReject`). Used solely to
+  // call `RecordWorkTab(*working_tab_id)` before dispatch so the
+  // session's `last_work_tab_` advances to track the LLM's intent —
+  // the observation builder downstream reads `last_work_tab_`
+  // directly and doesn't need the value plumbed through the callback
+  // chain. `std::nullopt` means "no specific working tab" (e.g.
+  // `close_tab`); the recorder skips the update in that case.
   void RunActorAction(optimization_guide::proto::Actions actions,
                       std::string_view action_name,
-                      ToolCallback done);
+                      ToolCallback done,
+                      std::optional<int32_t> working_tab_id);
   ToolCallback PausableBudgetWrap(ToolCallback inner,
                                   base::TimeDelta budget,
                                   std::string action_name);
@@ -247,8 +331,8 @@ class BrowserTool : public ToolBase,
       base::TimeDelta budget,
       std::string name,
       base::OnceClosure on_timeout);
-  void OnActorTaskStateChanged(actor::TaskId task_id,
-                               actor::ActorTask::State state);
+  // custom-browser: Chromium 149's TaskStateChangedCallback passes ActorTask&.
+  void OnActorTaskStateChanged(actor::ActorTask& task);
   void PauseActiveTimeouts();
   void ResumeActiveTimeouts();
   void PruneSettledTimeouts();
@@ -257,12 +341,12 @@ class BrowserTool : public ToolBase,
   // First completion stage: PerformActions returns. We immediately
   // hand off to `BuildActionsResultWithObservations` to attach
   // post-action page observations (so the LLM can see what changed).
+  // custom-browser: Chromium 149's PerformActionsCallback passes only
+  // action_results (result_code/index are folded in and derived in the body).
   void OnActorPerformActionsDone(
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
-      actor::mojom::ActionResultCode result_code,
-      std::optional<size_t> index_of_failed_action,
       std::vector<actor::ActionResultWithLatencyInfo> action_results);
 
   // Two-stage `create_tab` flow.
@@ -282,8 +366,6 @@ class BrowserTool : public ToolBase,
       std::string action_name,
       actor::ActorTask::TabHandleSet tabs_before,
       base::TimeTicks start_time,
-      actor::mojom::ActionResultCode result_code,
-      std::optional<size_t> index_of_failed_action,
       std::vector<actor::ActionResultWithLatencyInfo> action_results);
 
   // Observation-only path used by `screenshot` / `read_page` /
@@ -301,15 +383,19 @@ class BrowserTool : public ToolBase,
   // `OnActionsResultBuilt`, custom text extractor, custom find-text
   // walker, …). All variants resolve `done` once the result_proto is
   // in hand.
+  // custom-browser: matches Chromium 149's BuildActionsResultWithObservations
+  // callback (result_code/index folded into action_results; screenshot
+  // collection options added before the result proto).
   using ObservationCompletion = base::OnceCallback<void(
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
-      actor::mojom::ActionResultCode result_code,
-      std::optional<size_t> index_of_failed_action,
       std::vector<actor::ActionResultWithLatencyInfo> action_results,
       actor::TaskId task_id,
       bool skip_async_observation_information,
+      std::optional<page_content_annotations::ScreenshotOptions::
+                        ScreenshotCollectionOptions>
+          screenshot_collection_options,
       std::unique_ptr<optimization_guide::proto::ActionsResult> result_proto,
       std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> journal)>;
 
@@ -330,11 +416,12 @@ class BrowserTool : public ToolBase,
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
-      actor::mojom::ActionResultCode result_code,
-      std::optional<size_t> index_of_failed_action,
       std::vector<actor::ActionResultWithLatencyInfo> action_results,
       actor::TaskId task_id,
       bool skip_async_observation_information,
+      std::optional<page_content_annotations::ScreenshotOptions::
+                        ScreenshotCollectionOptions>
+          screenshot_collection_options,
       std::unique_ptr<optimization_guide::proto::ActionsResult> result_proto,
       std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> journal);
 
@@ -349,27 +436,34 @@ class BrowserTool : public ToolBase,
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
-      actor::mojom::ActionResultCode result_code,
-      std::optional<size_t> index_of_failed_action,
       std::vector<actor::ActionResultWithLatencyInfo> action_results,
       actor::TaskId task_id,
       bool skip_async_observation_information,
+      std::optional<page_content_annotations::ScreenshotOptions::
+                        ScreenshotCollectionOptions>
+          screenshot_collection_options,
       std::unique_ptr<optimization_guide::proto::ActionsResult> result_proto,
       std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> journal);
 
   // Second completion stage: the ActionsResult proto (with
   // observations attached) is ready. We walk it, populate
   // `node_registry_`, build a SimpleObservation-shaped JSON dict,
-  // and resolve `done`.
+  // and resolve `done`. Reads `LastWorkTab()` to decide which tab
+  // gets the full element walk; every other session-owned tab in
+  // the observation gets basics only.
+  // custom-browser: matches Chromium 149's BuildActionsResultWithObservations
+  // callback (result_code/index folded into action_results; screenshot options
+  // added).
   void OnActionsResultBuilt(
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
-      actor::mojom::ActionResultCode result_code,
-      std::optional<size_t> index_of_failed_action,
       std::vector<actor::ActionResultWithLatencyInfo> action_results,
       actor::TaskId task_id,
       bool skip_async_observation_information,
+      std::optional<page_content_annotations::ScreenshotOptions::
+                        ScreenshotCollectionOptions>
+          screenshot_collection_options,
       std::unique_ptr<optimization_guide::proto::ActionsResult> result_proto,
       std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> journal);
 
@@ -384,12 +478,51 @@ class BrowserTool : public ToolBase,
       int tab_id,
       base::ListValue& out_elements);
 
-  // Builds the SimpleObservation JSON returned to the LLM. Per tab:
-  // tab_id / url / title / elements[] / has_screenshot. Non-fatal
-  // observation errors (e.g. timeout) surface as flags so the LLM
-  // can still reason about the action's success.
+  // Pre-pass over the APC tree that fills `observation_label_targets_`
+  // from every `<label for=...>` node (APC's `label_for_dom_node_id`).
+  // Run once per working-tab walk in `BuildObservationDict`, before
+  // `WalkContentNode`, so the walk can retarget hidden checkboxes/radios
+  // to their visible label. See `observation_label_targets_`.
+  void CollectLabelTargets(
+      const optimization_guide::proto::ContentNode& node);
+
+  // Builds the SimpleObservation JSON returned to the LLM.
+  //
+  // The **working tab** is read directly from `LastWorkTab()` —
+  // the session's stored "tab the most recent action ran against".
+  // It was updated by `RecordWorkTab` at the top of `RunActorAction`
+  // / `RunTabObservation` before dispatch, so by the time this
+  // builds the observation it points at the just-acted-upon tab.
+  //
+  // For the working tab in `result_proto.tabs()`: emits the full
+  // payload — `tab_id` / `url` / `title` / `elements[]` /
+  // `has_screenshot` — walks the APC tree via `WalkContentNode`,
+  // populates `node_registry_`, and updates the
+  // `last_observation_*` snapshot used by `agent_meta`.
+  //
+  // For every other session-owned tab in the observation: emits
+  // basics only — `tab_id` / `url` / `title`. No `elements[]`,
+  // no screenshot, no registry / projection updates. The LLM
+  // sees that those tabs exist but must `BrowserActivateTab(id)`
+  // to bring one into focus and see its interactive elements.
+  //
+  // If `LastWorkTab()` returns nullopt (no work tab recorded yet,
+  // or the recorded tab has died — e.g. just-closed by `close_tab`),
+  // every entry is basics-only.
+  //
+  // Cross-session tab filter (`kSessionScopedTabs`) still applies
+  // here — tabs whose `NexusSessionTabTag` doesn't match this
+  // session are dropped entirely.
+  // `include_screenshot_image`: when true AND the working tab carries a
+  // non-empty screenshot blob, the working tab's dict gets a
+  // `screenshot: { mime, data_base64 }` field (base64 of the captured
+  // bytes) so the JS side can turn it into an image content block for
+  // the model. Only `BrowserScreenshot` sets this — every other tool
+  // would just bloat its result with an image the model didn't ask for,
+  // so they keep the lightweight `has_screenshot: true` flag instead.
   base::DictValue BuildObservationDict(
-      const optimization_guide::proto::ActionsResult& result_proto);
+      const optimization_guide::proto::ActionsResult& result_proto,
+      bool include_screenshot_image = false);
 
   // Phase 2 stop-gap for tools that aren't actor-wired yet.
   void RejectNotYetImplemented(std::string_view tool_name, ToolCallback done);
@@ -406,7 +539,44 @@ class BrowserTool : public ToolBase,
                                         ToolCallback& done,
                                         std::string_view tool_name);
 
+  // Close every tagged tab and clear the bookkeeping. Idempotent.
+  // Called exclusively from `~BrowserTool` — see the comment above
+  // `OnStop` for why teardown is destructor-driven rather than
+  // OnStop-driven.
+  void CloseAllSessionTabsOnDestroy();
+
   std::optional<actor::TaskId> task_id_;
+
+  // Records `handle` as the tab a tool just operated on. Called from
+  // `RunActorAction` / `RunTabObservation` when their resolved
+  // working_tab_id is non-null. Validates the handle is session-owned
+  // before storing — a no-op on cross-session leaks. The "natural
+  // default" for the next tab-less call.
+  void RecordWorkTab(tabs::TabHandle handle);
+
+  // Session-owned tab bookkeeping (formerly the per-profile
+  // `NexusSessionTabGroupRegistry`'s `SessionState` row).
+  //
+  // `tab_group_id_` is std::nullopt until the first `BindTabToSession`
+  // creates the visual group. The group dies automatically once the
+  // last tab in it closes (Chromium auto-deletes empty groups).
+  //
+  // `session_tabs_` is the fast-path membership index. Reconciled with
+  // the authoritative `NexusSessionTabTag` on shutdown via
+  // `CollectSessionTabs()` so a tab the user dragged out of the group
+  // still gets closed on session teardown.
+  //
+  // `last_work_tab_` is the most-recent tab a tool DISPATCHED an
+  // action against. Set via `RecordWorkTab` in `RunActorAction` /
+  // `RunTabObservation`, NOT in `BindTabToSession` /
+  // `RunActivateTabOnUI` — creating or focus-cycling a tab isn't the
+  // same as the LLM working on it. `LastWorkTab()` reads it back,
+  // gating on the handle still being alive and still session-tagged.
+  // Used by `GetSessionScopedActiveTabHandleId` as a fallback after
+  // Chrome's foreground tab when that one isn't session-owned.
+  std::optional<tab_groups::TabGroupId> tab_group_id_;
+  base::flat_set<tabs::TabHandle> session_tabs_;
+  tabs::TabHandle last_work_tab_;
 
   // Per-action wall-clock budget. Default matches Browser-Use
   // (180s); JS can override via `browser.setAgentLoopSettings`,
@@ -417,6 +587,23 @@ class BrowserTool : public ToolBase,
   base::CallbackListSubscription task_state_subscription_;
   std::vector<scoped_refptr<browser_tool_internal::PausableTimeout>>
       active_timeouts_;
+
+  // A visible <label> that drives a (typically CSS-hidden) form control,
+  // resolved from APC's `label_for_dom_node_id`. `node_id` is the label's
+  // own DOM content_node_id; `box` is its `[x, y, w, h]` viewport rect.
+  struct LabelTarget {
+    int node_id = 0;
+    std::array<int, 4> box{};
+  };
+  // Per-observation index: hidden form control's node_id → its visible
+  // label. Built by a pre-pass over the APC tree in `BuildObservationDict`
+  // (before `WalkContentNode`), then read during the walk so a checkbox /
+  // radio whose own rect is empty (custom "sr-only" input behind a styled
+  // <label for=...>) is RE-TARGETED to the label: clicking the label
+  // toggles the input via native HTML, so the LLM gets a working,
+  // box-bearing element instead of an un-clickable offscreen one. Cleared
+  // and repopulated per working-tab walk; never persisted across actions.
+  base::flat_map<int, LabelTarget> observation_label_targets_;
 
   // Maps `(index, tab_id)` (the LLM-facing identifier pair) → the
   // actor proto's `(document_identifier, tab_id)` plus diagnostic

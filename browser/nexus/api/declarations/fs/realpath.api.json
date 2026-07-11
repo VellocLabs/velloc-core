@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "realpath",
+  "description": "Resolve a path to its canonical absolute form. Follows symlinks on POSIX; normalizes path on Windows. Used by the JS guest skill loader to dedup entries that point at the same on-disk file through different surface paths.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Path to canonicalize (relative paths resolve against cwd)."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

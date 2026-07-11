@@ -44,6 +44,8 @@ export interface BrowserApiProxy {
 
   executeBrowserCommand(commandId: BrowserCommandID): void;
   setUIMode(mode: UIMode): void;
+  getUIMode(): Promise<{uiMode: UIMode}>;
+  openBrowserWindow(): void;
   saveIntPref(key: IntKey, value: number): void;
   saveBoolPref(key: BoolKey, value: boolean): void;
   enableLayoutsSaving(enable: boolean): void;
@@ -195,6 +197,14 @@ export class BrowserApiProxyImpl implements BrowserApiProxy {
 
   setUIMode(mode: UIMode) {
     this.nativeViewHandler.setUIMode(mode);
+  }
+
+  getUIMode() {
+    return this.nativeViewHandler.getUIMode();
+  }
+
+  openBrowserWindow() {
+    this.nativeViewHandler.openBrowserWindow();
   }
 
   saveIntPref(key: IntKey, value: number) {

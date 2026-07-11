@@ -320,16 +320,39 @@ FileTool::~FileTool() {
   // Defensive — invalidate WeakPtrs so any reply still queued on
   // ThreadPool drops cleanly. OnStop is idempotent so the explicit
   // call here is safe even if it already ran.
-  OnStop("destructor");
+  OnStop(OnStopReason::kDestructor);
 }
 
-void FileTool::OnStop(const std::string& reason) {
+void FileTool::OnStop(OnStopReason reason) {
   LOG(INFO) << "[FileTool] OnStop session=" << GetSessionKey()
-            << " reason=" << reason;
-  // Invalidating WeakPtrs is the entire stop story for this class —
-  // we hold no actor task, no timers, no caches. Replies in flight on
-  // ThreadPool will fire harmlessly into a no-op closure.
-  weak_ptr_factory_.InvalidateWeakPtrs();
+            << " reason=" << OnStopReasonToString(reason);
+  // InvalidateWeakPtrs is gated on TEARDOWN reasons only — the ones
+  // that mean this FileTool is actually going away.
+  //
+  // Background: per-turn cleanup reasons (kCompleted, kUserStopped)
+  // fire OnStop while the ToolSession stays warm in the adapter map
+  // (typed-OnStop refactor — see tools_adapter.cc). FileTool caches
+  // a `weak_this_` member at construction time
+  // (file_tool.h declares `weak_this_`, file_tool.cc ctor sets it)
+  // because thread-pool bodies can't call `GetWeakPtr()` off-sequence.
+  // Invalidating WeakPtrs on per-turn cleanup would permanently null
+  // out that cached `weak_this_` for the rest of the session — every
+  // subsequent Read/Write/Edit/Glob would post its reply back to UI
+  // bound to a dead WeakPtr, the BindOnce would silently drop, and
+  // `ToolCallback`'s destructor would emit `tool_dropped` to the LLM.
+  //
+  // For kCompleted / kUserStopped there can be no in-flight tool I/O
+  // anyway (the agent loop blocks on tool results before deciding the
+  // turn is "complete"), so the invalidate has no in-flight callbacks
+  // to clean up — it's pure collateral damage on the cached
+  // `weak_this_`. Skip it.
+  const bool teardown = reason == OnStopReason::kSessionDeleted ||
+                        reason == OnStopReason::kDisconnected ||
+                        reason == OnStopReason::kShutdown ||
+                        reason == OnStopReason::kDestructor;
+  if (teardown) {
+    weak_ptr_factory_.InvalidateWeakPtrs();
+  }
 }
 
 // =============================================================================
@@ -510,18 +533,21 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   ProjectionResult projection =
       BuildLineNumberedProjection(contents, start_line, max_lines);
 
-  base::DictValue payload;
-  payload.Set("file_path", path.AsUTF8Unsafe());
-  payload.Set("content", projection.projection);
-  payload.Set("start_line", start_line);
-  payload.Set("lines_emitted", projection.lines_emitted);
-  payload.Set("truncated", projection.truncated);
-  // total_bytes is informational — lets the LLM gauge how much it has
-  // left to read when chasing a target via offset/limit.
-  payload.Set("total_bytes", static_cast<int>(contents.size()));
-
+  // CC parity: Read returns the line-numbered content directly (CC's
+  // FileReadTool emits "cat -n" formatted text as the tool_result
+  // string). When the projection truncated the file, append a trailer
+  // line telling the model so it can choose to re-Read with offset.
   result.ok = true;
-  result.payload = std::move(payload);
+  result.message = std::move(projection.projection);
+  if (projection.truncated) {
+    result.message.append(
+        base::StrCat({"\n\n[file truncated at line ",
+                      base::NumberToString(start_line +
+                                           projection.lines_emitted - 1),
+                      " of ",
+                      base::NumberToString(contents.size()),
+                      " bytes; re-Read with offset to continue]"}));
+  }
   return result;
 }
 
@@ -529,6 +555,12 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
 FileTool::WriteResult FileTool::WriteFileBlocking(base::FilePath path,
                                                   std::string content) {
   WriteResult result;
+
+  // Probe existence BEFORE we touch the file so the prose response can
+  // distinguish create-vs-update (CC's FileWriteTool branches on the
+  // same signal). base::WriteFile overwrites on create, so without a
+  // prior probe we couldn't tell which case applies.
+  const bool was_create = !base::PathExists(path);
 
   // Ensure the parent directory exists. base::WriteFile fails silently
   // (returns false) when the parent is missing; creating it explicitly
@@ -551,11 +583,42 @@ FileTool::WriteResult FileTool::WriteFileBlocking(base::FilePath path,
     return result;
   }
 
-  base::DictValue payload;
-  payload.Set("file_path", path.AsUTF8Unsafe());
-  payload.Set("bytes_written", static_cast<int>(content.size()));
+  // Result-string design (latest iteration — see D7 entry in
+  // C:\Users\myyyb\.claude\plans\compare-the-cc-and-staged-reddy.md and
+  // docs/agents/nexus-web-parity-audit.md → "Write tool success message"):
+  //
+  // CC's wording is reused verbatim ("File created successfully at: <p>"
+  // / "The file <p> has been updated successfully.") so the model's
+  // trained recognition pattern fires. CC's wording on its own was not
+  // enough in Nexus — testing showed the model still re-issued Write
+  // calls because the result didn't confirm the content actually
+  // landed on disk (it only confirmed the file existed afterwards).
+  // The fix is the additive ". Wrote N bytes." suffix: it carries an
+  // unambiguous byte-count signal that the agent's content was
+  // accepted, which closes the verify-loop the model was caught in.
+  //
+  // Echoing the path is intentional — earlier hypotheses worried it
+  // would "create ambiguity about whether the SAME path was written",
+  // but the opposite proved true: the path echo lets the model
+  // pattern-match what it sent vs. what landed in one comparison,
+  // and is consistent with CC's wording.
+  //
+  // Earlier wording variants in this slot:
+  //  - "The function is executed successfully; the file is created and
+  //    the content is updated too." (generic, ambiguous about content)
+  //  - "The function is executed successfully; the content is updated."
+  //    (update-only variant; same ambiguity)
+  // Both produced retry spirals. Do not revert to either.
   result.ok = true;
-  result.payload = std::move(payload);
+  const std::string byte_str = base::NumberToString(content.size());
+  result.message =
+      was_create
+          ? base::StrCat({"File created successfully at: ",
+                          path.AsUTF8Unsafe(), ". Wrote ", byte_str,
+                          " bytes."})
+          : base::StrCat({"The file ", path.AsUTF8Unsafe(),
+                          " has been updated successfully. Wrote ",
+                          byte_str, " bytes."});
   return result;
 }
 
@@ -592,12 +655,10 @@ FileTool::EditResult FileTool::EditFileBlocking(base::FilePath path,
   }
 
   std::string updated;
-  int replacements = 0;
   if (replace_all) {
     updated = contents;
     base::ReplaceSubstringsAfterOffset(&updated, /*start_offset=*/0,
                                        old_string, new_string);
-    replacements = static_cast<int>(occurrences);
   } else {
     // Single-occurrence path. We already checked occurrences == 1.
     size_t pos = contents.find(old_string);
@@ -607,7 +668,6 @@ FileTool::EditResult FileTool::EditFileBlocking(base::FilePath path,
     updated.append(new_string);
     updated.append(contents, pos + old_string.size(),
                    contents.size() - pos - old_string.size());
-    replacements = 1;
   }
 
   if (!base::WriteFile(path, updated)) {
@@ -617,12 +677,21 @@ FileTool::EditResult FileTool::EditFileBlocking(base::FilePath path,
     return result;
   }
 
-  base::DictValue payload;
-  payload.Set("file_path", path.AsUTF8Unsafe());
-  payload.Set("replacements", replacements);
-  payload.Set("bytes_after", static_cast<int>(updated.size()));
+  // CC parity: prose success string. Match FileEditTool.ts wording
+  // exactly so the model's recognition pattern is shared with the CC
+  // experience. The branches mirror CC's replace_all flag.
   result.ok = true;
-  result.payload = std::move(payload);
+  result.message =
+      replace_all
+          ? base::StrCat({"The file ", path.AsUTF8Unsafe(),
+                          " has been updated. All occurrences were "
+                          "successfully replaced."})
+          : base::StrCat({"The file ", path.AsUTF8Unsafe(),
+                          " has been updated successfully."});
+  // Replacement count and `bytes_after` are intentionally not exposed
+  // — CC's response carries no such structured fields, and the
+  // diagnostics are available via tool-call telemetry if a future UI
+  // wants them.
   return result;
 }
 
@@ -728,20 +797,34 @@ FileTool::GlobResult FileTool::GlobFilesBlocking(base::FilePath root,
     truncated = true;
   }
 
-  base::ListValue filenames;
-  for (const Match& m : matches) {
-    filenames.Append(m.absolute.AsUTF8Unsafe());
-  }
+  // Suppress unused-variable warning when duration is no longer
+  // referenced in the prose path. The timing is still computed for
+  // any future telemetry hook.
+  (void)started;
 
-  base::TimeDelta duration = base::TimeTicks::Now() - started;
-
-  base::DictValue payload;
-  payload.Set("filenames", std::move(filenames));
-  payload.Set("num_files", static_cast<int>(matches.size()));
-  payload.Set("truncated", truncated);
-  payload.Set("duration_ms", static_cast<int>(duration.InMilliseconds()));
   result.ok = true;
-  result.payload = std::move(payload);
+
+  // CC parity: GlobTool.ts:177 emits "No files found" on empty
+  // results, otherwise the matched paths joined by '\n' with a
+  // pagination caveat appended when truncated. The model uses this
+  // same pattern as a file-exists check (call Glob with the exact
+  // path as the pattern — "No files found" means the file doesn't
+  // exist, otherwise the path comes back).
+  if (matches.empty()) {
+    result.message = "No files found";
+    return result;
+  }
+  std::string body;
+  for (size_t i = 0; i < matches.size(); ++i) {
+    if (i > 0) body.push_back('\n');
+    body.append(matches[i].absolute.AsUTF8Unsafe());
+  }
+  if (truncated) {
+    body.append(
+        "\n(Results are truncated. Consider using a more specific pattern "
+        "or increasing the limit.)");
+  }
+  result.message = std::move(body);
   return result;
 }
 
@@ -755,6 +838,10 @@ void FileTool::OnReadDone(ToolCallback done, ReadResult result) {
                             std::move(result.error_message));
     return;
   }
+  if (!result.message.empty()) {
+    std::move(done).Resolve(base::Value(std::move(result.message)));
+    return;
+  }
   std::move(done).Resolve(std::move(result.payload));
 }
 
@@ -762,6 +849,14 @@ void FileTool::OnWriteDone(ToolCallback done, WriteResult result) {
   if (!result.ok) {
     std::move(done).Reject(std::move(result.error_code),
                             std::move(result.error_message));
+    return;
+  }
+  // Prefer the prose `message` when populated. The JS-side
+  // `serializeToolResult` (toolExecution.ts) returns the string
+  // directly when `result.data` is a string — the model sees the
+  // CC-style prose instead of a JSON dict.
+  if (!result.message.empty()) {
+    std::move(done).Resolve(base::Value(std::move(result.message)));
     return;
   }
   std::move(done).Resolve(std::move(result.payload));
@@ -773,6 +868,10 @@ void FileTool::OnEditDone(ToolCallback done, EditResult result) {
                             std::move(result.error_message));
     return;
   }
+  if (!result.message.empty()) {
+    std::move(done).Resolve(base::Value(std::move(result.message)));
+    return;
+  }
   std::move(done).Resolve(std::move(result.payload));
 }
 
@@ -780,6 +879,10 @@ void FileTool::OnGlobDone(ToolCallback done, GlobResult result) {
   if (!result.ok) {
     std::move(done).Reject(std::move(result.error_code),
                             std::move(result.error_message));
+    return;
+  }
+  if (!result.message.empty()) {
+    std::move(done).Resolve(base::Value(std::move(result.message)));
     return;
   }
   std::move(done).Resolve(std::move(result.payload));

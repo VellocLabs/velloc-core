@@ -8,6 +8,7 @@
 #define CUSTOM_BROWSER_UI_PREFS_CUSTOM_BROWSER_UI_PREFS_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -67,6 +68,13 @@ class CustomBrowserUiPrefs {
   static void InitMainUI(content::WebUIDataSource* source, PrefService* prefs);
   static UIMode GetUIModeFromPref(PrefService* prefs);
 
+  // Forces the mode loaded by the next BuildInitUrl()/RestoreFromPrefs() call,
+  // overriding pref_mode(). Used to open a window directly in kNexus without
+  // touching the persisted current-mode pref.
+  void set_initial_mode_override(std::optional<UIMode> mode) {
+    initial_mode_override_ = mode;
+  }
+
   GURL BuildInitUrl();
   // Loads any saved child layouts and applies them to the given manager.
   // Uses a temporary restoring flag so NativeUIContainerView can avoid
@@ -104,8 +112,11 @@ class CustomBrowserUiPrefs {
   custom_browser::mojom::UILayoutParamsPtr ui_layout_params_ptr_;
   std::unordered_set<int32_t> touched_hash_ids_;
   bool enable_layouts_saving_ = true;
+  std::optional<UIMode> initial_mode_override_;
 
-  UIMode ui_mode_;
+  // Browser-mode default until LoadUILayoutParams() sets the real mode. Keeps
+  // current_mode() safe to read before init (e.g. window-mode lookups).
+  UIMode ui_mode_ = UIMode::kSidebar;
   base::ObserverList<Observer> observers_;
   std::unique_ptr<CustomBrowserUiModePrefPaths> mode_pref_paths_;
   PrefChangeRegistrar pref_change_registrar_;

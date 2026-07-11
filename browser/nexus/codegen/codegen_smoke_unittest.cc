@@ -24,6 +24,16 @@
 //       struct from a base::DictValue, including the missing-required
 //       error path.
 //
+// Browser-tool reflection-field protocol: codegen auto-injects three
+// required string parameters (`evaluation_previous_goal`, `memory`,
+// `next_goal`) on every tool under `declarations/browser_tool/` —
+// they're prepended to `schema.parameters[]` and to the typed input
+// struct ahead of whatever the .tool.json declared. See
+// `_inject_reflection_fields` in `codegen/generate.py`. All four
+// representative tools tested here (screenshot / navigate / click /
+// done) live under browser_tool/, so every Extract() call below seeds
+// the three reflection-field strings.
+//
 // Adding a new declaration: drop a corresponding test block. The
 // codegen guarantees the include below still resolves and the
 // schema-builder symbol still exists, so test failures here mean
@@ -41,23 +51,53 @@
 namespace nexus::generated {
 namespace {
 
+// Number of reflection-field args codegen prepends to every browser-
+// tool schema and input struct.
+constexpr size_t kReflectionFieldCount = 3;
+
+// Seed every Extract() call's args dict with the three reflection
+// fields that codegen treats as required. Without these, every
+// browser-tool Extract() returns a `missing required string` error
+// before it ever looks at the .tool.json-declared fields.
+void SeedReflectionFields(base::DictValue& args) {
+  args.Set("evaluation_previous_goal", "No prior goal yet.");
+  args.Set("memory", "Smoke-test run; no prior context.");
+  args.Set("next_goal", "Run this codegen smoke test to green.");
+}
+
+// Same, for assertions on the populated input struct.
+template <typename InputT>
+void ExpectReflectionFieldsPopulated(const InputT& input) {
+  EXPECT_EQ(input.evaluation_previous_goal, "No prior goal yet.");
+  EXPECT_EQ(input.memory, "Smoke-test run; no prior context.");
+  EXPECT_EQ(input.next_goal, "Run this codegen smoke test to green.");
+}
+
 // =============================================================================
 // Schema-builder shape tests. Pick four representative declarations:
-//   - screenshot: optional-only inputs (no required fields)
-//   - navigate:   1 required string + 1 optional integer
-//   - click:      1 required integer + 3 optionals (mixed)
+//   - screenshot: zero declared inputs (reflection fields only)
+//   - navigate:   1 required string + 1 optional boolean
+//   - click:      1 required integer (no optionals)
 //   - done:       2 required mixed-type fields (boolean + string)
+// `schema.name` reads from the .tool.json's `wire_name` if set,
+// otherwise `name`; all four browser tools tested here have explicit
+// `wire_name` entries that we pin below.
 // =============================================================================
 
 TEST(CodegenSmokeTest, ScreenshotSchemaShape) {
   ::nexus::ToolSchema schema = BuildScreenshotSchema();
-  EXPECT_EQ(schema.name, "screenshot");
+  EXPECT_EQ(schema.name, "BrowserScreenshot");
   EXPECT_FALSE(schema.description.empty());
   EXPECT_EQ(schema.output_kind, ::nexus::JsonSchemaKind::kObject);
-  ASSERT_EQ(schema.parameters.size(), 1u);
-  EXPECT_EQ(schema.parameters[0].name, "tab_id");
-  EXPECT_EQ(schema.parameters[0].kind, ::nexus::JsonSchemaKind::kInteger);
-  EXPECT_FALSE(schema.parameters[0].required);
+  // No declared inputs → only the 3 injected reflection fields remain.
+  ASSERT_EQ(schema.parameters.size(), kReflectionFieldCount);
+  EXPECT_EQ(schema.parameters[0].name, "evaluation_previous_goal");
+  EXPECT_EQ(schema.parameters[1].name, "memory");
+  EXPECT_EQ(schema.parameters[2].name, "next_goal");
+  for (const auto& p : schema.parameters) {
+    EXPECT_EQ(p.kind, ::nexus::JsonSchemaKind::kString);
+    EXPECT_TRUE(p.required);
+  }
   // Anthropic input_examples block emitted from the .tool.json.
   ASSERT_TRUE(schema.input_examples.has_value());
   EXPECT_FALSE(schema.input_examples->empty());
@@ -65,103 +105,122 @@ TEST(CodegenSmokeTest, ScreenshotSchemaShape) {
 
 TEST(CodegenSmokeTest, NavigateSchemaShape) {
   ::nexus::ToolSchema schema = BuildNavigateSchema();
-  EXPECT_EQ(schema.name, "navigate");
+  EXPECT_EQ(schema.name, "BrowserNavigate");
   EXPECT_FALSE(schema.description.empty());
-  ASSERT_EQ(schema.parameters.size(), 2u);
-  // url is required and listed first per the .tool.json's input order.
-  EXPECT_EQ(schema.parameters[0].name, "url");
-  EXPECT_EQ(schema.parameters[0].kind, ::nexus::JsonSchemaKind::kString);
-  EXPECT_TRUE(schema.parameters[0].required);
-  // tab_id is the optional follow-up.
-  EXPECT_EQ(schema.parameters[1].name, "tab_id");
-  EXPECT_EQ(schema.parameters[1].kind, ::nexus::JsonSchemaKind::kInteger);
-  EXPECT_FALSE(schema.parameters[1].required);
+  // 3 reflection + url + new_tab = 5.
+  ASSERT_EQ(schema.parameters.size(), kReflectionFieldCount + 2);
+  // Reflection fields are prepended first.
+  EXPECT_EQ(schema.parameters[0].name, "evaluation_previous_goal");
+  EXPECT_EQ(schema.parameters[1].name, "memory");
+  EXPECT_EQ(schema.parameters[2].name, "next_goal");
+  // Declared inputs follow in .tool.json order.
+  EXPECT_EQ(schema.parameters[3].name, "url");
+  EXPECT_EQ(schema.parameters[3].kind, ::nexus::JsonSchemaKind::kString);
+  EXPECT_TRUE(schema.parameters[3].required);
+  EXPECT_EQ(schema.parameters[4].name, "new_tab");
+  EXPECT_EQ(schema.parameters[4].kind, ::nexus::JsonSchemaKind::kBoolean);
+  EXPECT_FALSE(schema.parameters[4].required);
 }
 
 TEST(CodegenSmokeTest, ClickSchemaShape) {
   ::nexus::ToolSchema schema = BuildClickSchema();
-  EXPECT_EQ(schema.name, "click");
-  ASSERT_EQ(schema.parameters.size(), 4u);
-  EXPECT_EQ(schema.parameters[0].name, "index");
-  EXPECT_TRUE(schema.parameters[0].required);
-  EXPECT_EQ(schema.parameters[0].kind, ::nexus::JsonSchemaKind::kInteger);
-  // Remaining three are optional: tab_id, button, click_count.
-  EXPECT_FALSE(schema.parameters[1].required);
-  EXPECT_FALSE(schema.parameters[2].required);
-  EXPECT_FALSE(schema.parameters[3].required);
+  EXPECT_EQ(schema.name, "BrowserClick");
+  // 3 reflection + index = 4.
+  ASSERT_EQ(schema.parameters.size(), kReflectionFieldCount + 1);
+  EXPECT_EQ(schema.parameters[0].name, "evaluation_previous_goal");
+  EXPECT_EQ(schema.parameters[1].name, "memory");
+  EXPECT_EQ(schema.parameters[2].name, "next_goal");
+  EXPECT_EQ(schema.parameters[3].name, "index");
+  EXPECT_TRUE(schema.parameters[3].required);
+  EXPECT_EQ(schema.parameters[3].kind, ::nexus::JsonSchemaKind::kInteger);
 }
 
 TEST(CodegenSmokeTest, DoneSchemaShape) {
   ::nexus::ToolSchema schema = BuildDoneSchema();
-  EXPECT_EQ(schema.name, "done");
-  ASSERT_EQ(schema.parameters.size(), 2u);
-  // Both required: success (bool) + text (string).
-  EXPECT_TRUE(schema.parameters[0].required);
-  EXPECT_TRUE(schema.parameters[1].required);
-  // The two have different kinds; we don't pin order beyond what
-  // matches the .tool.json's inputs[] ordering.
-  EXPECT_EQ(schema.parameters[0].name, "success");
-  EXPECT_EQ(schema.parameters[0].kind, ::nexus::JsonSchemaKind::kBoolean);
-  EXPECT_EQ(schema.parameters[1].name, "text");
-  EXPECT_EQ(schema.parameters[1].kind, ::nexus::JsonSchemaKind::kString);
+  EXPECT_EQ(schema.name, "Done");
+  // 3 reflection + success + text = 5.
+  ASSERT_EQ(schema.parameters.size(), kReflectionFieldCount + 2);
+  EXPECT_EQ(schema.parameters[0].name, "evaluation_previous_goal");
+  EXPECT_EQ(schema.parameters[1].name, "memory");
+  EXPECT_EQ(schema.parameters[2].name, "next_goal");
+  // Both declared inputs are required: success (bool) + text (string).
+  EXPECT_EQ(schema.parameters[3].name, "success");
+  EXPECT_EQ(schema.parameters[3].kind, ::nexus::JsonSchemaKind::kBoolean);
+  EXPECT_TRUE(schema.parameters[3].required);
+  EXPECT_EQ(schema.parameters[4].name, "text");
+  EXPECT_EQ(schema.parameters[4].kind, ::nexus::JsonSchemaKind::kString);
+  EXPECT_TRUE(schema.parameters[4].required);
 }
 
 // =============================================================================
 // Extract() tests: success paths + missing-required error paths.
+// Every browser-tool Extract() expects the 3 reflection fields, so each
+// success-path test calls SeedReflectionFields() first; the missing-
+// required tests OMIT one specific field at a time and assert the
+// error names that field.
 // =============================================================================
 
-TEST(CodegenSmokeTest, ScreenshotExtractEmptyDict) {
-  // No required fields → empty dict is valid.
+TEST(CodegenSmokeTest, ScreenshotExtractWithReflectionFields) {
   base::DictValue args;
+  SeedReflectionFields(args);
   ScreenshotInput input;
   EXPECT_FALSE(Extract(args, input).has_value());
-  EXPECT_FALSE(input.tab_id.has_value());
+  ExpectReflectionFieldsPopulated(input);
 }
 
-TEST(CodegenSmokeTest, ScreenshotExtractWithOptional) {
+TEST(CodegenSmokeTest, ScreenshotExtractMissingReflectionField) {
+  // Empty dict — every reflection field is missing. The extractor
+  // walks them in declared order, so the FIRST one reported is
+  // `evaluation_previous_goal`.
   base::DictValue args;
-  args.Set("tab_id", 42);
   ScreenshotInput input;
-  EXPECT_FALSE(Extract(args, input).has_value());
-  ASSERT_TRUE(input.tab_id.has_value());
-  EXPECT_EQ(*input.tab_id, 42);
+  std::optional<std::string> err = Extract(args, input);
+  ASSERT_TRUE(err.has_value());
+  EXPECT_NE(err->find("evaluation_previous_goal"), std::string::npos)
+      << "missing reflection-field error should name "
+         "evaluation_previous_goal; got: "
+      << *err;
 }
 
 TEST(CodegenSmokeTest, NavigateExtractRequiredFieldPresent) {
   base::DictValue args;
+  SeedReflectionFields(args);
   args.Set("url", "https://example.com");
   NavigateInput input;
   EXPECT_FALSE(Extract(args, input).has_value());
   EXPECT_EQ(input.url, "https://example.com");
-  EXPECT_FALSE(input.tab_id.has_value());
+  EXPECT_FALSE(input.new_tab.has_value());
+  ExpectReflectionFieldsPopulated(input);
 }
 
 TEST(CodegenSmokeTest, NavigateExtractWithOptional) {
   base::DictValue args;
+  SeedReflectionFields(args);
   args.Set("url", "https://example.com");
-  args.Set("tab_id", 7);
+  args.Set("new_tab", true);
   NavigateInput input;
   EXPECT_FALSE(Extract(args, input).has_value());
   EXPECT_EQ(input.url, "https://example.com");
-  ASSERT_TRUE(input.tab_id.has_value());
-  EXPECT_EQ(*input.tab_id, 7);
+  ASSERT_TRUE(input.new_tab.has_value());
+  EXPECT_TRUE(*input.new_tab);
 }
 
-TEST(CodegenSmokeTest, NavigateExtractMissingRequired) {
-  // Empty dict is now a SHAPE error because url is required. This is
-  // the structural fix the split-tool migration delivers: the
-  // extractor rejects empty-args before the body sees the call.
+TEST(CodegenSmokeTest, NavigateExtractMissingRequiredUrl) {
+  // Reflection fields present; url missing. The extractor walks the
+  // reflection fields first, then the declared inputs; the first
+  // failing field stops extraction and names itself in the error.
   base::DictValue args;
+  SeedReflectionFields(args);
   NavigateInput input;
   std::optional<std::string> err = Extract(args, input);
   ASSERT_TRUE(err.has_value());
   EXPECT_NE(err->find("url"), std::string::npos)
-      << "missing-required error should name the missing field; got: "
-      << *err;
+      << "missing-required error should name `url`; got: " << *err;
 }
 
 TEST(CodegenSmokeTest, DoneExtractBothRequiredPresent) {
   base::DictValue args;
+  SeedReflectionFields(args);
   args.Set("success", true);
   args.Set("text", "Found it.");
   DoneInput input;
@@ -172,8 +231,10 @@ TEST(CodegenSmokeTest, DoneExtractBothRequiredPresent) {
 
 TEST(CodegenSmokeTest, DoneExtractMissingText) {
   base::DictValue args;
+  SeedReflectionFields(args);
   args.Set("success", true);
-  // No text → required-string error.
+  // No text → required-string error after the reflection fields and
+  // success pass.
   DoneInput input;
   std::optional<std::string> err = Extract(args, input);
   ASSERT_TRUE(err.has_value());
@@ -183,17 +244,16 @@ TEST(CodegenSmokeTest, DoneExtractMissingText) {
 
 TEST(CodegenSmokeTest, ClickExtractRequiredIndexPresent) {
   base::DictValue args;
+  SeedReflectionFields(args);
   args.Set("index", 12);
   ClickInput input;
   EXPECT_FALSE(Extract(args, input).has_value());
   EXPECT_EQ(input.index, 12);
-  EXPECT_FALSE(input.tab_id.has_value());
-  EXPECT_FALSE(input.button.has_value());
-  EXPECT_FALSE(input.click_count.has_value());
 }
 
 TEST(CodegenSmokeTest, ClickExtractMissingIndex) {
   base::DictValue args;
+  SeedReflectionFields(args);
   // No index → required-integer error.
   ClickInput input;
   std::optional<std::string> err = Extract(args, input);

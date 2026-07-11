@@ -76,8 +76,13 @@ function isBootstrapWebView(el: HTMLElement | null): el is BootstrapWebView {
 // `window.parent`, so it relies on the `event.source` from this ping to
 // learn the host window.
 function waitForGuestAck(
-    webview: BootstrapWebView, guestOrigin: string): Promise<void> {
+    webview: BootstrapWebView, guestOrigin: string,
+    signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('nexus-init handshake aborted'));
+      return;
+    }
     let pingTimer: ReturnType<typeof setInterval> | null = null;
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -91,6 +96,15 @@ function waitForGuestAck(
         timeout = null;
       }
       window.removeEventListener('message', onMessage);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    // A newer guest (re)load superseded this handshake — stop pinging and
+    // tear down so we don't leave a stale ping loop / listener racing the
+    // fresh handshake for the new guest's messages.
+    const onAbort = () => {
+      cleanup();
+      reject(new Error('nexus-init handshake aborted'));
     };
 
     const onMessage = (event: MessageEvent) => {
@@ -118,6 +132,7 @@ function waitForGuestAck(
     };
 
     window.addEventListener('message', onMessage);
+    signal?.addEventListener('abort', onAbort);
     pingTimer = setInterval(sendPing, NEXUS_INIT_PING_INTERVAL_MS);
     sendPing();
 
@@ -135,8 +150,13 @@ function waitForGuestAck(
 // forward both ports unchanged into the guest webview.
 function waitForBootstrapAndForward(
     webview: BootstrapWebView,
-    guestOrigin: string): Promise<void> {
+    guestOrigin: string,
+    signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('nexus-bridge-bootstrap aborted'));
+      return;
+    }
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
     const cleanup = () => {
@@ -145,6 +165,12 @@ function waitForBootstrapAndForward(
         timeout = null;
       }
       window.removeEventListener('message', onMessage);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(new Error('nexus-bridge-bootstrap aborted'));
     };
 
     // Native posts the bootstrap message via
@@ -202,6 +228,7 @@ function waitForBootstrapAndForward(
     };
 
     window.addEventListener('message', onMessage);
+    signal?.addEventListener('abort', onAbort);
     timeout = setTimeout(() => {
       cleanup();
       reject(new Error(`nexus-bridge-bootstrap timed out after ${
@@ -218,6 +245,11 @@ export async function bootstrapNexusGuest(
         (webview ? webview.tagName : 'null'));
   }
 
+  // Capture the narrowed element in a const so the BootstrapWebView
+  // narrowing survives into the closures below (a mutable parameter widens
+  // back to `HTMLElement | null` inside nested functions).
+  const guest: BootstrapWebView = webview;
+
   const guestUrl = buildGuestUrl();
   const guestOrigin = originOf(guestUrl);
   debugTrace('bootstrapping nexus guest', {
@@ -225,14 +257,61 @@ export async function bootstrapNexusGuest(
     origin: guestOrigin,
   });
 
-  webview.src = guestUrl.toString();
+  // The handshake must run on EVERY guest (re)load, not just the first.
+  //
+  // A guest reload (Vite full reload on `nexus_web` update, an in-app
+  // `location.reload()`, or any re-navigation of the <webview>) destroys
+  // the guest's JS state — including the host-window reference it captured
+  // from the first `nexus-init`. The fresh guest re-enters
+  // `waitForNexusHostInit()` and sits there forever unless the host pings
+  // `nexus-init` again. The original one-shot bootstrap only ran from
+  // `<nexus-view>.firstUpdated()`, so after a reload the panel stayed
+  // blank. We now re-drive the full handshake on each guest `contentload`.
+  //
+  // The downstream layers already tolerate a repeat:
+  //   • NexusBridgeBootstrapHost::GuestReady() reuses its
+  //     NexusBridgePortService and CreatePortPair() resets + rebinds to the
+  //     new guest's port (the old, now-dead port is closed).
+  //   • SharedWorkerSessionManager.addBridgePort('direct') disposes the old
+  //     DirectPortBridgeTransport and installs the new workerPort.
+  let activeHandshake: AbortController | null = null;
 
-  await waitForGuestAck(webview, guestOrigin);
+  const runHandshake = (reason: string) => {
+    // Supersede any in-flight handshake from a previous (now-stale) load so
+    // we never leave two ping loops / message listeners fighting over the
+    // new guest's messages.
+    activeHandshake?.abort();
+    const controller = new AbortController();
+    activeHandshake = controller;
+    const {signal} = controller;
+    debugTrace('starting nexus handshake', {reason});
 
-  const remote = NexusBridgeBootstrap.getRemote();
-  remote.guestReady();
-  debugTrace('called NexusBridgeBootstrap.guestReady()');
+    void (async () => {
+      try {
+        await waitForGuestAck(guest, guestOrigin, signal);
+        NexusBridgeBootstrap.getRemote().guestReady();
+        debugTrace('called NexusBridgeBootstrap.guestReady()', {reason});
+        await waitForBootstrapAndForward(guest, guestOrigin, signal);
+        debugTrace('bootstrap complete; runtime ports owned by the webview', {
+          reason,
+        });
+      } catch (e) {
+        if (signal.aborted) {
+          // Expected: a newer guest load superseded this handshake.
+          return;
+        }
+        debugTrace('nexus handshake failed', {
+          reason,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    })();
+  };
 
-  await waitForBootstrapAndForward(webview, guestOrigin);
-  debugTrace('bootstrap complete; runtime ports are owned by the webview');
+  // `contentload` fires once per guest document load — the initial
+  // navigation we trigger below AND every subsequent reload. Attach the
+  // listener before setting `src` so the very first load is captured.
+  guest.addEventListener('contentload', () => runHandshake('contentload'));
+
+  guest.src = guestUrl.toString();
 }

@@ -51,7 +51,7 @@ export class NexusPage extends CrLitElement {
       display: flex;
       flex-direction: column;
       flex: 1 1 auto;
-      margin: var(--app-edge, 10px);
+      margin: 0;
       min-height: 0;
       overflow: hidden;
     }
@@ -121,7 +121,7 @@ export class NexusPage extends CrLitElement {
   }
 
   private onOpenSettings_(event: Event) {
-    const detail = (event as CustomEvent).detail as
+    const detail = (event as CustomEvent<unknown>).detail as
         {section?: string} | undefined;
     this.openSettings_(this.normalizeSection_(detail?.section));
   }
@@ -174,7 +174,7 @@ export class NexusPage extends CrLitElement {
   }
 
   private onAgentZoneChanged_(event: Event) {
-    const detail = (event as CustomEvent).detail as
+    const detail = (event as CustomEvent<unknown>).detail as
         {visible?: boolean} | undefined;
     this.agentZoneVisible_ = !!detail?.visible;
     this.requestUpdate();

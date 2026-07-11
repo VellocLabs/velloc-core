@@ -10,13 +10,16 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/feature.h"
 #include "base/feature_list.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/browser_management/browser_management_service.h"
 #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
 #include "chrome/browser/glic/glic_pref_names.h"
+#include "chrome/browser/glic/glic_pref_names_internal.h"
 #include "chrome/browser/glic/glic_user_status_code.h"
 #include "chrome/browser/glic/glic_user_status_fetcher.h"
 #include "chrome/browser/glic/host/auth_controller.h"
@@ -31,8 +34,8 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/startup_data.h"
-#include "chrome/browser/subscription_eligibility/subscription_eligibility_service.h"
 #include "chrome/browser/subscription_eligibility/subscription_eligibility_service_factory.h"
+#include "components/subscription_eligibility/subscription_eligibility_service.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
@@ -55,6 +58,15 @@
 #include "components/user_manager/user.h"       // nogncheck
 #include "components/user_manager/user_type.h"  // nogncheck
 #endif
+
+// custom-browser: feature flags below were upstream in the 146 baseline but
+// removed in Chromium 149. They are re-introduced here (disabled by default)
+// because the custom glic override layer still references them. Confirm the
+// intended default/behavior for the custom product.
+namespace features {
+BASE_FEATURE(kGlicUnifiedFreScreen, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kGlicTrustFirstOnboarding, base::FEATURE_DISABLED_BY_DEFAULT);
+}  // namespace features
 
 namespace glic {
 
@@ -202,6 +214,122 @@ bool GlicEnabling::IsProfileEligible(const Profile* profile) {
 
 bool GlicEnabling::IsEnabledForProfile(Profile* profile) {
   return EnablementForProfile(profile).IsEnabled();
+}
+
+bool GlicEnabling::IsContextualMenuItemEnabled(Profile* profile) {
+  return IsEnabledForProfile(profile) &&
+         base::FeatureList::IsEnabled(features::kGlicContextMenu);
+}
+
+bool GlicEnabling::IsAutoOpenForPdfEnabled(Profile* profile) {
+  if (!base::FeatureList::IsEnabled(features::kAutoOpenGlicForPdf)) {
+    return false;
+  }
+  if (HasConsentedForProfile(profile)) {
+    return true;
+  }
+  return features::kAutoOpenGlicForPdfWithOnboarding.Get();
+}
+
+bool GlicEnabling::IsInternalsWebUIEnabled(Profile* profile) {
+  return base::FeatureList::IsEnabled(features::kGlic) &&
+         profile->IsRegularProfile();
+}
+
+bool GlicEnabling::IsSelectionPromptEnabledForProfile(Profile* profile) {
+  return IsEnabledForProfile(profile) &&
+         base::FeatureList::IsEnabled(features::kGlicSelectionPrompt);
+}
+
+bool GlicEnabling::IsLiveAndFloatyEnabledByFlags() {
+  // Despite the name, when off, this disables live mode and floaty.
+  return base::FeatureList::IsEnabled(features::kGlicLiveMode);
+}
+
+bool GlicEnabling::IsEnabledByGlobalCriteria() {
+  // This custom override does not carry upstream's GlicGlobalEnabling
+  // global-criteria object; the flag-based global gate is the closest
+  // equivalent maintained here.
+  return IsEnabledByFlags();
+}
+
+void GlicEnabling::RecordProfileIneligibilityMetricsAtStartup(
+    Profile* profile) {
+  // Top-level startup ineligibility metric. The detailed per-reason breakdown
+  // upstream records is omitted because this override's ProfileEnablement does
+  // not carry the Reason enum.
+  if (IsProfileEligible(profile)) {
+    return;
+  }
+  base::UmaHistogramBoolean("Glic.ProfileEnablement.IsEnabled.Startup", false);
+}
+
+void GlicEnabling::SetCompletedFre(prefs::FreStatus status) {
+  profile_->GetPrefs()->SetInteger(prefs::kGlicCompletedFre,
+                                   static_cast<int>(status));
+}
+
+prefs::FreStatus GlicEnabling::GetCompletedFre() const {
+  return static_cast<prefs::FreStatus>(
+      profile_->GetPrefs()->GetInteger(prefs::kGlicCompletedFre));
+}
+
+bool GlicEnabling::GetUserEnabledActuationOnWeb() const {
+  return profile_->GetPrefs()->GetBoolean(
+      prefs::kGlicUserEnabledActuationOnWeb);
+}
+
+void GlicEnabling::SetUserEnabledActuationOnWeb(bool enabled) {
+  profile_->GetPrefs()->SetBoolean(prefs::kGlicUserEnabledActuationOnWeb,
+                                   enabled);
+}
+
+void GlicEnabling::MaybeRecordStartupMetrics() {
+  // custom-browser: upstream's ProfileEnablement::RecordStartupMetrics() is not
+  // carried by this override, so this is a no-op that satisfies upstream
+  // callers. Restore detailed startup metrics during proper glic reconciliation.
+}
+
+base::CallbackListSubscription
+GlicEnabling::RegisterOnUserEnabledActuationOnWebChanged(
+    UserEnabledActuationOnWebChangedCallback callback) {
+  return user_enabled_actuation_on_web_changed_callback_list_.Add(
+      std::move(callback));
+}
+
+bool GlicEnabling::IsUserEnabledActuationOnWebDefault() const {
+  const PrefService::Preference* pref = profile_->GetPrefs()->FindPreference(
+      prefs::kGlicUserEnabledActuationOnWeb);
+  return pref && pref->IsDefaultValue();
+}
+
+bool GlicEnabling::GetExperimentalTriggeringEnabled() const {
+  return profile_->GetPrefs()->GetBoolean(
+      prefs::kGlicExperimentalTriggeringEnabled);
+}
+
+void GlicEnabling::SetExperimentalTriggeringEnabled(bool enabled) {
+  profile_->GetPrefs()->SetBoolean(prefs::kGlicExperimentalTriggeringEnabled,
+                                   enabled);
+}
+
+syncer::DeviceInfo::GlicExperimentalTriggeringState
+GlicEnabling::GetExperimentalTriggeringState() {
+  if (!base::FeatureList::IsEnabled(features::kGlicExperimentalTriggering)) {
+    return syncer::DeviceInfo::GlicExperimentalTriggeringState::kUnavailable;
+  }
+  if (HasConsented() && GetUserEnabledActuationOnWeb() &&
+      GetExperimentalTriggeringEnabled()) {
+    return syncer::DeviceInfo::GlicExperimentalTriggeringState::kReady;
+  }
+  return syncer::DeviceInfo::GlicExperimentalTriggeringState::kNeedsOptIn;
+}
+
+base::CallbackListSubscription
+GlicEnabling::RegisterOnExperimentalTriggeringEnabledChanged(
+    ExperimentalTriggeringEnabledChangedCallback callback) {
+  return experimental_triggering_enabled_changed_callback_list_.Add(
+      std::move(callback));
 }
 
 bool GlicEnabling::HasConsentedForProfile(Profile* profile) {

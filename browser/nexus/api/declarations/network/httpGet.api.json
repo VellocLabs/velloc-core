@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "httpGet",
+  "description": "Issue an HTTP GET against a public URL via the Chromium net stack. Runs in the browser process (NOT subject to renderer CORS). Used by WebFetch's URL retrieval and available to any future TS-side tool that needs to fetch a URL through the same network stack the LLM providers use. Response body returned as bytes via the bridge's binary transport. Redirects: by default the loader returns a 3xx response with the Location header intact; pass followRedirects=true to follow up to maxRedirects hops.",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "Absolute http(s) URL to GET. Caller is responsible for length-cap, credentials-stripping, and scheme validation."
+    },
+    {
+      "name": "headers",
+      "type": "object",
+      "required": false,
+      "description": "Optional request headers — a map of string -> string. Do NOT include Authorization here (LLM-provider concern; see api/llm/providers/* for that path)."
+    },
+    {
+      "name": "timeoutMs",
+      "type": "integer",
+      "required": false,
+      "description": "Hard timeout in milliseconds; the loader is cancelled past this. Default 60_000 when omitted."
+    },
+    {
+      "name": "maxResponseBytes",
+      "type": "integer",
+      "required": false,
+      "description": "Cap on response-body size; the loader aborts once this many bytes have been received. Default 50_000_000 (50 MB) when omitted."
+    },
+    {
+      "name": "followRedirects",
+      "type": "boolean",
+      "required": false,
+      "description": "If false (default), 3xx responses are returned to the caller AS-IS so the caller can apply its own redirect policy (e.g. same-host-only). If true, the loader follows redirects up to maxRedirects hops."
+    },
+    {
+      "name": "maxRedirects",
+      "type": "integer",
+      "required": false,
+      "description": "Maximum number of redirects to follow when followRedirects=true. Default 10."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

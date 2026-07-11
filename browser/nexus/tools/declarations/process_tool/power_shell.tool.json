@@ -1,0 +1,63 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "power_shell",
+  "wire_name": "PowerShell",
+  "description": "Executes a given PowerShell command and returns its output.\n\nUse this on Windows for terminal operations. The working directory persists between commands, but shell state (variables, functions) does not.\n\nIMPORTANT: Avoid using this tool to read, search, edit, or list files when a dedicated tool is available — use Read / Edit / Write / Glob / Grep instead, which give a better, reviewable experience. Reserve PowerShell for system commands and terminal operations that require shell execution.\n\n# Instructions\n - Write PowerShell syntax, not bash. Use PowerShell cmdlets and operators (e.g. `Get-ChildItem`, `Remove-Item`, `$env:VAR`, `Where-Object`).\n - Pipelines pass objects, not text. Use `Select-Object` / `Where-Object` / `ForEach-Object` rather than `awk`/`sed`.\n - To set an env var for a command, prefix with `$env:NAME='value';`. To read one, use `$env:NAME`.\n - Quote paths containing spaces with single or double quotes.\n - Prefer absolute paths; avoid `cd` unless the user requests it.\n - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes); default 120000ms.\n - When commands are independent, issue multiple PowerShell tool calls in one message so they run in parallel; when they depend on each other, chain them in one call with `;`.\n - For git: prefer new commits over amending; avoid destructive operations (`git reset --hard`, `git push --force`) unless asked; never skip hooks (`--no-verify`) unless asked.",
+  "inputs": [
+    {
+      "name": "command",
+      "type": "string",
+      "required": true,
+      "description": "The PowerShell command to execute"
+    },
+    {
+      "name": "timeout",
+      "type": "integer",
+      "required": false,
+      "description": "Optional timeout in milliseconds (max 600000)"
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false,
+      "description": "Clear, concise description of what this command does in active voice (5-10 words for simple commands; more context for piped or obscure ones)."
+    }
+  ],
+  "parametersStrict": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "The PowerShell command to execute"
+      },
+      "timeout": {
+        "type": ["integer", "null"],
+        "description": "Optional timeout in milliseconds (max 600000)"
+      },
+      "description": {
+        "type": ["string", "null"],
+        "description": "Clear, concise description of what this command does in active voice."
+      }
+    },
+    "required": ["command", "timeout", "description"],
+    "additionalProperties": false
+  },
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "command": "Get-ChildItem -Force C:\\temp",
+          "description": "List files in C:\\temp"
+        },
+        {
+          "command": "git status",
+          "description": "Show working tree status"
+        }
+      ]
+    }
+  }
+}

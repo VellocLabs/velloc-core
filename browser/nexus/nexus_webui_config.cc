@@ -6,7 +6,7 @@
 namespace nexus {
 
 #if defined(NDEBUG)
-const char kDefaultNexusGuestURL[] = "https://nexus.velloc.app/index.html";
+const char kDefaultNexusGuestURL[] = "https://nexus.velloc.app/";
 #else
 const char kDefaultNexusGuestURL[] =
     "http://localhost:5173/index.html?log=1&trace=1";

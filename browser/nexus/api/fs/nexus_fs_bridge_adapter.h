@@ -99,6 +99,14 @@ class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
       ::nexus::generated::ExistsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  void HandleRealpathOnThreadPool(
+      ::nexus::generated::RealpathInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleSystemInfoOnThreadPool(
+      ::nexus::generated::SystemInfoInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
 
   std::unique_ptr<NexusFsHost> fs_host_;
 };

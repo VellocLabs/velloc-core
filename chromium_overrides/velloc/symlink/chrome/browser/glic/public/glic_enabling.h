@@ -14,10 +14,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/types/expected.h"
+#include "chrome/browser/glic/glic_pref_names.h"
 #include "chrome/browser/glic/glic_user_status_fetcher.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
+#include "components/sync_device_info/device_info.h"
 
 class Profile;
 class ProfileAttributesStorage;
@@ -118,6 +120,32 @@ class GlicEnabling : public signin::IdentityManager::Observer {
   // Code inside should use instance method IsAllowed() instead.
   static bool IsEnabledForProfile(Profile* profile);
 
+  // Methods below were added in the Chromium 149 baseline; upstream callers
+  // expect them on GlicEnabling. Ported into this custom override so the
+  // 149 tree links.
+
+  // Whether the tab web contents contextual menu item is enabled. Added in the
+  // Chromium 149 baseline (used by glic_context_menu_invocation_helper).
+  static bool IsContextualMenuItemEnabled(Profile* profile);
+
+  // Whether the auto-open-for-pdf flow is enabled.
+  static bool IsAutoOpenForPdfEnabled(Profile* profile);
+
+  // Whether the glic internals WebUI is enabled for the profile.
+  static bool IsInternalsWebUIEnabled(Profile* profile);
+
+  // Whether the selection prompt is enabled for the profile.
+  static bool IsSelectionPromptEnabledForProfile(Profile* profile);
+
+  // Whether live mode and floaty are enabled by flags.
+  static bool IsLiveAndFloatyEnabledByFlags();
+
+  // Whether Glic is enabled by global (non-profile) criteria.
+  static bool IsEnabledByGlobalCriteria();
+
+  // Records UMA metrics at startup when the profile is ineligible for Glic.
+  static void RecordProfileIneligibilityMetricsAtStartup(Profile* profile);
+
   // Returns true if the profile has completed the FRE.
   static bool HasConsentedForProfile(Profile* profile);
 
@@ -210,6 +238,12 @@ class GlicEnabling : public signin::IdentityManager::Observer {
     // Whether live (audio) functionality is disallowed for this account type.
     bool live_disallowed : 1 = false;
 
+    // custom-browser: re-added for the Chromium 149 baseline; upstream glic
+    // code (glic_internals_page_handler, glic_private_api, metrics) reads these.
+    bool disallowed_by_country_filter : 1 = false;
+    bool disallowed_by_locale_filter : 1 = false;
+    bool share_image_disallowed : 1 = false;
+
     bool IsProfileEligible() const {
       return !feature_disabled && !not_regular_profile;
     }
@@ -245,6 +279,16 @@ class GlicEnabling : public signin::IdentityManager::Observer {
     bool DisallowedByAdmin() const {
       return disallowed_by_chrome_policy || disallowed_by_remote_admin;
     }
+
+    // custom-browser: re-added for the Chromium 149 baseline.
+    bool EligibleForShareImage() const {
+      return IsProfileEligible() && !share_image_disallowed;
+    }
+
+    // No-op: this override does not carry upstream's per-reason metrics
+    // recorder. Restore detailed steady-state metrics during glic
+    // reconciliation if needed.
+    void RecordSteadyStateMetrics() const {}
   };
   static ProfileEnablement EnablementForProfile(Profile* profile);
 
@@ -272,6 +316,29 @@ class GlicEnabling : public signin::IdentityManager::Observer {
   //   * Profile is not paused.
   // If all entry-points have been disabled, then glic is functionally disabled.
   bool IsAllowed();
+
+  // Sets the first-run-experience completion status pref. Re-added for the
+  // Chromium 149 baseline; upstream's FRE controller calls
+  // enabling().SetCompletedFre(...).
+  void SetCompletedFre(prefs::FreStatus status);
+
+  // Additional instance methods re-added for the Chromium 149 baseline; upstream
+  // glic code calls these via enabling().
+  prefs::FreStatus GetCompletedFre() const;
+  bool GetUserEnabledActuationOnWeb() const;
+  void SetUserEnabledActuationOnWeb(bool enabled);
+  void MaybeRecordStartupMetrics();
+  using UserEnabledActuationOnWebChangedCallback = base::RepeatingClosure;
+  base::CallbackListSubscription RegisterOnUserEnabledActuationOnWebChanged(
+      UserEnabledActuationOnWebChangedCallback callback);
+  bool IsUserEnabledActuationOnWebDefault() const;
+  bool GetExperimentalTriggeringEnabled() const;
+  void SetExperimentalTriggeringEnabled(bool enabled);
+  syncer::DeviceInfo::GlicExperimentalTriggeringState
+  GetExperimentalTriggeringState();
+  using ExperimentalTriggeringEnabledChangedCallback = base::RepeatingClosure;
+  base::CallbackListSubscription RegisterOnExperimentalTriggeringEnabledChanged(
+      ExperimentalTriggeringEnabledChangedCallback callback);
 
   // Returns true if the given profile has completed the FRE and false
   // otherwise.
@@ -357,6 +424,15 @@ class GlicEnabling : public signin::IdentityManager::Observer {
       base::RepeatingCallbackList<void()>;
   ProfileReadyStateChangedCallbackList
       profile_ready_state_changed_callback_list_;
+  // custom-browser: re-added for the Chromium 149 baseline.
+  using UserEnabledActuationOnWebChangedCallbackList =
+      base::RepeatingCallbackList<void()>;
+  UserEnabledActuationOnWebChangedCallbackList
+      user_enabled_actuation_on_web_changed_callback_list_;
+  using ExperimentalTriggeringEnabledChangedCallbackList =
+      base::RepeatingCallbackList<void()>;
+  ExperimentalTriggeringEnabledChangedCallbackList
+      experimental_triggering_enabled_changed_callback_list_;
   PrefChangeRegistrar pref_registrar_;
   std::unique_ptr<GlicUserStatusFetcher> glic_user_status_fetcher_;
   base::ScopedObservation<signin::IdentityManager,

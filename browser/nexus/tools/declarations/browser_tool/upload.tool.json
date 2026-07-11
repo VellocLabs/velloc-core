@@ -1,0 +1,39 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "upload",
+  "wire_name": "BrowserUpload",
+  "description": "Attach a local file to a file <input> on the page. Pass `index` of the file-input element (or the button/label that opens the file picker) and `file_path` of the file to attach (workspace-relative, or absolute). The host intercepts the file chooser the click opens and supplies your file — no native dialog appears. The file must already exist locally (e.g. one you downloaded with BrowserDownload or created with the file tools). After it runs, re-read the observation to confirm the input now shows the filename.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": true,
+      "description": "Element index (from the latest observation's elements[]) of the file <input> — or the control that opens the file picker — to click."
+    },
+    {
+      "name": "file_path",
+      "type": "string",
+      "required": true,
+      "description": "Path to the local file to upload. Relative paths resolve against the session workspace; absolute paths are used as-is. The file must already exist."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "index": 31,
+          "file_path": "downloads/resume.pdf"
+        },
+        {
+          "index": 12,
+          "file_path": "C:\\Users\\me\\Pictures\\avatar.png"
+        }
+      ]
+    }
+  }
+}

@@ -1,8 +1,10 @@
 #include "custom_browser/browser/nexus/api/llm/providers/ollama/ollama_provider.h"
 
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -503,6 +505,12 @@ base::ListValue OllamaProvider::TranslateMessages(
     }
 
     if (*role == "tool") {
+      // Ollama speaks the OpenAI-compatible format; like OpenAI, a
+      // `role:"tool"` message is text-only and can't carry images. So a
+      // multimodal tool result (BrowserScreenshot) puts text on the tool
+      // message and delivers the image as a follow-up `user` message with
+      // `image_url` data URIs.
+      std::vector<std::string> image_data_uris;
       for (const auto& part_val : *content_list) {
         if (!part_val.is_dict()) {
           continue;
@@ -517,13 +525,66 @@ base::ListValue OllamaProvider::TranslateMessages(
           openai_msg.Set("tool_call_id", *tool_call_id);
         }
         const auto* result = part.Find("result");
-        if (result) {
+        if (const auto* result_list = result ? result->GetIfList() : nullptr) {
+          std::string content;
+          for (const auto& rp_val : *result_list) {
+            const auto* rp = rp_val.GetIfDict();
+            if (!rp) {
+              continue;
+            }
+            const auto* rt = rp->FindString("type");
+            if (rt && *rt == "text") {
+              const auto* t = rp->FindString("text");
+              if (t) {
+                if (!content.empty()) {
+                  content += '\n';
+                }
+                content += *t;
+              }
+            } else if (rt && *rt == "image") {
+              const auto* img = rp->FindString("image");
+              if (img && !img->empty()) {
+                if (img->starts_with("http://") ||
+                    img->starts_with("https://") ||
+                    img->starts_with("data:")) {
+                  image_data_uris.push_back(*img);
+                } else {
+                  const auto* mime = rp->FindString("mimeType");
+                  image_data_uris.push_back(
+                      "data:" + (mime ? *mime : std::string("image/jpeg")) +
+                      ";base64," + *img);
+                }
+              }
+            }
+          }
+          openai_msg.Set("content", std::move(content));
+        } else if (result) {
           std::string json;
           base::JSONWriter::Write(*result, &json);
           openai_msg.Set("content", json);
         }
       }
       messages.Append(std::move(openai_msg));
+
+      if (!image_data_uris.empty()) {
+        base::ListValue parts;
+        base::DictValue note;
+        note.Set("type", "text");
+        note.Set("text", "(Screenshot returned by the previous tool call.)");
+        parts.Append(std::move(note));
+        for (const std::string& uri : image_data_uris) {
+          base::DictValue img_part;
+          img_part.Set("type", "image_url");
+          base::DictValue img_url;
+          img_url.Set("url", uri);
+          img_part.Set("image_url", std::move(img_url));
+          parts.Append(std::move(img_part));
+        }
+        base::DictValue user_msg;
+        user_msg.Set("role", "user");
+        user_msg.Set("content", std::move(parts));
+        messages.Append(std::move(user_msg));
+      }
       continue;
     }
 

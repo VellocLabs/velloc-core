@@ -14,8 +14,7 @@ import {
 
 import '../../components/native/native_view_aliases.js';
 import './nexus_quick_settings.js';
-import {uiStore} from '../../ui_store.js';
-import {UIMode} from '../../ui_view_controller.mojom-webui.js';
+import {BrowserApiProxyImpl} from '../../browser_api_proxy.js';
 import {
   browserModeIcon,
   globeIcon,
@@ -373,13 +372,12 @@ export class NexusTopbar extends CrLitElement {
       height: 100%;
       place-items: center;
       transition: background .12s, color .12s;
-      width: 44px;
+      width: 38px;
     }
     .sysbtn:hover { background: var(--hover); color: var(--ink-1); }
 
     /* Native window controls and browser-button are 37px tall C++ Views;
      * vertically center them in the 40px header. */
-    caption-browser-button,
     caption-button-container {
       align-self: center;
     }
@@ -511,11 +509,12 @@ export class NexusTopbar extends CrLitElement {
         'nexus-open-settings', {bubbles: true, composed: true, detail}));
   }
 
-  // Sysbtn — switches the entire UI to plain Chrome (UIMode.kStandard).
-  // Goes through uiStore so BATCH.setPaused() and observers fire.
-  private onSwitchToStandardClick_() {
-    uiStore.setMode(UIMode.kStandard);
-    // Intentionally nothing else — <nexus-page> is about to be torn down.
+  // Sysbtn — leaves the nexus window toward a browser window. The nexus
+  // window's UI mode is pinned (kNexus), so we must NOT change it here.
+  // Instead, focus an existing normal browser window for this profile, or
+  // open a new one (handled natively in UIViewHandler::OpenBrowserWindow).
+  private onOpenBrowser_() {
+    BrowserApiProxyImpl.getInstance().openBrowserWindow();
   }
 
   // --- Render ----------------------------------------------------------
@@ -530,13 +529,11 @@ export class NexusTopbar extends CrLitElement {
       <div class="header__sep"></div>
       ${this.surfaceMode === 'warning' ? nothing :
         html`<button class="sysbtn"
-                @click=${this.onSwitchToStandardClick_}
-                title="Switch to browser mode"
-                aria-label="Switch to browser mode">
+                @click=${this.onOpenBrowser_}
+                title="Open browser window"
+                aria-label="Open browser window">
               ${browserModeIcon}
             </button>`}
-      <div class="header__drag"></div>
-      <caption-browser-button align-x="right"></caption-browser-button>
       <caption-button-container align-x="right"></caption-button-container>
     `;
   }

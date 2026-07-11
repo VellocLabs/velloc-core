@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "chrome/browser/background/glic/glic_launcher_configuration.h"
+#include "chrome/browser/glic/glic_pref_names_internal.h"
 #include "chrome/browser/glic/common/local_hotkey_manager.h"
 #include "chrome/common/chrome_features.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -38,6 +39,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
   registry->RegisterIntegerPref(
       kGlicCompletedFre, static_cast<int>(prefs::FreStatus::kNotStarted));
+  registry->RegisterIntegerPref(prefs::kGlicZoomLevel, 100);
   registry->RegisterTimePref(kGlicWindowLastDismissedTime, base::Time());
 
   // The default value is not used. If not set the default position is
@@ -53,16 +55,31 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   // Boolean pref for the closed captioning setting.
   registry->RegisterBooleanPref(prefs::kGlicClosedCaptioningEnabled, false);
 
+  registry->RegisterIntegerPref(prefs::kGlicSelectionWidgetDismissCount, 0);
+
+  // Boolean pref that determines if errors are allowed to be shown.
+  registry->RegisterBooleanPref(prefs::kGlicShowErrorAllowed, false);
+
   // Boolean pref for the daisy chain new tabs setting.
   registry->RegisterBooleanPref(prefs::kGlicKeepSidepanelOpenOnNewTabsEnabled,
+                                true);
+
+  // Boolean pref that enables or disables experimental triggering.
+  registry->RegisterBooleanPref(prefs::kGlicExperimentalTriggeringEnabled,
                                 true);
 
   registry->RegisterIntegerPref(
       prefs::kGlicActuationOnWeb,
       std::to_underlying(GetGlicActuationOnWebPolicyState()));
 
-  // Default on for custom browser builds; explicit user choices still win.
+  registry->RegisterListPref(prefs::kGlicActuationOnWebAllowedForURLs);
+  registry->RegisterListPref(prefs::kGlicActuationOnWebBlockedForURLs);
+
+  // custom-browser divergence: default ON for custom browser builds (upstream
+  // 149 defaults this to false); explicit user choices still win.
   registry->RegisterBooleanPref(prefs::kGlicUserEnabledActuationOnWeb, true);
+
+  registry->RegisterBooleanPref(prefs::kGlicPartitionNeedsCookieSync, true);
 }
 
 void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
@@ -72,12 +89,35 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
       ui::Command::AcceleratorToString(
           GlicLauncherConfiguration::GetDefaultHotkey()));
   registry->RegisterStringPref(
+      prefs::kGlicSelectionHotkey,
+      ui::Command::AcceleratorToString(
+          GlicLauncherConfiguration::GetDefaultSelectionHotkey()));
+  registry->RegisterStringPref(
       prefs::kGlicFocusToggleHotkey,
       ui::Command::AcceleratorToString(
           LocalHotkeyManager::GetDefaultAccelerator(
               LocalHotkeyManager::Hotkey::kFocusToggle)));
-  registry->RegisterBooleanPref(
-      prefs::kGlicMultiInstanceEnabledBySubscriptionTier, false);
+  registry->RegisterStringPref(prefs::kGlicGuestUrlPresetAutopush, "");
+  registry->RegisterStringPref(prefs::kGlicGuestUrlPresetStaging, "");
+  registry->RegisterStringPref(prefs::kGlicGuestUrlPresetPreprod, "");
+  registry->RegisterStringPref(prefs::kGlicGuestUrlPresetProd, "");
+  registry->RegisterStringPref(
+      prefs::kGlicWebContinuityOriginatingHostUrlPreset, "");
+  // custom-browser (149 upgrade): `kGlicMultiInstanceEnabledBySubscriptionTier`
+  // ("glic.multi_instance_enabled_by_tier") was DEPRECATED upstream in 149 and
+  // is now registered by `RegisterLocalStatePrefsForMigration`
+  // (chrome/browser/prefs/browser_prefs.cc, "Deprecated 03/2026" block) in the
+  // SAME local-state registry. Registering it here too tripped the
+  // pref_registry.cc DCHECK ("previously registered pref") and crashed startup.
+  // The migration registration keeps the key valid for the GetBoolean/SetBoolean
+  // calls still present in glic_enabling.cc, so dropping our duplicate is safe;
+  // the only behavior change is that the deprecation-cleanup may clear the value
+  // across runs (acceptable for this custom build of the Google subscription-tier
+  // feature).
+  // TODO(velloc-glic): if the multi-instance-by-tier feature is intentionally
+  // retired for Velloc, remove the dead GetAndUpdateEligibility* /
+  // IsEligibleForGlicMultiInstanceTieredRolloutThisRun helpers from
+  // glic_enabling.cc as well.
 }
 
 }  // namespace glic::prefs

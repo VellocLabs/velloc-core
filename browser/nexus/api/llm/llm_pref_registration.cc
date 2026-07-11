@@ -12,6 +12,16 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kNexusActiveProviderId, std::string());
   registry->RegisterStringPref(prefs::kNexusWebappUrl, std::string());
 
+  // Where BrowserTool hosts the agent's tabs: false = active (Nexus) window,
+  // true = a dedicated separate browser window. Default preserves the legacy
+  // shared-window behavior.
+  registry->RegisterBooleanPref(prefs::kNexusBrowserToolsSeparateWindow, false);
+
+  // Unified agent runtime config dict, pushed to the nexus_web SharedWorker.
+  // Starts empty; keys (maxTurns, stepTimeoutSec, model) are layered on top of
+  // GetAgentConfig() defaults as the user changes settings.
+  registry->RegisterDictionaryPref(prefs::kNexusAgentConfig);
+
   // Single authoritative store of per-provider configuration. Every provider
   // id maps to a dict holding api_key, base_url, model, default_model,
   // enabled_models, last_verification, etc.

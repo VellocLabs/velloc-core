@@ -40,11 +40,17 @@ class NexusBridgeResponseDelegate;
 //   - `GetOrCreateSession(key)` — lazy create on first use.
 //   - `OnSessionStopped(key, reason)` — runs the OnStop cascade
 //     (`ToolSession::OnStop` → each per-category `OnStop`) so e.g.
-//     `BrowserTool::OnStop` stops its actor task. Then erases the
-//     session from the map.
-//   - `~ToolsAdapter` — runs `OnStop("disconnected")` on every
-//     remaining session as a defensive fallback (port-service
-//     teardown / webview reload path).
+//     `BrowserTool::OnStop` stops its actor task. The ToolSession is
+//     erased from the map **only** when `reason == kSessionDeleted`
+//     (the user deleted the session from the sidebar). For
+//     `kCompleted` / `kUserStopped` the ToolSession stays warm so the
+//     next turn / Stop-then-resume reuses the same instance — including
+//     its session tabs, group, and last-active-tab bookkeeping.
+//   - `~ToolsAdapter` — runs `OnStop(kDisconnected)` on every remaining
+//     session as a defensive fallback (port-service teardown / webview
+//     reload path). The subsequent map clear destroys each ToolSession;
+//     ~BrowserTool then closes that session's tabs ("tabs close with
+//     the panel" UX).
 class ToolsAdapter : public NexusBridgeCapabilityHandler {
  public:
   ToolsAdapter(NexusBridgeResponseDelegate* delegate, Profile* profile);
@@ -68,10 +74,16 @@ class ToolsAdapter : public NexusBridgeCapabilityHandler {
   // private `sessions_` map.
   bool HasSession(const std::string& session_key) const;
 
-  // Cascades the OnStop notification through the session and erases
-  // it from the map. Idempotent — no-op if `session_key` isn't present.
-  void OnSessionStopped(const std::string& session_key,
-                        const std::string& reason);
+  // Cascades the OnStop notification through the session. Erases the
+  // session from the map ONLY when `reason == OnStopReason::kSessionDeleted`
+  // — every other reason leaves the ToolSession warm in the map so the
+  // next turn / Stop-then-resume reuses it (the per-session BrowserTool
+  // keeps its actor task, node registry, and tab bookkeeping across
+  // turns; the actor task gets stopped on each OnStop and is re-armed
+  // by the next tool call's `EnsureTaskCreated`).
+  //
+  // Idempotent — no-op if `session_key` isn't present.
+  void OnSessionStopped(const std::string& session_key, OnStopReason reason);
 
   // Forwarders used by per-tool `ToolCallback` resolutions. Public so
   // `base::BindOnce(&ToolsAdapter::ForwardSuccess, weak_ptr, …)` can

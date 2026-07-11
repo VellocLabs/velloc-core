@@ -2,25 +2,25 @@
   "$schema": "../../codegen/tool_schema.json",
   "name": "glob",
   "wire_name": "Glob",
-  "description": "Fast file pattern matching. Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\". Returns matching paths sorted by modification time (newest first). Skips node_modules, .git, dist, build, and other vendor/output directories.",
+  "description": "- Fast file pattern matching tool that works with any codebase size\n- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\"\n- Returns matching file paths sorted by modification time\n- Use this tool when you need to find files by name patterns\n- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead",
   "inputs": [
     {
       "name": "pattern",
       "type": "string",
       "required": true,
-      "description": "Glob pattern. Supports `**` (recursive across directories), `*` (any chars within a path segment), `?` (single char), and character classes like `[abc]`."
+      "description": "The glob pattern to match files against"
     },
     {
       "name": "path",
       "type": "string",
       "required": false,
-      "description": "Optional root directory to search from. If absolute, used as-is; if relative, resolved against the session cwd. Defaults to the session cwd."
+      "description": "The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter \"undefined\" or \"null\" - simply omit it for the default behavior. Must be a valid directory path if provided."
     },
     {
       "name": "limit",
       "type": "integer",
       "required": false,
-      "description": "Optional cap on returned paths. Defaults to 100. Increase when the model genuinely needs to enumerate a large set; otherwise rely on the default to keep response size bounded."
+      "description": "Optional cap on returned paths. Defaults to 100."
     }
   ],
   "output_kind": "object",

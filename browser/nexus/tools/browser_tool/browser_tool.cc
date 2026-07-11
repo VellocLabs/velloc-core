@@ -1,11 +1,14 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <utility>
 
+#include "base/base64.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/hash/hash.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/escape.h"
@@ -18,13 +21,26 @@
 #include "chrome/browser/actor/actor_proto_conversion.h"
 #include "chrome/browser/actor/actor_task.h"
 #include "chrome/browser/actor/actor_task_metadata.h"
+#include "components/actor/core/task_source_info.h"
 #include "chrome/browser/glic/actor/glic_actor_policy_checker.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
+#include "chrome/browser/ui/tabs/tab_group_model.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor_webui.mojom.h"
+#include "components/tab_groups/tab_group_color.h"
+#include "components/tab_groups/tab_group_visual_data.h"
+#include "components/tabs/public/tab_group.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/session/nexus_session_features.h"
+#include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "services/media_session/public/cpp/media_metadata.h"
@@ -44,7 +60,7 @@ namespace {
 
 namespace apc = optimization_guide::proto;
 
-// All cross-cutting helpers (DescribeActorError, MapStopReason,
+// All cross-cutting helpers (DescribeActorError, ToActorStoppedReason,
 // GetActiveBrowserForProfile, GetActiveWindowSessionId,
 // GetActiveTabHandleId, ResolveTabIdOrReject, MaybePrependActivateTab,
 // GetPolicyChecker, ContentAttributeTypeName, ExtractNodeText,
@@ -53,6 +69,65 @@ namespace apc = optimization_guide::proto;
 // browser_tool_internal.{h,cc}. The `using namespace
 // browser_tool_internal;` directive at the top of this TU lets us
 // continue calling them unqualified from BrowserTool method bodies.
+
+// Deterministic color picker for the session's tab group. Hashing the
+// session_key onto one of eight non-grey palette entries gives every
+// session a stable color across the browser-process lifetime without
+// requiring any persisted state — group lifetime is in-process anyway.
+tab_groups::TabGroupColorId DeterministicColorFor(
+    std::string_view session_key) {
+  static constexpr std::array<tab_groups::TabGroupColorId, 8> kPalette = {
+      tab_groups::TabGroupColorId::kBlue,
+      tab_groups::TabGroupColorId::kRed,
+      tab_groups::TabGroupColorId::kYellow,
+      tab_groups::TabGroupColorId::kGreen,
+      tab_groups::TabGroupColorId::kPink,
+      tab_groups::TabGroupColorId::kPurple,
+      tab_groups::TabGroupColorId::kCyan,
+      tab_groups::TabGroupColorId::kOrange,
+  };
+  const size_t i = base::FastHash(session_key) % kPalette.size();
+  return kPalette[i];
+}
+
+std::u16string TabGroupTitleFor(std::string_view session_key) {
+  // Twelve chars is enough to disambiguate typical short session ids
+  // without bloating the tab-strip pill.
+  constexpr size_t kMaxLen = 12;
+  std::string truncated(session_key.substr(0, kMaxLen));
+  if (session_key.size() > kMaxLen) {
+    truncated.append("...");
+  }
+  return base::UTF8ToUTF16("Nexus: " + truncated);
+}
+
+// Resolve (Browser*, TabStripModel*, index, WebContents*) for a handle.
+// `browser` is null when the tab is gone or its WebContents is
+// orphaned.
+struct LocatedTab {
+  raw_ptr<Browser> browser = nullptr;
+  raw_ptr<TabStripModel> tab_strip = nullptr;
+  int index = TabStripModel::kNoTab;
+  raw_ptr<content::WebContents> contents = nullptr;
+};
+
+LocatedTab LocateTabForHandle(tabs::TabHandle handle) {
+  LocatedTab out;
+  tabs::TabInterface* tab = handle.Get();
+  if (!tab) return out;
+  content::WebContents* contents = tab->GetContents();
+  if (!contents) return out;
+  out.contents = contents;
+  out.browser = chrome::FindBrowserWithTab(contents);
+  if (!out.browser) return out;
+  out.tab_strip = out.browser->tab_strip_model();
+  if (!out.tab_strip) {
+    out.browser = nullptr;
+    return out;
+  }
+  out.index = out.tab_strip->GetIndexOfWebContents(contents);
+  return out;
+}
 
 }  // namespace
 
@@ -86,20 +161,53 @@ BrowserTool::BrowserTool(ToolSession* session, Profile* profile,
     : ToolBase(session, profile, session_key) {}
 
 BrowserTool::~BrowserTool() {
-  // Defensive — if OnStop wasn't called explicitly (e.g. via
-  // ToolsAdapter::OnSessionStopped), run it now so the actor task
-  // never leaks. Idempotent: task_id_ is reset by OnStop.
-  OnStop("destructor");
+  // 1) Final OnStop pass — idempotent, stops the actor task and clears
+  //    the node registry if they survived prior OnStop calls.
+  OnStop(OnStopReason::kDestructor);
+  // 2) Tab teardown lives in the destructor — fires for kSessionDeleted
+  //    (ToolsAdapter erases the session), the ~ToolsAdapter cascade
+  //    (panel close / port-service teardown), and any other path that
+  //    destroys the ToolSession. "Tabs close with the panel" is the
+  //    chosen UX.
+  CloseAllSessionTabsOnDestroy();
 }
 
-void BrowserTool::OnStop(const std::string& reason) {
+void BrowserTool::OnStop(OnStopReason reason) {
   LOG(INFO) << "[BrowserTool] OnStop session=" << GetSessionKey()
-            << " reason=" << reason
+            << " reason=" << OnStopReasonToString(reason)
             << " has_task=" << task_id_.has_value()
             << " registry_size=" << node_registry_.size();
   if (task_id_.has_value()) {
-    if (auto* service = actor::ActorKeyedService::Get(GetProfile())) {
-      service->StopTask(*task_id_, MapStopReason(reason));
+    auto* service = actor::ActorKeyedService::Get(GetProfile());
+    // Diagnostic: if we're being asked to stop a task that's
+    // currently kActing or kReflecting, that's almost always a JS-
+    // side bug — the agent loop fired `session.onStop` while a tool
+    // dispatch was still in flight. Surface this as a noisy WARNING
+    // so we can correlate with the JS-side stack trace (see the
+    // matching console.error in deps.ts::handleStopHooks).
+    if (service) {
+      if (actor::ActorTask* task = service->GetTask(*task_id_)) {
+        actor::ActorTask::State state = task->GetState();
+        if (state == actor::ActorTask::State::kActing ||
+            state == actor::ActorTask::State::kReflecting) {
+          LOG(WARNING)
+              << "[BrowserTool] OnStop(reason="
+              << OnStopReasonToString(reason)
+              << ") arrived while task " << task_id_->value()
+              << " is in active state " << static_cast<int>(state)
+              << " (kActing/kReflecting). The in-flight tool's "
+                 "PerformActions BindOnce is about to be dropped, "
+                 "which will emit tool_dropped to the JS guest. This "
+                 "is a JS-side bug — `session.onStop` should not fire "
+                 "while a tool is mid-flight. See "
+                 "nexus_web/src/query.ts !needsFollowUp branch + "
+                 "nexus_web/src/query/deps.ts::handleStopHooks for "
+                 "the JS call sites and capture the matching console "
+                 "error to identify the trigger. session="
+              << GetSessionKey();
+        }
+      }
+      service->StopTask(*task_id_, ToActorStoppedReason(reason));
     }
     task_id_.reset();
   }
@@ -112,6 +220,143 @@ void BrowserTool::OnStop(const std::string& reason) {
   // Stale node ids from a stopped session must never feed back
   // into a fresh session's actor calls.
   node_registry_.Clear();
+  // Note: tabs are NOT closed here. Closure happens in ~BrowserTool
+  // so that the OnStop-but-stay-warm reasons (kCompleted /
+  // kUserStopped) preserve the user's tabs across turns.
+}
+
+void BrowserTool::BindTabToSession(tabs::TabHandle handle) {
+  if (!::nexus::features::IsSessionScopedTabsEnabled() ||
+      GetSessionKey().empty()) {
+    return;
+  }
+  LocatedTab located = LocateTabForHandle(handle);
+  if (!located.contents) {
+    return;
+  }
+  ::nexus::NexusSessionTabTag::AttachTo(located.contents, GetSessionKey());
+
+  // Add to (or create) the session's tab group. Best-effort: some
+  // browser types (devtools, app windows) disable groups; that's fine,
+  // the tag is still the source of truth.
+  if (located.browser && located.tab_strip &&
+      located.tab_strip->SupportsTabGroups() &&
+      located.index != TabStripModel::kNoTab) {
+    if (tab_group_id_.has_value()) {
+      std::optional<tab_groups::TabGroupId> current =
+          located.tab_strip->GetTabGroupForTab(located.index);
+      if (current != tab_group_id_) {
+        located.tab_strip->AddToExistingGroup({located.index}, *tab_group_id_,
+                                               /*add_to_end=*/true);
+      }
+    } else {
+      tab_group_id_ = located.tab_strip->AddToNewGroup({located.index});
+      if (TabGroup* group = located.tab_strip->group_model()->GetTabGroup(
+              *tab_group_id_)) {
+        tab_groups::TabGroupVisualData visual_data(
+            TabGroupTitleFor(GetSessionKey()),
+            DeterministicColorFor(GetSessionKey()),
+            /*is_collapsed=*/false);
+        group->SetVisualData(std::move(visual_data),
+                              /*is_customized=*/true);
+      }
+      LOG(INFO) << "[BrowserTool] created tab group for session="
+                << GetSessionKey()
+                << " group=" << tab_group_id_->ToString();
+    }
+  }
+
+  session_tabs_.insert(handle);
+}
+
+void BrowserTool::RecordWorkTab(tabs::TabHandle handle) {
+  // Verify the handle is still alive AND carries this session's tag
+  // before storing — a working_tab_id resolved at the call site can
+  // race a tab close on shutdown paths, and we don't want a stale
+  // handle handed back by `LastWorkTab()` next call.
+  tabs::TabInterface* tab = handle.Get();
+  if (!tab) return;
+  const std::string* tag =
+      ::nexus::NexusSessionTabTag::SessionKeyFor(tab->GetContents());
+  if (!tag || *tag != GetSessionKey()) {
+    return;
+  }
+  last_work_tab_ = handle;
+}
+
+std::optional<tabs::TabHandle> BrowserTool::LastWorkTab() const {
+  tabs::TabInterface* tab = last_work_tab_.Get();
+  if (!tab) {
+    return std::nullopt;
+  }
+  const std::string* tag =
+      ::nexus::NexusSessionTabTag::SessionKeyFor(tab->GetContents());
+  if (!tag || *tag != GetSessionKey()) {
+    return std::nullopt;
+  }
+  return last_work_tab_;
+}
+
+std::vector<tabs::TabHandle> BrowserTool::CollectSessionTabs() const {
+  std::vector<tabs::TabHandle> out;
+  Profile* profile = GetProfile();
+  if (!profile || GetSessionKey().empty()) {
+    return out;
+  }
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+        Browser* browser =
+            window ? window->GetBrowserForMigrationOnly() : nullptr;
+        if (!browser || browser->profile() != profile) {
+          return true;
+        }
+        TabStripModel* tab_strip = browser->tab_strip_model();
+        if (!tab_strip) {
+          return true;
+        }
+        for (int i = 0; i < tab_strip->count(); ++i) {
+          content::WebContents* contents = tab_strip->GetWebContentsAt(i);
+          const std::string* tag =
+              ::nexus::NexusSessionTabTag::SessionKeyFor(contents);
+          if (tag && *tag == GetSessionKey()) {
+            tabs::TabInterface* tab = tab_strip->GetTabAtIndex(i);
+            if (tab) {
+              out.push_back(tab->GetHandle());
+            }
+          }
+        }
+        return true;
+      });
+  return out;
+}
+
+void BrowserTool::CloseAllSessionTabsOnDestroy() {
+  if (!::nexus::features::IsSessionScopedTabsEnabled() ||
+      GetSessionKey().empty()) {
+    session_tabs_.clear();
+    tab_group_id_.reset();
+    return;
+  }
+  // The tag — not session_tabs_ — is authoritative. A tab the user
+  // dragged out of the group is still session-owned and gets closed.
+  std::vector<tabs::TabHandle> tabs = CollectSessionTabs();
+  LOG(INFO) << "[BrowserTool] closing tabs on destroy session="
+            << GetSessionKey() << " count=" << tabs.size();
+  for (const tabs::TabHandle& handle : tabs) {
+    LocatedTab located = LocateTabForHandle(handle);
+    if (!located.tab_strip || located.index == TabStripModel::kNoTab) {
+      continue;
+    }
+    // CLOSE_USER_GESTURE keeps the close from being treated as a
+    // crash-style teardown; CLOSE_CREATE_HISTORICAL_TAB lets the user
+    // recover via Ctrl+Shift+T if they close the panel by mistake.
+    located.tab_strip->CloseWebContentsAt(
+        located.index,
+        TabCloseTypes::CLOSE_USER_GESTURE |
+            TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
+  }
+  session_tabs_.clear();
+  tab_group_id_.reset();
 }
 
 scoped_refptr<PausableTimeout> BrowserTool::RegisterPausableTimeout(
@@ -174,11 +419,72 @@ bool ActorStateResumesTimeouts(actor::ActorTask::State state) {
 
 }  // namespace
 
-void BrowserTool::OnActorTaskStateChanged(actor::TaskId task_id,
-                                          actor::ActorTask::State state) {
+void BrowserTool::OnActorTaskStateChanged(actor::ActorTask& task) {
+  // custom-browser: Chromium 149's TaskStateChangedCallback delivers ActorTask&;
+  // extract id/state to preserve the logic below.
+  const actor::TaskId task_id = task.id();
+  const actor::ActorTask::State state = task.GetState();
   if (!task_id_.has_value() || task_id != *task_id_) {
     return;
   }
+
+  // Diagnostic: log EVERY state transition for our task, including
+  // ones not handled by the pause / resume / terminal predicates.
+  // Used to correlate task state changes with `tool_dropped` errors
+  // — if the state never transitions to a terminal value between two
+  // calls that the actor service dropped, the bug is somewhere other
+  // than terminal-state-staleness.
+  //
+  // VLOG(1): opt-in via --vmodule=browser_tool=1+. State transitions
+  // fire on every actor turn — too chatty for the default floor.
+  VLOG(1) << "[BrowserTool] OnActorTaskStateChanged task_id="
+          << task_id.value() << " state=" << static_cast<int>(state)
+          << " session=" << GetSessionKey();
+
+  // Terminal-state handling — aligned to upstream glic
+  // (chrome/browser/glic/actor/glic_actor_task_manager.cc:655-669,
+  // GlicActorTaskManager::NotifyActorTaskStateChanged).
+  //
+  // Once the actor task enters kFinished / kCancelled / kFailed it
+  // never leaves (see chrome/browser/actor/actor_task.h:99-100). The
+  // cached `task_id_` is forever stale at that point: a stale id
+  // handed back from `EnsureTaskCreated` would steer the next
+  // `PerformActions` into the actor service against a dead task, the
+  // bound BindOnce gets silently dropped, and the inner
+  // `ToolCallback`'s destructor emits the synthetic
+  // `tool_dropped: tool dropped without resolving` error to the JS
+  // guest — opaque to the model and unrecoverable without restart.
+  //
+  // Trigger we hit in production: a `BrowserClick` navigating a tab
+  // cross-origin causes Chromium's actor framework to terminate the
+  // task with `StoppedReason::kTabDetached`, transitioning the state
+  // to `kCancelled`/`kFailed`. Without this branch the runtime kept
+  // the stale id and every subsequent browser tool call returned
+  // `tool_dropped`. See docs/agents/nexus-web-parity-audit.md
+  // ("BrowserTool actor task lifecycle — adopted from glic").
+  if (actor::ActorTask::IsCompletedState(state)) {
+    // VLOG(1) — visible with --vmodule=browser_tool=1+. The state
+    // transition to terminal is an important diagnostic but happens
+    // on routine cross-origin nav / task-stop paths too, so the
+    // default-level INFO floor would make it too chatty.
+    VLOG(1) << "[BrowserTool] actor task entered terminal state "
+            << static_cast<int>(state) << " session=" << GetSessionKey()
+            << "; clearing cached task_id_ so the next tool call recreates";
+    for (const scoped_refptr<PausableTimeout>& t : active_timeouts_) {
+      t->Stop();
+    }
+    active_timeouts_.clear();
+    actor_task_paused_ = false;
+    task_state_subscription_ = {};
+    task_id_.reset();
+    // node_registry_ is intentionally NOT cleared — element indexes
+    // are document-scoped and the user's existing tabs (and their
+    // DOM) survive task termination. OnStop is the only path that
+    // nukes the registry; a task-level terminal state should leave
+    // per-tab state intact.
+    return;
+  }
+
   if (ActorStatePausesTimeouts(state)) {
     actor_task_paused_ = true;
     PauseActiveTimeouts();
@@ -261,9 +567,81 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
       actor::webui::mojom::TaskOptions::New();
   options->title = base::StrCat({"nexus-browser-tools:", GetSessionKey()});
 
+  // custom-browser: Chromium 149 added a leading TaskSourceInfo argument.
   task_id_ = service->CreateTaskWithOptions(
+      actor::TaskSourceInfo(actor::TaskSourceInfo::Client::kGlic,
+                            /*id=*/std::nullopt),
       policy_checker, std::move(options),
       /*delegate=*/base::WeakPtr<actor::ActorTaskDelegate>());
+
+  // Post-create validation. Turn-end `OnStop("completed")` calls
+  // `service->StopTask(...)` on the previous task; the actor
+  // service's async cleanup of that task can still be in flight
+  // when the next conversation turn calls `CreateTaskWithOptions`
+  // on a fresh `BrowserTool`. If the cleanup hasn't settled, the
+  // new task can be returned with a null id, or returned as a
+  // pointer that's not yet in the expected `kCreated` initial
+  // state — in which case the very next `PerformActions` silently
+  // drops its `BindOnce` and the inner ToolCallback fires
+  // `tool_dropped` from its destructor.
+  //
+  // Convert that silent drop into a typed `task_create_*` reject
+  // here so the model receives a recoverable error (and we get a
+  // `LOG(WARNING)` for telemetry). Tracked in
+  // `docs/agents/nexus-web-parity-audit.md` under "BrowserTool
+  // restart after turn-end teardown".
+  if (task_id_->is_null()) {
+    LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
+                 << GetSessionKey()
+                 << " CreateTaskWithOptions returned null TaskId";
+    std::move(done).Reject(
+        "task_create_failed",
+        "actor task creation: CreateTaskWithOptions returned a null "
+        "TaskId — the actor service may still be cleaning up the "
+        "previous task. Retry the tool call.");
+    task_id_.reset();
+    return std::nullopt;
+  }
+  actor::ActorTask* new_task = service->GetTask(*task_id_);
+  if (!new_task) {
+    LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
+                 << GetSessionKey() << " GetTask(" << task_id_->value()
+                 << ") returned null immediately after creation";
+    std::move(done).Reject(
+        "task_create_unhealthy",
+        "actor task creation: GetTask returned null immediately "
+        "after CreateTaskWithOptions — the task is not registered. "
+        "Retry the tool call.");
+    task_id_.reset();
+    return std::nullopt;
+  }
+  if (new_task->GetState() != actor::ActorTask::State::kCreated) {
+    // Anything other than kCreated immediately after creation is
+    // unexpected. kPausedByActor / kPausedByUser / kWaitingOnUser
+    // shouldn't happen for a brand-new task. kCancelled / kFinished /
+    // kFailed mean the service has already torn it down.
+    LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
+                 << GetSessionKey() << " task " << task_id_->value()
+                 << " in unexpected initial state "
+                 << static_cast<int>(new_task->GetState());
+    std::move(done).Reject(
+        "task_create_unhealthy",
+        base::StrCat(
+            {"actor task creation: new task is in state ",
+             base::NumberToString(static_cast<int>(new_task->GetState())),
+             " immediately after creation (expected kCreated=0). "
+             "The actor service may still be tearing down the "
+             "previous task. Retry the tool call."}));
+    task_id_.reset();
+    return std::nullopt;
+  }
+  // VLOG(1) — successful-task-create diagnostic, opt-in via
+  // --vmodule=browser_tool=1+. The failure-path equivalents above
+  // stay LOG(WARNING) so they're always visible.
+  VLOG(1) << "[BrowserTool] EnsureTaskCreated session=" << GetSessionKey()
+          << " new task_id=" << task_id_->value()
+          << " state=" << static_cast<int>(new_task->GetState());
+
   task_state_subscription_ = service->AddTaskStateChangedCallback(
       base::BindRepeating(&BrowserTool::OnActorTaskStateChanged,
                           weak_ptr_factory_.GetWeakPtr()));
@@ -272,7 +650,17 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
 
 void BrowserTool::RunActorAction(apc::Actions actions,
                                  std::string_view action_name,
-                                 ToolCallback done) {
+                                 ToolCallback done,
+                                 std::optional<int32_t> working_tab_id) {
+  // Record the tab this dispatch is targeting before the action runs —
+  // the next tab-less tool call will use this as its default focus via
+  // `LastWorkTab()` if Chrome's foreground tab isn't session-owned.
+  // Validated session-owned inside `RecordWorkTab`; nullopt means "no
+  // specific working tab" (e.g. close_tab) and we skip the update.
+  if (working_tab_id.has_value()) {
+    RecordWorkTab(tabs::TabHandle(*working_tab_id));
+  }
+
   // Wrap `done` with a per-action wall-clock budget so a hung
   // CDP/WebSocket can't deadlock the loop. The settle-once timer
   // races the legitimate PerformActions → BuildActionsResultWithObservations
@@ -309,6 +697,24 @@ void BrowserTool::RunActorAction(apc::Actions actions,
   base::TimeTicks start_time = base::TimeTicks::Now();
   actor::ActorTaskMetadata task_metadata;
 
+  // Diagnostic: log the dispatch so we can correlate with whether
+  // OnActorPerformActionsDone fires (or gets dropped). Pairs with the
+  // entry log in OnActorPerformActionsDone and the
+  // `[NexusToolCallback] Callback destroyed without resolving` warning
+  // in nexus_tool_callback.cc — three together pinpoint where the
+  // callback goes missing when `tool_dropped` reaches the JS guest.
+  //
+  // VLOG(1): opt-in via --vmodule=browser_tool=1+. Routine per-tool-
+  // call line — would be too chatty at the default INFO floor.
+  VLOG(1) << "[BrowserTool] PerformActions dispatch action="
+          << action_name << " task_id=" << task_id->value()
+          << " task_state="
+          << static_cast<int>(
+                 service->GetTask(*task_id) ?
+                     service->GetTask(*task_id)->GetState() :
+                     actor::ActorTask::State::kFailed)
+          << " session=" << GetSessionKey();
+
   service->PerformActions(
       *task_id, std::move(tool_request_result.value()),
       std::move(task_metadata),
@@ -321,9 +727,30 @@ void BrowserTool::OnActorPerformActionsDone(
     ToolCallback done,
     std::string action_name,
     base::TimeTicks start_time,
-    actor::mojom::ActionResultCode result_code,
-    std::optional<size_t> index_of_failed_action,
     std::vector<actor::ActionResultWithLatencyInfo> action_results) {
+  // Chromium 149's PerformActions callback no longer passes a separate
+  // result_code — it's folded into the per-action `action_results` vector.
+  // Reduce to the overall code via upstream's canonical helper (first
+  // non-OK action wins); see `OverallActorResultCode` for the rationale.
+  const actor::mojom::ActionResultCode result_code =
+      OverallActorResultCode(action_results);
+  // Diagnostic: log entry so we can confirm whether the actor service
+  // invoked this callback (vs. dropped the BindOnce on the floor,
+  // which would skip this log and surface as `tool_dropped` via the
+  // outer ToolCallback's destructor). See the matching dispatch log
+  // in RunActorAction.
+  //
+  // VLOG(1): opt-in via --vmodule=browser_tool=1+. Routine per-tool-
+  // call line.
+  VLOG(1) << "[BrowserTool] OnActorPerformActionsDone action="
+          << action_name
+          << " result_code=" << static_cast<int>(result_code)
+          << " session=" << GetSessionKey()
+          << " task_id="
+          << (task_id_.has_value()
+                  ? base::NumberToString(task_id_->value())
+                  : std::string("(none)"));
+
   // PerformActions has settled. Hand off to the actor framework's
   // observation builder so the LLM gets a fresh page snapshot back.
   // Without this stage the LLM has no way to know what the action did.
@@ -355,6 +782,97 @@ void BrowserTool::OnActorPerformActionsDone(
         base::StrCat({action_name, ": actor task no longer exists"}));
     return;
   }
+  // Auto-recover from a wedged execution engine.
+  //
+  // `kExecutionEngineExistingAction` (code 37) means the actor's
+  // ExecutionEngine refused to take a new action because the prior
+  // one is still "in flight" — typically after a JS-side
+  // bridge_timeout (60s) or a renderer crash (STATUS_BREAKPOINT) left
+  // a phantom in-flight `Actions` request that never produced a
+  // result. Without intervention, EVERY subsequent tool call in this
+  // session keeps hitting 37 until the C++-side action_timeout (180s
+  // default) finally fires — a 60-180s dead window during which the
+  // model can do nothing. Even `BrowserCloseTab` re-hits 37 because
+  // it dispatches through the same actor task; the
+  // "close-and-reopen-the-tab-to-recover" advice from
+  // DescribeActorError is therefore unreachable from inside the
+  // model.
+  //
+  // The recovery is the same one the model is being asked to do
+  // manually: stop the wedged task, reset cached id + subscription,
+  // and surface a typed error that tells the model the host fixed
+  // itself and the next call will mint a fresh task. The next tool
+  // call's `EnsureTaskCreated` re-arms a healthy task; the model
+  // loses ONE turn instead of being permanently stuck.
+  if (result_code ==
+      actor::mojom::ActionResultCode::kExecutionEngineExistingAction) {
+    LOG(WARNING) << "[BrowserTool] " << action_name
+                 << ": actor engine wedged (code 37); auto-recovering "
+                    "by stopping task " << task_id_->value()
+                 << " session=" << GetSessionKey();
+    service->StopTask(*task_id_,
+                      actor::ActorTask::StoppedReason::kShutdown);
+    task_state_subscription_ = {};
+    task_id_.reset();
+    actor_task_paused_ = false;
+    for (const scoped_refptr<PausableTimeout>& t : active_timeouts_) {
+      t->Stop();
+    }
+    active_timeouts_.clear();
+    std::move(done).Reject(
+        "actor_engine_wedged",
+        base::StrCat(
+            {"actor_error_37: ", action_name,
+             ": the actor execution engine was wedged by a prior "
+             "timeout or renderer crash (the previous action never "
+             "settled, blocking new dispatches). The host has reset "
+             "the actor task automatically. Retry the SAME tool call "
+             "ONCE — the next dispatch will mint a fresh task and "
+             "should succeed. If it fails the same way again, the "
+             "underlying tab may have crashed; tell the user instead "
+             "of looping."}));
+    return;
+  }
+  // Defense-in-depth — aligned to upstream glic
+  // (chrome/browser/glic/actor/glic_actor_task_manager.cc:161-167,
+  // GlicActorTaskManager::PerformActionsFinished which synthesizes a
+  // `kTaskWentAway` error when `!task` covers the in-state-map-but-
+  // dead case our `!task` guard above misses).
+  //
+  // The actor service's task map keeps terminal-state tasks around
+  // (see chrome/browser/actor/actor_task.h:99-100 — terminal states
+  // are sticky; tasks aren't immediately evicted). So `GetTask`
+  // returns a valid pointer to a dead task and the guard above
+  // passes. Without this second check, `BuildActionsResultWithObservations`
+  // walks a corpse, the actor framework silently drops the bound
+  // BindOnce, and the inner ToolCallback's destructor emits the
+  // synthetic `tool_dropped` error to the model — opaque and
+  // unrecoverable. Reject with a typed `task_went_away` instead, and
+  // proactively clear the cached id so the NEXT tool call goes
+  // through `EnsureTaskCreated` and gets a fresh task.
+  //
+  // The Layer-1 fix in `OnActorTaskStateChanged` already clears
+  // `task_id_` synchronously on state transitions; this branch
+  // guards the race where this callback fires before the state-
+  // change broadcast lands. Belt-and-suspenders, exactly like glic.
+  if (task->IsCompleted()) {
+    LOG(WARNING) << "[BrowserTool] " << action_name
+                 << ": actor task already in terminal state "
+                 << static_cast<int>(task->GetState())
+                 << " session=" << GetSessionKey();
+    task_state_subscription_ = {};
+    task_id_.reset();
+    std::move(done).Reject(
+        "task_went_away",
+        base::StrCat(
+            {action_name,
+             ": actor task is already in a terminal state (",
+             base::NumberToString(static_cast<int>(task->GetState())),
+             ") — likely caused by a cross-origin navigation or tab "
+             "detach. The next tool call will create a fresh task; "
+             "retry the action."}));
+    return;
+  }
   // Defensive: don't kick off the observation pipeline when the task has
   // no tabs. Upstream `actor::BuildActionsResultWithObservations` →
   // `ActorKeyedService::RequestTabObservation` walks the task's tabs and
@@ -377,10 +895,12 @@ void BrowserTool::OnActorPerformActionsDone(
     return;
   }
 
+  // custom-browser: Chromium 149 dropped the separate result_code/index args
+  // (folded into action_results) and added screenshot_collection_options.
   actor::BuildActionsResultWithObservations(
-      *profile, start_time, result_code, index_of_failed_action,
-      std::move(action_results), *task,
+      *profile, start_time, std::move(action_results), *task,
       /*skip_async_observation_information=*/false,
+      /*screenshot_collection_options=*/std::nullopt,
       base::BindOnce(&BrowserTool::OnActionsResultBuilt,
                      weak_ptr_factory_.GetWeakPtr(), std::move(done),
                      std::move(action_name)));
@@ -390,13 +910,18 @@ void BrowserTool::OnActionsResultBuilt(
     ToolCallback done,
     std::string action_name,
     base::TimeTicks /*start_time*/,
-    actor::mojom::ActionResultCode result_code,
-    std::optional<size_t> /*index_of_failed_action*/,
-    std::vector<actor::ActionResultWithLatencyInfo> /*action_results*/,
+    std::vector<actor::ActionResultWithLatencyInfo> action_results,
     actor::TaskId /*task_id*/,
     bool /*skip_async_observation_information*/,
+    std::optional<page_content_annotations::ScreenshotOptions::
+                      ScreenshotCollectionOptions>
+    /*screenshot_collection_options*/,
     std::unique_ptr<apc::ActionsResult> result_proto,
     std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> /*journal*/) {
+  // Chromium 149 folded the result code into the per-action `action_results`
+  // vector; reduce it via upstream's canonical helper (first non-OK wins).
+  const actor::mojom::ActionResultCode result_code =
+      OverallActorResultCode(action_results);
   // Node registry ACCUMULATES across observations now — indexes
   // (== APC content_node_id) are stable for a document's lifetime,
   // so the LLM can refer to elements from prior turns. Stale indexes
@@ -415,7 +940,10 @@ void BrowserTool::OnActionsResultBuilt(
   // explicit emptiness here is clearer for diagnostics and avoids
   // exercising any latent upstream paths on degenerate inputs.
   if (result_proto && result_proto->tabs_size() > 0) {
-    observation = BuildObservationDict(*result_proto);
+    // Only BrowserScreenshot wants the actual image bytes delivered to
+    // the model; every other action keeps the lightweight flag.
+    observation = BuildObservationDict(
+        *result_proto, /*include_screenshot_image=*/action_name == "screenshot");
   }
 
   base::DictValue result;
@@ -427,8 +955,14 @@ void BrowserTool::OnActionsResultBuilt(
   if (!actor::IsOk(result_code)) {
     // Tool result still includes the observation so the LLM can see
     // why the page rejected the action (e.g. element became stale).
+    // Tool-aware error string: when the failing tool was a scroll-tool
+    // and the code is kElementOffscreen, override the generic
+    // "prepend a scroll_to" advice (which would create an infinite
+    // retry loop). See `DescribeActorErrorForTool` in
+    // browser_tool_internal.cc for the override rules.
     result.Set("ok", false);
-    result.Set("result", DescribeActorError(result_code));
+    result.Set("result",
+                DescribeActorErrorForTool(action_name, result_code));
     std::move(done).Resolve(std::move(result));
     return;
   }
@@ -616,13 +1150,52 @@ std::optional<base::Value> ExtractBoundingBox(
 
 }  // namespace
 
+void BrowserTool::CollectLabelTargets(const apc::ContentNode& node) {
+  // Record, for every `<label for=X>` node with a non-empty visible rect,
+  // the mapping `X (the labelled input's dom_node_id) → {label's own
+  // node_id, label box}`. APC sets `label_for_dom_node_id` on the label
+  // node and guarantees it equals the input's `common_ancestor_dom_node_id`
+  // (see common_quality_data.proto). This lets `WalkContentNode` retarget
+  // a hidden checkbox/radio (custom "sr-only" input behind a styled label,
+  // e.g. Uniqlo's size/colour filters) to its visible, clickable label.
+  // First label with a visible box wins (labels are 1:1 with inputs in
+  // practice).
+  if (node.has_content_attributes()) {
+    const apc::ContentAttributes& attrs = node.content_attributes();
+    if (attrs.has_label_for_dom_node_id() &&
+        attrs.has_common_ancestor_dom_node_id() && attrs.has_geometry() &&
+        attrs.geometry().has_visible_bounding_box()) {
+      const apc::BoundingRect& r = attrs.geometry().visible_bounding_box();
+      if (r.width() > 0 || r.height() > 0) {
+        const int input_id = attrs.label_for_dom_node_id();
+        // First label with a visible box wins — keep it if already set.
+        if (observation_label_targets_.find(input_id) ==
+            observation_label_targets_.end()) {
+          observation_label_targets_.insert_or_assign(
+              input_id, LabelTarget{attrs.common_ancestor_dom_node_id(),
+                                    {r.x(), r.y(), r.width(), r.height()}});
+        }
+      }
+    }
+  }
+  for (const apc::ContentNode& child : node.children_nodes()) {
+    CollectLabelTargets(child);
+  }
+}
+
 void BrowserTool::WalkContentNode(const apc::ContentNode& node,
                                    const std::string& document_id,
                                    int tab_id,
                                    base::ListValue& out_elements) {
   if (node.has_content_attributes()) {
     const apc::ContentAttributes& attrs = node.content_attributes();
-    if (IsActionable(attrs) && attrs.has_common_ancestor_dom_node_id()) {
+    // Skip emitting a standalone `<label for=...>` node: its clickable
+    // role is folded into the control it labels (a hidden checkbox/radio
+    // gets RE-TARGETED to this label below), so emitting it separately
+    // would produce a duplicate element pointing at the same DOM node.
+    // Children still recurse at the bottom so inner text/elements surface.
+    if (IsActionable(attrs) && attrs.has_common_ancestor_dom_node_id() &&
+        !attrs.has_label_for_dom_node_id()) {
       // Use the APC's content_node_id directly as the LLM-facing
       // index. Stable for the document's lifetime in the renderer,
       // so the LLM can refer to the same DOM element by the same index
@@ -718,6 +1291,41 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
       if (!box) {
         box = ExtractDescendantBoundingBox(node);
       }
+
+      // Hidden-control retarget. A checkbox/radio whose own rect is empty
+      // is a CSS-hidden ("sr-only") custom control behind a styled
+      // `<label for=...>`. The actor can't click the input (empty rect →
+      // kElementOffscreen) and scroll_to can't help. If the pre-pass found
+      // the associated label and it HAS a visible box, retarget this
+      // element to the label's node_id + box: clicking the label toggles
+      // the input via native HTML, so the LLM gets a working, box-bearing
+      // control instead of an un-clickable offscreen one. We keep the
+      // input's role / input_type / name / is_checked (set above) so the
+      // model still sees it as a checkbox/radio and its current state.
+      if (!box && attrs.has_form_control_data()) {
+        const apc::FormControlType fct =
+            attrs.form_control_data().form_control_type();
+        if (fct == apc::FORM_CONTROL_TYPE_INPUT_CHECKBOX ||
+            fct == apc::FORM_CONTROL_TYPE_INPUT_RADIO) {
+          auto lt = observation_label_targets_.find(node_id);
+          if (lt != observation_label_targets_.end()) {
+            const int label_node_id = lt->second.node_id;
+            base::ListValue lbox;
+            lbox.Append(lt->second.box[0]);
+            lbox.Append(lt->second.box[1]);
+            lbox.Append(lt->second.box[2]);
+            lbox.Append(lt->second.box[3]);
+            box = base::Value(std::move(lbox));
+            // Register the label node_id too, so a later lookup by the
+            // emitted index resolves to the same entry as the input.
+            node_registry_.Set(label_node_id, entry);
+            // Overwrite the index set earlier with the clickable label's
+            // node_id so a BrowserClick lands on the visible label.
+            elem.Set("index", label_node_id);
+          }
+        }
+      }
+
       if (box) {
         elem.Set("box", std::move(*box));
       }
@@ -802,37 +1410,33 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
 }
 
 base::DictValue BrowserTool::BuildObservationDict(
-    const apc::ActionsResult& result_proto) {
-  // Reset the agent-meta snapshot at the start of every observation.
-  // The "primary" tab's URL/focus/tab_id are surfaced to the JS-side
-  // detector and to per-action stop-detection (`pre_action_tab_id`,
-  // `tab_changed`).
+    const apc::ActionsResult& result_proto,
+    bool include_screenshot_image) {
+  // The "working tab" is the session's stored `last_work_tab_` — set
+  // by `RecordWorkTab` at the top of `RunActorAction` /
+  // `RunTabObservation`, so by the time we're building the
+  // post-action observation it points at the tab the just-dispatched
+  // action ran against. Stateful by design: any future tab-less tool
+  // call also reads it via `GetSessionScopedActiveTabHandleId`, so
+  // the LLM's "current focus" lives in one place and the observation
+  // mirrors it.
   //
-  // IMPORTANT: We deliberately do NOT use "first tab in
-  // result_proto.tabs()" as the primary tab. The upstream
-  // `BuildActionsResultWithObservations` populates result_proto.tabs()
-  // by iterating `task.GetLastActedTabs()`, which is an
-  // `absl::flat_hash_set<tabs::TabHandle>` — and there's an upstream
-  // TODO (`actor_task.cc:742`, crbug.com/420669167) admitting that
-  // method actually returns ALL controlled tabs, not just the
-  // most-recently-acted ones. Once the agent has touched a tab in this
-  // task, it stays in `controlled_tabs_` for the task's lifetime, so
-  // multi-batch sessions accumulate ≥2 entries.
+  // Only the working tab gets the full APC walk, `elements[]`
+  // payload, screenshot flag, `last_observation_*` snapshot, and
+  // `node_registry_` updates. Every other session-owned tab in the
+  // observation gets basics only — `tab_id` / `url` / `title`. The
+  // LLM must `BrowserActivateTab(id)` to bring a background tab into
+  // focus and see its interactive elements.
   //
-  // Hash set iteration order is non-deterministic across calls, so
-  // "first tab" jumps randomly between batches even when the user is
-  // sitting on a single tab. That breaks:
-  //   - JS-side per-tab keep-newest strip dedup (same logical tab
-  //     reads as N distinct tab_ids → cap of 2 keeps too many full
-  //     observations).
-  //   - tab-change stop-detection (`pre_action_tab_id != post_action_tab_id`
-  //     fires spuriously and chops batches short).
-  //
-  // Fix: prefer the active tab handle (from
-  // `chrome::FindLastActiveWithProfile` → `TabStripModel::GetActiveTab`)
-  // as the deterministic primary tab when it's present in the
-  // observation. Fall back to first-seen for the genuinely-non-active
-  // case (agent operating on a background tab via explicit `tab_id`).
+  // `LastWorkTab()` returns nullopt when no tool action has dispatched
+  // yet OR the recorded tab has died (e.g. just-closed by `close_tab`).
+  // In that case every entry is basics-only and the
+  // `last_observation_*` snapshot stays cleared.
+  const std::optional<tabs::TabHandle> working_handle = LastWorkTab();
+  const std::optional<int32_t> working_tab_id =
+      working_handle.has_value()
+          ? std::make_optional(working_handle->raw_value())
+          : std::nullopt;
   last_observation_url_.clear();
   last_observation_title_.clear();
   last_observation_interactive_count_ = 0;
@@ -841,37 +1445,81 @@ base::DictValue BrowserTool::BuildObservationDict(
   last_observation_focus_target_present_ = false;
   last_observation_focus_target_id_.clear();
 
-  // Snapshot the active tab handle once. `GetActiveTabHandleId` returns
-  // nullopt if the profile has no live Browser/active tab; in that case
-  // we fall through to first-seen semantics.
-  const std::optional<int32_t> active_tab_handle_id =
-      GetActiveTabHandleId(GetProfile());
-
-  // Per-tab values captured during the walk so we can pick the primary
-  // signals AFTER deciding which tab is primary (active vs first-seen).
-  // Keeps the loop body close to the original layout — we just defer
-  // assignment to the member fields.
-  struct TabPrimarySnapshot {
-    int tab_id = 0;
-    std::string url;
-    std::string title;
-    bool focus_present = false;
-    std::string focus_target_id;
-  };
-  std::optional<TabPrimarySnapshot> first_seen_snapshot;
-  std::optional<TabPrimarySnapshot> active_snapshot;
+  // When session-scoped tabs are enabled, observations must hide tabs
+  // owned by other sessions (or by the user outside any session). This
+  // is the single choke point — every tool's observation flows through
+  // here, so a filter here is sufficient to strictly hide cross-session
+  // tabs from the model's view.
+  const bool session_scope =
+      ::nexus::features::IsSessionScopedTabsEnabled() &&
+      !GetSessionKey().empty();
+  const std::string this_session_key = GetSessionKey();
 
   base::DictValue observation;
   base::ListValue tabs;
   for (const apc::TabObservation& tab_obs : result_proto.tabs()) {
-    base::DictValue tab_dict;
-    tab_dict.Set("tab_id", tab_obs.id());
-    if (tab_obs.has_screenshot() && !tab_obs.screenshot().empty()) {
-      tab_dict.Set("has_screenshot", true);
+    if (session_scope) {
+      tabs::TabInterface* tab_iface = tabs::TabHandle(tab_obs.id()).Get();
+      content::WebContents* contents =
+          tab_iface ? tab_iface->GetContents() : nullptr;
+      const std::string* tag =
+          ::nexus::NexusSessionTabTag::SessionKeyFor(contents);
+      if (!tag || *tag != this_session_key) {
+        continue;
+      }
     }
 
-    TabPrimarySnapshot this_tab;
-    this_tab.tab_id = tab_obs.id();
+    const bool is_working = working_tab_id.has_value() &&
+                            tab_obs.id() == *working_tab_id;
+
+    base::DictValue tab_dict;
+    tab_dict.Set("tab_id", tab_obs.id());
+
+    // Pull `url` / `title` from main_frame_data — emitted for every
+    // tab (basics for non-working, full envelope's basics for the
+    // working one too).
+    if (tab_obs.has_annotated_page_content() &&
+        tab_obs.annotated_page_content().has_main_frame_data()) {
+      const apc::FrameData& mf =
+          tab_obs.annotated_page_content().main_frame_data();
+      if (!mf.url().empty()) {
+        tab_dict.Set("url", mf.url());
+      }
+      if (!mf.title().empty()) {
+        tab_dict.Set("title", mf.title());
+      }
+    }
+
+    if (!is_working) {
+      // Non-working tab — basics only. No elements walk, no screenshot,
+      // no node_registry / projection updates.
+      tabs.Append(std::move(tab_dict));
+      continue;
+    }
+
+    // ── Working tab: full payload ─────────────────────────────────
+    if (tab_obs.has_screenshot() && !tab_obs.screenshot().empty()) {
+      if (include_screenshot_image) {
+        // BrowserScreenshot path: deliver the actual pixels. The bridge
+        // browser-result transport is JSON-only, and the model API takes
+        // base64 regardless, so base64 here is the right carrier — JS
+        // lifts it straight into an image content block. `screenshot` is
+        // raw bytes; `screenshot_mime_type` is the captured format
+        // (defaults to JPEG when the framework didn't set one).
+        base::DictValue shot;
+        shot.Set("mime", (tab_obs.has_screenshot_mime_type() &&
+                          !tab_obs.screenshot_mime_type().empty())
+                             ? tab_obs.screenshot_mime_type()
+                             : std::string("image/jpeg"));
+        shot.Set("data_base64", base::Base64Encode(tab_obs.screenshot()));
+        tab_dict.Set("screenshot", std::move(shot));
+      } else {
+        // Every other tool: a lightweight flag only. Emitting the image
+        // on every observation would bloat each result with pixels the
+        // model didn't ask for.
+        tab_dict.Set("has_screenshot", true);
+      }
+    }
 
     base::ListValue elements;
     if (tab_obs.has_annotated_page_content()) {
@@ -886,15 +1534,12 @@ base::DictValue BrowserTool::BuildObservationDict(
         document_id =
             apc_data.main_frame_data().document_identifier().serialized_token();
       }
+
+      // Populate the agent_meta snapshot from the working tab.
+      last_observation_tab_id_ = tab_obs.id();
       if (apc_data.has_main_frame_data()) {
-        if (!apc_data.main_frame_data().url().empty()) {
-          tab_dict.Set("url", apc_data.main_frame_data().url());
-          this_tab.url = apc_data.main_frame_data().url();
-        }
-        if (!apc_data.main_frame_data().title().empty()) {
-          tab_dict.Set("title", apc_data.main_frame_data().title());
-          this_tab.title = apc_data.main_frame_data().title();
-        }
+        last_observation_url_ = apc_data.main_frame_data().url();
+        last_observation_title_ = apc_data.main_frame_data().title();
       }
 
       // Stable focus signal for multi-act guards. The proto's
@@ -905,8 +1550,8 @@ base::DictValue BrowserTool::BuildObservationDict(
       if (apc_data.has_page_interaction_info() &&
           apc_data.page_interaction_info().has_focused_node_id() &&
           apc_data.page_interaction_info().focused_node_id() != 0) {
-        this_tab.focus_present = true;
-        this_tab.focus_target_id = base::NumberToString(
+        last_observation_focus_target_present_ = true;
+        last_observation_focus_target_id_ = base::NumberToString(
             apc_data.page_interaction_info().focused_node_id());
       }
 
@@ -914,34 +1559,17 @@ base::DictValue BrowserTool::BuildObservationDict(
           apc_data.has_tab_id() ? apc_data.tab_id() : tab_obs.id();
 
       if (apc_data.has_root_node()) {
+        // Pre-pass: index `<label for=...>` → control so `WalkContentNode`
+        // can retarget hidden checkboxes/radios to their visible label.
+        // Per-tab scope — clear before each walk.
+        observation_label_targets_.clear();
+        CollectLabelTargets(apc_data.root_node());
         WalkContentNode(apc_data.root_node(), document_id, tab_id_for_registry,
                         elements);
       }
     }
     tab_dict.Set("elements", std::move(elements));
     tabs.Append(std::move(tab_dict));
-
-    if (!first_seen_snapshot.has_value()) {
-      first_seen_snapshot = this_tab;
-    }
-    if (active_tab_handle_id.has_value() &&
-        tab_obs.id() == *active_tab_handle_id) {
-      active_snapshot = this_tab;
-    }
-  }
-
-  // Pick the primary tab: active if present in the observation,
-  // otherwise first-seen. This is the only place `last_observation_*`
-  // primary fields get assigned, so they're guaranteed deterministic
-  // across batches whenever the user sits on a stable foreground tab.
-  const std::optional<TabPrimarySnapshot>& primary =
-      active_snapshot.has_value() ? active_snapshot : first_seen_snapshot;
-  if (primary.has_value()) {
-    last_observation_tab_id_ = primary->tab_id;
-    last_observation_url_ = primary->url;
-    last_observation_title_ = primary->title;
-    last_observation_focus_target_present_ = primary->focus_present;
-    last_observation_focus_target_id_ = primary->focus_target_id;
   }
 
   observation.Set("tabs", std::move(tabs));

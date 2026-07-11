@@ -5,6 +5,7 @@ source_set("hooks_registration") {
   ]
 
   deps = [
+    "//custom_browser/browser/nexus:session_tab_management",
     "//custom_browser/browser/nexus/api/llm:broker",
     "//custom_browser/chromium_hooks:hook_api",
     "//custom_browser/features/patch_webui:feature",

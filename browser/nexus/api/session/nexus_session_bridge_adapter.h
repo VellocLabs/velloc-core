@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "components/prefs/pref_change_registrar.h"
 #include "custom_browser/browser/nexus/api/session/session_api.gen.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
@@ -85,8 +86,17 @@ class NexusSessionBridgeAdapter
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 
+  // Pushes the unified agent runtime config to the guest as a
+  // `session.applyAgentConfig` event. Invoked whenever the
+  // `nexus.agent_config` pref changes (live settings updates). The boot
+  // snapshot is delivered separately via the bootstrap manifest.
+  void PushAgentConfig();
+
   raw_ptr<Profile> profile_;
   raw_ptr<ToolsAdapter> tools_adapter_;
+
+  // Observes `nexus.agent_config`; on change → PushAgentConfig().
+  PrefChangeRegistrar pref_change_registrar_;
 };
 
 }  // namespace nexus

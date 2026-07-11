@@ -8,6 +8,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_util.h"
@@ -20,6 +21,8 @@
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
 #include "custom_browser/browser/nexus/api/llm/llm_text_helpers.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
 #include "mojo/public/cpp/base/values_mojom_traits.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -377,7 +380,8 @@ base::ListValue TranslateBridgeTools(
 
 std::string ResolveProviderIconSvg(const std::string& provider_id) {
   int resource_id = 0;
-  if (provider_id == "openai") {
+  if (provider_id == "openai" || provider_id == "chatgpt-pro") {
+    // ChatGPT Plus/Pro reuses the OpenAI brand mark — no separate asset.
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_OPENAI_SVG;
   } else if (provider_id == "anthropic") {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_ANTHROPIC_SVG;
@@ -389,8 +393,11 @@ std::string ResolveProviderIconSvg(const std::string& provider_id) {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_KIMI_SVG;
   } else if (provider_id == "minimax") {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_MINIMAX_SVG;
-  } else if (provider_id == "qwen") {
+  } else if (provider_id == "qwen" || provider_id == "qwen-code") {
+    // Qwen Code (OAuth) reuses the Qwen brand mark.
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_QWEN_SVG;
+  } else if (provider_id == "github-copilot") {
+    resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_GITHUBCOPILOT_SVG;
   } else if (provider_id == "glm") {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_GLM_SVG;
   }
@@ -491,9 +498,19 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
 
   for (const ProviderInfo& info : broker->GetRegisteredProviders()) {
     LlmProvider* provider = broker->GetProvider(info.id);
-    const bool provider_configured = provider && provider->IsConfigured();
+    // For OAuth providers, treat "signed in" (tokens present) as the source of
+    // truth for configured/verified — the in-memory api_key or the prefs
+    // last_verification stamp can lag (e.g. tokens stored before stamping
+    // existed), which would otherwise hide the provider from the picker even
+    // though it works.
+    const bool oauth_connected =
+        IsOAuthProvider(info.id) && broker->oauth_manager() &&
+        broker->oauth_manager()->IsConnected(info.id);
+    const bool provider_configured =
+        (provider && provider->IsConfigured()) || oauth_connected;
     const bool provider_verified =
-        provider_configured && IsProviderVerified(prefs, info.id);
+        provider_configured &&
+        (oauth_connected || IsProviderVerified(prefs, info.id));
 
     bool has_enabled_model = false;
     std::vector<mojom::NexusLlmModelPtr> models;
@@ -511,6 +528,14 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
           provider ? provider->SupportsStreaming() : false;
       model_ptr->supports_tools =
           model.supports_tools || (provider ? provider->SupportsTools() : false);
+      // Reasoning-effort metadata from dynamic discovery (e.g. the Codex
+      // /models endpoint). Lets the guest render the thinking-tier picker
+      // without a hardcoded curated entry.
+      if (model.default_thinking_tier &&
+          !model.default_thinking_tier->empty()) {
+        model_ptr->default_thinking_tier = *model.default_thinking_tier;
+      }
+      model_ptr->available_thinking_tiers = model.available_thinking_tiers;
       seen_ids.insert(model.id);
       models.push_back(std::move(model_ptr));
     }
@@ -577,6 +602,14 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
     provider_ptr->label = info.name;
     provider_ptr->icon_svg = ResolveProviderIconSvg(info.id);
     provider_ptr->enabled = provider_verified && has_enabled_model;
+    if (IsOAuthProvider(info.id)) {
+      DLOG(INFO) << "[nexus-catalog] " << info.id
+                 << " configured=" << provider_configured
+                 << " verified=" << provider_verified
+                 << " fetched_models=" << info.models.size()
+                 << " has_enabled_model=" << has_enabled_model
+                 << " enabled=" << provider_ptr->enabled;
+    }
     if (!default_model_id.empty()) {
       provider_ptr->default_model_id = default_model_id;
     }
@@ -1124,6 +1157,44 @@ bool NexusLlmHost::SetDefaultSelection(const std::string& provider_id,
   return true;
 }
 
+void NexusLlmHost::EnsureProviderAuthThen(
+    const std::string& provider_id,
+    base::OnceCallback<void(bool ok)> done) {
+  LlmBroker* broker = GetBroker(profile_);
+  if (!broker || !broker->oauth_manager() || !IsOAuthProvider(provider_id)) {
+    // Non-OAuth providers (or no manager) need no token refresh.
+    std::move(done).Run(true);
+    return;
+  }
+
+  broker->oauth_manager()->EnsureFreshToken(
+      provider_id,
+      base::BindOnce(&NexusLlmHost::OnEnsureFreshToken,
+                     weak_factory_.GetWeakPtr(), provider_id,
+                     std::move(done)));
+}
+
+void NexusLlmHost::OnEnsureFreshToken(const std::string& provider_id,
+                                      base::OnceCallback<void(bool ok)> done,
+                                      bool ok,
+                                      std::string access_token,
+                                      std::string account_id) {
+  if (ok) {
+    // Apply the fresh token to the provider in-memory only — the token store
+    // already persisted it; calling broker->ConfigureProvider() with a
+    // partial dict would clobber default_model et al. in prefs.
+    if (LlmBroker* broker = GetBroker(profile_)) {
+      if (LlmProvider* provider = broker->GetProvider(provider_id)) {
+        base::DictValue config;
+        config.Set("api_key", access_token);
+        config.Set("account_id", account_id);
+        provider->Configure(config);
+      }
+    }
+  }
+  std::move(done).Run(ok);
+}
+
 void NexusLlmHost::Call(mojom::NexusLlmRequestParamsPtr request,
                         CallCallback callback) {
   if (!request) {
@@ -1142,6 +1213,32 @@ void NexusLlmHost::Call(mojom::NexusLlmRequestParamsPtr request,
     return;
   }
   if (!provider->IsConfigured()) {
+    std::move(callback).Run(
+        false, nullptr,
+        std::make_optional("Requested Nexus LLM provider is not configured"));
+    return;
+  }
+
+  EnsureProviderAuthThen(
+      provider_id,
+      base::BindOnce(&NexusLlmHost::ContinueCall, weak_factory_.GetWeakPtr(),
+                     std::move(request), std::move(callback)));
+}
+
+void NexusLlmHost::ContinueCall(mojom::NexusLlmRequestParamsPtr request,
+                                CallCallback callback,
+                                bool auth_ok) {
+  if (!auth_ok) {
+    std::move(callback).Run(
+        false, nullptr,
+        std::make_optional(
+            "Sign in to this provider in Nexus settings to continue"));
+    return;
+  }
+
+  std::string provider_id;
+  LlmProvider* provider = ResolveProvider(profile_, *request, &provider_id);
+  if (!provider || !provider->IsConfigured()) {
     std::move(callback).Run(
         false, nullptr,
         std::make_optional("Requested Nexus LLM provider is not configured"));
@@ -1180,6 +1277,33 @@ void NexusLlmHost::StreamStart(mojom::NexusLlmRequestParamsPtr request,
     return;
   }
   if (!provider->IsConfigured()) {
+    std::move(callback).Run(
+        false, std::nullopt,
+        std::make_optional("Requested Nexus LLM provider is not configured"));
+    return;
+  }
+
+  EnsureProviderAuthThen(
+      provider_id,
+      base::BindOnce(&NexusLlmHost::ContinueStreamStart,
+                     weak_factory_.GetWeakPtr(), std::move(request),
+                     std::move(callback)));
+}
+
+void NexusLlmHost::ContinueStreamStart(mojom::NexusLlmRequestParamsPtr request,
+                                       StreamStartCallback callback,
+                                       bool auth_ok) {
+  if (!auth_ok) {
+    std::move(callback).Run(
+        false, std::nullopt,
+        std::make_optional(
+            "Sign in to this provider in Nexus settings to continue"));
+    return;
+  }
+
+  std::string provider_id;
+  LlmProvider* provider = ResolveProvider(profile_, *request, &provider_id);
+  if (!provider || !provider->IsConfigured()) {
     std::move(callback).Run(
         false, std::nullopt,
         std::make_optional("Requested Nexus LLM provider is not configured"));

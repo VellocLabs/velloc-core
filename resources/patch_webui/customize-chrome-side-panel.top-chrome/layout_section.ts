@@ -13,7 +13,6 @@ const LayoutRadioName = {
   COMPACT_SIDEBAR: 'compactSidebar',
   STANDARD: 'standard',
   COMPACT_STANDARD: 'compactStandard',
-  NEXUS: 'nexus',
 } as const;
 
 const LayoutRadioToPrefValue = new Map<string, number>([
@@ -21,7 +20,6 @@ const LayoutRadioToPrefValue = new Map<string, number>([
   [LayoutRadioName.COMPACT_SIDEBAR, 2],
   [LayoutRadioName.STANDARD, 3],
   [LayoutRadioName.COMPACT_STANDARD, 4],
-  [LayoutRadioName.NEXUS, 5],
 ]);
 
 const PrefValueToLayoutRadio =
@@ -64,8 +62,6 @@ interface LayoutStrings {
   standardDescription: string;
   compactStandard: string;
   compactStandardDescription: string;
-  nexus: string;
-  nexusDescription: string;
   loadingLabel: string;
 }
 
@@ -94,8 +90,6 @@ function getLayoutStrings(): LayoutStrings {
     standardDescription: getString('modeStandardDescription', ''),
     compactStandard: getString('modeCompactStandard', ''),
     compactStandardDescription: getString('modeCompactStandardDescription', ''),
-    nexus: getString('modeNexus', ''),
-    nexusDescription: getString('modeNexusDescription', ''),
     loadingLabel: getString('customBrowserLoadingLabel', ''),
   };
 }
@@ -122,13 +116,6 @@ function getLayoutOptions(strings: LayoutStrings): LayoutOption[] {
       type: LayoutRadioName.STANDARD,
       title: strings.standard,
       description: strings.standardDescription,
-    },
-    {
-      containerName: 'customBrowserLayoutNexusOption',
-      buttonName: LayoutRadioName.NEXUS,
-      type: LayoutRadioName.NEXUS,
-      title: strings.nexus,
-      description: strings.nexusDescription,
     },
     // {
     //   containerName: 'customBrowserLayoutCompactStandardOption',

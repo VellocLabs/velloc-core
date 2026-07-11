@@ -1,0 +1,47 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "download",
+  "wire_name": "BrowserDownload",
+  "description": "Download a file into the local workspace. Two modes — pass EXACTLY ONE of `index` or `url`:\n- `index`: click an element that triggers a download. Use this when you can't get a direct URL — e.g. a button/link whose download is JS-driven, a `blob:` URL, a form-POST download, or a `Content-Disposition: attachment` response. The host captures whatever download the click produces.\n- `url`: download a direct URL using the current page's session (cookies/auth apply), for when you already have a stable file URL.\nThe file is saved under the workspace `downloads/` folder and the returned `path` can be read with the file tools (Read/Glob). For very large files the call returns as soon as the transfer is underway with `status: \"downloading\"` plus byte progress — the file finishes streaming in the background, so re-check the path a bit later rather than re-issuing the download.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": false,
+      "description": "Element index (from the latest observation's elements[]) to click in order to trigger a download. Use for downloads whose URL you can't obtain directly. Provide exactly one of index or url."
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": false,
+      "description": "Absolute URL of a file to download directly (uses the current page's cookies/session). Provide exactly one of index or url."
+    },
+    {
+      "name": "filename",
+      "type": "string",
+      "required": false,
+      "description": "Optional filename to save as (basename only, no directories). Defaults to the server-suggested name or the URL's last path segment."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "index": 42
+        },
+        {
+          "url": "https://example.com/reports/q1-2026.pdf"
+        },
+        {
+          "index": 18,
+          "filename": "invoice.pdf"
+        }
+      ]
+    }
+  }
+}

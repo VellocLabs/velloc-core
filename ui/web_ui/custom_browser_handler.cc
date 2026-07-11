@@ -6,6 +6,7 @@
 
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/span.h"
+#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/tabs/alert/tab_alert_controller.h"
@@ -29,17 +29,16 @@
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_group_theme.h"
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
-#include "chrome/browser/ui/tabs/tab_renderer_data.h"
+#include "chrome/browser/ui/tabs/tab_data.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/tabs/browser_tab_strip_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
-#include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_metrics.h"
-#include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_util.h"
+#include "custom_browser/ui/web_ui/tab_strip_ui_util.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/browser/ui/webui/util/image_util.h"
-#include "chrome/browser/ui/webui/webui_util_desktop.h"
+#include "chrome/browser/ui/webui/util/webui_util_desktop.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/tab_groups/tab_group_color.h"
@@ -420,12 +419,6 @@ void CustomBrowserHandler::OnTabPinnedStateChanged(tabs::TabInterface* tab,
   NotifyTabDataChanged(tab->GetContents(), tab, index);
 }
 
-void CustomBrowserHandler::OnTabBlockedStateChanged(
-    tabs::TabInterface* tab,
-    int index) {
-  NotifyTabDataChanged(tab->GetContents(), tab, index);
-}
-
 void CustomBrowserHandler::OnLongPressTimer() {
   page_browser_->LongPress();
 }
@@ -484,8 +477,8 @@ custom_browser::mojom::TabPtr CustomBrowserHandler::GetTabData(
     tab_data->group_id = group_id.value().ToString();
   }
 
-  TabRendererData tab_renderer_data =
-      TabRendererData::FromTabInterface(
+  tabs::TabData tab_renderer_data =
+      tabs::TabData::FromTabInterface(
           tab_strip_model->GetTabAtIndex(index));
   tab_data->pinned = tab_renderer_data.pinned;
   tab_data->title = base::UTF16ToUTF8(tab_renderer_data.title);
@@ -518,12 +511,12 @@ custom_browser::mojom::TabPtr CustomBrowserHandler::GetTabData(
   } else {
     tab_data->is_default_favicon = true;
   }
-  tab_data->show_icon = tab_renderer_data.show_icon;
+  tab_data->show_icon = tab_renderer_data.should_display_favicon;
   tab_data->network_state = tab_renderer_data.network_state;
   tab_data->should_hide_throbber = tab_renderer_data.should_hide_throbber;
   tab_data->blocked = tab_renderer_data.blocked;
   tab_data->crashed = tab_renderer_data.is_crashed;
-  // TODO(johntlee): Add the rest of TabRendererData
+  // TODO(johntlee): Add the rest of TabData
 
   tab_data->alert_states =
       tabs::TabAlertController::From(tab)->GetAllActiveAlerts();

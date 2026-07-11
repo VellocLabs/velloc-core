@@ -21,7 +21,7 @@ class NexusBridgeResponseDelegate;
 //
 // Phase 11h architecture (mirrors api/llm — UI thread + typed inputs +
 // BridgeResponseCallback):
-//   - 7 actions declared under api/declarations/ui/*.api.json. All run
+//   - 8 actions declared under api/declarations/ui/*.api.json. All run
 //     on the bridge's home thread (UI) — they touch BrowserView / WebUI
 //     directly which is UI-bound.
 //   - The codegen-emitted dispatcher extracts a typed input struct
@@ -59,6 +59,10 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase {
       ::nexus::BridgeResponseCallback done) override;
   void HandleShowMainContentsOnUI(
       ::nexus::generated::ShowMainContentsInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleOpenUrlOnUI(
+      ::nexus::generated::OpenUrlInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void HandleGetBootTimingsOnUI(

@@ -3,8 +3,10 @@
 #include "base/functional/bind.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "chrome/browser/ui/browser.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 
 UIViewHandler::UIViewHandler(
     mojo::PendingReceiver<custom_browser::mojom::UIViewHandler> receiver,
@@ -19,6 +21,8 @@ UIViewHandler::UIViewHandler(
   DCHECK(native_view_ && native_view_.is_bound());
   if (ui_prefs_) {
     ui_prefs_->AddObserver(this);
+    // Note: the WebUI pulls its authoritative per-window mode via GetUIMode()
+    // on startup (see ui_store.ts), so there is no fire-and-forget push here.
   }
 }
 
@@ -42,6 +46,26 @@ void UIViewHandler::SetUIMode(custom_browser::mojom::UIMode ui_mode) {
   if (custom_browser_view_ && custom_browser_view_->ui_prefs()) {
     custom_browser_view_->ui_prefs()->UpdateUIMode(ui_mode);
   }
+}
+
+void UIViewHandler::GetUIMode(GetUIModeCallback callback) {
+  TRACE_EVENT0("browser", "UIViewHandler::GetUIMode");
+  // Authoritative per-window mode (kNexus for the nexus window, the shared
+  // browser mode otherwise). Lets the WebUI sync on startup without relying on
+  // the data source's profile-global baked value.
+  std::move(callback).Run(ui_prefs_ ? ui_prefs_->current_mode()
+                                     : custom_browser::mojom::UIMode::kSidebar);
+}
+
+void UIViewHandler::OpenBrowserWindow() {
+  TRACE_EVENT0("browser", "UIViewHandler::OpenBrowserWindow");
+  if (!custom_browser_view_ || !custom_browser_view_->browser()) {
+    return;
+  }
+  // Do NOT change this (pinned nexus) window's UI mode. Focus an existing
+  // normal browser window for the profile, or open a new one.
+  custom_browser::window_util::OpenOrFocusNormalWindow(
+      custom_browser_view_->browser()->profile());
 }
 
 void UIViewHandler::SaveIntPref(custom_browser::mojom::IntKey key,

@@ -32,11 +32,28 @@ ToolCallback::~ToolCallback() {
   // synthetic error so the guest sees an explicit failure rather than a
   // hung promise. The bound `WeakPtr` inside `on_error_` will silently
   // drop the call if the adapter is also gone.
+  //
+  // Why the message is verbose: a previous "tool dropped without
+  // resolving" string was ambiguous enough that LLMs interpreted it
+  // as a transient log line and claimed the operation succeeded
+  // anyway (observed: model said "已记录" after Write returned
+  // tool_dropped because FileTool's cached weak_this_ had been
+  // invalidated). The new wording is explicit that NO work happened
+  // and the model must NOT claim success — that's the load-bearing
+  // part for honest agent behavior.
   if (on_error_) {
     LOG(WARNING) << "[NexusToolCallback] Callback destroyed without "
                     "resolving; emitting tool_dropped.";
-    DispatchError(kDroppedToolErrorCode,
-                  "tool dropped without resolving");
+    DispatchError(
+        kDroppedToolErrorCode,
+        "INTERNAL HOST ERROR: this tool call was dispatched but its "
+        "result was discarded by the host before completing. The "
+        "action did NOT execute — no state change happened (no file "
+        "written, no click landed, no navigation, no data returned). "
+        "Do NOT claim success. Report the failure to the user "
+        "verbatim. If the action is idempotent and safe to retry "
+        "(e.g. a read), you may attempt it ONCE more after re-"
+        "observing the page; otherwise stop and ask the user.");
   }
 }
 
@@ -55,10 +72,16 @@ ToolCallback& ToolCallback::operator=(ToolCallback&& other) noexcept {
   }
   // If `*this` had unfired state, drain it first — surface a dropped
   // error before we overwrite. (Matters only if a caller assigns onto an
-  // in-flight callback, which would be a bug.)
+  // in-flight callback, which would be a bug.) Same explicit-failure
+  // wording as the destructor path; the model must understand the
+  // operation did not run.
   if (!fired_ && on_error_) {
-    DispatchError(kDroppedToolErrorCode,
-                  "tool dropped without resolving (overwritten)");
+    DispatchError(
+        kDroppedToolErrorCode,
+        "INTERNAL HOST ERROR: this tool call was overwritten by another "
+        "before it could resolve (host bug). The original action did "
+        "NOT execute — no state change happened. Do NOT claim success. "
+        "Report the failure to the user.");
   }
   on_success_ = std::move(other.on_success_);
   on_error_ = std::move(other.on_error_);

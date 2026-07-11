@@ -6,6 +6,7 @@
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -41,10 +42,13 @@ struct ShellInvocation {
 ShellInvocation BuildShellInvocation(const std::string& command_line) {
   ShellInvocation inv;
 #if BUILDFLAG(IS_WIN)
-  // `/d` skips AutoRun, `/s` adjusts quoting rules, `/c` runs and
-  // exits — same pattern claude_code uses for cmd-on-Windows.
-  inv.command = "cmd";
-  inv.args = {"/d", "/s", "/c", command_line};
+  // Windows: run git-bash directly. The Bash tool is only surfaced on
+  // Windows when `bash` resolves on PATH (see the listHostedTools filter in
+  // nexus_catalog_bridge_adapter.cc); on a no-bash host the model gets the
+  // PowerShell tool instead. We invoke bash explicitly (RunBashOnUI sets
+  // use_shell=false) rather than wrapping in cmd/pwsh, so bash syntax works.
+  inv.command = "bash";
+  inv.args = {"-c", command_line};
 #else
   // Default to /bin/sh; the utility process resolves it against the
   // SafeCommandPolicy allowlist. If a host has bash but not sh the
@@ -53,6 +57,49 @@ ShellInvocation BuildShellInvocation(const std::string& command_line) {
   inv.args = {"-c", command_line};
 #endif
   return inv;
+}
+
+// Hook-exec variant: run `command` in the explicitly requested shell
+// rather than the platform default. bash/sh/zsh use `-c <command>`;
+// pwsh/powershell use the non-interactive `-Command` form (mirrors
+// claude_code's execCommandHook PowerShell argv:
+// `-NoProfile -NonInteractive -Command`). The shell id is resolved by the
+// utility process against the SafeCommandPolicy allowlist; an unavailable
+// shell surfaces as BINARY_NOT_FOUND (the JS runner falls back).
+ShellInvocation BuildHookShellInvocation(const std::string& shell_id,
+                                         const std::string& command) {
+  ShellInvocation inv;
+  inv.command = shell_id;
+  if (shell_id == "pwsh" || shell_id == "powershell") {
+    inv.args = {"-NoProfile", "-NonInteractive", "-Command", command};
+  } else {
+    inv.args = {"-c", command};
+  }
+  return inv;
+}
+
+// Parse the hook_env JSON object string into mojo ShellEnvEntry pairs.
+// Invalid / non-object JSON yields an empty list (the hook still runs,
+// just without the extra env). Non-string values are skipped.
+std::vector<mojom::ShellEnvEntryPtr> ParseHookEnv(const std::string& json) {
+  std::vector<mojom::ShellEnvEntryPtr> out;
+  if (json.empty()) {
+    return out;
+  }
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
+  if (!parsed || !parsed->is_dict()) {
+    return out;
+  }
+  for (const auto [key, value] : parsed->GetDict()) {
+    if (value.is_string()) {
+      auto entry = mojom::ShellEnvEntry::New();
+      entry->name = key;
+      entry->value = value.GetString();
+      out.push_back(std::move(entry));
+    }
+  }
+  return out;
 }
 
 // Decode a base::BigBuffer into a UTF-8 std::string capped at
@@ -384,15 +431,30 @@ ProcessTool::~ProcessTool() {
   // Defensive — invalidate WeakPtrs so any pending mojo callback drops
   // cleanly, then drop the launcher (which releases the Remote and
   // disconnects the utility process).
-  OnStop("destructor");
+  OnStop(OnStopReason::kDestructor);
 }
 
-void ProcessTool::OnStop(const std::string& reason) {
+void ProcessTool::OnStop(OnStopReason reason) {
   LOG(INFO) << "[ProcessTool] OnStop session=" << GetSessionKey()
-            << " reason=" << reason;
-  weak_ptr_factory_.InvalidateWeakPtrs();
-  if (launcher_) {
-    launcher_->Shutdown();
+            << " reason=" << OnStopReasonToString(reason);
+  // Gated on TEARDOWN reasons only — see the matching comment in
+  // FileTool::OnStop for the full rationale. Summary: after the typed-
+  // OnStop refactor, kCompleted / kUserStopped fire while the
+  // ToolSession stays warm; invalidating WeakPtrs and shutting down
+  // the utility process here would break every subsequent Bash call
+  // in the same session (the cached weak_ptr captured by the next
+  // mojo callback would be dead, and the launcher's utility-process
+  // Remote would be torn down). Only invalidate / shut down when the
+  // ProcessTool is actually going away.
+  const bool teardown = reason == OnStopReason::kSessionDeleted ||
+                        reason == OnStopReason::kDisconnected ||
+                        reason == OnStopReason::kShutdown ||
+                        reason == OnStopReason::kDestructor;
+  if (teardown) {
+    weak_ptr_factory_.InvalidateWeakPtrs();
+    if (launcher_) {
+      launcher_->Shutdown();
+    }
   }
 }
 
@@ -426,13 +488,50 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
     timeout_ms = kMaxBashTimeoutMs;
   }
 
+  // Hook-exec path: the internal `hook_shell` field (set only by the JS
+  // hook runner, never the model) requests an explicit shell with hook
+  // input on stdin and env exported natively — the CC-faithful command-hook
+  // contract. Run the requested shell directly (use_shell = false) and
+  // return the RAW exit code + combined output so the JS executor can apply
+  // its own protocol (exit 2 = block, 0 = pass, other = non-blocking
+  // warning). This bypasses the prose/non-zero-reject shaping of the normal
+  // Bash path.
+  if (input.hook_shell.has_value() && !input.hook_shell->empty()) {
+    ShellInvocation inv =
+        BuildHookShellInvocation(*input.hook_shell, input.command);
+
+    auto hook_options = mojom::ShellSpawnOptions::New();
+    hook_options->command = inv.command;
+    hook_options->args = std::move(inv.args);
+    hook_options->cwd = cwd;
+    hook_options->use_shell = false;
+    hook_options->env = ParseHookEnv(input.hook_env.value_or(std::string()));
+    hook_options->stdin_data = input.hook_stdin.value_or(std::string());
+    hook_options->timeout_ms = static_cast<uint32_t>(timeout_ms);
+    hook_options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
+
+    mojo::Remote<mojom::NexusShellService>& hook_remote =
+        launcher_->GetService();
+    hook_remote->Exec(
+        std::move(hook_options),
+        base::BindOnce(&ProcessTool::OnHookExecDone,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(done)));
+    return;
+  }
+
   ShellInvocation invocation = BuildShellInvocation(input.command);
 
   auto options = mojom::ShellSpawnOptions::New();
   options->command = invocation.command;
   options->args = std::move(invocation.args);
   options->cwd = cwd;
+#if BUILDFLAG(IS_WIN)
+  // git-bash is invoked directly (command="bash"); no default-shell wrapper.
+  options->use_shell = false;
+#else
+  // POSIX: run through the resolved default shell (unchanged behaviour).
   options->use_shell = true;
+#endif
   options->timeout_ms = static_cast<uint32_t>(timeout_ms);
   options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
 
@@ -445,6 +544,94 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
                      base::TimeTicks::Now()));
 }
 
+// =============================================================================
+// RunPowerShellOnUI override (Windows model-facing PowerShell tool)
+// =============================================================================
+
+void ProcessTool::RunPowerShellOnUI(
+    ::nexus::generated::PowerShellInput input, ToolCallback done) {
+  if (input.command.empty()) {
+    std::move(done).Reject("invalid_args", "command must not be empty");
+    return;
+  }
+
+  ToolSession* session = GetSession();
+  base::FilePath cwd = session ? session->cwd() : base::FilePath();
+  if (cwd.empty()) {
+    std::move(done).Reject(
+        "invalid_args",
+        "session cwd is not set. Push a cwd via setAgentLoopSettings "
+        "before running shell commands.");
+    return;
+  }
+
+  int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
+  if (timeout_ms <= 0) {
+    timeout_ms = kDefaultBashTimeoutMs;
+  } else if (timeout_ms > kMaxBashTimeoutMs) {
+    timeout_ms = kMaxBashTimeoutMs;
+  }
+
+  // Prefer PowerShell 7 (pwsh); OnPowerShellExecDone falls back to Windows
+  // PowerShell (powershell) if pwsh isn't installed.
+  LaunchPowerShellAttempt(input.command, std::move(cwd), timeout_ms, "pwsh",
+                          std::move(done));
+}
+
+void ProcessTool::LaunchPowerShellAttempt(std::string command,
+                                          base::FilePath cwd,
+                                          int timeout_ms,
+                                          std::string shell_id,
+                                          ToolCallback done) {
+  // <shell_id> -NoProfile -NonInteractive -Command <command>, invoked
+  // directly (use_shell=false) — same builder as the command-hook path.
+  ShellInvocation inv = BuildHookShellInvocation(shell_id, command);
+
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = inv.command;
+  options->args = std::move(inv.args);
+  options->cwd = cwd;
+  options->use_shell = false;
+  options->timeout_ms = static_cast<uint32_t>(timeout_ms);
+  options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
+
+  mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
+  remote->Exec(
+      std::move(options),
+      base::BindOnce(&ProcessTool::OnPowerShellExecDone,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(done), command,
+                     std::move(cwd), timeout_ms, shell_id,
+                     base::TimeTicks::Now()));
+}
+
+void ProcessTool::OnPowerShellExecDone(
+    ToolCallback done,
+    std::string command,
+    base::FilePath cwd,
+    int timeout_ms,
+    std::string attempted_shell,
+    base::TimeTicks start_time,
+    bool ok,
+    mojom::ShellExecResultPtr result,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  // pwsh not installed → fall back to Windows PowerShell (powershell.exe),
+  // which is universally present on Windows. Only retry the pre-launch
+  // resolution failures; a command that ran (any exit code) is final.
+  if (!ok && attempted_shell == "pwsh" && error_code.has_value() &&
+      (*error_code == "BINARY_NOT_FOUND" ||
+       *error_code == "COMMAND_NOT_ALLOWED")) {
+    LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
+                            "powershell", std::move(done));
+    return;
+  }
+
+  // Otherwise shape exactly like the Bash tool's prose path.
+  OnBashExecDone(std::move(done), std::move(command), start_time, ok,
+                 std::move(result), error_code, error_message, install_hint);
+}
+
 void ProcessTool::OnBashExecDone(
     ToolCallback done,
     std::string original_command,
@@ -455,41 +642,35 @@ void ProcessTool::OnBashExecDone(
     const std::optional<std::string>& error_message,
     const std::optional<std::string>& install_hint) {
   base::TimeDelta wall = base::TimeTicks::Now() - start_time;
-
-  base::DictValue payload;
-  payload.Set("command", original_command);
+  (void)wall;  // Reserved for telemetry; currently unused in prose path.
+  (void)original_command;
 
   if (!ok || !result) {
     // Pre-launch failure (BINARY_NOT_FOUND, COMMAND_NOT_ALLOWED,
-    // CWD_INVALID, …). Surface via the standard `error_code` /
-    // `error_message` pair plus optional install_hint so the model can
-    // self-recover (e.g. install a missing binary then retry). Shape
-    // mirrors the TS `makeFailureOutput`.
-    payload.Set("stdout", "");
-    std::string stderr_text =
+    // CWD_INVALID, …). CC parity: surface as a tool error via
+    // done.Reject — the framework marks the tool_result as an error,
+    // matching how CC's BashTool emits failures. install_hint, when
+    // present, is appended to the message so the model has a recovery
+    // suggestion inline.
+    std::string msg =
         error_message.has_value() ? *error_message : std::string();
     if (install_hint.has_value() && !install_hint->empty()) {
-      stderr_text = base::StrCat({stderr_text, "\n\n", *install_hint});
+      if (!msg.empty()) {
+        msg.append("\n\n");
+      }
+      msg.append(*install_hint);
     }
-    payload.Set("stderr", stderr_text);
-    payload.Set("stdout_truncated", false);
-    payload.Set("stderr_truncated", false);
-    payload.Set("exit_code", -1);
-    payload.Set("timed_out", false);
-    payload.Set("duration_ms", static_cast<int>(wall.InMilliseconds()));
-    payload.Set("is_error", true);
-    if (error_code.has_value()) {
-      payload.Set("interpretation", *error_code);
-    }
-    if (install_hint.has_value() && !install_hint->empty()) {
-      payload.Set("install_hint", *install_hint);
-    }
-    std::move(done).Resolve(std::move(payload));
+    std::string code = error_code.value_or("bash_failed");
+    std::move(done).Reject(std::move(code), std::move(msg));
     return;
   }
 
   // Post-launch path — the child ran (success or non-zero exit), and
-  // `result` carries the captured streams.
+  // `result` carries the captured streams. CC parity: emit
+  // [stdout, stderr].filter(Boolean).join('\n') as the model-visible
+  // result string. Non-zero exit codes get a leading annotation line
+  // so the model knows the command failed, mirroring CC's behavior of
+  // surfacing exit_code via is_error.
   std::string stdout_text =
       BigBufferToString(result->stdout_buffer, kMaxOutputBytes);
   std::string stderr_text =
@@ -502,23 +683,105 @@ void ProcessTool::OnBashExecDone(
   CommandInterpretation interp = InterpretExit(base, exit_code);
   bool is_error = result->exit->timed_out || interp.is_error;
 
-  payload.Set("stdout", std::move(stdout_text));
-  payload.Set("stderr", std::move(stderr_text));
-  payload.Set("stdout_truncated", result->stdout_truncated);
-  payload.Set("stderr_truncated", result->stderr_truncated);
-  payload.Set("exit_code", exit_code);
-  if (result->exit->signal.has_value()) {
-    payload.Set("signal", *result->exit->signal);
+  // Build the prose body.
+  std::string body;
+  if (result->exit->timed_out) {
+    body.append("Command timed out.\n");
+  } else if (exit_code != 0) {
+    body.append(base::StrCat({"Command exited with code ",
+                              base::NumberToString(exit_code), ".\n"}));
   }
-  payload.Set("timed_out", result->exit->timed_out);
-  payload.Set("duration_ms",
-              static_cast<int>(result->exit->duration_ms));
-  payload.Set("is_error", is_error);
-  if (!interp.message.empty()) {
-    payload.Set("interpretation", interp.message);
+  if (!stdout_text.empty()) {
+    body.append(stdout_text);
+  }
+  if (!stderr_text.empty()) {
+    if (!stdout_text.empty()) {
+      body.push_back('\n');
+    }
+    body.append(stderr_text);
+  }
+  if (result->stdout_truncated || result->stderr_truncated) {
+    if (!body.empty() && body.back() != '\n') body.push_back('\n');
+    body.append(
+        "[output truncated — re-run with a narrower scope to capture more]");
+  }
+  if (!interp.message.empty() && is_error) {
+    if (!body.empty() && body.back() != '\n') body.push_back('\n');
+    body.append(interp.message);
+  }
+  if (body.empty()) {
+    body = "(no output)";
   }
 
-  std::move(done).Resolve(std::move(payload));
+  // Failures Reject so the framework marks the tool_result as
+  // isError, matching CC's BashTool which sets is_error: true when
+  // exit_code != 0 / timed_out.
+  if (is_error) {
+    std::string code = result->exit->timed_out ? "bash_timeout" : "bash_failed";
+    std::move(done).Reject(std::move(code), std::move(body));
+    return;
+  }
+  std::move(done).Resolve(base::Value(std::move(body)));
+}
+
+// =============================================================================
+// OnHookExecDone — raw-result callback for the hook-exec path
+// =============================================================================
+
+void ProcessTool::OnHookExecDone(
+    ToolCallback done,
+    bool ok,
+    mojom::ShellExecResultPtr result,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  // Pre-launch failure: the requested shell isn't on the host
+  // (BINARY_NOT_FOUND), the command is disallowed, or the cwd is invalid.
+  // Reject so the JS hook runner can detect it — when its shell preference
+  // was the default bash list, it retries with PowerShell. install_hint is
+  // appended when present.
+  if (!ok || !result) {
+    std::string msg = error_message.value_or(std::string());
+    if (install_hint.has_value() && !install_hint->empty()) {
+      if (!msg.empty()) {
+        msg.append("\n\n");
+      }
+      msg.append(*install_hint);
+    }
+    std::move(done).Reject(error_code.value_or("hook_exec_failed"),
+                           std::move(msg));
+    return;
+  }
+
+  // Post-launch: return the UNSHAPED exit code + combined stdout/stderr.
+  // Unlike RunBashOnUI's prose path, we deliberately do NOT reject on a
+  // non-zero exit — the JS hook executor owns the exit-code protocol
+  // (2 = block, 0 = pass, other = non-blocking warning), so it needs the
+  // raw code and output. The JS `readBashResult` reads {output, exit_code}.
+  std::string stdout_text =
+      BigBufferToString(result->stdout_buffer, kMaxOutputBytes);
+  std::string stderr_text =
+      BigBufferToString(result->stderr_buffer, kMaxOutputBytes);
+  int exit_code = result->exit->code.has_value() ? *result->exit->code : -1;
+  if (result->exit->timed_out) {
+    exit_code = -1;
+  }
+
+  std::string combined = stdout_text;
+  if (!stderr_text.empty()) {
+    if (!combined.empty()) {
+      combined.push_back('\n');
+    }
+    combined.append(stderr_text);
+  }
+
+  // This tree aliases the dictionary type to base::DictValue (see
+  // base/values.h); base::Value has no nested ::Dict here. `done.Resolve`
+  // accepts a DictValue directly (same as browser_tool.cc).
+  base::DictValue dict;
+  dict.Set("output", std::move(combined));
+  dict.Set("exit_code", exit_code);
+  std::move(done).Resolve(std::move(dict));
 }
 
 // =============================================================================
@@ -600,26 +863,18 @@ void ProcessTool::OnGrepExecDone(
     const std::optional<std::string>& install_hint) {
   // Pre-launch failure path. ripgrep missing from the host shows up
   // here as BINARY_NOT_FOUND with an `install_hint` the model can use
-  // to install rg via Bash and retry.
+  // to install rg via Bash and retry. CC parity: emit as a tool
+  // error so the framework marks the tool_result.is_error.
   if (!ok || !result) {
-    base::DictValue payload;
-    payload.Set("mode", output_mode);
-    payload.Set("num_files", 0);
-    base::ListValue empty_filenames;
-    payload.Set("filenames", std::move(empty_filenames));
-    std::string content =
+    std::string msg =
         error_message.has_value()
             ? base::StrCat({"ripgrep unavailable: ", *error_message})
-            : "ripgrep unavailable";
+            : std::string("ripgrep unavailable");
     if (install_hint.has_value() && !install_hint->empty()) {
-      content = base::StrCat({content, "\n\n", *install_hint});
-      payload.Set("install_hint", *install_hint);
+      msg = base::StrCat({msg, "\n\n", *install_hint});
     }
-    payload.Set("content", std::move(content));
-    if (error_code.has_value()) {
-      payload.Set("interpretation", *error_code);
-    }
-    std::move(done).Resolve(std::move(payload));
+    std::string code = error_code.value_or("grep_failed");
+    std::move(done).Reject(std::move(code), std::move(msg));
     return;
   }
 
@@ -628,24 +883,31 @@ void ProcessTool::OnGrepExecDone(
   std::vector<std::string> lines = ParseRipgrepLines(
       result->stdout_buffer, exit_code, kMaxOutputBytes);
 
-  base::DictValue payload;
-  payload.Set("mode", output_mode);
+  // CC parity: GrepTool.ts emits per-mode prose strings. Mirror those
+  // exactly so the model's recognition pattern is shared with CC.
 
   if (output_mode == "content") {
     SliceResult sliced =
         ApplyHeadLimit(std::move(lines), head_limit, offset);
-    payload.Set("num_files", 0);
-    base::ListValue empty_filenames;
-    payload.Set("filenames", std::move(empty_filenames));
-    payload.Set("content", base::JoinString(sliced.items, "\n"));
-    payload.Set("num_lines", static_cast<int>(sliced.items.size()));
+    if (sliced.items.empty()) {
+      std::move(done).Resolve(base::Value("No files found"));
+      return;
+    }
+    std::string body = base::JoinString(sliced.items, "\n");
     if (sliced.truncated) {
-      payload.Set("applied_limit", sliced.applied_limit);
+      body.append(base::StrCat(
+          {"\n\n[Showing results with pagination = limit ",
+           base::NumberToString(sliced.applied_limit),
+           offset > 0 ? base::StrCat(
+                            {", offset ", base::NumberToString(offset)})
+                      : std::string(),
+           "]"}));
     }
-    if (offset > 0) {
-      payload.Set("applied_offset", offset);
-    }
-  } else if (output_mode == "count") {
+    std::move(done).Resolve(base::Value(std::move(body)));
+    return;
+  }
+
+  if (output_mode == "count") {
     SliceResult sliced =
         ApplyHeadLimit(std::move(lines), head_limit, offset);
     int total_matches = 0;
@@ -663,36 +925,38 @@ void ProcessTool::OnGrepExecDone(
         ++file_count;
       }
     }
-    payload.Set("num_files", file_count);
-    base::ListValue empty_filenames;
-    payload.Set("filenames", std::move(empty_filenames));
-    payload.Set("num_matches", total_matches);
-    payload.Set("content", base::JoinString(sliced.items, "\n"));
+    std::string body = base::JoinString(sliced.items, "\n");
+    body.append(base::StrCat({"\n\nFound ", base::NumberToString(total_matches),
+                              " total occurrence(s) across ",
+                              base::NumberToString(file_count),
+                              " file(s)."}));
     if (sliced.truncated) {
-      payload.Set("applied_limit", sliced.applied_limit);
+      body.append(base::StrCat(
+          {" [Showing results with pagination = limit ",
+           base::NumberToString(sliced.applied_limit), "]"}));
     }
-    if (offset > 0) {
-      payload.Set("applied_offset", offset);
-    }
-  } else {
-    // files_with_matches: rg already returns one path per line.
-    SliceResult sliced =
-        ApplyHeadLimit(std::move(lines), head_limit, offset);
-    base::ListValue filenames;
-    for (const std::string& fp : sliced.items) {
-      filenames.Append(fp);
-    }
-    payload.Set("num_files", static_cast<int>(sliced.items.size()));
-    payload.Set("filenames", std::move(filenames));
-    if (sliced.truncated) {
-      payload.Set("applied_limit", sliced.applied_limit);
-    }
-    if (offset > 0) {
-      payload.Set("applied_offset", offset);
-    }
+    std::move(done).Resolve(base::Value(std::move(body)));
+    return;
   }
 
-  std::move(done).Resolve(std::move(payload));
+  // files_with_matches: rg already returns one path per line.
+  SliceResult sliced =
+      ApplyHeadLimit(std::move(lines), head_limit, offset);
+  if (sliced.items.empty()) {
+    std::move(done).Resolve(base::Value("No files found"));
+    return;
+  }
+  std::string body = base::StrCat({"Found ",
+                                    base::NumberToString(sliced.items.size()),
+                                    " file(s)"});
+  if (sliced.truncated) {
+    body.append(base::StrCat(
+        {" [Showing results with pagination = limit ",
+         base::NumberToString(sliced.applied_limit), "]"}));
+  }
+  body.push_back('\n');
+  body.append(base::JoinString(sliced.items, "\n"));
+  std::move(done).Resolve(base::Value(std::move(body)));
 }
 
 }  // namespace nexus

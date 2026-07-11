@@ -59,6 +59,17 @@ export class UiStore {
         (uiMode: UIMode) => this.setMode_(uiMode, /*syncToNative=*/true));
 
     BATCH.setPaused(this.mode_ === UIMode.kStandard);
+
+    // The shell data source only bakes the profile-global mode, so the value
+    // read above can be wrong for a per-window mode (e.g. the dedicated kNexus
+    // window would otherwise render the last-saved browser mode like kSidebar).
+    // Pull this window's authoritative mode from native and apply it. Unlike
+    // the startup push, a request/response cannot be lost to page-load timing.
+    BrowserApiProxyImpl.getInstance().getUIMode().then(({uiMode}) => {
+      if ((UIMode as any)[uiMode] !== undefined) {
+        this.setMode_(uiMode, /*syncToNative=*/false);
+      }
+    });
   }
 
   static getInstance(): UiStore {

@@ -11,7 +11,7 @@
 #include "chrome/browser/ui/tabs/tab_change_type.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/thumbnails/thumbnail_tracker.h"
-#include "chrome/browser/ui/webui/tab_strip/tab_before_unload_tracker.h"
+#include "custom_browser/ui/web_ui/tab_before_unload_tracker.h"
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/tabs/public/tab_group.h"
 #include "content/public/browser/web_contents.h"
@@ -66,7 +66,8 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
                       int index,
                       TabChangeType change_type) override;
   void OnTabPinnedStateChanged(tabs::TabInterface* tab, int index) override;
-  void OnTabBlockedStateChanged(tabs::TabInterface* tab, int index) override;
+  // custom-browser: Chromium 149 removed OnTabBlockedStateChanged from
+  // TabStripModelObserver, so it can no longer be an override.
 
  private:
   void OnLongPressTimer();

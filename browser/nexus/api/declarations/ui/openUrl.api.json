@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "openUrl",
+  "description": "Open an in-conversation hyperlink in the host browser instead of letting the click navigate the nexus guest <webview> away. (Stub: the actual <main-contents-view> tab-open is wired in a follow-up change.)",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "Absolute http/https URL to open. The host validates the scheme before opening."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -47,11 +47,23 @@ enum class PromptRole {
 
 // Metadata for a single model offered by a provider.
 struct ModelInfo {
+  ModelInfo();
+  ModelInfo(const ModelInfo&);
+  ModelInfo(ModelInfo&&);
+  ModelInfo& operator=(const ModelInfo&);
+  ModelInfo& operator=(ModelInfo&&);
+  ~ModelInfo();
+
   std::string id;
   std::string name;
   int context_window = 0;
   bool supports_tools = false;
   bool supports_vision = false;
+  // Reasoning-effort metadata, populated by providers that discover it (e.g.
+  // the Codex /models endpoint returns default + supported reasoning levels).
+  // Empty for providers that don't expose it.
+  std::optional<std::string> default_thinking_tier;
+  std::vector<std::string> available_thinking_tiers;
 };
 
 // Metadata for a registered provider, including its model catalogue.

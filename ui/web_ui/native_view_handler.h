@@ -31,6 +31,8 @@ class UIViewHandler : public custom_browser::mojom::UIViewHandler,
   void UpsertNativeViewLayouts(
       std::vector<custom_browser::mojom::NativeViewParamsPtr> batch) override;
   void SetUIMode(custom_browser::mojom::UIMode ui_mode) override;
+  void GetUIMode(GetUIModeCallback callback) override;
+  void OpenBrowserWindow() override;
   void SaveIntPref(custom_browser::mojom::IntKey key, int32_t value) override;
   void SaveBoolPref(custom_browser::mojom::BoolKey key, bool value) override;
   void EnableLayoutsSaving(bool enable) override;

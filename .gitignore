@@ -1,0 +1,4 @@
+# Python bytecode cache — created by CPython when importing the grit
+# helper modules under resources/grit/. Not part of the source tree.
+__pycache__/
+*.pyc

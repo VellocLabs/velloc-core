@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -30,6 +31,37 @@ constexpr std::string_view kOpenAiDefaultBaseUrl =
     "https://api.openai.com/v1";
 
 constexpr int kMaxResponseSizeBytes = 4 * 1024 * 1024;
+
+// Sent as `?client_version=` when listing models from the Codex backend. The
+// backend hides any model whose `minimal_client_version` exceeds this, so it
+// must stay >= the newest model's minimum (e.g. gpt-5.5 needs 0.124.0). We
+// claim a high version to receive the account's full model list; bump if a
+// future model sets an even higher minimum.
+constexpr char kCodexClientVersion[] = "0.500.0";
+
+// Curated model list for Qwen Code (qwen-code OAuth). The Qwen portal does not
+// expose an OpenAI-style /models endpoint, so we fall back to the free-tier
+// coder models the qwen-code CLI uses when discovery returns nothing.
+std::vector<ModelInfo> CuratedQwenCodeModels() {
+  std::vector<ModelInfo> models;
+  {
+    ModelInfo plus;
+    plus.id = "qwen3-coder-plus";
+    plus.name = "Qwen3 Coder Plus";
+    plus.context_window = 1048576;
+    plus.supports_tools = true;
+    models.push_back(std::move(plus));
+  }
+  {
+    ModelInfo flash;
+    flash.id = "qwen3-coder-flash";
+    flash.name = "Qwen3 Coder Flash";
+    flash.context_window = 1048576;
+    flash.supports_tools = true;
+    models.push_back(std::move(flash));
+  }
+  return models;
+}
 
 constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("nexus_openai_llm", R"(
@@ -73,6 +105,34 @@ std::string ResolveRequestId(const base::DictValue& call_options) {
     return *request_id;
   }
   return base::Uuid::GenerateRandomV4().AsLowercaseString();
+}
+
+// Extracts a human-readable error message from a JSON error body. Handles the
+// public OpenAI shape (`{"error":{"message":…}}` / `{"error":"…"}`) and the
+// ChatGPT subscription (Codex) backend shape (`{"detail":"…"}` /
+// `{"message":"…"}`). Returns empty when the body isn't a recognizable JSON
+// error object (e.g. a normal SSE stream or a successful response).
+std::string ExtractApiErrorMessage(const std::string& body) {
+  std::optional<base::DictValue> parsed =
+      base::JSONReader::ReadDict(body, base::JSON_PARSE_RFC);
+  if (!parsed) {
+    return std::string();
+  }
+  if (const base::DictValue* err = parsed->FindDict("error")) {
+    if (const std::string* msg = err->FindString("message")) {
+      return *msg;
+    }
+  }
+  if (const std::string* err = parsed->FindString("error")) {
+    return *err;
+  }
+  if (const std::string* detail = parsed->FindString("detail")) {
+    return *detail;
+  }
+  if (const std::string* message = parsed->FindString("message")) {
+    return *message;
+  }
+  return std::string();
 }
 
 }  // namespace
@@ -182,10 +242,26 @@ OpenAiProvider::OpenAiProvider(
     std::string provider_id,
     std::string display_name,
     std::string default_base_url)
+    : OpenAiProvider(std::move(url_loader_factory),
+                     provider_id,
+                     std::move(display_name),
+                     std::move(default_base_url),
+                     /*uses_responses_api=*/provider_id == kOpenAiProviderId,
+                     /*extra_headers=*/{}) {}
+
+OpenAiProvider::OpenAiProvider(
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    std::string provider_id,
+    std::string display_name,
+    std::string default_base_url,
+    bool uses_responses_api,
+    std::map<std::string, std::string> extra_headers)
     : provider_id_(std::move(provider_id)),
       display_name_(std::move(display_name)),
       default_base_url_(std::move(default_base_url)),
       base_url_(default_base_url_),
+      uses_responses_api_(uses_responses_api),
+      extra_headers_(std::move(extra_headers)),
       url_loader_factory_(std::move(url_loader_factory)) {}
 
 OpenAiProvider::~OpenAiProvider() {
@@ -249,7 +325,24 @@ bool OpenAiProvider::Configure(const base::DictValue& config) {
     configured_model_ = *model;
   }
 
+  // OAuth-backed providers (chatgpt-pro) pass the ChatGPT account id so it can
+  // be sent as the `ChatGPT-Account-Id` header. Absent for other providers.
+  if (const std::string* account_id = config.FindString("account_id");
+      account_id) {
+    account_id_ = *account_id;
+  }
+
   return true;
+}
+
+void OpenAiProvider::ApplyExtraHeaders(
+    network::ResourceRequest* request) const {
+  for (const auto& [name, value] : extra_headers_) {
+    request->headers.SetHeader(name, value);
+  }
+  if (!account_id_.empty()) {
+    request->headers.SetHeader("ChatGPT-Account-Id", account_id_);
+  }
 }
 
 std::string OpenAiProvider::GetDefaultBaseUrl() const {
@@ -412,6 +505,13 @@ base::ListValue OpenAiProvider::TranslateMessages(
           tool_msg.Set("tool_call_id", *tc_id);
 
         std::string content;
+        // OpenAI's `role:"tool"` message content is text-only — it does
+        // NOT accept image parts. So when a multimodal tool result carries
+        // an image (BrowserScreenshot), we put the text on the tool message
+        // and deliver the image as a SEPARATE follow-up `user` message with
+        // an `image_url` part (which OpenAI does support). Collect any
+        // image data-URIs here while flattening the text.
+        std::vector<std::string> image_data_uris;
         if (const base::ListValue* result_parts = part->FindList("result")) {
           for (const auto& rp_val : *result_parts) {
             if (const base::DictValue* rp = rp_val.GetIfDict()) {
@@ -421,6 +521,20 @@ base::ListValue OpenAiProvider::TranslateMessages(
                   if (!content.empty())
                     content += '\n';
                   content += *text;
+                }
+              } else if (rp_type && *rp_type == "image") {
+                const std::string* img = rp->FindString("image");
+                if (img && !img->empty()) {
+                  if (img->starts_with("http://") ||
+                      img->starts_with("https://") ||
+                      img->starts_with("data:")) {
+                    image_data_uris.push_back(*img);
+                  } else {
+                    const std::string* mime = rp->FindString("mimeType");
+                    image_data_uris.push_back(
+                        "data:" + (mime ? *mime : std::string("image/jpeg")) +
+                        ";base64," + *img);
+                  }
                 }
               }
             }
@@ -433,6 +547,30 @@ base::ListValue OpenAiProvider::TranslateMessages(
         }
         tool_msg.Set("content", std::move(content));
         messages.Append(std::move(tool_msg));
+
+        // Follow-up user message carrying the image(s), since the tool
+        // message itself can't. Placed right after the tool result so the
+        // model associates it with that call.
+        if (!image_data_uris.empty()) {
+          base::ListValue parts;
+          base::DictValue note;
+          note.Set("type", "text");
+          note.Set("text",
+                   "(Screenshot returned by the previous tool call.)");
+          parts.Append(std::move(note));
+          for (const std::string& uri : image_data_uris) {
+            base::DictValue img_part;
+            img_part.Set("type", "image_url");
+            base::DictValue img_url;
+            img_url.Set("url", uri);
+            img_part.Set("image_url", std::move(img_url));
+            parts.Append(std::move(img_part));
+          }
+          base::DictValue user_msg;
+          user_msg.Set("role", "user");
+          user_msg.Set("content", std::move(parts));
+          messages.Append(std::move(user_msg));
+        }
       }
       continue;
     }
@@ -687,11 +825,9 @@ GenerateResult OpenAiProvider::ParseResponse(
 //
 // OpenAI-compatible providers (Kimi, MiniMax, Qwen, GLM, …) share this
 // class via the secondary constructor but their servers don't implement
-// /v1/responses, so the routing key is `provider_id_ == "openai"`.
-
-bool OpenAiProvider::IsOpenAiNative() const {
-  return provider_id_ == kOpenAiProviderId;
-}
+// /v1/responses, so they stay on chat-completions. Whether a given instance
+// takes the Responses path is carried by `uses_responses_api_` (true for the
+// native `openai` provider and the OAuth `chatgpt-pro` provider).
 
 base::DictValue OpenAiProvider::TranslateToolDefinitionForResponses(
     const base::DictValue& tool) const {
@@ -870,10 +1006,20 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
   return input;
 }
 
+bool OpenAiProvider::IsCodexBackend() const {
+  return base_url_.find("/backend-api/codex") != std::string::npos;
+}
+
 base::DictValue OpenAiProvider::BuildResponsesApiRequestBody(
     const base::DictValue& call_options,
     bool stream) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // The ChatGPT subscription (Codex) backend is stricter than the public
+  // /v1/responses API: it requires a non-empty `instructions` field and
+  // rejects sampling/length params (max_output_tokens, stop, seed, …). Mirror
+  // BrowserOS's codex-fetch normalization for that endpoint only.
+  const bool codex_backend = IsCodexBackend();
 
   base::DictValue body;
   body.Set("model", ResolveModel(call_options));
@@ -885,6 +1031,9 @@ base::DictValue OpenAiProvider::BuildResponsesApiRequestBody(
     if (!instructions.empty())
       body.Set("instructions", std::move(instructions));
   }
+
+  if (codex_backend && !body.Find("instructions"))
+    body.Set("instructions", "You are a helpful assistant.");
 
   if (stream)
     body.Set("stream", true);
@@ -940,9 +1089,13 @@ base::DictValue OpenAiProvider::BuildResponsesApiRequestBody(
     }
   }
 
-  // Token limit — Responses API uses `max_output_tokens`.
-  if (auto v = call_options.FindInt("maxTokens"))
-    body.Set("max_output_tokens", *v);
+  // Token limit — Responses API uses `max_output_tokens`. The Codex
+  // subscription backend rejects it (length is controlled server-side), so
+  // only send it to the public API.
+  if (!codex_backend) {
+    if (auto v = call_options.FindInt("maxTokens"))
+      body.Set("max_output_tokens", *v);
+  }
 
   // Reasoning effort is the entire reason we're on this path. Translate
   // {reasoning_effort: "..."} into {reasoning: {effort: "..."}} as the
@@ -971,10 +1124,13 @@ base::DictValue OpenAiProvider::BuildResponsesApiRequestBody(
   // intentionally drop them here so this path doesn't get rejected with
   // "Unsupported parameter" the way the chat-completions builder would.
 
-  if (const auto* v = call_options.FindList("stopSequences"))
-    body.Set("stop", v->Clone());
-  if (auto v = call_options.FindInt("seed"))
-    body.Set("seed", *v);
+  // stop/seed are likewise refused by the Codex subscription backend.
+  if (!codex_backend) {
+    if (const auto* v = call_options.FindList("stopSequences"))
+      body.Set("stop", v->Clone());
+    if (auto v = call_options.FindInt("seed"))
+      body.Set("seed", *v);
+  }
 
   // Merge any remaining provider-body-extension keys last so explicit TS
   // overrides win over our defaults.
@@ -1258,7 +1414,7 @@ void OpenAiProvider::DoGenerate(const base::DictValue& call_options,
   }
 
   std::string request_id = ResolveRequestId(call_options);
-  const bool use_responses_api = IsOpenAiNative();
+  const bool use_responses_api = uses_responses_api_;
   base::DictValue body =
       use_responses_api
           ? BuildResponsesApiRequestBody(call_options, /*stream=*/false)
@@ -1275,6 +1431,7 @@ void OpenAiProvider::DoGenerate(const base::DictValue& call_options,
   resource_request->headers.SetHeader("Authorization",
                                       "Bearer " + api_key_);
   resource_request->headers.SetHeader("Content-Type", "application/json");
+  ApplyExtraHeaders(resource_request.get());
 
   auto loader = network::SimpleURLLoader::Create(std::move(resource_request),
                                                  kTrafficAnnotation);
@@ -1331,13 +1488,11 @@ void OpenAiProvider::OnGenerateComplete(
 
   const base::DictValue& dict = *parsed;
 
-  if (const base::DictValue* error_obj = dict.FindDict("error")) {
-    std::string error_msg = display_name_ + " API error";
-    if (const std::string* msg = error_obj->FindString("message"))
-      error_msg = *msg;
+  if (std::string api_error = ExtractApiErrorMessage(*response_body);
+      !api_error.empty()) {
     DLOG(ERROR) << display_name_ << " API error (HTTP " << http_status
-                << "): " << error_msg;
-    std::move(callback).Run(GenerateResult(), std::move(error_msg));
+                << "): " << api_error;
+    std::move(callback).Run(GenerateResult(), std::move(api_error));
     return;
   }
 
@@ -1362,7 +1517,7 @@ void OpenAiProvider::DoStream(const base::DictValue& call_options,
   }
 
   std::string request_id = ResolveRequestId(call_options);
-  const bool use_responses_api = IsOpenAiNative();
+  const bool use_responses_api = uses_responses_api_;
   base::DictValue body =
       use_responses_api
           ? BuildResponsesApiRequestBody(call_options, /*stream=*/true)
@@ -1379,6 +1534,7 @@ void OpenAiProvider::DoStream(const base::DictValue& call_options,
   resource_request->headers.SetHeader("Authorization",
                                       "Bearer " + api_key_);
   resource_request->headers.SetHeader("Content-Type", "application/json");
+  ApplyExtraHeaders(resource_request.get());
 
   auto loader = network::SimpleURLLoader::Create(std::move(resource_request),
                                                  kTrafficAnnotation);
@@ -1636,26 +1792,27 @@ void OpenAiProvider::OnStreamComplete(const std::string& request_id,
   }
 
   // With SetAllowHttpErrorResults(true) the loader reports success even for
-  // HTTP 4xx/5xx.  Check the status code and surface the API error body.
+  // HTTP 4xx/5xx. Some backends — notably the ChatGPT subscription (Codex)
+  // endpoint — also return a JSON error body with HTTP 200 instead of an SSE
+  // stream, e.g. {"detail":"The 'gpt-5.1-codex' model is not supported when
+  // using Codex with a ChatGPT account."}. ProcessSseLine ignores that (it
+  // isn't a `data:`/`event:` line), so detect the error body here and surface
+  // it through the existing done-error path.
+  int http_status = -1;
   if (ctx->loader) {
     if (const auto* info = ctx->loader->ResponseInfo();
         info && info->headers) {
-      int status = info->headers->response_code();
-      if (status >= 400) {
-        std::string error = "HTTP " + base::NumberToString(status);
-        auto parsed =
-            base::JSONReader::ReadDict(ctx->raw_response, base::JSON_PARSE_RFC);
-        if (parsed) {
-          if (const auto* err = parsed->FindDict("error")) {
-            if (const std::string* msg = err->FindString("message"))
-              error = *msg;
-          }
-        }
-        DLOG(ERROR) << display_name_ << " stream error: " << error;
-        std::move(ctx->done_callback).Run(std::move(error));
-        return;
-      }
+      http_status = info->headers->response_code();
     }
+  }
+  const std::string api_error = ExtractApiErrorMessage(ctx->raw_response);
+  if (http_status >= 400 || (!ctx->finish_emitted && !api_error.empty())) {
+    std::string error = !api_error.empty()
+                            ? api_error
+                            : ("HTTP " + base::NumberToString(http_status));
+    DLOG(ERROR) << display_name_ << " stream error: " << error;
+    std::move(ctx->done_callback).Run(std::move(error));
+    return;
   }
 
   std::move(ctx->done_callback).Run(std::nullopt);
@@ -1691,12 +1848,24 @@ void OpenAiProvider::FetchAvailableModels(FetchModelsCallback callback) {
     return;
   }
 
+  const bool codex = IsCodexBackend();
   std::string models_url = base_url_ + "/models";
+  if (codex) {
+    // The Codex backend gates the model list on a client-version query param
+    // and returns exactly the models the signed-in ChatGPT account can use
+    // (mirrors the Codex CLI's `GET /models?client_version=…`).
+    models_url += "?client_version=";
+    models_url += kCodexClientVersion;
+  }
 
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = GURL(models_url);
   request->method = "GET";
   request->headers.SetHeader("Authorization", "Bearer " + api_key_);
+  // Apply per-provider headers (e.g. Codex originator/account-id, Copilot
+  // Openai-Intent/x-initiator) so /models discovery is accepted. No-op for
+  // providers without extra headers.
+  ApplyExtraHeaders(request.get());
 
   models_loader_ =
       network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
@@ -1738,27 +1907,88 @@ void OpenAiProvider::OnFetchModelsComplete(
     return;
   }
 
-  const base::ListValue* data = parsed->FindList("data");
-  if (!data) {
-    std::move(callback).Run({});
+  std::vector<ModelInfo> models;
+
+  if (IsCodexBackend()) {
+    // Codex backend shape: {"models":[{"slug","display_name",
+    // "default_reasoning_level","supported_reasoning_levels":[{"effort"}]}]}.
+    const base::ListValue* codex_models = parsed->FindList("models");
+    if (!codex_models) {
+      DLOG(WARNING) << display_name_ << " codex models: missing 'models'";
+      std::move(callback).Run({});
+      return;
+    }
+    for (const auto& model_val : *codex_models) {
+      const base::DictValue* model = model_val.GetIfDict();
+      if (!model)
+        continue;
+      const std::string* slug = model->FindString("slug");
+      if (!slug || slug->empty())
+        continue;
+
+      // Only models marked for listing belong in the picker; "hide"/"none"
+      // are internal/deprecated. Absent visibility is treated as listable.
+      if (const std::string* visibility = model->FindString("visibility");
+          visibility && *visibility != "list") {
+        continue;
+      }
+
+      ModelInfo info;
+      info.id = *slug;
+      if (const std::string* display = model->FindString("display_name");
+          display && !display->empty()) {
+        info.name = *display;
+      } else {
+        info.name = *slug;
+      }
+      info.supports_tools = true;
+      if (const std::string* level =
+              model->FindString("default_reasoning_level");
+          level && !level->empty()) {
+        info.default_thinking_tier = *level;
+      }
+      if (const base::ListValue* levels =
+              model->FindList("supported_reasoning_levels")) {
+        for (const auto& level_val : *levels) {
+          if (const base::DictValue* level_dict = level_val.GetIfDict()) {
+            if (const std::string* effort = level_dict->FindString("effort");
+                effort && !effort->empty()) {
+              info.available_thinking_tiers.push_back(*effort);
+            }
+          }
+        }
+      }
+      models.push_back(std::move(info));
+    }
+
+    fetched_models_ = models;
+    std::move(callback).Run(std::move(models));
     return;
   }
 
-  std::vector<ModelInfo> models;
-  for (const auto& model_val : *data) {
-    const base::DictValue* model = model_val.GetIfDict();
-    if (!model)
-      continue;
+  if (const base::ListValue* data = parsed->FindList("data")) {
+    for (const auto& model_val : *data) {
+      const base::DictValue* model = model_val.GetIfDict();
+      if (!model)
+        continue;
 
-    const std::string* id = model->FindString("id");
-    if (!id || id->empty())
-      continue;
+      const std::string* id = model->FindString("id");
+      if (!id || id->empty())
+        continue;
 
-    ModelInfo info;
-    info.id = *id;
-    info.name = *id;
+      ModelInfo info;
+      info.id = *id;
+      info.name = *id;
 
-    models.push_back(std::move(info));
+      models.push_back(std::move(info));
+    }
+  }
+
+  // Qwen Code's portal does not expose an OpenAI-style /models list, so
+  // discovery typically comes back empty. Fall back to the curated free-tier
+  // coder models the qwen-code CLI ships with, so the picker still populates.
+  if (models.empty() && provider_id_ == "qwen-code") {
+    models = CuratedQwenCodeModels();
   }
 
   fetched_models_ = models;

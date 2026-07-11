@@ -14,6 +14,7 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
+#include "components/prefs/scoped_user_pref_update.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -24,7 +25,12 @@
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_url_opener.h"
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
+#include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
+#include "url/gurl.h"
 
 namespace settings {
 
@@ -260,6 +266,40 @@ void NexusSettingsHandler::RegisterMessages() {
       "setActiveProvider",
       base::BindRepeating(&NexusSettingsHandler::HandleSetActiveProvider,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "beginProviderOAuth",
+      base::BindRepeating(&NexusSettingsHandler::HandleBeginProviderOAuth,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getProviderOAuthStatus",
+      base::BindRepeating(&NexusSettingsHandler::HandleGetProviderOAuthStatus,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getWebappUrl",
+      base::BindRepeating(&NexusSettingsHandler::HandleGetWebappUrl,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setWebappUrl",
+      base::BindRepeating(&NexusSettingsHandler::HandleSetWebappUrl,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getBrowserToolsSeparateWindow",
+      base::BindRepeating(
+          &NexusSettingsHandler::HandleGetBrowserToolsSeparateWindow,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setBrowserToolsSeparateWindow",
+      base::BindRepeating(
+          &NexusSettingsHandler::HandleSetBrowserToolsSeparateWindow,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getAgentConfig",
+      base::BindRepeating(&NexusSettingsHandler::HandleGetAgentConfig,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setAgentConfig",
+      base::BindRepeating(&NexusSettingsHandler::HandleSetAgentConfig,
+                          base::Unretained(this)));
   // Quick-settings popup support — read-side handlers + the user-pick
   // write-side handler. See nexus_settings_handler.h for full contracts.
   web_ui()->RegisterMessageCallback(
@@ -308,6 +348,17 @@ void NexusSettingsHandler::OnSessionStatusChanged(
   // legacy `nexusSessionStatusChanged` fan-out is retired; the broker's
   // session-status cache is still updated for any non-WebUI consumer
   // that reads it via `LlmBroker::GetSessionStatus`.
+}
+
+void NexusSettingsHandler::OnProviderModelsRefreshed(
+    const std::string& /*provider_id*/) {
+  // A provider's model list was just discovered from its backend (the guest's
+  // cold-boot catalog refresh, a login, or a connect test). Rebuild the
+  // always-mounted topbar quick-switch popup so lazily-discovered OAuth models
+  // (chatgpt-pro) appear immediately — without this the popup keeps the empty
+  // catalog it captured before discovery finished, and the only way to refresh
+  // it was to open the provider settings page.
+  BroadcastEnrichedCatalog_();
 }
 
 Profile* NexusSettingsHandler::GetProfile() {
@@ -366,6 +417,21 @@ void NexusSettingsHandler::HandleGetAgentProviders(
     provider_dict.Set("type", type_string);
     provider_dict.Set("isConfigured", info.is_configured);
     provider_dict.Set("hasStoredApiKey", HasStoredApiKey(stored_config));
+
+    // OAuth-backed providers (ChatGPT Plus/Pro) render a "Sign in" card
+    // instead of base-url/api-key fields. Surface the auth mode and live
+    // connection status so the WebUI can pick the right UI.
+    const bool is_oauth = nexus::IsOAuthProvider(info.id);
+    provider_dict.Set("authMode", is_oauth ? "oauth" : "api_key");
+    if (is_oauth && broker->oauth_manager()) {
+      provider_dict.Set("connected",
+                        broker->oauth_manager()->IsConnected(info.id));
+      const std::string email =
+          broker->oauth_manager()->GetConnectedEmail(info.id);
+      if (!email.empty()) {
+        provider_dict.Set("connectedEmail", email);
+      }
+    }
 
     const std::string configured_model =
         GetConfiguredModelName(prefs, info.id, provider);
@@ -652,6 +718,57 @@ void NexusSettingsHandler::HandleRefreshProviderModels(
     return;
   }
 
+  // OAuth providers need a backend-ready token applied before discovery. The
+  // stored api_key may not be directly usable (github-copilot stores a GitHub
+  // OAuth token that must be exchanged for a Copilot session token) or may be
+  // near expiry (chatgpt-pro). EnsureFreshToken handles both; the result is
+  // applied to the provider in OnOAuthTokenForModels before fetching /models.
+  if (nexus::IsOAuthProvider(provider_id) && broker->oauth_manager()) {
+    broker->oauth_manager()->EnsureFreshToken(
+        provider_id,
+        base::BindOnce(&NexusSettingsHandler::OnOAuthTokenForModels,
+                       weak_factory_.GetWeakPtr(), callback_id, provider_id));
+    return;
+  }
+
+  broker->RefreshModels(
+      provider_id,
+      base::BindOnce(&NexusSettingsHandler::OnProviderModelsFetched,
+                     weak_factory_.GetWeakPtr(), callback_id));
+}
+
+void NexusSettingsHandler::OnOAuthTokenForModels(const std::string& callback_id,
+                                                 const std::string& provider_id,
+                                                 bool ok,
+                                                 std::string access_token,
+                                                 std::string account_id) {
+  nexus::LlmBroker* broker = GetBroker();
+  if (!broker) {
+    RejectJavascriptCallback(
+        base::Value(callback_id),
+        base::Value("Nexus LLM Broker is not available"));
+    return;
+  }
+
+  if (!ok || access_token.empty()) {
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("error",
+               "Could not obtain a fresh access token. Please sign in again.");
+    ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
+    return;
+  }
+
+  // Apply the fresh, backend-ready token in-memory (the token store already
+  // persisted the durable credential; a partial Configure dict here would
+  // clobber default_model et al. if written to prefs).
+  if (nexus::LlmProvider* provider = broker->GetProvider(provider_id)) {
+    base::DictValue config;
+    config.Set("api_key", access_token);
+    config.Set("account_id", account_id);
+    provider->Configure(config);
+  }
+
   broker->RefreshModels(
       provider_id,
       base::BindOnce(&NexusSettingsHandler::OnProviderModelsFetched,
@@ -827,6 +944,15 @@ void NexusSettingsHandler::OnProviderModelsFetched(
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             std::move(result));
+
+  // The fetch above ran through LlmBroker::RefreshModels, which persists the
+  // discovered list into the provider's in-memory `fetched_models_` (read by
+  // GetSupportedModels()). Re-broadcast the enriched catalog so the always-
+  // mounted topbar quick-switch popup rebuilds with the freshly discovered
+  // models. Without this the popup keeps the stale catalog it captured at
+  // boot — the exact symptom for OAuth providers (chatgpt-pro) whose models
+  // are discovered live the first time their settings card opens.
+  BroadcastEnrichedCatalog_();
 }
 
 void NexusSettingsHandler::OnVerifyProviderModelsFetched(
@@ -890,6 +1016,219 @@ void NexusSettingsHandler::HandleSetActiveProvider(
   }
 }
 
+void NexusSettingsHandler::HandleBeginProviderOAuth(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string& callback_id = args[0].GetString();
+  const std::string& provider_id = args[1].GetString();
+
+  Profile* profile = GetProfile();
+  nexus::LlmBroker* broker = GetBroker();
+  if (!profile || !broker || !broker->oauth_manager()) {
+    RejectJavascriptCallback(base::Value(callback_id),
+                             base::Value("OAuth is not available"));
+    return;
+  }
+
+  // Device-code providers (GitHub Copilot, Qwen Code) don't use a redirect:
+  // request a device code and return the user code + verification URL for the
+  // UI to display, then poll in the background.
+  const nexus::OAuthProviderConfig* oauth_config =
+      nexus::GetOAuthProviderConfig(provider_id);
+  if (oauth_config && oauth_config->flow == nexus::OAuthFlow::kDeviceCode) {
+    broker->oauth_manager()->StartDeviceCodeFlow(
+        provider_id,
+        base::BindOnce(&NexusSettingsHandler::OnDeviceCodeStarted,
+                       weak_factory_.GetWeakPtr(), callback_id));
+    return;
+  }
+
+  const std::string auth_url =
+      broker->oauth_manager()->BeginLogin(provider_id);
+  if (auth_url.empty()) {
+    RejectJavascriptCallback(
+        base::Value(callback_id),
+        base::Value("Unknown OAuth provider: " + provider_id));
+    return;
+  }
+
+  // Open the authorization page in a normal browser window (not the Nexus
+  // pane) so the loopback redirect (http://localhost:1455/auth/callback) is
+  // captured by the OAuthRedirectThrottle. Routed through OpenNexusAuthUrl —
+  // a startup-registered hook backed by
+  // custom_browser::window_util::OpenUrlInNormalWindow — because this handler
+  // cannot depend on //chrome/browser/ui directly (it would form a GN cycle,
+  // since //chrome/browser/ui already depends on the settings handler).
+  nexus::OpenNexusAuthUrl(profile, GURL(auth_url));
+
+  base::DictValue result;
+  result.Set("flow", "pkce");
+  result.Set("started", true);
+  ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
+}
+
+void NexusSettingsHandler::OnDeviceCodeStarted(
+    const std::string& callback_id,
+    bool ok,
+    nexus::NexusOAuthManager::DeviceCodeInfo info,
+    std::string error) {
+  if (!ok) {
+    RejectJavascriptCallback(
+        base::Value(callback_id),
+        base::Value(error.empty() ? "Failed to start sign-in" : error));
+    return;
+  }
+
+  // Open the verification page in a normal window so the user can authorize
+  // without leaving the device code behind.
+  if (Profile* profile = GetProfile();
+      profile && !info.verification_uri.empty()) {
+    nexus::OpenNexusAuthUrl(profile, GURL(info.verification_uri));
+  }
+
+  base::DictValue result;
+  result.Set("flow", "device-code");
+  result.Set("userCode", info.user_code);
+  result.Set("verificationUri", info.verification_uri);
+  result.Set("expiresIn", info.expires_in);
+  ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
+}
+
+void NexusSettingsHandler::HandleGetProviderOAuthStatus(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string& callback_id = args[0].GetString();
+  const std::string& provider_id = args[1].GetString();
+
+  base::DictValue result;
+  nexus::LlmBroker* broker = GetBroker();
+  if (broker && broker->oauth_manager()) {
+    nexus::NexusOAuthManager* manager = broker->oauth_manager();
+    result.Set("connected", manager->IsConnected(provider_id));
+    const std::string email = manager->GetConnectedEmail(provider_id);
+    if (!email.empty()) {
+      result.Set("connectedEmail", email);
+    }
+  } else {
+    result.Set("connected", false);
+  }
+  ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
+}
+
+void NexusSettingsHandler::HandleGetWebappUrl(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string& callback_id = args[0].GetString();
+
+  Profile* profile = GetProfile();
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  const std::string value =
+      prefs ? prefs->GetString(nexus::prefs::kNexusWebappUrl) : std::string();
+
+  ResolveJavascriptCallback(base::Value(callback_id), base::Value(value));
+}
+
+void NexusSettingsHandler::HandleSetWebappUrl(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string& callback_id = args[0].GetString();
+  const std::string& value = args[1].GetString();
+
+  Profile* profile = GetProfile();
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  if (!prefs) {
+    RejectJavascriptCallback(base::Value(callback_id),
+                             base::Value("Profile prefs unavailable"));
+    return;
+  }
+
+  // Store the value verbatim (empty = use default). GetResolvedNexusGuestURL()
+  // re-validates the stored URL at read time and falls back to the default if
+  // it is not an allowed guest URL, so no scheme/host check is needed here.
+  prefs->SetString(nexus::prefs::kNexusWebappUrl, value);
+  ResolveJavascriptCallback(
+      base::Value(callback_id),
+      base::Value(prefs->GetString(nexus::prefs::kNexusWebappUrl)));
+}
+
+void NexusSettingsHandler::HandleGetBrowserToolsSeparateWindow(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string& callback_id = args[0].GetString();
+
+  Profile* profile = GetProfile();
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  const bool enabled =
+      prefs && prefs->GetBoolean(nexus::prefs::kNexusBrowserToolsSeparateWindow);
+
+  ResolveJavascriptCallback(base::Value(callback_id), base::Value(enabled));
+}
+
+void NexusSettingsHandler::HandleSetBrowserToolsSeparateWindow(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string& callback_id = args[0].GetString();
+  const bool enabled = args[1].GetBool();
+
+  Profile* profile = GetProfile();
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  if (!prefs) {
+    RejectJavascriptCallback(base::Value(callback_id),
+                             base::Value("Profile prefs unavailable"));
+    return;
+  }
+
+  prefs->SetBoolean(nexus::prefs::kNexusBrowserToolsSeparateWindow, enabled);
+  ResolveJavascriptCallback(
+      base::Value(callback_id),
+      base::Value(
+          prefs->GetBoolean(nexus::prefs::kNexusBrowserToolsSeparateWindow)));
+}
+
+void NexusSettingsHandler::HandleGetAgentConfig(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string& callback_id = args[0].GetString();
+
+  // Returns the effective config (built-in defaults overlaid with stored
+  // overrides). The UI reads keys it knows (maxTurns, stepTimeoutSec, …).
+  ResolveJavascriptCallback(
+      base::Value(callback_id),
+      base::Value(nexus::GetAgentConfig(GetProfile())));
+}
+
+void NexusSettingsHandler::HandleSetAgentConfig(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 3u);
+  const std::string& callback_id = args[0].GetString();
+  const std::string& key = args[1].GetString();
+  // args[2] is the value — number (maxTurns/stepTimeoutSec) or dict (model).
+  // Stored verbatim; per-key validation/clamping lives in the UI (UX) and the
+  // consumer (engine.applyRuntimeSettings, the safety backstop).
+
+  Profile* profile = GetProfile();
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  if (!prefs) {
+    RejectJavascriptCallback(base::Value(callback_id),
+                             base::Value("Profile prefs unavailable"));
+    return;
+  }
+
+  {
+    ScopedDictPrefUpdate update(prefs, nexus::prefs::kNexusAgentConfig);
+    update->Set(key, args[2].Clone());
+  }
+  // Writing the pref fires the PrefChangeRegistrar in the session bridge
+  // adapter, which pushes the full dict to the guest live. Echo the merged
+  // config back for the WebUI to refresh its local view.
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(nexus::GetAgentConfig(profile)));
+}
+
 // --- Quick-settings popup handlers ------------------------------------------
 
 base::DictValue NexusSettingsHandler::BuildEnrichedNexusCatalog_() {
@@ -918,9 +1257,17 @@ base::DictValue NexusSettingsHandler::BuildEnrichedNexusCatalog_() {
   base::ListValue providers;
   for (const nexus::ProviderInfo& info : broker->GetRegisteredProviders()) {
     nexus::LlmProvider* provider = broker->GetProvider(info.id);
-    const bool is_configured = provider && provider->IsConfigured();
+    // OAuth providers: "signed in" (tokens present) is the source of truth for
+    // configured/verified, since the in-memory api_key / prefs last_verification
+    // can lag and would otherwise hide a working provider from the quick-switch.
+    const bool oauth_connected =
+        nexus::IsOAuthProvider(info.id) && broker->oauth_manager() &&
+        broker->oauth_manager()->IsConnected(info.id);
+    const bool is_configured =
+        (provider && provider->IsConfigured()) || oauth_connected;
     const bool is_verified =
-        is_configured && nexus::IsNexusProviderVerified(prefs, info.id);
+        is_configured &&
+        (oauth_connected || nexus::IsNexusProviderVerified(prefs, info.id));
 
     base::DictValue provider_dict;
     provider_dict.Set("providerId", info.id);
@@ -938,20 +1285,48 @@ base::DictValue NexusSettingsHandler::BuildEnrichedNexusCatalog_() {
     }
 
     // Splice the model list (+ any filterMode) from the TS-pushed catalog.
+    // OAuth providers (chatgpt-pro, github-copilot, qwen-code) have no TS
+    // config — their models are discovered live — so when the TS catalog has
+    // none, fall back to the provider's fetched model list. Without this the
+    // topbar quick-switch popup shows no models for those providers even after
+    // discovery populated them.
+    base::ListValue model_list;
+    bool have_models = false;
     auto it = ts_by_provider.find(info.id);
     if (it != ts_by_provider.end() && it->second) {
       if (const std::string* filter_mode =
               it->second->FindString("filterMode")) {
         provider_dict.Set("filterMode", *filter_mode);
       }
-      if (const base::ListValue* models = it->second->FindList("models")) {
-        provider_dict.Set("models", models->Clone());
-      } else {
-        provider_dict.Set("models", base::ListValue());
+      if (const base::ListValue* models = it->second->FindList("models");
+          models && !models->empty()) {
+        model_list = models->Clone();
+        have_models = true;
       }
-    } else {
-      provider_dict.Set("models", base::ListValue());
     }
+    if (!have_models) {
+      for (const nexus::ModelInfo& model : info.models) {
+        base::DictValue model_dict;
+        model_dict.Set("model", model.id);
+        model_dict.Set("name", model.name.empty() ? model.id : model.name);
+        if (model.context_window > 0) {
+          model_dict.Set("contextWindow", model.context_window);
+        }
+        if (model.default_thinking_tier &&
+            !model.default_thinking_tier->empty()) {
+          model_dict.Set("defaultThinkingTier", *model.default_thinking_tier);
+        }
+        if (!model.available_thinking_tiers.empty()) {
+          base::ListValue tiers;
+          for (const std::string& tier : model.available_thinking_tiers) {
+            tiers.Append(tier);
+          }
+          model_dict.Set("availableThinkingTiers", std::move(tiers));
+        }
+        model_list.Append(std::move(model_dict));
+      }
+    }
+    provider_dict.Set("models", std::move(model_list));
 
     providers.Append(std::move(provider_dict));
   }

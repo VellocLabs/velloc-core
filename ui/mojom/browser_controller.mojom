@@ -4,7 +4,7 @@
 
 module custom_browser.mojom;
 
-import "chrome/browser/ui/webui/tabs/tabs.mojom";
+import "components/tabs/public/mojom/tabs.mojom";
 import "url/mojom/url.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "custom_browser/ui/mojom/browser_command_ids.mojom";

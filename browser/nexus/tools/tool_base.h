@@ -2,6 +2,7 @@
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_TOOL_BASE_H_
 
 #include <string>
+#include <string_view>
 
 #include "base/memory/raw_ptr.h"
 
@@ -10,6 +11,54 @@ class Profile;
 namespace nexus {
 
 class ToolSession;
+
+// Typed reason for the OnStop cascade. Replaces the pre-refactor
+// stringly-typed `const std::string& reason` parameter so the C++
+// side is exhaustive over reasons and a typo can't silently fall
+// through to a default.
+//
+// JS-facing reason strings are parsed at the bridge boundary
+// (`NexusSessionBridgeAdapter::HandleOnStopOnUI`) by
+// `ParseOnStopReason`. Internal callers (destructors, port-service
+// teardown) pass enum values directly.
+//
+// Semantics:
+//   - kCompleted       — conversation finished naturally (one per turn,
+//                          fired by `query/deps.ts::handleStopHooks`).
+//                          Stops the actor task; leaves ToolSession in
+//                          the adapter map so the next turn reuses it.
+//   - kUserStopped     — user pressed Stop. Same lifetime as kCompleted.
+//   - kSessionDeleted  — user deleted the session from the sidebar.
+//                          ToolsAdapter erases the ToolSession on this
+//                          reason ONLY; ~BrowserTool then closes the
+//                          session's tabs.
+//   - kDisconnected    — bridge port service teardown (panel close /
+//                          webview reload). `~ToolsAdapter` cascades
+//                          this before the sessions map clears, which
+//                          triggers ~BrowserTool → tab close.
+//   - kShutdown        — profile / process teardown. Same behavior as
+//                          kDisconnected.
+//   - kDestructor      — defensive call from a destructor when no
+//                          explicit OnStop ran first. Idempotent guard.
+enum class OnStopReason {
+  kCompleted,
+  kUserStopped,
+  kSessionDeleted,
+  kDisconnected,
+  kShutdown,
+  kDestructor,
+};
+
+// Parse a JS-facing reason string into the typed enum. Unrecognized /
+// empty strings fall back to `fallback` (callers typically pass
+// `kUserStopped` because that's the safe default the JS guest used
+// before the typed contract existed).
+OnStopReason ParseOnStopReason(std::string_view reason,
+                                OnStopReason fallback = OnStopReason::kUserStopped);
+
+// Stable short name for logs / telemetry. Mirrors the legacy reason
+// strings so existing greps over `[NexusTrace]` logs still match.
+std::string_view OnStopReasonToString(OnStopReason reason);
 
 // `ToolBase` — common base for every per-LLM-session tool category
 // (BrowserTool, future SkillTool, etc.). Holds the shared (ToolSession*,
@@ -53,20 +102,12 @@ class ToolBase {
   // Called when the LLM session is stopping. The cascade is driven by
   // `ToolsAdapter::OnSessionStopped(session_key, reason)` →
   // `ToolSession::OnStop(reason)` → each per-category member's
-  // `OnStop(reason)`.
+  // `OnStop(reason)`. See `OnStopReason` above for per-value semantics.
   //
-  // Reasons (informational, surfaced in [NexusTrace] logs):
-  //   - "user_stopped" — explicit user stop / new conversation
-  //   - "completed"    — conversation finished naturally
-  //   - "disconnected" — bridge port reset / webview reload
-  //   - "shutdown"     — profile / process tear-down
-  //   - "destructor"   — defensive call from ~ToolSession when no
-  //                      explicit OnStop ran first
-  //
-  // Implementations MUST be idempotent — OnStop may run twice in some
-  // teardown paths (e.g. explicit endSession then port reset). Default
-  // implementation is a no-op.
-  virtual void OnStop(const std::string& reason);
+  // Implementations MUST be idempotent — OnStop may run more than once
+  // in some teardown paths (e.g. explicit kCompleted then destructor's
+  // kDestructor). Default implementation is a no-op.
+  virtual void OnStop(OnStopReason reason);
 
  private:
   raw_ptr<ToolSession> session_;

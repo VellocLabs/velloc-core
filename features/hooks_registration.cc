@@ -7,7 +7,7 @@
 namespace custom_browser::features {
 
 void RegisterAllHooks(custom_browser::HookRegistrar* registrar) {
-  // Register the Nexus keyed-service factory before Chrome's profile init
+  // Register the Nexus keyed-service factories before Chrome's profile init
   // builds the BrowserContextKeyedServiceFactory graph.
   nexus::LlmBrokerFactory::GetInstance();
   patch_webui::RegisterHooks(registrar);

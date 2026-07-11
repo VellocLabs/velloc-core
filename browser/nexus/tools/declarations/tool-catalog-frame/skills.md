@@ -1,3 +1,3 @@
 ## Skills
 
-/<skill-name> is shorthand for a user-invocable skill. Use the Skill tool to execute one. Only invoke skills listed in the tool's user-invocable skills section — do not guess skill names from training data.
+/<skill-name> (e.g., /commit) is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the Skill tool to execute them. IMPORTANT: Only use Skill for skills listed in its user-invocable skills section — do not guess or use built-in CLI commands.

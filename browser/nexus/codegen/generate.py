@@ -146,6 +146,19 @@ class ToolDecl:
     # emission picks the Anthropic block for `input_examples` since
     # that's the only provider that surfaces it on the wire today.
     providers: dict[str, dict] = field(default_factory=dict)
+    # Optional hand-crafted strict-mode JSON Schema variant. When set,
+    # codegen emits a `schema.strict_input_schema = ...` block that
+    # ships through the host manifest as `parametersStrict` to the JS
+    # guest. The JS-side `deps.ts:serializeToolsForModel` picks this
+    # variant (over the regular `parameters`) when the active model's
+    # catalog flag `supportsStrictTools: true`, and sets the outbound
+    # `strict: true` flag on Anthropic / OpenAI tool definitions.
+    # Authors are responsible for keeping the schema strict-compliant:
+    #   - `additionalProperties: false` on every nested object
+    #   - no `pattern` / `format` / `maxItems` / `minItems` (Anthropic
+    #     strict subset rejects these)
+    # See docs for the strict subset: https://docs.anthropic.com/en/docs/build-with-claude/tool-use#strict-mode
+    parameters_strict: dict | None = None
     # Optional system-prompt content. Tools without a prompt block are
     # not advertised in the {{TOOL_CATALOG}} placeholder (they're still
     # callable on the wire — the model just doesn't see them in the
@@ -302,6 +315,21 @@ def parse_declaration(decl_path: Path) -> ToolDecl:
             group=group or "",
         )
 
+    # Optional `parametersStrict` block — hand-crafted strict-mode
+    # JSON Schema. Validated only loosely here (must be a dict with
+    # `type: "object"`); full structural validation is the author's
+    # responsibility because Anthropic / OpenAI strict-mode subsets
+    # are slightly different.
+    raw_parameters_strict = raw.get("parametersStrict")
+    if raw_parameters_strict is not None:
+        if not isinstance(raw_parameters_strict, dict):
+            raise ValueError(
+                f"{decl_path}: 'parametersStrict' must be an object")
+        if raw_parameters_strict.get("type") != "object":
+            raise ValueError(
+                f"{decl_path}: parametersStrict.type must be 'object' "
+                f"(got {raw_parameters_strict.get('type')!r})")
+
     return ToolDecl(
         name=raw["name"],
         description=raw["description"],
@@ -312,6 +340,7 @@ def parse_declaration(decl_path: Path) -> ToolDecl:
         wire_name=wire_name,
         providers=providers,
         prompt=prompt,
+        parameters_strict=raw_parameters_strict,
     )
 
 
@@ -512,7 +541,7 @@ inline ::nexus::ToolSchema {schema_builder}() {{
   schema.description =
       {description_literal};
   schema.output_kind = {output_kind_enum};
-{parameters_emit}{input_examples_emit}  return schema;
+{parameters_emit}{input_examples_emit}{strict_input_schema_emit}  return schema;
 }}
 
 // =============================================================================
@@ -564,13 +593,22 @@ def cpp_string_literal(s: str) -> str:
     return ("\n      ").join(lines)
 
 
+def _doc_comment_lines(text: str, indent: str = "  ") -> list[str]:
+    """Render `text` as a sequence of C++ // doc comments, one per line.
+    Multi-line descriptions must prefix every line with `//` — otherwise the
+    second+ lines leak through as raw code."""
+    text = text.rstrip("\n")
+    return [f"{indent}//" if not line else f"{indent}// {line}"
+            for line in text.split("\n")]
+
+
 def render_input_struct_fields(inputs: list[InputDecl]) -> str:
     if not inputs:
         return "  // (no inputs)"
     lines = []
     for inp in inputs:
         if inp.description:
-            lines.append(f"  // {inp.description}")
+            lines.extend(_doc_comment_lines(inp.description))
         lines.append(f"  {inp.cpp_type} {inp.name};")
     return "\n".join(lines)
 
@@ -630,6 +668,41 @@ def render_input_examples_emit(decl: ToolDecl) -> str:
             lines.append("    examples.Append(std::move(ex));")
         lines.append("  }")
     lines.append("  schema.input_examples = std::move(examples);")
+    return "\n".join(lines) + "\n"
+
+
+def render_strict_input_schema_emit(decl: ToolDecl) -> str:
+    """Emit C++ code that builds the hand-crafted strict-mode JSON
+    Schema variant and assigns it to `schema.strict_input_schema`. Fires
+    only when the .tool.json declared `parametersStrict`. The JS guest
+    picks this variant over the regular parameters when the active
+    model's catalog has `supportsStrictTools: true`, and sets the
+    outbound `strict: true` flag on the tool definition.
+    """
+    if decl.parameters_strict is None:
+        return ""
+    counter = [0]
+
+    def fresh(prefix: str) -> str:
+        counter[0] += 1
+        return f"{prefix}{counter[0]}"
+
+    pre, expr = render_value_statements(decl.parameters_strict, fresh, "  ")
+    lines = [
+        "  // Per-tool strict-mode JSON Schema variant. The JS guest",
+        "  // (deps.ts:serializeToolsForModel) picks this over the",
+        "  // permissive `parameters` block when the active model's",
+        "  // catalog has `supportsStrictTools: true`, and sets the",
+        "  // outbound `strict: true` flag on the tool definition.",
+    ]
+    lines.extend(pre)
+    # `render_value_statements` for a dict returns an expression like
+    # `std::move(dN)`. Convert it into a base::DictValue we can assign
+    # to the optional<DictValue> field.
+    lines.append(f"  base::Value strict_v({expr});")
+    lines.append("  if (auto* strict_dict = strict_v.GetIfDict()) {")
+    lines.append("    schema.strict_input_schema = std::move(*strict_dict);")
+    lines.append("  }")
     return "\n".join(lines) + "\n"
 
 
@@ -894,6 +967,7 @@ def emit_header(decl: ToolDecl, source_path: Path, output_dir: Path) -> Path:
             decl.output_kind, "::nexus::JsonSchemaKind::kAny"),
         parameters_emit=render_parameters_emit(decl.inputs),
         input_examples_emit=render_input_examples_emit(decl),
+        strict_input_schema_emit=render_strict_input_schema_emit(decl),
         schema_builder=decl.schema_builder_name,
         extractor_body=render_extractor_body(decl.inputs),
     )
@@ -1873,7 +1947,7 @@ def _emit_api_input_struct(decl: ApiActionDecl) -> str:
     for inp in decl.inputs:
         comment = inp.description.strip()
         if comment:
-            field_lines.append(f"  // {comment}")
+            field_lines.extend(_doc_comment_lines(comment))
         field_lines.append(f"  {_api_cpp_type(inp)} {inp.name};")
     fields = "\n".join(field_lines)
     return (

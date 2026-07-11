@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/uuid.h"
 #include "base/values.h"
@@ -12,6 +13,8 @@
 #include "custom_browser/browser/nexus/api/llm/llm_pref_registration.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace nexus {
@@ -30,8 +33,12 @@ LlmBroker::DispatchPickResult& LlmBroker::DispatchPickResult::operator=(
 LlmBroker::LlmBroker(
     PrefService* prefs,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
-    : prefs_(prefs), url_loader_factory_(std::move(url_loader_factory)) {
+    : prefs_(prefs), url_loader_factory_(url_loader_factory) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
+  oauth_manager_ = std::make_unique<NexusOAuthManager>(
+      prefs_, url_loader_factory_,
+      base::BindRepeating(&LlmBroker::OnOAuthTokensSaved,
+                          base::Unretained(this)));
   InitializeProviders();
   LoadProviderConfigs();
   // Warm-load the TS-pushed caches from prefs so the WebUI quick-settings
@@ -44,6 +51,28 @@ LlmBroker::LlmBroker(
   // `nexus_web/src/browser/config/nexusModelConfig.ts`). No network discovery
   // is performed — the hard-coded config supplies every id, context window,
   // and max-output-tokens value the UI renders.
+}
+
+void LlmBroker::OnOAuthTokensSaved(const std::string& provider_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // The OAuth manager just persisted tokens for `provider_id` (login or
+  // refresh). Reconfigure the in-memory provider from prefs — the access
+  // token is mirrored into `api_key` — so IsConfigured() flips true right
+  // away. Without this the provider's catalog entry stays disabled (see
+  // BuildCatalog's `provider_configured` gate) until the next browser start.
+  const base::DictValue& all_configs =
+      prefs_->GetDict(prefs::kNexusProviderConfigs);
+  const base::DictValue* config = all_configs.FindDict(provider_id);
+  if (!config) {
+    return;
+  }
+  if (LlmProvider* provider = GetProvider(provider_id)) {
+    provider->Configure(*config);
+    // Discover the account's models now (the provider is configured), so the
+    // picker is populated promptly after sign-in rather than waiting for the
+    // next catalog refresh. No-op for providers without /models discovery.
+    RefreshCatalogForProvider(provider_id);
+  }
 }
 
 LlmBroker::~LlmBroker() {
@@ -144,6 +173,25 @@ LlmBroker::DispatchPickResult LlmBroker::DispatchUserPick(
   config->Set("model", model_id);
   prefs_->SetDict(prefs::kNexusProviderConfigs, std::move(all_configs));
 
+  // Mirror the active selection into the unified agent-config dict so it rides
+  // the generic `session.applyAgentConfig` channel (the same flow the loop
+  // limits use). Writing this pref fires the session adapter's
+  // PrefChangeRegistrar, which fans the whole dict out to the guest; the shell
+  // routes the `model` key to the active session and updates the new-session
+  // default. This is the single source of the guest-facing default selection.
+  {
+    base::DictValue agent_config =
+        prefs_->GetDict(prefs::kNexusAgentConfig).Clone();
+    base::DictValue model;
+    model.Set("providerId", provider_id);
+    model.Set("modelId", model_id);
+    if (!thinking_tier.empty()) {
+      model.Set("thinkingTier", thinking_tier);
+    }
+    agent_config.Set("model", std::move(model));
+    prefs_->SetDict(prefs::kNexusAgentConfig, std::move(agent_config));
+  }
+
   if (!SetActiveProvider(provider_id)) {
     result.error_code = "INTERNAL";
     result.error_message = "Failed to switch active provider";
@@ -153,20 +201,14 @@ LlmBroker::DispatchPickResult LlmBroker::DispatchUserPick(
   result.ok = true;
   result.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
 
-  // Push the rebind event into nexus_web. nexus_web's React shell
-  // calls `setModelSelection` on the active session client, which posts
-  // `worker.setModelSelection` to the SharedWorker, which updates the
-  // engine and re-pushes a fresh SessionStatus. That status broadcast
-  // is what the WebUI quick-settings popup listens for. We deliberately
-  // do NOT update `session_status_` optimistically here — doing so
-  // makes the popup trigger label flip before the worker has actually
-  // applied the pick, which lies to anyone (test or human) who reads
-  // it as "the next request will use this model". The global-default
-  // pref write above is the only durable guarantee.
-  // Fan out to every registered pusher (one per live bridge port).
-  // The page surface where MultiSessionShell subscribes might be on a
-  // different port than the worker surface that fielded the original
-  // chrome.send, so a single-pusher slot would race-and-lose.
+  // DEPRECATED legacy delivery (kept for the `pusherInvoked` diagnostic that
+  // pickNexusSelection still surfaces). The authoritative live delivery is now
+  // the `nexus.agent_config.model` write above, which the session adapter's
+  // PrefChangeRegistrar fans out as `session.applyAgentConfig`. The guest no
+  // longer subscribes to `session.applySelection`, so these pushes are inert.
+  // TODO(nexus): remove the PickEventPusher infra + pusherInvoked once the
+  //   quick-settings popup's "no guest listening" diagnostic is reworked to
+  //   key off the agent-config push (best done with a build to verify).
   for (const auto& [token, pusher] : pick_event_pushers_) {
     pusher.Run(result.request_id, provider_id, model_id, thinking_tier,
                /*also_update_default=*/true);
@@ -274,6 +316,55 @@ void LlmBroker::RefreshModels(const std::string& provider_id,
     return;
   }
 
+  // OAuth providers need a backend-ready token before discovery. The stored
+  // api_key may be expired (chatgpt-pro/qwen) or not directly usable
+  // (github-copilot stores a GitHub OAuth token that must be exchanged for a
+  // Copilot session token). Refresh/exchange once here so EVERY discovery path
+  // — the guest's cold-boot catalog refresh, the settings connect test — hits
+  // the backend with a valid bearer instead of silently 401ing. EnsureFreshToken
+  // is a no-op cache hit when the token is already fresh.
+  if (oauth_manager_ && IsOAuthProvider(provider_id)) {
+    oauth_manager_->EnsureFreshToken(
+        provider_id,
+        base::BindOnce(&LlmBroker::OnEnsureTokenBeforeRefresh,
+                       weak_factory_.GetWeakPtr(), provider_id,
+                       std::move(callback)));
+    return;
+  }
+
+  FetchModelsWithPersist(provider_id, std::move(callback));
+}
+
+void LlmBroker::OnEnsureTokenBeforeRefresh(const std::string& provider_id,
+                                           FetchModelsCallback callback,
+                                           bool ok,
+                                           std::string access_token,
+                                           std::string account_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (LlmProvider* provider = GetProvider(provider_id);
+      provider && ok && !access_token.empty()) {
+    base::DictValue config;
+    config.Set("api_key", access_token);
+    config.Set("account_id", account_id);
+    provider->Configure(config);
+  }
+  // Attempt discovery even if the token couldn't be refreshed — the fetch will
+  // surface the auth failure through the normal empty/error path rather than
+  // silently skipping.
+  FetchModelsWithPersist(provider_id, std::move(callback));
+}
+
+void LlmBroker::FetchModelsWithPersist(const std::string& provider_id,
+                                       FetchModelsCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  LlmProvider* provider = GetProvider(provider_id);
+  if (!provider) {
+    std::move(callback).Run({});
+    return;
+  }
+
   // Wrap the caller's callback so that every successful fetch — regardless of
   // which code path triggered it — persists the raw JSON blob to the prefs
   // cache. Without this wrap there is a race: `NexusLlmHost::Catalog()` and
@@ -303,9 +394,11 @@ void LlmBroker::RefreshCatalogForProvider(const std::string& provider_id) {
     return;
   }
 
-  provider->FetchAvailableModels(
-      base::BindOnce(&LlmBroker::OnCatalogRefreshed,
-                     weak_factory_.GetWeakPtr(), provider_id));
+  // Delegate to RefreshModels so OAuth providers get a fresh/exchanged token
+  // before discovery (RefreshModels persists the raw catalog + notifies
+  // observers via the same OnCatalogRefreshed path). Without this, login-time
+  // discovery for github-copilot would fetch with the raw GitHub token (401).
+  RefreshModels(provider_id, base::DoNothing());
 }
 
 void LlmBroker::ReloadProvidersFromPrefs() {
@@ -428,6 +521,15 @@ void LlmBroker::OnCatalogRefreshed(const std::string& provider_id,
       prefs_->GetDict(prefs::kNexusProviderCatalogs).Clone();
   all_catalogs.Set(provider_id, std::move(raw));
   prefs_->SetDict(prefs::kNexusProviderCatalogs, std::move(all_catalogs));
+
+  // Notify observers (the WebUI settings handler) so the topbar quick-switch
+  // popup rebuilds now that `provider`'s fetched_models_ are populated. This is
+  // what surfaces lazily-discovered OAuth models (chatgpt-pro) on cold boot —
+  // the guest's catalog refresh triggers the fetch, but only this signal tells
+  // the always-mounted popup to pick the results up.
+  for (auto& observer : observers_) {
+    observer.OnProviderModelsRefreshed(provider_id);
+  }
 }
 
 }  // namespace nexus

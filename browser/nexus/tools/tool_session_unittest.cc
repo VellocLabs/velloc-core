@@ -140,10 +140,10 @@ TEST(ToolSessionTest, SessionKeyIsExposedAsConstructed) {
 TEST(ToolSessionTest, OnStopIsIdempotent) {
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   // Cascading OnStop multiple times must be safe — the dtor also runs
-  // OnStop("destructor"), so any explicit call must tolerate being
-  // followed by a second one without crashing or leaking.
-  session.OnStop("first");
-  session.OnStop("second");
+  // OnStop(OnStopReason::kDestructor), so any explicit call must
+  // tolerate being followed by a second one without crashing or leaking.
+  session.OnStop(OnStopReason::kCompleted);
+  session.OnStop(OnStopReason::kUserStopped);
   // No assert here other than the implicit "no crash" — the dtor runs
   // on scope exit and exercises the third call.
 }

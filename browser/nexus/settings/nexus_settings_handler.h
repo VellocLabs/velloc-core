@@ -18,6 +18,7 @@
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 
 class Profile;
 
@@ -65,6 +66,7 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // nexus::LlmBroker::Observer:
   void OnTsModelCatalogChanged(const base::DictValue& catalog) override;
   void OnSessionStatusChanged(const base::DictValue& status) override;
+  void OnProviderModelsRefreshed(const std::string& provider_id) override;
 
  private:
   // Returns the LlmBroker for the current profile. May return nullptr
@@ -120,6 +122,74 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // JS: cr.sendWithPromise('getNexusViewState')
   void HandleGetNexusViewState(const base::ListValue& args);
 
+  // --- OAuth-backed providers (ChatGPT Plus/Pro, …) ---
+  //
+  // Begins a PKCE login for an OAuth-backed provider and opens the
+  // authorization URL in a new tab. The loopback redirect is captured by a
+  // NavigationThrottle; the WebUI polls getProviderOAuthStatus to detect
+  // completion. Returns {started: bool}.
+  // JS: cr.sendWithPromise('beginProviderOAuth', providerId)
+  void HandleBeginProviderOAuth(const base::ListValue& args);
+
+  // Returns {connected: bool, connectedEmail?: string} for an OAuth-backed
+  // provider.
+  // JS: cr.sendWithPromise('getProviderOAuthStatus', providerId)
+  void HandleGetProviderOAuthStatus(const base::ListValue& args);
+
+  // Callback for StartDeviceCodeFlow: resolves beginProviderOAuth with the
+  // user code + verification URL (and opens the verification page).
+  void OnDeviceCodeStarted(const std::string& callback_id,
+                           bool ok,
+                           nexus::NexusOAuthManager::DeviceCodeInfo info,
+                           std::string error);
+
+  // --- Custom Nexus web app URL ---
+  //
+  // chrome.settingsPrivate is not exposed to the chrome://custom.top-chrome
+  // host that serves the Nexus settings page, so the webapp-URL override is
+  // read/written through this handler (the same channel the rest of the page
+  // uses) instead of the settingsPrivate API.
+  //
+  // Returns the persisted custom web app URL (empty string = built-in
+  // default).
+  // JS: cr.sendWithPromise('getWebappUrl')
+  void HandleGetWebappUrl(const base::ListValue& args);
+
+  // Persists the custom web app URL. An empty string clears the override.
+  // The value is applied on the next browser launch by
+  // nexus::GetResolvedNexusGuestURL(), which re-validates it.
+  // JS: cr.sendWithPromise('setWebappUrl', url)
+  void HandleSetWebappUrl(const base::ListValue& args);
+
+  // --- Browser tools: tab-hosting window mode ---
+  //
+  // Returns whether the agent's tabs are created in a dedicated separate
+  // window (true) or the active Nexus window (false). Read by the
+  // Tools · Browser settings page.
+  // JS: cr.sendWithPromise('getBrowserToolsSeparateWindow')
+  void HandleGetBrowserToolsSeparateWindow(const base::ListValue& args);
+
+  // Persists the tab-hosting window mode. Applied to subsequently created
+  // agent tabs via nexus::ShouldHostAgentTabsInSeparateWindow().
+  // JS: cr.sendWithPromise('setBrowserToolsSeparateWindow', enabled)
+  void HandleSetBrowserToolsSeparateWindow(const base::ListValue& args);
+
+  // --- Unified agent runtime config (nexus.agent_config) ---
+  //
+  // Generic get/set over the single agent-config dict pref. The transport is
+  // fixed: setting a key fires the session adapter's PrefChangeRegistrar,
+  // which pushes the whole dict live to the guest. Adding a setting never
+  // changes these handlers — only the UI (producer) and
+  // engine.applyRuntimeSettings (consumer).
+  //
+  // Returns the effective config (defaults overlaid with stored overrides).
+  // JS: cr.sendWithPromise('getAgentConfig')
+  void HandleGetAgentConfig(const base::ListValue& args);
+
+  // Writes one key into the agent-config dict (value: number or dict).
+  // JS: cr.sendWithPromise('setAgentConfig', key, value)
+  void HandleSetAgentConfig(const base::ListValue& args);
+
   // --- WebUI quick-settings popup support ---
   //
   // The Lit `<nexus-quick-settings>` popup in the Nexus topbar reads the
@@ -158,6 +228,16 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // Callback for asynchronous generic provider model fetch.
   void OnProviderModelsFetched(const std::string& callback_id,
                                std::vector<nexus::ModelInfo> models);
+
+  // For OAuth providers, the model-discovery connect test must run with a
+  // backend-ready token (e.g. github-copilot's GitHub OAuth token is exchanged
+  // for a Copilot session token). This applies the fresh token to the provider
+  // before kicking off the actual /models fetch.
+  void OnOAuthTokenForModels(const std::string& callback_id,
+                             const std::string& provider_id,
+                             bool ok,
+                             std::string access_token,
+                             std::string account_id);
 
   // Callback for the verify-and-load flow. The transient provider fetches
   // its model catalogue as the connectivity probe, and this delivers the

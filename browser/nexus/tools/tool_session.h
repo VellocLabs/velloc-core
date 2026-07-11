@@ -49,12 +49,13 @@ class ToolSession {
 
   // Cascades the OnStop notification to every per-category member.
   // Called from `ToolsAdapter::OnSessionStopped(session_key, reason)`
-  // before the session is erased from the sessions map. The dtor also
-  // runs `OnStop("destructor")` as a defensive fallback.
+  // before the session is (conditionally) erased from the sessions map.
+  // The dtor also runs `OnStop(OnStopReason::kDestructor)` as a
+  // defensive fallback.
   //
   // Idempotent — every category's `OnStop` override must tolerate
   // being called more than once.
-  void OnStop(const std::string& reason);
+  void OnStop(OnStopReason reason);
 
   // Per-action wall-clock budget. Used by individual tool methods that
   // wrap their actor work (PerformActions / observation builds) with a

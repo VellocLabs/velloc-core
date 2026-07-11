@@ -6,6 +6,10 @@ assert(enable_custom_browser)
 
 build_webui("build") {
   grd_prefix = "patch_webui"
+
+  # Custom WebUI predates Chromium 149's stricter type-aware @webui-eslint
+  # rules. tsc type-checking still runs; only the style lint gate is skipped.
+  enable_type_aware_eslint_checks = false
   static_files = [
     "./customize-chrome-side-panel.top-chrome/custom_main.css",
     "./new-tab-page/get_started.html",

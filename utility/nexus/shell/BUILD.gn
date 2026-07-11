@@ -8,6 +8,8 @@ assert(enable_custom_browser)
 
 # Host-shell capability probe (PATH lookup + --version probe). Pure C++,
 # no Mojo, so it can be unit-tested without spinning up a service runner.
+# The `--version` probe reuses the child-process runner so it launches with
+# CREATE_NO_WINDOW on Windows (no console-window flashing).
 source_set("shell_resolver") {
   sources = [
     "shell_resolver.cc",
@@ -15,6 +17,8 @@ source_set("shell_resolver") {
   ]
 
   public_deps = [ "//base" ]
+
+  deps = [ ":child_process_runner" ]
 }
 
 # Platform-specific install hints used when a known tool is missing from

@@ -58,13 +58,15 @@ ToolsAdapter::ToolsAdapter(NexusBridgeResponseDelegate* delegate,
 
 ToolsAdapter::~ToolsAdapter() {
   // Defensive cascade — the port service is being torn down (e.g.
-  // webview reload). Notify every still-live session so they get a
-  // final chance to stop their actor tasks. ~ToolSession also runs
-  // OnStop("destructor") as a redundant fallback; sessions' OnStop
-  // overrides are idempotent.
+  // webview reload, side panel close). Notify every still-live session
+  // so they get a final chance to stop their actor tasks. ~ToolSession
+  // also runs OnStop(kDestructor) as a redundant fallback; sessions'
+  // OnStop overrides are idempotent. After this returns, the sessions
+  // map clears, destroying each ToolSession → ~BrowserTool closes that
+  // session's tagged tabs ("tabs close with the panel" UX).
   for (auto& [key, session] : sessions_) {
     if (session) {
-      session->OnStop("disconnected");
+      session->OnStop(OnStopReason::kDisconnected);
     }
   }
 }
@@ -86,7 +88,7 @@ bool ToolsAdapter::HasSession(const std::string& session_key) const {
 }
 
 void ToolsAdapter::OnSessionStopped(const std::string& session_key,
-                                     const std::string& reason) {
+                                     OnStopReason reason) {
   auto it = sessions_.find(session_key);
   if (it == sessions_.end()) {
     return;
@@ -94,7 +96,15 @@ void ToolsAdapter::OnSessionStopped(const std::string& session_key,
   if (it->second) {
     it->second->OnStop(reason);
   }
-  sessions_.erase(it);
+  // The session is removed from the map ONLY when the user explicitly
+  // deleted it. For kCompleted / kUserStopped / kDisconnected / kShutdown
+  // the ToolSession (and its BrowserTool + node registry + session-tab
+  // bookkeeping) stays warm so the next turn / Stop-then-resume reuses
+  // it. The next tool call's `EnsureTaskCreated` re-arms the actor task
+  // (task_id_ was reset inside BrowserTool::OnStop).
+  if (reason == OnStopReason::kSessionDeleted) {
+    sessions_.erase(it);
+  }
 }
 
 void ToolsAdapter::ForwardSuccess(std::string id,

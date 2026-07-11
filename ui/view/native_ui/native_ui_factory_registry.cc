@@ -3,7 +3,6 @@
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
 #include "chrome/browser/ui/views/tabs/tab_search_button.h"
-#include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_control_button.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
@@ -17,7 +16,6 @@
 #include "custom_browser/ui/view/native_ui/new_tab_button_native_ui.h"
 #include "custom_browser/ui/view/native_ui/pinned_toolbar_actions_container_native_ui.h"
 #include "custom_browser/ui/view/native_ui/tab_strip_action_container_native_ui.h"
-#include "custom_browser/ui/view/native_ui/tab_search_container_native_ui.h"
 #include "custom_browser/ui/view/native_ui/views_container_native_ui.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_action_container.h"
 
@@ -34,7 +32,6 @@ REGISTER_NATIVE_UI_CLASS(NewTabButtonNativeUI)
 REGISTER_NATIVE_UI_CLASS(CaptionContainerNativeUI)
 #endif
 REGISTER_NATIVE_UI_CLASS(LocationBarAutoSizeNativeUI)
-REGISTER_NATIVE_UI_CLASS(TabSearchContainerNativeUI)
 REGISTER_NATIVE_UI_CLASS(TabStripActionContainerNativeUI)
 
 REGISTER_VIEW_NATIVE_UI_ADAPTER(BookmarkBarView)

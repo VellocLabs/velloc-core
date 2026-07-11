@@ -8,11 +8,14 @@
 #include <vector>
 
 #include "base/containers/span.h"
+#include "base/environment.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -38,6 +41,33 @@ std::vector<uint8_t> CopyBigBufferBytes(const mojo_base::BigBuffer& buffer) {
   std::vector<uint8_t> bytes(buffer.size());
   base::span(bytes).copy_from(base::span(buffer));
   return bytes;
+}
+
+// Reduce a shell path to its interpreter name only — `/usr/bin/zsh` →
+// `zsh`, `C:\Program Files\Git\bin\bash.exe` → `bash`. Empty input
+// (env var unset or value empty) produces an empty output, which the
+// caller treats as "no shell info" and the guest's prompt drops the
+// `Shell:` line entirely. Used for both $SHELL and $COMSPEC since
+// they share the same path → basename → strip-.exe normalization.
+std::string ExtractShellBasename(std::optional<std::string> raw) {
+  if (!raw.has_value() || raw->empty()) {
+    return std::string();
+  }
+  base::FilePath shell_path = base::FilePath::FromUTF8Unsafe(*raw);
+  std::string basename = shell_path.BaseName().AsUTF8Unsafe();
+#if BUILDFLAG(IS_WIN)
+  // Strip a trailing .exe on Windows so the model sees "bash" not
+  // "bash.exe" — matches the shell names Claude Code uses.
+  constexpr char kExeSuffix[] = ".exe";
+  constexpr size_t kExeSuffixLen = sizeof(kExeSuffix) - 1;
+  if (basename.size() > kExeSuffixLen) {
+    const size_t suffix_pos = basename.size() - kExeSuffixLen;
+    if (basename.compare(suffix_pos, std::string::npos, kExeSuffix) == 0) {
+      basename.resize(suffix_pos);
+    }
+  }
+#endif
+  return basename;
 }
 
 }  // namespace
@@ -78,6 +108,61 @@ NexusFsHost::~NexusFsHost() = default;
 
 std::string NexusFsHost::Cwd() const {
   return cwd_.AsUTF8Unsafe();
+}
+
+NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
+  SystemInfoResult result;
+
+#if BUILDFLAG(IS_WIN)
+  result.platform = "win32";
+#elif BUILDFLAG(IS_MAC)
+  result.platform = "darwin";
+#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+  result.platform = "linux";
+#else
+  // Unknown platform — leave the field empty so the guest's
+  // `# Environment` block drops the `Platform:` line entirely rather
+  // than advertising a platform string the model doesn't recognize.
+#endif
+
+  // Human-readable "<OS name> <version>" string. base::SysInfo handles
+  // the per-platform formatting: Windows uses GetVersionEx-derived
+  // strings (e.g. "Windows 11 Pro 10.0.26200"); POSIX returns
+  // uname -sr equivalents.
+  const std::string os_name = base::SysInfo::OperatingSystemName();
+  const std::string os_version = base::SysInfo::OperatingSystemVersion();
+  if (!os_name.empty() && !os_version.empty()) {
+    result.os_version = os_name + " " + os_version;
+  } else if (!os_version.empty()) {
+    result.os_version = os_version;
+  } else {
+    result.os_version = os_name;
+  }
+
+  // Best-effort shell detection. The model uses this to disambiguate
+  // POSIX-shell-on-Windows (where it should write `/dev/null` not
+  // `NUL`) from native PowerShell. We read $SHELL first because it's
+  // the interpreter the user actively chose; $COMSPEC on Windows is
+  // the cmd.exe fallback and only meaningful if $SHELL is unset.
+  //
+  // base::Environment::GetVar returns std::optional<std::string> in
+  // current Chromium (the older `bool GetVar(name, string*)` out-param
+  // form was removed). Use the optional value directly; treat both
+  // "not set" and "empty value" as "no shell info available".
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  result.shell = ExtractShellBasename(env->GetVar("SHELL"));
+#if BUILDFLAG(IS_WIN)
+  // On Windows the user may not have $SHELL set at all. $COMSPEC is
+  // always defined (cmd.exe by default). It's a poor proxy for "what
+  // shell will the Bash tool actually invoke," but it's better than
+  // leaving the line off entirely on a Windows host that hasn't
+  // configured $SHELL.
+  if (result.shell.empty()) {
+    result.shell = ExtractShellBasename(env->GetVar("COMSPEC"));
+  }
+#endif
+
+  return result;
 }
 
 NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
@@ -284,6 +369,27 @@ NexusFsHost::ExistsResult NexusFsHost::Exists(const std::string& path) const {
   ExistsResult result;
   result.success = true;
   result.exists = base::PathExists(ResolvePath(cwd_, path));
+  return result;
+}
+
+NexusFsHost::RealpathResult NexusFsHost::Realpath(
+    const std::string& path) const {
+  RealpathResult result;
+  const base::FilePath resolved = ResolvePath(cwd_, path);
+
+  // base::MakeAbsoluteFilePath returns an empty FilePath on failure
+  // (target missing, permission denied, broken symlink loop). It
+  // resolves symlinks on POSIX and normalizes the path on Windows, which
+  // is exactly what JS-side dedup wants: two callers that ended up at
+  // the same on-disk file produce the same string.
+  base::FilePath canonical = base::MakeAbsoluteFilePath(resolved);
+  if (canonical.empty()) {
+    result.error = "Failed to resolve canonical path";
+    return result;
+  }
+
+  result.success = true;
+  result.path = canonical.AsUTF8Unsafe();
   return result;
 }
 

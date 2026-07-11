@@ -23,6 +23,7 @@ class NexusCatalogBridgeAdapter;
 class NexusFsBridgeAdapter;
 class NexusLlmBridgeAdapter;
 class NexusMessagePortEndpoint;
+class NexusNetworkBridgeAdapter;
 class NexusSessionBridgeAdapter;
 class NexusUiBridgeAdapter;
 class ToolsAdapter;
@@ -90,6 +91,12 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   std::unique_ptr<NexusFsBridgeAdapter> fs_adapter_;
   std::unique_ptr<NexusLlmBridgeAdapter> llm_adapter_;
   std::unique_ptr<NexusUiBridgeAdapter> ui_adapter_;
+  // V1 of WebFetch: general-purpose HTTP-GET bridge surface used by
+  // TS-side tools that need to fetch a URL through the Chromium net
+  // stack (not subject to renderer CORS). See
+  // api/network/nexus_network_bridge_adapter.h for the contract and
+  // api/declarations/network/httpGet.api.json for the wire schema.
+  std::unique_ptr<NexusNetworkBridgeAdapter> network_adapter_;
   // Phase 12: serves the `catalog` capability — listHostedTools (lazy-
   // pull replacement for the bootstrap manifest's hostedTools field)
   // and renderPromptSection / listPromptSections (C++ side now owns

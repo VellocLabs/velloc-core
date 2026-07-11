@@ -3,7 +3,6 @@
 #include "base/check.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/ui/ui_features.h"
-#include "chrome/browser/ui/views/tabs/tab_search_container.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
@@ -31,8 +30,14 @@ views::View* CreateToolbarButtonNativeUI::CreatePinnedButtonForAction(
   auto action_id_opt =
       PinnedToolbarActionsContainerNativeUI::GetActionIdFromClassName(
           class_name);
-  auto* actions_container =
-      GetCustomBrowserView()->toolbar()->pinned_toolbar_actions_container();
+  // custom-browser: Chromium 149 made ToolbarView's container member private
+  // and exposes the PinnedToolbarActions base via GetPinnedToolbarActions().
+  // In the custom browser configuration this is always the concrete
+  // PinnedToolbarActionsContainer (which owns CreateOrGetButtonForAction()).
+  auto* actions_container = static_cast<PinnedToolbarActionsContainer*>(
+      GetCustomBrowserView()
+          ->toolbar_button_provider()
+          ->GetPinnedToolbarActions());
   if (!action_id_opt.has_value() || !actions_container) {
     return nullptr;
   }

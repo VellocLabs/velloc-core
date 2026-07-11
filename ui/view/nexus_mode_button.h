@@ -41,12 +41,10 @@ class NexusModeButton : public views::LabelButton {
   void ApplyModeState(custom_browser::mojom::UIMode ui_mode);
   void UpdateForMode(custom_browser::mojom::UIMode mode);
   void UpdateBackground();
-  custom_browser::mojom::UIMode GetBrowserModeForToggle() const;
 
   raw_ptr<CustomBrowserView> custom_browser_view_;
   raw_ptr<CustomBrowserUiPrefs> browser_ui_prefs_;
   std::optional<custom_browser::mojom::UIMode> current_ui_mode_;
-  std::optional<custom_browser::mojom::UIMode> last_non_nexus_mode_;
   bool glic_button_visible_before_nexus_ = false;
   bool glic_button_hidden_for_nexus_ = false;
 };

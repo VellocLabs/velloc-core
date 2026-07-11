@@ -67,7 +67,7 @@ class ProcessTool : public ToolBase,
 
   // Tears down the per-session launcher (releases the utility
   // process) and invalidates WeakPtrs. Idempotent.
-  void OnStop(const std::string& reason) override;
+  void OnStop(OnStopReason reason) override;
 
   // generated::ProcessToolBase overrides. Public because the codegen
   // dispatcher in nexus_tools_registry.gen.cc invokes through a
@@ -76,6 +76,12 @@ class ProcessTool : public ToolBase,
                    ToolCallback done) override;
   void RunGrepOnUI(::nexus::generated::GrepInput input,
                    ToolCallback done) override;
+  // Windows-only model-facing PowerShell tool (gated into the catalog by
+  // the listHostedTools filter). Tries PowerShell 7 (`pwsh`) first, falling
+  // back to Windows PowerShell (`powershell`) when pwsh isn't installed, and
+  // shapes the result through OnBashExecDone like the Bash tool's prose path.
+  void RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
+                         ToolCallback done) override;
 
  private:
   // Mojo callback for `NexusShellService::Exec` from `RunBashOnUI`.
@@ -85,6 +91,41 @@ class ProcessTool : public ToolBase,
   void OnBashExecDone(ToolCallback done,
                       std::string original_command,
                       base::TimeTicks start_time,
+                      bool ok,
+                      ::nexus::mojom::ShellExecResultPtr result,
+                      const std::optional<std::string>& error_code,
+                      const std::optional<std::string>& error_message,
+                      const std::optional<std::string>& install_hint);
+
+  // Launch one PowerShell attempt with `shell_id` ("pwsh" or "powershell").
+  // Shared by RunPowerShellOnUI and its pwsh→powershell fallback retry.
+  void LaunchPowerShellAttempt(std::string command,
+                               base::FilePath cwd,
+                               int timeout_ms,
+                               std::string shell_id,
+                               ToolCallback done);
+
+  // Mojo callback for a PowerShell attempt. If `pwsh` wasn't found, retries
+  // once with `powershell` (Windows PowerShell, universally present);
+  // otherwise delegates to OnBashExecDone for identical prose shaping.
+  void OnPowerShellExecDone(ToolCallback done,
+                            std::string command,
+                            base::FilePath cwd,
+                            int timeout_ms,
+                            std::string attempted_shell,
+                            base::TimeTicks start_time,
+                            bool ok,
+                            ::nexus::mojom::ShellExecResultPtr result,
+                            const std::optional<std::string>& error_code,
+                            const std::optional<std::string>& error_message,
+                            const std::optional<std::string>& install_hint);
+
+  // Mojo callback for `NexusShellService::Exec` from the hook-exec branch
+  // of `RunBashOnUI` (the internal `hook_shell` path). Resolves `done` with
+  // a raw `{output, exit_code}` dict — no prose shaping, no reject on
+  // non-zero exit — so the JS hook executor can apply its own exit-code
+  // protocol. Rejects only on pre-launch failure.
+  void OnHookExecDone(ToolCallback done,
                       bool ok,
                       ::nexus::mojom::ShellExecResultPtr result,
                       const std::optional<std::string>& error_code,

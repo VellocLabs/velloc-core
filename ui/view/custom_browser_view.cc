@@ -4,14 +4,16 @@
 #include <utility>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/supports_user_data.h"
 #include "base/task/sequenced_task_runner.h"
 #include "ui/events/event.h"            // ui::MouseEvent
 #include "ui/events/types/event_type.h"            // ui::EventType
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/views/frame/contents_container_view.h"
@@ -22,6 +24,7 @@
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui.h"
 
@@ -54,6 +57,30 @@
 #include "base/feature_list.h"
 
 
+namespace {
+
+// Command-line switch: when present, the first window of a profile opens in a
+// browser mode (pref_mode()) instead of the default kNexus startup window.
+constexpr char kBrowserModeSwitch[] = "browser-mode";
+constexpr char kStartupDefaultConsumedKey[] =
+    "custom_browser_startup_default_consumed";
+
+class StartupDefaultConsumedMarker : public base::SupportsUserData::Data {};
+
+// Returns true exactly once per profile, for the first normal window created.
+// Backed by transient Profile user-data so it is lifetime-safe and never
+// persisted.
+bool ConsumeStartupDefault(Profile* profile) {
+  if (!profile || profile->GetUserData(kStartupDefaultConsumedKey)) {
+    return false;
+  }
+  profile->SetUserData(kStartupDefaultConsumedKey,
+                       std::make_unique<StartupDefaultConsumedMarker>());
+  return true;
+}
+
+}  // namespace
+
 CustomBrowserViews::CustomBrowserViews() = default;
 CustomBrowserViews::CustomBrowserViews(
     CustomBrowserViews&&) noexcept = default;
@@ -65,17 +92,30 @@ CustomBrowserViews::~CustomBrowserViews() noexcept = default;
 CustomBrowserView::CustomBrowserView(Browser* browser)
     : BrowserView(browser) {
   DCHECK(browser_);
-  BrowserList::AddObserver(this);
+  browser_did_close_subscription_ =
+      browser->RegisterBrowserDidClose(base::BindRepeating(
+          &CustomBrowserView::OnBrowserRemoved, base::Unretained(this)));
   views_.browser_view = this;
 }
 
 CustomBrowserView::~CustomBrowserView() {
-  BrowserList::RemoveObserver(this);
   StopMouseCapture(false);
   fullscreen_observation_.Reset();
-  // Ensure observer lifetimes are torn down in a safe order.
-  // NativeUIContainerView may reference ui_prefs_ during destruction to detach.
+  // Tear members down in a safe, explicit order — they hold raw references to
+  // each other / to ui_prefs_, so the implicit reverse-declaration order is
+  // NOT safe:
+  //   * native_ui_container_ was Init()'d with custom_browser_webui_view_ and
+  //     references ui_prefs_ during destruction to detach.
+  //   * custom_browser_webui_view_'s WebUI owns a UIViewHandler that holds a
+  //     raw ui_prefs_ pointer and calls ui_prefs_->RemoveObserver(this) in its
+  //     destructor (native_view_handler.cc). That raw pointer is NOT nulled
+  //     when the unique_ptr below resets, so destroying the WebUI view AFTER
+  //     ui_prefs_ is a use-after-free (libc++ hardening aborts in
+  //     ObserverList::RemoveObserver).
+  // Order: native_ui_container_ (references both) -> webui view (references
+  // ui_prefs_) -> ui_prefs_ last.
   native_ui_container_.reset();
+  custom_browser_webui_view_.reset();
   ui_prefs_.reset();
 }
 
@@ -193,6 +233,22 @@ std::optional<gfx::Rect> CustomBrowserView::GetTabSearchAnchorRectOverride(
 void CustomBrowserView::InitializeCustomBrowser() {
     ui_prefs_ = std::make_unique<CustomBrowserUiPrefs>(browser()->profile()->GetPrefs());
     ui_prefs_->AddObserver(this);
+
+    // Decide whether this window should open directly in kNexus, before the
+    // WebUI view triggers BuildInitUrl() below.
+    Profile* profile = browser()->profile();
+    bool want_nexus =
+        custom_browser::window_util::ConsumePendingNexusWindow(profile);
+    if (!want_nexus && ConsumeStartupDefault(profile)) {
+      // Normal startup defaults the first window to kNexus unless launched with
+      // the browser-mode switch.
+      want_nexus = !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          kBrowserModeSwitch);
+    }
+    if (want_nexus && !custom_browser::window_util::FindNexusWindow(profile)) {
+      ui_prefs_->set_initial_mode_override(UIMode::kNexus);
+    }
+
     native_ui_container_ = std::make_unique<NativeUIContainerView>(this);
     views_.native_ui_container = native_ui_container_.get();
     native_ui_container_->SaveChromiumHierarchy();
@@ -247,13 +303,11 @@ void CustomBrowserView::UpdatePositionArea(const gfx::Point& location) {
     } else {
       info.area = MouseMovePositionArea::kActiveWebContentsArea;
     }
-  } else if (auto* side_panel = contents_height_side_panel();
-             side_panel && side_panel->GetVisible() &&
-             side_panel->bounds().Contains(location)) {
-    info.area = MouseMovePositionArea::kSidePanelArea;
-  } else if (auto* toolbar_side_panel = toolbar_height_side_panel();
-             toolbar_side_panel && toolbar_side_panel->GetVisible() &&
-             toolbar_side_panel->bounds().Contains(location)) {
+    // custom-browser: Chromium 149 unified the former contents-height and
+    // toolbar-height side panels into a single BrowserView::side_panel().
+  } else if (auto* unified_side_panel = side_panel();
+             unified_side_panel && unified_side_panel->GetVisible() &&
+             unified_side_panel->bounds().Contains(location)) {
     info.area = MouseMovePositionArea::kSidePanelArea;
   } else if (infobar_container() && infobar_container()->GetVisible() &&
              infobar_container()->bounds().Contains(location)) {
@@ -454,14 +508,61 @@ void CustomBrowserView::OnPreHandleRootViewMouseEvent(gfx::Point location_in_thi
   //            << " area=" << static_cast<int>(last_mouse_move_position_area_.area);
 }
 
-void CustomBrowserView::OnBrowserRemoved(Browser* browser) {
-  if (browser != this->browser()) {
-    return;
-  }
+void CustomBrowserView::OnBrowserRemoved(BrowserWindowInterface* browser) {
+  // RegisterBrowserDidClose() only fires for this view's own browser, so the
+  // previous BrowserList-wide identity filter is no longer required.
   if (ui_prefs_) {
     ui_prefs_->OnBrowserClosing();
   }
+  RestoreChromiumHierarchyForTeardown();
+}
+
+void CustomBrowserView::WillCloseAllTabs(TabStripModel* tab_strip_model) {
+  // custom-browser (149): restore the Chromium view hierarchy BEFORE any tab is
+  // detached. Browser::OnWindowClosing() -> TabStripModel::CloseAllTabs() ->
+  // CloseTabs() notifies WillCloseAllTabs() first, then drives the per-tab
+  // detach notifications. Those detaches synchronously reach
+  // BrowserView::OnTabDetached() -> ToolbarSizeChanged() ->
+  // UpdateUIForContents() -> MaybeShowBookmarkBar(), which in 149 does
+  // `top_container_->RemoveChildViewT(bookmark_bar_view_)` and DCHECKs because
+  // the custom layout reparented the bookmark bar under native_ui_container_.
+  // Restoring here (before the detaches) puts the bookmark/loading bars back
+  // under top_container_ so that removal succeeds. RestoreViewHierarchy is
+  // idempotent, so the later TabStripEmpty()/OnBrowserRemoved() restores remain
+  // harmless no-ops.
+  RestoreChromiumHierarchyForTeardown();
+  BrowserView::WillCloseAllTabs(tab_strip_model);
+}
+
+void CustomBrowserView::TabStripEmpty() {
+  // Second restore for the "strip emptied via tab drag-out" path, which does
+  // not go through CloseAllTabs()/WillCloseAllTabs(). Idempotent — see
+  // WillCloseAllTabs() above for the full rationale.
+  RestoreChromiumHierarchyForTeardown();
+  BrowserView::TabStripEmpty();
+}
+
+void CustomBrowserView::RestoreChromiumHierarchyForTeardown() {
   if (native_ui_container_) {
     native_ui_container_->RestoreChromiumHierarchy();
+  }
+  // The BookmarkBarView is created lazily by BrowserView::MaybeShowBookmarkBar
+  // — AFTER NativeUIContainerView::SaveChromiumHierarchy() snapshotted the view
+  // tree at init — so RestoreChromiumHierarchy() above can never restore it.
+  // BrowserView (149) believes it owns the bar under top_container_ (its
+  // detached_bookmark_bar_view_ is null once attached) and on teardown does
+  // `top_container_->RemoveChildViewT(bookmark_bar_view_)`. Because the custom
+  // layout (CustomBrowserViewLayout::FixViewsParentForCustom) reparented the
+  // bar under native_ui_container_, that removal DCHECKs on
+  // `std::ranges::contains(top_container_->children(), bar)`. Move the bar back
+  // under top_container_ here so the upstream removal stays valid. Only act
+  // when the bar currently has a (non-top_container_) parent: a null parent
+  // means it is the detached unique_ptr, in which case the remove branch does
+  // not run. Mirrors FixViewsParentForCustom()'s AddChildViewRaw usage.
+  if (BookmarkBarView* bar = bookmark_bar()) {
+    TopContainerView* tc = top_container();
+    if (tc && bar->parent() && bar->parent() != tc) {
+      tc->AddChildViewRaw(bar);
+    }
   }
 }

@@ -14,7 +14,9 @@
 #include "content/public/browser/web_ui.h"
 #include "custom_browser/browser/nexus/ui/nexus_ui_broadcast.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
+#include "url/gurl.h"
 
 namespace nexus {
 
@@ -157,6 +159,25 @@ void NexusUiBridgeAdapter::HandleShowMainContentsOnUI(
   // the agent decides to surface the main browser content alongside the
   // chat pane). Idempotent: the parent latches its visibility flag.
   BroadcastWebUiListenerEventToProfile(profile_, "nexusShowMainContents");
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleOpenUrlOnUI(
+    ::nexus::generated::OpenUrlInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // The guest routes in-conversation hyperlink clicks here so the click
+  // does not navigate the nexus guest <webview> away (which would unload
+  // the whole React SPA). Open the link in a normal (non-kNexus) browser
+  // window instead. URLs originate from untrusted conversation content, so
+  // only valid http/https URLs are allowed.
+  const GURL url(input.url);
+  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
+    std::move(done).Error("UI_ERROR",
+                          "openUrl: only valid http/https URLs are allowed");
+    return;
+  }
+  custom_browser::window_util::OpenUrlInNormalWindow(profile_, url);
   std::move(done).SuccessVoid();
 }
 

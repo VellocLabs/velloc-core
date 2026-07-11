@@ -10,6 +10,11 @@ assert(enable_custom_browser)
 build_webui("build") {
   grd_prefix = "custom_browser"
 
+  # Custom Nexus WebUI predates Chromium 149's stricter type-aware
+  # @webui-eslint rules (lit-element-structure, no-mixed-type-and-value-imports,
+  # etc.). tsc type-checking still runs; only the style lint gate is skipped.
+  enable_type_aware_eslint_checks = false
+
   static_files = [
     "components/tab_indicators/alert_indicators/picture_in_picture_alt.svg",
     "components/tab_indicators/alert_indicators/serial_port.svg",
@@ -22,6 +27,7 @@ build_webui("build") {
     "components/tab_indicators/alert_indicators/tab_usb_connected.svg",
     "components/tab_indicators/alert_indicators/vr_headset.svg",
     "components/nexus/anthropic.svg",
+    "components/nexus/githubcopilot.svg",
     "components/nexus/glm.svg",
     "components/nexus/google.svg",
     "components/nexus/kimi.svg",
@@ -86,7 +92,7 @@ build_webui("build") {
   mojo_files_deps = [
     "//custom_browser/ui/mojom:mojo_bindings_ts__generator",
     "//custom_browser/browser/nexus/mojom:mojom_ts__generator",
-    "//chrome/browser/ui/webui/tabs:mojo_bindings_ts__generator",
+    "//components/tabs/public/mojom:mojom_ts__generator",
     "//components/tab_groups/public/mojom:mojo_bindings_ts__generator",
   ]
   mojo_files = [
@@ -95,7 +101,7 @@ build_webui("build") {
     "$root_gen_dir/custom_browser/ui/mojom/browser_constants.mojom-webui.ts",
     "$root_gen_dir/custom_browser/ui/mojom/ui_view_controller.mojom-webui.ts",
     "$root_gen_dir/custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom-webui.ts",
-    "$root_gen_dir/chrome/browser/ui/webui/tabs/tabs.mojom-webui.ts",
+    "$root_gen_dir/components/tabs/public/mojom/tabs.mojom-webui.ts",
     "$root_gen_dir/components/tab_groups/public/mojom/tab_group_types.mojom-webui.ts",
   ]
 

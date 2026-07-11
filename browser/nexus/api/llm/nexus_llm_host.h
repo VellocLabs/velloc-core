@@ -105,6 +105,23 @@ class NexusLlmHost {
   };
 
  private:
+  // OAuth-backed providers need a fresh access token before dispatch. These
+  // run an async refresh (no-op for non-OAuth providers), apply the token to
+  // the provider in-memory, then continue the original Call / StreamStart.
+  void EnsureProviderAuthThen(const std::string& provider_id,
+                              base::OnceCallback<void(bool ok)> done);
+  void OnEnsureFreshToken(const std::string& provider_id,
+                          base::OnceCallback<void(bool ok)> done,
+                          bool ok,
+                          std::string access_token,
+                          std::string account_id);
+  void ContinueCall(mojom::NexusLlmRequestParamsPtr request,
+                    CallCallback callback,
+                    bool auth_ok);
+  void ContinueStreamStart(mojom::NexusLlmRequestParamsPtr request,
+                           StreamStartCallback callback,
+                           bool auth_ok);
+
   void OnGenerateComplete(const std::string& resolved_model_id,
                           CallCallback callback,
                           GenerateResult result,

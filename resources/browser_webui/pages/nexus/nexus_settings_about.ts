@@ -12,6 +12,7 @@
 import 'chrome://resources/cr_elements/cr_button/cr_button.js';
 import 'chrome://resources/cr_elements/cr_input/cr_input.js';
 
+import {sendWithPromise} from 'chrome://resources/js/cr.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {
   CrLitElement,
@@ -26,7 +27,6 @@ import {
   getWebappUrlValidationMessage,
   isValidWebappUrl,
   paneStyles,
-  WEBAPP_URL_PREF,
 } from './nexus_shared.js';
 import './nexus_subpage_layout.js';
 
@@ -107,13 +107,18 @@ export class NexusSettingsAboutElement extends CrLitElement {
     }
   }
 
-  // --- Pref I/O (ported verbatim) -------------------------------------
+  // --- Pref I/O ------------------------------------------------------
+  //
+  // chrome.settingsPrivate is only exposed to a fixed allowlist of WebUI
+  // hosts and chrome://custom.top-chrome (which serves this page) is not on
+  // it, so reads/writes go through NexusSettingsHandler — the same channel
+  // every other setting on this page uses.
 
   private async loadWebappState_() {
     this.webappLoading_ = true;
     this.requestUpdate();
 
-    const value = await this.getPrefString_(WEBAPP_URL_PREF, '');
+    const value = await this.getWebappUrl_();
     this.webappUrl_ = value;
     this.savedUrl_ = value;
     this.loadedUrl_ = value;
@@ -122,29 +127,22 @@ export class NexusSettingsAboutElement extends CrLitElement {
     this.requestUpdate();
   }
 
-  private async getPrefString_(prefName: string, fallback: string):
-      Promise<string> {
-    if (!chrome.settingsPrivate) {
-      return fallback;
-    }
+  private async getWebappUrl_(): Promise<string> {
     try {
-      const pref = await chrome.settingsPrivate.getPref(prefName);
-      return typeof pref.value === 'string' ? pref.value : fallback;
+      const value = await sendWithPromise('getWebappUrl');
+      return typeof value === 'string' ? value : '';
     } catch (error) {
-      console.error(`Failed to read pref ${prefName}:`, error);
-      return fallback;
+      console.error('Failed to read Nexus web app URL:', error);
+      return '';
     }
   }
 
-  private async setPref_(prefName: string, value: unknown): Promise<boolean> {
-    if (!chrome.settingsPrivate) {
-      return false;
-    }
+  private async setWebappUrl_(value: string): Promise<boolean> {
     try {
-      const ok = await chrome.settingsPrivate.setPref(prefName, value);
-      return ok !== false;
+      await sendWithPromise('setWebappUrl', value);
+      return true;
     } catch (error) {
-      console.error(`Failed to set pref ${prefName}:`, error);
+      console.error('Failed to set Nexus web app URL:', error);
       return false;
     }
   }
@@ -168,7 +166,7 @@ export class NexusSettingsAboutElement extends CrLitElement {
     if (trimmed === this.savedUrl_) {
       return true;
     }
-    const ok = await this.setPref_(WEBAPP_URL_PREF, trimmed);
+    const ok = await this.setWebappUrl_(trimmed);
     if (ok) {
       this.savedUrl_ = trimmed;
       this.requestUpdate();
@@ -211,7 +209,7 @@ export class NexusSettingsAboutElement extends CrLitElement {
     }
     this.webappUrl_ = '';
     this.validationMessage_ = '';
-    const ok = await this.setPref_(WEBAPP_URL_PREF, '');
+    const ok = await this.setWebappUrl_('');
     if (ok) {
       this.savedUrl_ = '';
     }

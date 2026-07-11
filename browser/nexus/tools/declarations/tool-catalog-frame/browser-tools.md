@@ -43,6 +43,12 @@ Element interaction (every one takes a required `index` from the latest observat
 Search
 - BrowserSearch { query, engine? } — preferred first step for any "search/find/look up the web" intent. engine is one of google|bing|baidu|duckduckgo (default google).
 
+Download
+- BrowserDownload { index?, url?, filename? } — save a file into the workspace `downloads/` folder so you can read it with the file tools. Pass EXACTLY ONE of: `index` (click a download control to capture whatever download it triggers — use this when the URL isn't obtainable: blob:/POST/Content-Disposition/JS-driven downloads), or `url` (a direct file URL, downloaded with the active tab's session/cookies). Returns `{ status, path, bytes }`. For large files it returns `status:"downloading"` with byte progress and keeps streaming in the background — re-check the returned `path` with the file tools rather than re-issuing the download.
+
+Upload
+- BrowserUpload { index, file_path } — attach a local file to a file `<input>` on the page. `index` is the file-input element (or the button/label that opens the picker); `file_path` is the local file (workspace-relative or absolute) and must already exist (e.g. one you got via BrowserDownload or created with the file tools). No native dialog appears — the host fills the chooser with your file. After it runs, re-read the observation to confirm the input shows the filename.
+
 Media
 - BrowserMediaControl { action, seek_time_ms? } — control the active tab's MediaSession. action='play'|'pause'|'seek'. seek requires seek_time_ms (ms from start).
 - BrowserMediaState {} — read the active tab's MediaSession state (playback state, position, duration, metadata).

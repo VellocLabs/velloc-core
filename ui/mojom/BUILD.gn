@@ -7,7 +7,7 @@ mojom("mojo_bindings") {
               "browser_constants.mojom",
               "ui_view_controller.mojom" ]
   public_deps = [
-    "//chrome/browser/ui/webui/tabs:mojo_bindings",
+    "//components/tabs/public/mojom:mojom",
     "//mojo/public/mojom/base",
     "//ui/webui/resources/cr_components/color_change_listener:mojom",
     "//url/mojom:url_mojom_gurl",

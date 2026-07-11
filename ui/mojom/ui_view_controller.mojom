@@ -95,6 +95,17 @@ struct NativeViewParams {
 interface UIViewHandler {
   SetUIMode(UIMode ui_mode);
 
+  // Returns this window's authoritative per-window UI mode. The shell data
+  // source only bakes the profile-global mode, so the WebUI pulls the real
+  // per-window mode on startup (e.g. a kNexus window) rather than relying on a
+  // fire-and-forget push that can race page load.
+  GetUIMode() => (UIMode ui_mode);
+
+  // Focuses an existing normal (non-kNexus) browser window for this profile,
+  // or opens a new one if none exists. Used by the nexus window to leave
+  // toward a browser window WITHOUT changing its own (pinned) UI mode.
+  OpenBrowserWindow();
+
   SaveIntPref(IntKey key, int32 value);
   SaveBoolPref(BoolKey key, bool value);
 

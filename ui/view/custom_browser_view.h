@@ -25,11 +25,10 @@
 #include "chrome/browser/extensions/extension_commands_global_registry.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
 #include "chrome/browser/ui/exclusive_access/fullscreen_observer.h"
-#include "chrome/browser/ui/tabs/tab_renderer_data.h"
+#include "chrome/browser/ui/tabs/tab_data.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/translate/partial_translate_bubble_model.h"
 #include "chrome/browser/ui/user_education/browser_user_education_interface.h"
@@ -78,6 +77,7 @@ class AccessibilityFocusHighlight;
 class BookmarkBarController;
 class BookmarkBarView;
 class Browser;
+class BrowserWindowInterface;
 class CustomBrowserUiPrefs;
 class ContentsContainerView;
 class ContentsLayoutManager;
@@ -155,7 +155,6 @@ struct CustomBrowserViews {
 // CustomBrowserView implements the BrowserWindow interface for custom browser UI.
 // It handles custom browser window behaviors and appearance.
 class CustomBrowserView : public BrowserView,
-                          public BrowserListObserver,
                           public CustomBrowserUiPrefs::Observer,
                           public FullscreenObserver {
 
@@ -195,6 +194,26 @@ class CustomBrowserView : public BrowserView,
   int NonClientHitTest(const gfx::Point& point) override;
   // void Layout(PassKey) override;
 
+  // TabStripModelObserver:
+  // custom-browser (149): the custom layout reparents the BookmarkBarView (and
+  // loading bar) under native_ui_container_, but 149's
+  // BrowserView::MaybeShowBookmarkBar now dynamically removes the bookmark bar
+  // from top_container_ whenever the bar should hide — a RemoveChildViewT that
+  // DCHECKs if the bar isn't actually under top_container_. On close that hide
+  // happens while tabs are still detaching, so we must restore the saved
+  // Chromium hierarchy BEFORE any tab-detach notification fires.
+  //
+  // WillCloseAllTabs() is notified at the very start of CloseTabs(), before
+  // CloseWebContentses()/SendDetachWebContentsNotifications(), so it covers the
+  // window-close / close-all / last-tab-close paths (the reported crash, which
+  // reaches MaybeShowBookmarkBar via OnTabDetached -> ToolbarSizeChanged before
+  // TabStripEmpty() ever runs). TabStripEmpty() is kept as a second restore
+  // for the rarer "strip emptied via tab drag-out" path (no close-all). Both
+  // restores are idempotent. The RegisterBrowserDidClose() restore in
+  // OnBrowserRemoved() fires too late (only after CloseAllTabs() completes).
+  void WillCloseAllTabs(TabStripModel* tab_strip_model) override;
+  void TabStripEmpty() override;
+
   // FullscreenObserver:
   void OnFullscreenStateChanged() override;
 
@@ -209,13 +228,21 @@ class CustomBrowserView : public BrowserView,
                          base::TimeDelta delay,
                          base::OnceCallback<void(bool)> completion_callback);
   void OnPreHandleRootViewMouseEvent(gfx::Point location_in_this, ui::MouseEvent* event);
-  void OnBrowserRemoved(Browser* browser) override;
+  // custom-browser: was a BrowserListObserver override in the 146 baseline;
+  // Chromium 149 removed BrowserListObserver in favor of per-browser
+  // RegisterBrowserDidClose() callbacks.
+  void OnBrowserRemoved(BrowserWindowInterface* browser);
 private:
   friend class MouseEventHandler;
 
   void ObserveFullscreenController();
   void InitializeCustomBrowser();
   void UpdateVisibilityAndOrder();
+  // Restores the saved Chromium view hierarchy (bookmark/loading bars, etc.)
+  // back under their upstream parents during window teardown. Idempotent.
+  // See WillCloseAllTabs()/TabStripEmpty() for why this must run before tab
+  // detach on close.
+  void RestoreChromiumHierarchyForTeardown();
   static std::optional<gfx::Rect> GetTabSearchAnchorRectOverride(
       const views::View* anchor_view,
       const gfx::Rect& default_rect);
@@ -244,6 +271,7 @@ private:
   base::OnceCallback<void(bool)> capture_finished_callback_;
   base::ScopedObservation<FullscreenController, FullscreenObserver>
       fullscreen_observation_{this};
+  base::CallbackListSubscription browser_did_close_subscription_;
   std::unique_ptr<MouseEventHandler> mouse_event_filter_;
   views::ViewTracker active_tab_search_button_tracker_;
   base::WeakPtrFactory<CustomBrowserView> weak_ptr_factory_{this};

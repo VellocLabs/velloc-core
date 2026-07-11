@@ -2,7 +2,6 @@
 #define CUSTOM_BROWSER_UI_WEB_UI_CUSTOM_BROWSER_WEBUI_EMBEDDER_H_
 
 #include "base/functional/callback_forward.h"
-#include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_layout.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/menu_model.h"

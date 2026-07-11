@@ -52,7 +52,7 @@ base::ListValue BuildStringList(const std::array<const char*, N>& entries) {
 
 }  // namespace
 
-base::DictValue BuildNexusHostManifest() {
+base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   base::DictValue manifest;
   manifest.Set("hostKind", kHostKind);
 
@@ -64,18 +64,22 @@ base::DictValue BuildNexusHostManifest() {
   // launcher; nothing in the bridge serializes those calls.
   manifest.Set("capabilities", std::move(capabilities));
 
+  // Boot snapshot of the unified agent runtime config (maxTurns,
+  // stepTimeoutSec, model, …). The guest applies this once after building
+  // the runtime; later changes arrive live via `session.applyAgentConfig`.
+  manifest.Set("agentConfig", std::move(agent_config));
+
   // Phase 12c: hostedTools used to live here. They now flow through the
   // `catalog` capability — JS calls `nexus.catalog.listHostedTools`
-  // post-bootstrap to fetch the same array. Bootstrap message stays
-  // minimal: hostKind + capabilities only.
+  // post-bootstrap to fetch the same array.
   return manifest;
 }
 
-std::string BuildNexusBridgeBootstrapMessage() {
+std::string BuildNexusBridgeBootstrapMessage(base::DictValue agent_config) {
   base::DictValue message;
   message.Set("type", "nexus-bridge-bootstrap");
   message.Set("nexus", true);
-  message.Set("manifest", BuildNexusHostManifest());
+  message.Set("manifest", BuildNexusHostManifest(std::move(agent_config)));
   return bridge_support::SerializeJson(base::Value(std::move(message)));
 }
 

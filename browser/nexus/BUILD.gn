@@ -82,6 +82,7 @@ action("nexus_tools_codegen") {
     "tools/declarations/browser_tool/click.tool.json",
     "tools/declarations/browser_tool/close_tab.tool.json",
     "tools/declarations/browser_tool/done.tool.json",
+    "tools/declarations/browser_tool/download.tool.json",
     "tools/declarations/browser_tool/drag_and_drop.tool.json",
     "tools/declarations/browser_tool/fill_form.tool.json",
     "tools/declarations/browser_tool/find_text.tool.json",
@@ -97,6 +98,7 @@ action("nexus_tools_codegen") {
     "tools/declarations/browser_tool/scroll_to.tool.json",
     "tools/declarations/browser_tool/search.tool.json",
     "tools/declarations/browser_tool/select.tool.json",
+    "tools/declarations/browser_tool/upload.tool.json",
 
     # file_tool category — Claude-Code-style local-filesystem tools.
     # All run on base::ThreadPool (runtime.thread = "thread_pool")
@@ -111,6 +113,7 @@ action("nexus_tools_codegen") {
     # commands; Grep shells out to ripgrep.
     "tools/declarations/process_tool/bash.tool.json",
     "tools/declarations/process_tool/grep.tool.json",
+    "tools/declarations/process_tool/power_shell.tool.json",
 
     # Bridge-API declarations (Phase 10c). Each *.api.json names a
     # single wire action under one of the categories below. Codegen
@@ -121,7 +124,7 @@ action("nexus_tools_codegen") {
     # add it to the inputs/outputs lists below.
     "codegen/api_schema.json",
 
-    # fs category — 12 actions, all proxied through NexusFsHost.
+    # fs category — 13 actions, all proxied through NexusFsHost.
     "api/declarations/fs/appendFile.api.json",
     "api/declarations/fs/cwd.api.json",
     "api/declarations/fs/exists.api.json",
@@ -130,8 +133,10 @@ action("nexus_tools_codegen") {
     "api/declarations/fs/readFileBytes.api.json",
     "api/declarations/fs/readRange.api.json",
     "api/declarations/fs/readdir.api.json",
+    "api/declarations/fs/realpath.api.json",
     "api/declarations/fs/rm.api.json",
     "api/declarations/fs/stat.api.json",
+    "api/declarations/fs/systemInfo.api.json",
     "api/declarations/fs/unlink.api.json",
     "api/declarations/fs/writeFile.api.json",
 
@@ -145,6 +150,12 @@ action("nexus_tools_codegen") {
     "api/declarations/llm/streamRead.api.json",
     "api/declarations/llm/streamStart.api.json",
 
+    # network category — V1 of the WebFetch tool. General-purpose HTTP
+    # GET over the Chromium net stack, exposed to TS-side tools that
+    # need to fetch URLs without renderer-CORS gating. Wraps
+    # `network::SimpleURLLoader` in `NexusNetworkHost`.
+    "api/declarations/network/httpGet.api.json",
+
     # session category — 3 actions (Phase 12f). Dedicated capability
     # for SessionStatus + LLM-session lifecycle. `publishStatus` and
     # `onStop` (renamed from `browser.endSession`) plus
@@ -153,15 +164,16 @@ action("nexus_tools_codegen") {
     "api/declarations/session/publishStatus.api.json",
     "api/declarations/session/setAgentLoopSettings.api.json",
 
-    # ui category — 7 actions; settings shortcut + boot-state events
-    # + opaque pass-through broadcasts. All run on UI (the bridge's
-    # home thread).
+    # ui category — 8 actions; settings shortcut + boot-state events
+    # + opaque pass-through broadcasts + open-url. All run on UI (the
+    # bridge's home thread).
     "api/declarations/ui/broadcastCurrentSessionState.api.json",
     "api/declarations/ui/broadcastSessionsSummary.api.json",
     "api/declarations/ui/dismissBootWelcome.api.json",
     "api/declarations/ui/getBootTimings.api.json",
     "api/declarations/ui/getProviderMissingPrompt.api.json",
     "api/declarations/ui/openNexusSettings.api.json",
+    "api/declarations/ui/openUrl.api.json",
     "api/declarations/ui/showMainContents.api.json",
 
     # catalog category — 3 actions; replaces the bootstrap manifest's
@@ -220,6 +232,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/fs/fs_api.gen.cc",
     "$target_gen_dir/api/llm/llm_api.gen.h",
     "$target_gen_dir/api/llm/llm_api.gen.cc",
+    "$target_gen_dir/api/network/network_api.gen.h",
+    "$target_gen_dir/api/network/network_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.h",
     "$target_gen_dir/api/ui/ui_api.gen.cc",
     "$target_gen_dir/api/catalog/catalog_api.gen.h",
@@ -316,6 +330,10 @@ source_set("bridge") {
     "api/llm/nexus_llm_bridge_adapter.h",
     "api/llm/nexus_llm_bridge_support.cc",
     "api/llm/nexus_llm_bridge_support.h",
+    "api/network/nexus_network_bridge_adapter.cc",
+    "api/network/nexus_network_bridge_adapter.h",
+    "api/network/nexus_network_host.cc",
+    "api/network/nexus_network_host.h",
     "api/session/nexus_session_bridge_adapter.cc",
     "api/session/nexus_session_bridge_adapter.h",
     "bridge_response_callback.cc",
@@ -338,6 +356,8 @@ source_set("bridge") {
     "tools/browser_tool/browser_tool_actions.cc",
     "tools/browser_tool/browser_tool_internal.cc",
     "tools/browser_tool/browser_tool_internal.h",
+    "tools/browser_tool/download_capture.cc",
+    "tools/browser_tool/download_capture.h",
     "tools/browser_tool/node_registry.cc",
     "tools/browser_tool/node_registry.h",
     "tools/file_tool/file_tool.cc",
@@ -380,6 +400,7 @@ source_set("bridge") {
     # need their ctors/dtors to link.
     "$target_gen_dir/api/fs/fs_api.gen.cc",
     "$target_gen_dir/api/llm/llm_api.gen.cc",
+    "$target_gen_dir/api/network/network_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.cc",
     "$target_gen_dir/api/catalog/catalog_api.gen.cc",
     "$target_gen_dir/api/session/session_api.gen.cc",
@@ -400,6 +421,16 @@ source_set("bridge") {
     # build so we catch breakage early. Phase 2 onwards will start
     # consuming the generated headers from C++ sources.
     ":nexus_tools_codegen",
+    # Per-session tab grouping. BrowserTool tags + groups freshly
+    # created tabs; ResolveTabIdOrReject + BuildObservationDict filter
+    # by the per-tab session tag.
+    ":session_tab_management",
+    # BrowserUpload arms NexusPendingUpload before clicking a file input;
+    # the chooser is answered by the hook in Browser::RunFileChooser.
+    ":file_chooser_interceptor",
+    # Reads the `separate window` tab-hosting pref so RunCreateTabAction can
+    # target/create the dedicated agent window.
+    ":browser_tools_config",
     "mojom",
     "//base",
     "//chrome/browser/actor",
@@ -407,12 +438,32 @@ source_set("bridge") {
     "//chrome/browser/ui",
     "//chrome/common:mojo_bindings",
     "//components/optimization_guide/proto:optimization_guide_proto",
+    # NexusSessionBridgeAdapter observes `nexus.agent_config` via a
+    # PrefChangeRegistrar to push live settings updates to the guest.
+    "//components/prefs",
+    # BrowserDownload (download_capture.{h,cc}) observes the profile's
+    # download::DownloadItem / DownloadUrlParameters via DownloadManager.
+    "//components/download/public/common:public",
+    # BrowserTool's per-session group bookkeeping uses
+    # tab_groups::TabGroupId / TabGroupColorId / TabGroupVisualData and
+    # tabs::TabHandle / tabs::TabInterface directly. (Pre-refactor these
+    # were pulled in through the now-removed registry source_set's
+    # public deps.)
+    "//components/tab_groups",
+    "//components/tabs:public",
     "//content/public/browser",
     "//crypto",
     "//custom_browser/browser/nexus/api/llm:broker",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:webui_host",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
+    # V1 WebFetch / network.httpGet — pulls in
+    # `network::SimpleURLLoader`, `network::SharedURLLoaderFactory`,
+    # `network::ResourceRequest`, and the URLResponseHead mojom.
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//net/traffic_annotation",
     "//third_party/blink/public/common",
     # FileTool::RunGlobOnThreadPool compiles glob patterns to RE2 and
     # uses re2::RE2::FullMatch for path filtering.
@@ -439,6 +490,25 @@ source_set("guest_config") {
   deps = [
     "//components/prefs",
     "//net",
+  ]
+}
+
+# Reads BrowserTool tab-hosting prefs (separate-window mode). Exported so the
+# browser-process tool code can branch on the user's choice.
+source_set("browser_tools_config") {
+  sources = [
+    "nexus_browser_tools_config.cc",
+    "nexus_browser_tools_config.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+  ]
+
+  deps = [
+    "//components/prefs",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
   ]
 }
 
@@ -500,6 +570,49 @@ source_set("session_types") {
   ]
 }
 
+# Per-session tab-group management. Each Nexus session owns a Chromium
+# tab group: BrowserTool tags the new WebContents with the session_key
+# (NexusSessionTabTag) and adds it to the group on creation;
+# ResolveTabIdOrReject + BuildObservationDict filter by the tag;
+# ~BrowserTool closes the session's tabs. The pre-refactor profile-wide
+# `NexusSessionTabGroupRegistry` KeyedService was inlined into
+# BrowserTool (per-session group_id_, session_tabs_, last_work_tab_
+# members) once `ToolsAdapter::OnSessionStopped` stopped erasing the
+# ToolSession on per-turn `kCompleted` / `kUserStopped` reasons — the
+# registry only existed to bridge BrowserTool lifetimes across that
+# erase/recreate cycle.
+source_set("session_tab_management") {
+  sources = [
+    "session/nexus_session_features.cc",
+    "session/nexus_session_features.h",
+    "session/nexus_session_tab_tag.cc",
+    "session/nexus_session_tab_tag.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+}
+
+# BrowserUpload's file-chooser interceptor. Tiny standalone target with
+# minimal deps so BOTH the nexus tools (`:bridge`, which arms it) and
+# upstream `chrome/browser/ui` (the ENABLE_CUSTOM_BROWSER hook in
+# Browser::RunFileChooser, which consults it) can depend on it without a
+# dependency cycle. Deliberately does NOT depend on //chrome/browser/ui.
+source_set("file_chooser_interceptor") {
+  sources = [
+    "upload/nexus_file_chooser_interceptor.cc",
+    "upload/nexus_file_chooser_interceptor.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+    "//third_party/blink/public/common",
+  ]
+}
+
 # Settings WebUI handler for chrome://settings/nexus (T026).
 source_set("nexus_settings_handler") {
   sources = [
@@ -511,6 +624,8 @@ source_set("nexus_settings_handler") {
     "//base",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/webui/settings",
+    ":browser_tools_config",
+    "//components/prefs",
     "//content/public/browser",
     "//custom_browser/browser/nexus/api/llm",
     "//custom_browser/browser/nexus/api/llm:webui_host",
@@ -529,6 +644,8 @@ source_set("unit_tests_lite") {
     "api/llm/llm_provider_factory_unittest.cc",
     "api/llm/llm_text_helpers_unittest.cc",
     "api/llm/llm_types_unittest.cc",
+    "api/llm/oauth/oauth_providers_unittest.cc",
+    "api/llm/oauth/oauth_token_store_unittest.cc",
     "api/llm/provider_config_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
@@ -552,6 +669,7 @@ source_set("unit_tests_lite") {
     "//components/prefs",
     "//components/prefs:test_support",
     "//custom_browser/browser/nexus/api/llm:line_splitter",
+    "//custom_browser/browser/nexus/api/llm:oauth",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:provider",
     "//custom_browser/browser/nexus/api/llm:provider_config",
@@ -571,6 +689,7 @@ source_set("unit_tests") {
     "api/fs/nexus_fs_host_unittest.cc",
     "api/llm/nexus_llm_bridge_support_unittest.cc",
     "nexus_guest_config_unittest.cc",
+    "session/nexus_session_tab_tag_unittest.cc",
     "tools/nexus_tool_schema_unittest.cc",
     "tools/nexus_tool_signature_unittest.cc",
     "tools/browser_tool/node_registry_unittest.cc",
@@ -582,13 +701,18 @@ source_set("unit_tests") {
     ":bridge",
     ":fs",
     ":guest_config",
+    ":session_tab_management",
     ":unit_tests_lite",
     "//base/test:test_support",
     "//chrome/test:test_support",
     "//components/prefs",
     "//components/sync_preferences:test_support",
+    "//components/tab_groups",
+    "//components/tabs:public",
+    "//content/public/browser",
     "//custom_browser/browser/nexus/api/llm:pref_registration",
     "//testing/gtest",
+    "//url",
   ]
 }
 

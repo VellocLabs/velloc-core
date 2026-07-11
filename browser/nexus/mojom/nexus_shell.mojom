@@ -73,6 +73,15 @@ struct ShellSpawnOptions {
   // is false; the `Bash` tool sets it to true.
   bool use_shell;
 
+  // Bytes written to the child's stdin, after which the stream is closed
+  // (EOF). Empty means the child sees an empty stdin (NUL / /dev/null),
+  // matching the prior behaviour. Used to deliver hook-input JSON to
+  // command hooks the same way Claude Code does via `child.stdin.write`,
+  // without the caller having to compose a `printf '<json>' | …` pipeline
+  // (which only works in a POSIX shell). UTF-8; carried as a string
+  // because hook input is always JSON text.
+  string stdin_data;
+
   // Hard wall-clock cap. The service kills the process tree (Job Object
   // on Windows, process group on POSIX) when this elapses. 0 means
   // "use the service default" (currently 30 000 ms — see

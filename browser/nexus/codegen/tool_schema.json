@@ -115,6 +115,15 @@
       }
     },
 
+    "parametersStrict": {
+      "type": "object",
+      "description": "Optional hand-crafted strict-mode JSON Schema variant. When present, codegen emits it into `schema.strict_input_schema`; the host manifest surfaces it as `parametersStrict` on the hosted-tool entry; the JS guest (`deps.ts::serializeToolsForModel`) selects this variant over the regular `parameters` block when the active model has `supportsStrictTools: true` in NEXUS_MODEL_CONFIG, AND sets the outbound `strict: true` flag on the tool definition. Authors must keep this strict-compliant: `additionalProperties: false` on every nested object, no `pattern`/`format`/`maxItems`/`minItems`/`maxLength`/`minLength`. Anthropic returns 400 on strict-subset violations. CC parity: the 7 tools CC declares `strict: true` on (Bash, PowerShell, Read, Write, Edit, Grep, TodoWrite) should also ship a strict variant here.",
+      "properties": {
+        "type": { "type": "string", "enum": ["object"] }
+      },
+      "required": ["type"]
+    },
+
     "providers": {
       "type": "object",
       "description": "Per-provider variance. Each block is OPTIONAL; missing means the provider takes defaults.",

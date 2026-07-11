@@ -11,10 +11,18 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/tabs/public/tab_interface.h"
 #include "chrome/common/actor.mojom.h"
+#include "chrome/common/actor/action_result.h"
 #include "components/sessions/core/session_id.h"
+#include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
+#include "custom_browser/browser/nexus/session/nexus_session_features.h"
+#include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 
 namespace nexus::browser_tool_internal {
 
@@ -141,7 +149,7 @@ void PausableToolCallbackHolder::OnTimeout() {
                     ": exceeded per-action wall-clock budget"}));
 }
 
-const actor::EnterprisePolicyUrlChecker* GetPolicyChecker(Profile* profile) {
+const actor::EnterprisePolicyChecker* GetPolicyChecker(Profile* profile) {
   if (!profile) {
     return nullptr;
   }
@@ -298,6 +306,134 @@ std::string DescribeActorError(actor::mojom::ActionResultCode code) {
     case actor::mojom::ActionResultCode::kClickSuppressed:
       desc = "click: the click event was suppressed by the page";
       break;
+    case actor::mojom::ActionResultCode::kScrollNoScrollingElement:
+      desc =
+          "scroll: the document has no scrollable viewport element (rare "
+          "quirks-mode page); target a specific scrollable element instead "
+          "of the page";
+      break;
+    case actor::mojom::ActionResultCode::kScrollTargetNotUserScrollable:
+      desc =
+          "scroll: the targeted element isn't user-scrollable (no "
+          "scrollable overflow) — scroll the page/viewport instead, or "
+          "pick a container that actually scrolls";
+      break;
+    case actor::mojom::ActionResultCode::kScrollOffsetDidNotChange:
+      desc =
+          "scroll: the page did not move — you're already at the edge in "
+          "that direction (top or bottom), or the target can't scroll "
+          "further. Do NOT repeat the same scroll; if you were looking for "
+          "more content, treat the current view as the end, or try the "
+          "opposite direction / a different scrollable element";
+      break;
+
+    // ── Policy / safety blocks (44–49). The action was refused for a
+    // policy or safety reason, not a transient page state — do NOT retry;
+    // report the reason to the user. (Chromium 149+ taxonomy.) ──
+    case actor::mojom::ActionResultCode::kActionsBlockedForSiteRisk:
+      desc =
+          "actions are blocked on this site because it was flagged as "
+          "risky — do not retry; tell the user the site is blocked";
+      break;
+    case actor::mojom::ActionResultCode::kActionsBlockedSafeBrowsingDisabled:
+      desc =
+          "actions are blocked because Safe Browsing is disabled in the "
+          "user's settings (it's required) — ask the user to enable it";
+      break;
+    case actor::mojom::ActionResultCode::kActionsBlockedByEnterprisePolicy:
+      desc =
+          "the administrator's enterprise policy forbids acting on this "
+          "page — do not retry; report this to the user";
+      break;
+    case actor::mojom::ActionResultCode::kActionsBlockedForScheme:
+      desc =
+          "only http(s) pages can be acted on — this page's scheme isn't "
+          "supported";
+      break;
+    case actor::mojom::ActionResultCode::kActionsBlockedOnErrorPage:
+      desc =
+          "the tab is showing a browser error page; navigate to a working "
+          "URL before acting";
+      break;
+    case actor::mojom::ActionResultCode::kActionBlockedByEnterpriseContentScan:
+      desc =
+          "the text was blocked by an enterprise data-loss policy scan — "
+          "do not retry; report this to the user";
+      break;
+
+    // ── Drag-and-drop (300–305). ──
+    case actor::mojom::ActionResultCode::kDragAndReleaseFromOffscreen:
+      desc =
+          "drag: the source (from_index) is offscreen — scroll it into "
+          "view first with BrowserScrollToElement";
+      break;
+    case actor::mojom::ActionResultCode::kDragAndReleaseToOffscreen:
+      desc =
+          "drag: the destination (to_index) is offscreen — scroll it into "
+          "view first with BrowserScrollToElement";
+      break;
+    case actor::mojom::ActionResultCode::kDragAndReleaseFromMoveSuppressed:
+    case actor::mojom::ActionResultCode::kDragAndReleaseDownSuppressed:
+    case actor::mojom::ActionResultCode::kDragAndReleaseToMoveSuppressed:
+    case actor::mojom::ActionResultCode::kDragAndReleaseUpSuppressed:
+      desc =
+          "drag: the page suppressed one of the drag mouse events — this "
+          "element may not accept a synthetic drag; try a different "
+          "approach";
+      break;
+
+    // ── Hover / mouse-move (400). ──
+    case actor::mojom::ActionResultCode::kMouseMoveEventSuppressed:
+      desc = "hover: the page suppressed the mouse-move event";
+      break;
+
+    // ── Select (600–602). ──
+    case actor::mojom::ActionResultCode::kSelectInvalidElement:
+      desc =
+          "select: the target index is not a native <select> — for a "
+          "custom dropdown, BrowserClick to open it, then click the option";
+      break;
+    case actor::mojom::ActionResultCode::kSelectNoSuchOption:
+      desc =
+          "select: no <option> in that <select> has the given value — "
+          "BrowserReadElement the <select> to see the exact option values "
+          "(match the value attribute, not the visible label)";
+      break;
+    case actor::mojom::ActionResultCode::kSelectOptionDisabled:
+      desc = "select: the requested option exists but is disabled";
+      break;
+
+    // ── Type (700–705). ──
+    case actor::mojom::ActionResultCode::kTypeTargetNotElement:
+      desc = "type: the target index is not a typeable element";
+      break;
+    case actor::mojom::ActionResultCode::kTypeTargetNotFocusable:
+      desc =
+          "type: the target can't be focused — BrowserClick it first, or "
+          "target the actual input field";
+      break;
+    case actor::mojom::ActionResultCode::kTypeUnsupportedCharacters:
+    case actor::mojom::ActionResultCode::kTypeFailedMappingCharToKey:
+      desc =
+          "type: some characters in the text can't be sent as key events "
+          "(unsupported / unmappable)";
+      break;
+    case actor::mojom::ActionResultCode::kTypeKeyDownSuppressed:
+      desc = "type: the page suppressed a keydown event while typing";
+      break;
+    case actor::mojom::ActionResultCode::kTypeInvalidTextEncoding:
+      desc = "type: the text to type is not valid UTF-8";
+      break;
+
+    // ── History / back (800–801). ──
+    case actor::mojom::ActionResultCode::kHistoryNoNavigationsCreated:
+      desc = "back: there's no earlier entry in this tab's history";
+      break;
+    case actor::mojom::ActionResultCode::kHistoryCancelledBeforeStart:
+      desc =
+          "back: the history navigation was cancelled before it started";
+      break;
+
     default:
       // Unknown code — fall back to the bare numeric form so the LLM
       // still has a stable identifier and humans can map it via the
@@ -307,16 +443,118 @@ std::string DescribeActorError(actor::mojom::ActionResultCode code) {
   return base::StrCat({"actor_error_", base::NumberToString(n), ": ", desc});
 }
 
-actor::ActorTask::StoppedReason MapStopReason(const std::string& reason) {
-  if (reason == "user_stopped") {
-    return actor::ActorTask::StoppedReason::kStoppedByUser;
+std::string DescribeActorErrorForTool(std::string_view action_name,
+                                       actor::mojom::ActionResultCode code) {
+  // Scroll-tools failing with `kElementOffscreen` are the loop trap.
+  // `BrowserScrollToElement` / `BrowserScroll` exist to FIX offscreen
+  // errors; getting that same code back from them means the upstream
+  // `ScrollIntoViewIfNeeded()` was clipped by an ancestor (see
+  // `chrome/renderer/actor/tool_base.cc:224-258`) and there's no
+  // recovery the model can do by re-issuing the same action. Override
+  // the generic "prepend a scroll_to" advice with explicit alternate
+  // tactics so the model breaks out of the retry loop.
+  const bool is_scroll_tool =
+      action_name == "scroll_to" || action_name == "scroll";
+  if (is_scroll_tool &&
+      code == actor::mojom::ActionResultCode::kElementOffscreen) {
+    return base::StrCat(
+        {"actor_error_",
+         base::NumberToString(static_cast<int>(code)),
+         ": ", action_name,
+         ": the element is in the DOM but cannot be scrolled into "
+         "view (typically clipped by an `overflow:hidden` ancestor — "
+         "e.g. a card carousel). Do NOT re-issue ", action_name,
+         " on the same index — it will fail the same way. Instead: "
+         "use BrowserFindText with the element's visible text and "
+         "click the returned clickable_ancestor_index, OR pick a "
+         "different element from the latest observation that has a "
+         "visible bounding box (one with `box: [x,y,w,h]` where y is "
+         "smaller than the viewport height)."});
   }
-  if (reason == "completed") {
-    return actor::ActorTask::StoppedReason::kTaskComplete;
+
+  // Non-scroll interaction tools (click / fill_form / type / hover /
+  // select_option) failing with `kElementOffscreen`. The base advice is
+  // "prepend a scroll_to", which is correct when the target is genuinely
+  // below the fold. But a very common web pattern produces this same code
+  // on a target that scroll_to can NEVER fix: custom / "sr-only"
+  // checkboxes and radios where the real <input> is visually hidden
+  // (clipped to a 1px rect, `appearance:none`, etc.) behind a styled
+  // <label>. The input node has an empty `VisibleBoundsInWidget`
+  // (see `chrome/renderer/actor/tool_base.cc`), so click/fill_form/
+  // scroll_to all target a rectangle-less node and all return code 20 —
+  // the observation shows these elements with NO `box`. Surface BOTH
+  // tactics in order so the model tries scroll_to once, then escapes to
+  // the visible label instead of looping. (Diagnostic tell: the failing
+  // index has `role: checkbox`/`radio` and no `box` in the observation.)
+  if (!is_scroll_tool &&
+      code == actor::mojom::ActionResultCode::kElementOffscreen) {
+    return base::StrCat(
+        {"actor_error_", base::NumberToString(static_cast<int>(code)),
+         ": ", action_name,
+         ": the target element is offscreen. First try BrowserScrollToElement "
+         "on that index, then retry. If scroll_to ALSO returns an offscreen "
+         "or clipped error, the element is NOT a normal below-the-fold node — "
+         "it's likely a hidden/custom form control (an `sr-only` checkbox or "
+         "radio behind a styled <label>; in the observation it shows `role: "
+         "checkbox`/`radio` with no `box`), which has no clickable rectangle "
+         "of its own. Do NOT keep retrying this index. Instead: use "
+         "BrowserFindText on the control's visible label text and click the "
+         "returned clickable_ancestor_index, or apply the setting via the "
+         "page's URL / query parameters if it encodes filters there (many "
+         "faceted-search pages do)."});
   }
-  if (reason == "disconnected" || reason == "shutdown" ||
-      reason == "destructor") {
-    return actor::ActorTask::StoppedReason::kShutdown;
+
+  // `kTargetNodeInteractionPointObscured` from a scroll-tool is rare
+  // but follows the same pattern: prepending a SCROLL of the obscuring
+  // element won't help. Echo the existing advice plus the breadcrumb
+  // that scroll_to itself returned it.
+  if (is_scroll_tool &&
+      code == actor::mojom::ActionResultCode::
+                  kTargetNodeInteractionPointObscured) {
+    return base::StrCat(
+        {"actor_error_",
+         base::NumberToString(static_cast<int>(code)),
+         ": ", action_name,
+         ": the target's interaction point is obscured by another "
+         "element — use BrowserFindText with the element's visible "
+         "text and click the returned clickable_ancestor_index, or "
+         "pick a different element."});
+  }
+
+  // Default — base description unchanged for every other combination.
+  return DescribeActorError(code);
+}
+
+actor::mojom::ActionResultCode OverallActorResultCode(
+    const std::vector<actor::ActionResultWithLatencyInfo>& action_results) {
+  // Delegate to upstream's canonical reducer so Nexus stays in lockstep
+  // with whatever the actor framework considers the "overall" result.
+  // `ExtractErrorResult` only writes when it finds a non-OK entry, so seed
+  // with kOk for the all-success case. The index out-param is unused here
+  // (Nexus surfaces the failing element through the observation, not an
+  // index), but the API requires it.
+  actor::mojom::ActionResultCode code = actor::mojom::ActionResultCode::kOk;
+  std::optional<size_t> index_of_failed_action;
+  actor::ExtractErrorResult(action_results, &code, index_of_failed_action);
+  return code;
+}
+
+actor::ActorTask::StoppedReason ToActorStoppedReason(OnStopReason reason) {
+  switch (reason) {
+    case OnStopReason::kCompleted:
+      return actor::ActorTask::StoppedReason::kTaskComplete;
+    case OnStopReason::kUserStopped:
+      return actor::ActorTask::StoppedReason::kStoppedByUser;
+    case OnStopReason::kSessionDeleted:
+      // User-initiated teardown — closer to "user stopped" than
+      // "shutdown" from the actor task's perspective. The session's
+      // tabs are about to be closed by ~BrowserTool, but that's
+      // orthogonal to the actor task's stop reason.
+      return actor::ActorTask::StoppedReason::kStoppedByUser;
+    case OnStopReason::kDisconnected:
+    case OnStopReason::kShutdown:
+    case OnStopReason::kDestructor:
+      return actor::ActorTask::StoppedReason::kShutdown;
   }
   return actor::ActorTask::StoppedReason::kStoppedByUser;
 }
@@ -325,7 +563,10 @@ Browser* GetActiveBrowserForProfile(Profile* profile) {
   if (!profile) {
     return nullptr;
   }
-  return chrome::FindLastActiveWithProfile(profile);
+  // custom-browser: Chromium 149's FindLastActiveWithProfile returns
+  // BrowserWindowInterface*.
+  auto* bwi = chrome::FindLastActiveWithProfile(profile);
+  return bwi ? bwi->GetBrowserForMigrationOnly() : nullptr;
 }
 
 std::optional<int32_t> GetActiveWindowSessionId(Profile* profile) {
@@ -334,6 +575,33 @@ std::optional<int32_t> GetActiveWindowSessionId(Profile* profile) {
     return std::nullopt;
   }
   return browser->session_id().id();
+}
+
+std::optional<int32_t> ResolveCreateTabWindowSessionId(Profile* profile) {
+  if (!profile) {
+    return std::nullopt;
+  }
+
+  // Default (pref off): keep agent tabs in the active Nexus window.
+  if (!::nexus::ShouldHostAgentTabsInSeparateWindow(profile)) {
+    return GetActiveWindowSessionId(profile);
+  }
+
+  // Pref on: route agent tabs into a separate NORMAL (non-kNexus) browsing
+  // window so they stay out of the agent chat window. Resolved through
+  // custom_browser::window_util — the canonical owner of the kNexus-vs-normal
+  // window-mode logic — rather than a hand-rolled Browser::Create + tracking
+  // map, so the window it returns is a real normal CustomBrowserView window.
+  // The same window is reused across all sessions for this profile (per-
+  // session tab groups keep them visually distinct); it's created on demand.
+  Browser* window =
+      custom_browser::window_util::FindOrCreateNormalWindow(profile);
+  if (!window) {
+    // Creation failed — fall back to the active window so the create still
+    // succeeds rather than rejecting the tool call.
+    return GetActiveWindowSessionId(profile);
+  }
+  return window->session_id().id();
 }
 
 std::optional<int32_t> GetActiveTabHandleId(Profile* profile) {
@@ -352,14 +620,100 @@ std::optional<int32_t> GetActiveTabHandleId(Profile* profile) {
   return active->GetHandle().raw_value();
 }
 
+std::optional<int32_t> GetSessionScopedActiveTabHandleId(
+    ::nexus::BrowserTool* browser_tool) {
+  if (!browser_tool || !::nexus::features::IsSessionScopedTabsEnabled() ||
+      browser_tool->GetSessionKey().empty()) {
+    return GetActiveTabHandleId(browser_tool ? browser_tool->GetProfile()
+                                              : nullptr);
+  }
+
+  // Three-level resolution, in priority order:
+  //
+  //   1. Chrome's actually-active tab IF it carries this session's tag.
+  //      Aligns with the system-prompt language "Most tools act on the
+  //      currently-active tab" — whatever the LLM (or the user) brought
+  //      to the foreground wins.
+  //
+  //   2. `BrowserTool::LastWorkTab()` — the most recent tab a tool
+  //      actually dispatched against, validated still-alive and still
+  //      session-tagged. Answers "the LLM was working on X; now it's
+  //      calling a tab-less tool, default to X" when the user's
+  //      foreground tab is outside the session. Set only by
+  //      `RunActorAction` / `RunTabObservation`, NOT by tab
+  //      creation/activation — so it tracks real work, not focus
+  //      cycles. Renamed from the earlier `last_active_tab_` to make
+  //      the semantic precise.
+  //
+  //   3. First session-owned tab from `CollectSessionTabs()` in
+  //      browser-window-activation order. Deterministic fallback when
+  //      neither (1) nor (2) applies (e.g. first tool call of a fresh
+  //      session before any work has dispatched).
+  Profile* profile = browser_tool->GetProfile();
+  if (std::optional<int32_t> active = GetActiveTabHandleId(profile);
+      active.has_value()) {
+    tabs::TabInterface* tab = tabs::TabHandle(*active).Get();
+    content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+    const std::string* tag =
+        ::nexus::NexusSessionTabTag::SessionKeyFor(contents);
+    if (tag && *tag == browser_tool->GetSessionKey()) {
+      return *active;
+    }
+  }
+  if (std::optional<tabs::TabHandle> last_work = browser_tool->LastWorkTab();
+      last_work.has_value()) {
+    return last_work->raw_value();
+  }
+  std::vector<tabs::TabHandle> tabs = browser_tool->CollectSessionTabs();
+  if (tabs.empty()) {
+    return std::nullopt;
+  }
+  return tabs.front().raw_value();
+}
+
 std::optional<int32_t> ResolveTabIdOrReject(
     std::optional<int> explicit_tab_id,
     Profile* profile,
     std::string_view tool_name,
-    ::nexus::ToolCallback& done) {
+    ::nexus::ToolCallback& done,
+    ::nexus::BrowserTool* browser_tool) {
+  const bool session_scope =
+      browser_tool && ::nexus::features::IsSessionScopedTabsEnabled() &&
+      !browser_tool->GetSessionKey().empty();
+
   if (explicit_tab_id.has_value()) {
+    if (session_scope) {
+      tabs::TabInterface* tab =
+          tabs::TabHandle(*explicit_tab_id).Get();
+      content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+      const std::string* tag =
+          ::nexus::NexusSessionTabTag::SessionKeyFor(contents);
+      if (!tag || *tag != browser_tool->GetSessionKey()) {
+        std::move(done).Reject(
+            "tab_not_in_session",
+            base::StrCat({tool_name, ": tab_id ",
+                          base::NumberToString(*explicit_tab_id),
+                          " is not owned by this Nexus session"}));
+        return std::nullopt;
+      }
+    }
     return *explicit_tab_id;
   }
+
+  if (session_scope) {
+    std::optional<int32_t> resolved =
+        GetSessionScopedActiveTabHandleId(browser_tool);
+    if (!resolved.has_value()) {
+      std::move(done).Reject(
+          "no_session_tab",
+          base::StrCat({tool_name,
+                        ": this Nexus session owns no tabs; open one with "
+                        "navigate(new_tab=true) or search first"}));
+      return std::nullopt;
+    }
+    return *resolved;
+  }
+
   std::optional<int32_t> active = GetActiveTabHandleId(profile);
   if (!active.has_value()) {
     std::move(done).Reject(

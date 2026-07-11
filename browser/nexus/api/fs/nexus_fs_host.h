@@ -86,6 +86,32 @@ class NexusFsHost {
     std::string error;
   };
 
+  struct RealpathResult {
+    bool success = false;
+    // Canonical (symlink-resolved on POSIX, normalized on Windows) path,
+    // UTF-8 encoded. Empty when `success` is false.
+    std::string path;
+    std::string error;
+  };
+
+  // Host-process platform identifiers. All three fields are intentionally
+  // simple strings — the guest just renders them verbatim into the
+  // `# Environment` block of its system prompt. Empty fields mean
+  // "unknown"; the guest drops the corresponding line from the prompt
+  // rather than guessing.
+  struct SystemInfoResult {
+    // 'win32' | 'darwin' | 'linux', matching Node's process.platform
+    // strings so the guest's `Platform:` line is byte-identical to
+    // Claude Code desktop's.
+    std::string platform;
+    // Human-readable OS version, e.g. "Windows 11 Pro 10.0.26200" /
+    // "macOS 14.4 23E214" / "Linux 6.6.4".
+    std::string os_version;
+    // Interpreter name only, no path. Derived from $SHELL (POSIX) or
+    // $COMSPEC (Windows). Empty when neither env var is set.
+    std::string shell;
+  };
+
   // ----------------------------------------------------------------------
 
   explicit NexusFsHost(const base::FilePath& cwd);
@@ -114,6 +140,17 @@ class NexusFsHost {
   SimpleResult Rm(const std::string& path, bool recursive, bool force) const;
   SimpleResult Unlink(const std::string& path) const;
   ExistsResult Exists(const std::string& path) const;
+  // Resolve `path` to its canonical absolute form (follows symlinks on
+  // POSIX, normalizes `..` segments and drive case on Windows). Used by
+  // the JS guest's skill-dedup pipeline so two SKILL.md files surfaced
+  // through different sources collapse when they ultimately point at the
+  // same on-disk file.
+  RealpathResult Realpath(const std::string& path) const;
+
+  // Snapshot host-process platform info — `base::SysInfo` reads on the
+  // current thread, so callers must allow base::MayBlock() like the
+  // other methods in this class.
+  SystemInfoResult SystemInfo() const;
 
  private:
   base::FilePath cwd_;

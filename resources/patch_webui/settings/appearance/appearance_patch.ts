@@ -14,7 +14,6 @@ const LayoutPrefValue = {
   COMPACT_SIDEBAR: 2,
   STANDARD: 3,
   COMPACT_STANDARD: 4,
-  NEXUS: 5,
 } as const;
 
 const ValidLayoutPrefValues =
@@ -53,7 +52,6 @@ interface LayoutStrings {
   compactSidebar: string;
   standard: string;
   compactStandard: string;
-  nexus: string;
 }
 
 interface LayoutState {
@@ -77,7 +75,6 @@ function getLayoutStrings(): LayoutStrings {
     compactSidebar: getString('modeCompactSidebar'),
     standard: getString('modeStandard'),
     compactStandard: getString('modeCompactStandard'),
-    nexus: getString('modeNexus'),
   };
 }
 
@@ -101,7 +98,6 @@ function buildRow(strings: LayoutStrings) {
     {value: LayoutPrefValue.SIDEBAR, name: strings.sidebar},
     {value: LayoutPrefValue.COMPACT_SIDEBAR, name: strings.compactSidebar},
     {value: LayoutPrefValue.STANDARD, name: strings.standard},
-    {value: LayoutPrefValue.NEXUS, name: strings.nexus},
     // {value: LayoutPrefValue.COMPACT_STANDARD, name: strings.compactStandard},
   ];
 

@@ -13,7 +13,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/webui_url_constants.h"
 #include "content/public/browser/web_ui_controller_interface_binder.h"
+#include "custom_browser/browser/nexus/api/llm/oauth/oauth_url_opener.h"
 #include "custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/features/patch_webui/extensions_hooks.h"
@@ -129,6 +131,14 @@ void RegisterHooks(custom_browser::HookRegistrar* registrar) {
       base::BindRepeating(&OnVersionDataSourceConfiguring));
   registrar->AddNavigationThrottleProvider(
       base::BindRepeating(&AddSearchRedirectThrottle));
+  registrar->AddNavigationThrottleProvider(
+      base::BindRepeating(&AddNexusOAuthRedirectThrottle));
+
+  // Wire the OAuth "Sign in" tab opener. The settings WebUI handler cannot
+  // depend on //chrome/browser/ui (it would form a GN cycle), so it opens the
+  // authorization URL through this hook, backed by window_util here.
+  nexus::SetNexusAuthUrlOpener(
+      base::BindRepeating(&custom_browser::window_util::OpenUrlInNormalWindow));
 }
 
 }  // namespace custom_browser::patch_webui

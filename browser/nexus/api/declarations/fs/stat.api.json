@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "stat",
+  "description": "Stat a file or directory; returns json-encoded mode/size/mtime.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Path to stat (relative paths resolve against cwd)."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

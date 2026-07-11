@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "listPromptSections",
+  "description": "Return the names of every prompt section the catalog can render. Used by the JS guest to know which placeholders to expect in .md templates.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

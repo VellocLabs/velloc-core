@@ -1,0 +1,19 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "read_page",
+  "wire_name": "BrowserReadPage",
+  "description": "Read the visible text content of the active tab. Useful when the indexed observation isn't enough — e.g. you need to read paragraph copy, search for content that isn't an interactive element, or grab article text. Returns page_text plus title/url metadata. Response is capped server-side; `truncated` flag is set when the cap is hit.",
+  "skill": "browser",
+  "inputs": [],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {}
+      ]
+    }
+  }
+}

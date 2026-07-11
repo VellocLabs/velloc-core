@@ -2,8 +2,9 @@
 
 namespace nexus {
 
-ToolBase::ToolBase(Profile* profile, const std::string& session_key)
-    : profile_(profile), session_key_(session_key) {}
+ToolBase::ToolBase(ToolSession* session, Profile* profile,
+                   const std::string& session_key)
+    : session_(session), profile_(profile), session_key_(session_key) {}
 
 ToolBase::~ToolBase() = default;
 

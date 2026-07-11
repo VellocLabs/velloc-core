@@ -1,0 +1,70 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "fill_form",
+  "wire_name": "BrowserFillForm",
+  "description": "Fill multiple form fields in a single call on the active tab. Each entry in `fields` describes one field by its observation index and the action to take. Covers the four mechanics that handle ~95% of HTML forms: text input ('type'), dropdown selection ('select'), checkbox toggle ('check' / 'uncheck'), and radio click ('click'). Fields are applied in order. Optionally clicks a submit button at the end. The actor framework stops the batch at the first failing action; the result envelope's standard error string identifies which action failed and the post-batch observation shows the resulting page state — re-issue single-field tools (BrowserType / BrowserSelectOption / BrowserClick) for any field that didn't apply. All fields must be on the same tab. Cap: 50 fields per call.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "fields",
+      "type": "array<object>",
+      "required": true,
+      "description": "Ordered list of field operations. Each entry is an object with: `index` (integer, required) — element index from the latest observation; `action` (string, required) — one of 'type' | 'select' | 'check' | 'uncheck' | 'click'; `value` (string) — required for action='type' or 'select', ignored otherwise. For 'type', the existing field content is replaced. For 'select', value must match an <option>'s `value` attribute exactly. For 'check'/'uncheck', the action is a no-op if the checkbox is already in the desired state."
+    },
+    {
+      "name": "submit_index",
+      "type": "integer",
+      "required": false,
+      "description": "Optional element index of a submit/continue button to click after all fields are filled. If omitted, leaves the form open. If any field failed and stop_on_error=false, the submit is skipped (safer default — partial submits are usually wrong)."
+    },
+    {
+      "name": "stop_on_error",
+      "type": "boolean",
+      "required": false,
+      "description": "Reserved for forward compatibility. In v1 the actor framework always stops the batch at the first failing field — the flag is accepted but has no effect. Future versions may add a best-effort 'attempt every field, return per-field results' path."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "fields": [
+            {
+              "index": 12,
+              "action": "type",
+              "value": "Ada Lovelace"
+            },
+            {
+              "index": 13,
+              "action": "type",
+              "value": "ada@example.com"
+            },
+            {
+              "index": 14,
+              "action": "select",
+              "value": "US"
+            },
+            {
+              "index": 15,
+              "action": "check"
+            }
+          ],
+          "submit_index": 16
+        },
+        {
+          "fields": [
+            {
+              "index": 22,
+              "action": "type",
+              "value": "machine learning"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

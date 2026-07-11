@@ -7,10 +7,280 @@ import("//testing/test.gni")
 
 assert(enable_custom_browser)
 
+# =============================================================================
+# Tool declaration codegen
+#
+# Reads `tools/declarations/<category>/<name>.tool.json` files and emits
+# `$target_gen_dir/tools/<name>.gen.h` headers. Each header declares a
+# typed input struct + abstract base class for the corresponding tool.
+# Implementations inherit the base class and override `Run<Name>`.
+#
+# Phase 1 of the declarative tool-definition migration. Only one
+# declaration today (`screenshot`); when Phase 3 splits browser_actions
+# the inputs/outputs lists below grow correspondingly. See plan
+# `giggly-watching-pie.md` for the migration path.
+#
+# To keep deps tracking precise, both `inputs` (files that influence
+# the output) and `outputs` (files emitted) must be enumerated. A
+# `*.tool.json` glob would miss new files and break incremental builds.
+# =============================================================================
+action("nexus_tools_codegen") {
+  script = "codegen/generate.py"
+
+  inputs = [
+    # The codegen script itself — re-run when this changes.
+    "codegen/tool_schema.json",
+    "codegen/skill_schema.json",
+
+    # Skill declarations — currently used only for editor validation +
+    # codegen-side malformed-shape rejection. Phase 5+ runtime gating
+    # will read these to decide which tools to omit from tools[] until
+    # Skill('<name>') activates the bucket.
+    "tools/declarations/skills/browser.skill.json",
+
+    # Phase 13.2 / 13.7: cross-cutting native-tool prose for the
+    # `{{system-prompt-tools}}` placeholder in
+    # `nexus_web/public/system_prompts/*.md`. One Markdown file at the
+    # top of `tools/declarations/` is the source of truth; codegen
+    # reads it verbatim into `system_prompt_tools.gen.h` (a single
+    # constexpr string the renderer returns as-is).
+    "tools/declarations/system-prompt-tools.md",
+
+    # Phase 13.4: catalog-frame manifest for the `{{TOOL_CATALOG}}`
+    # placeholder — group ordering, the "## Browser tools" / "##
+    # File and shell tools" headers, and `@file:` references to the
+    # prose .md files below. Codegen emits `tool_catalog_frame.gen.h`
+    # with constexpr string_views the renderer references, AND seeds
+    # `_BROWSER_TOOL_GROUP_ORDER` so the per-tool prompt-entries
+    # table sorts in the canonical group order defined here.
+    "tools/declarations/tool-catalog-frame.json",
+
+    # Phase 13.7 / 13.8 / 13.9: prose blocks for the catalog-frame
+    # manifest above. Each .md is loaded by the codegen's `@file:`
+    # resolver and embedded as a constexpr string in
+    # `tool_catalog_frame.gen.h`. Listed individually so GN re-runs
+    # codegen when any block changes.
+    #
+    # Phase 13.9 flattened all five sections to single-file form: the
+    # browser-tools .md lives live in
+    # `tool-catalog-frame/`. Each .md carries its own "## ..." header
+    # and (for browser / file-shell) the per-tool bullet lines that
+    # used to be aggregated from each .tool.json's `prompt` block.
+    "tools/declarations/tool-catalog-frame/browser-tools.md",
+    "tools/declarations/tool-catalog-frame/file-shell-tools.md",
+    "tools/declarations/tool-catalog-frame/task-tracking.md",
+    "tools/declarations/tool-catalog-frame/skills.md",
+    "tools/declarations/tool-catalog-frame/parallelism.md",
+
+    # Every *.tool.json declaration. Add a line per new file.
+    # Phase 13: collapsed catalog — was 24 tools, now 20. Cuts:
+    #   - wait/forward removed (low utility); create_tab merged into navigate
+    #     (new_tab boolean); media_play/pause/seek merged into media_control
+    #     (action discriminator); BrowserFillForm added for batch form fills.
+    "tools/declarations/browser_tool/activate_tab.tool.json",
+    "tools/declarations/browser_tool/back.tool.json",
+    "tools/declarations/browser_tool/click.tool.json",
+    "tools/declarations/browser_tool/close_tab.tool.json",
+    "tools/declarations/browser_tool/done.tool.json",
+    "tools/declarations/browser_tool/drag_and_drop.tool.json",
+    "tools/declarations/browser_tool/fill_form.tool.json",
+    "tools/declarations/browser_tool/find_text.tool.json",
+    "tools/declarations/browser_tool/hover.tool.json",
+    "tools/declarations/browser_tool/input.tool.json",
+    "tools/declarations/browser_tool/media_control.tool.json",
+    "tools/declarations/browser_tool/media_state.tool.json",
+    "tools/declarations/browser_tool/navigate.tool.json",
+    "tools/declarations/browser_tool/read_element.tool.json",
+    "tools/declarations/browser_tool/read_page.tool.json",
+    "tools/declarations/browser_tool/screenshot.tool.json",
+    "tools/declarations/browser_tool/scroll.tool.json",
+    "tools/declarations/browser_tool/scroll_to.tool.json",
+    "tools/declarations/browser_tool/search.tool.json",
+    "tools/declarations/browser_tool/select.tool.json",
+
+    # file_tool category — Claude-Code-style local-filesystem tools.
+    # All run on base::ThreadPool (runtime.thread = "thread_pool")
+    # because they do blocking disk I/O.
+    "tools/declarations/file_tool/edit.tool.json",
+    "tools/declarations/file_tool/glob.tool.json",
+    "tools/declarations/file_tool/read.tool.json",
+    "tools/declarations/file_tool/write.tool.json",
+
+    # process_tool category — UI-thread tools that fire async mojo
+    # calls into NexusShellService. Bash runs arbitrary host shell
+    # commands; Grep shells out to ripgrep.
+    "tools/declarations/process_tool/bash.tool.json",
+    "tools/declarations/process_tool/grep.tool.json",
+
+    # Bridge-API declarations (Phase 10c). Each *.api.json names a
+    # single wire action under one of the categories below. Codegen
+    # produces a per-category abstract base (e.g. `FsApiBase`,
+    # `LlmApiBase`) whose ctor calls Register(...) for every action,
+    # so the hand-written adapter only declares Handle*() overrides.
+    # Adding a new action = drop a *.api.json next to its peers and
+    # add it to the inputs/outputs lists below.
+    "codegen/api_schema.json",
+
+    # fs category — 12 actions, all proxied through NexusFsHost.
+    "api/declarations/fs/appendFile.api.json",
+    "api/declarations/fs/cwd.api.json",
+    "api/declarations/fs/exists.api.json",
+    "api/declarations/fs/mkdir.api.json",
+    "api/declarations/fs/readFile.api.json",
+    "api/declarations/fs/readFileBytes.api.json",
+    "api/declarations/fs/readRange.api.json",
+    "api/declarations/fs/readdir.api.json",
+    "api/declarations/fs/rm.api.json",
+    "api/declarations/fs/stat.api.json",
+    "api/declarations/fs/unlink.api.json",
+    "api/declarations/fs/writeFile.api.json",
+
+    # llm category — 7 actions, proxied through NexusLlmHost / LlmBroker.
+    # Phase 12f moved `publishStatus` out to the new `session` category.
+    "api/declarations/llm/call.api.json",
+    "api/declarations/llm/catalog.api.json",
+    "api/declarations/llm/publishCatalog.api.json",
+    "api/declarations/llm/setDefaultSelection.api.json",
+    "api/declarations/llm/streamCancel.api.json",
+    "api/declarations/llm/streamRead.api.json",
+    "api/declarations/llm/streamStart.api.json",
+
+    # session category — 3 actions (Phase 12f). Dedicated capability
+    # for SessionStatus + LLM-session lifecycle. `publishStatus` and
+    # `onStop` (renamed from `browser.endSession`) plus
+    # `setAgentLoopSettings` (renamed from `browser.setAgentLoopSettings`).
+    "api/declarations/session/onStop.api.json",
+    "api/declarations/session/publishStatus.api.json",
+    "api/declarations/session/setAgentLoopSettings.api.json",
+
+    # ui category — 7 actions; settings shortcut + boot-state events
+    # + opaque pass-through broadcasts. All run on UI (the bridge's
+    # home thread).
+    "api/declarations/ui/broadcastCurrentSessionState.api.json",
+    "api/declarations/ui/broadcastSessionsSummary.api.json",
+    "api/declarations/ui/dismissBootWelcome.api.json",
+    "api/declarations/ui/getBootTimings.api.json",
+    "api/declarations/ui/getProviderMissingPrompt.api.json",
+    "api/declarations/ui/openNexusSettings.api.json",
+    "api/declarations/ui/showMainContents.api.json",
+
+    # catalog category — 3 actions; replaces the bootstrap manifest's
+    # hostedTools field with a lazy-pull API and moves prompt-section
+    # rendering (was getUsingYourToolsSection in TS) to C++ as the
+    # single source of truth for tool-name knowledge.
+    "api/declarations/catalog/listHostedTools.api.json",
+    "api/declarations/catalog/listPromptSections.api.json",
+    "api/declarations/catalog/renderPromptSection.api.json",
+  ]
+
+  outputs = [
+    # Per-tool: one *.gen.h per *.tool.json above, in the same order.
+    "$target_gen_dir/tools/activate_tab.gen.h",
+    "$target_gen_dir/tools/back.gen.h",
+    "$target_gen_dir/tools/click.gen.h",
+    "$target_gen_dir/tools/close_tab.gen.h",
+    "$target_gen_dir/tools/done.gen.h",
+    "$target_gen_dir/tools/drag_and_drop.gen.h",
+    "$target_gen_dir/tools/fill_form.gen.h",
+    "$target_gen_dir/tools/find_text.gen.h",
+    "$target_gen_dir/tools/hover.gen.h",
+    "$target_gen_dir/tools/input.gen.h",
+    "$target_gen_dir/tools/media_control.gen.h",
+    "$target_gen_dir/tools/media_state.gen.h",
+    "$target_gen_dir/tools/navigate.gen.h",
+    "$target_gen_dir/tools/read_element.gen.h",
+    "$target_gen_dir/tools/read_page.gen.h",
+    "$target_gen_dir/tools/screenshot.gen.h",
+    "$target_gen_dir/tools/scroll.gen.h",
+    "$target_gen_dir/tools/scroll_to.gen.h",
+    "$target_gen_dir/tools/search.gen.h",
+    "$target_gen_dir/tools/select.gen.h",
+
+    # file_tool category — sorted by tool name within the category to
+    # match generate.py's sorted-by-name emission order.
+    "$target_gen_dir/tools/edit.gen.h",
+    "$target_gen_dir/tools/glob.gen.h",
+    "$target_gen_dir/tools/read.gen.h",
+    "$target_gen_dir/tools/write.gen.h",
+
+    # process_tool category — UI-thread tools that fire async mojo
+    # calls into NexusShellService.
+    "$target_gen_dir/tools/bash.gen.h",
+    "$target_gen_dir/tools/grep.gen.h",
+
+    # Bridge-API codegen (Phase 10c). One <category>_api.gen.{h,cc}
+    # pair per category. The .h holds the abstract base class with
+    # Handle*() pure virtuals; the .cc holds the ctor body whose
+    # Register() calls bind action names to those virtuals. The .h
+    # is consumed by the matching adapter header
+    # (api/<cat>/nexus_<cat>_bridge_adapter.h); the .cc is compiled
+    # into the `bridge` source_set so its FsApiBase / LlmApiBase
+    # ctor symbols satisfy the linker.
+    "$target_gen_dir/api/fs/fs_api.gen.h",
+    "$target_gen_dir/api/fs/fs_api.gen.cc",
+    "$target_gen_dir/api/llm/llm_api.gen.h",
+    "$target_gen_dir/api/llm/llm_api.gen.cc",
+    "$target_gen_dir/api/ui/ui_api.gen.h",
+    "$target_gen_dir/api/ui/ui_api.gen.cc",
+    "$target_gen_dir/api/catalog/catalog_api.gen.h",
+    "$target_gen_dir/api/catalog/catalog_api.gen.cc",
+    "$target_gen_dir/api/session/session_api.gen.h",
+    "$target_gen_dir/api/session/session_api.gen.cc",
+
+    # Per-category aggregate: one *.gen.h per UNIQUE folder under
+    # declarations/. Holds the abstract base class (e.g.
+    # `BrowserToolBase`) whose pure virtuals aggregate every tool in
+    # the category. The implementation class inherits this base.
+    # Add a line whenever a new declarations/<category>/ folder is
+    # introduced.
+    "$target_gen_dir/tools/browser_tool.gen.h",
+    "$target_gen_dir/tools/file_tool.gen.h",
+    "$target_gen_dir/tools/process_tool.gen.h",
+
+    # Combined registry: one .gen.h declaring AllSchemas() +
+    # PopulateRegistry(), one .gen.cc defining them. The .gen.cc is the
+    # only source-of-record of the combined registry plumbing; it gets
+    # compiled into the `bridge` source_set below.
+    "$target_gen_dir/tools/nexus_tools_registry.gen.h",
+    "$target_gen_dir/tools/nexus_tools_registry.gen.cc",
+
+    # Phase 13.2: rendered cross-cutting native-tool prose for the
+    # `{{system-prompt-tools}}` placeholder. Source .md at
+    # tools/declarations/system-prompt-tools.md. Consumed by
+    # api/catalog/prompt_section_renderer.cc.
+    "$target_gen_dir/tools/system_prompt_tools.gen.h",
+
+    # Phase 13.4 / 13.8 / 13.9: rendered catalog-frame prose for the
+    # `{{TOOL_CATALOG}}` placeholder. Source manifest at
+    # tools/declarations/tool-catalog-frame.json (references one .md
+    # per section). Consumed by api/catalog/prompt_section_renderer.cc
+    # via the constexpr string_views `kBrowserToolsContent`,
+    # `kFileShellToolsContent`, `kTaskTrackingContent`, `kSkillsContent`,
+    # `kParallelismContent`, plus the wire-name arrays
+    # `kBrowserToolWireNames` / `kFileShellToolWireNames` (used to gate
+    # whether each section is emitted).
+    "$target_gen_dir/tools/tool_catalog_frame.gen.h",
+  ]
+
+  args = [
+    "--declarations-dir",
+    rebase_path("tools/declarations", root_build_dir),
+    "--output-dir",
+    rebase_path("$target_gen_dir/tools", root_build_dir),
+    # Bridge-API codegen (Phase 10c). Optional flags; when present, the
+    # script ALSO emits one <category>_api.gen.{h,cc} per category under
+    # api/declarations/<category>/.
+    "--api-declarations-dir",
+    rebase_path("api/declarations", root_build_dir),
+    "--api-output-dir",
+    rebase_path("$target_gen_dir/api", root_build_dir),
+  ]
+}
+
 source_set("fs") {
   sources = [
-    "fs/nexus_fs_host.cc",
-    "fs/nexus_fs_host.h",
+    "api/fs/nexus_fs_host.cc",
+    "api/fs/nexus_fs_host.h",
   ]
 
   deps = [
@@ -19,14 +289,37 @@ source_set("fs") {
   ]
 }
 
+# Minimal source_set holding just `ToolParameter` / `ToolSchema` / the
+# JsonSchemaKind enum. Extracted out of `bridge` so the `unit_tests_lite`
+# target can link these symbols (needed by the codegen smoke test in
+# codegen/) without dragging in the rest of the bridge — which
+# pulls in //chrome/browser, content::, mojom bindings, and the actor
+# stack. Kept header-only-clean so the extraction stays cheap.
+source_set("tool_schema") {
+  sources = [
+    "tools/nexus_tool_schema.cc",
+    "tools/nexus_tool_schema.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 source_set("bridge") {
   sources = [
-    "fs/nexus_fs_bridge_adapter.cc",
-    "fs/nexus_fs_bridge_adapter.h",
-    "llm/nexus_llm_bridge_adapter.cc",
-    "llm/nexus_llm_bridge_adapter.h",
-    "llm/nexus_llm_bridge_support.cc",
-    "llm/nexus_llm_bridge_support.h",
+    "api/catalog/nexus_catalog_bridge_adapter.cc",
+    "api/catalog/nexus_catalog_bridge_adapter.h",
+    "api/catalog/prompt_section_renderer.cc",
+    "api/catalog/prompt_section_renderer.h",
+    "api/fs/nexus_fs_bridge_adapter.cc",
+    "api/fs/nexus_fs_bridge_adapter.h",
+    "api/llm/nexus_llm_bridge_adapter.cc",
+    "api/llm/nexus_llm_bridge_adapter.h",
+    "api/llm/nexus_llm_bridge_support.cc",
+    "api/llm/nexus_llm_bridge_support.h",
+    "api/session/nexus_session_bridge_adapter.cc",
+    "api/session/nexus_session_bridge_adapter.h",
+    "bridge_response_callback.cc",
+    "bridge_response_callback.h",
     "nexus_bridge_capability_handler.cc",
     "nexus_bridge_capability_handler.h",
     "nexus_bridge_bootstrap_host.cc",
@@ -36,29 +329,28 @@ source_set("bridge") {
     "nexus_bridge_response_delegate.h",
     "nexus_bridge_support.cc",
     "nexus_bridge_support.h",
-    "nexus_features.cc",
-    "nexus_features.h",
     "nexus_host_manifest.cc",
     "nexus_host_manifest.h",
     "nexus_message_port_endpoint.cc",
     "nexus_message_port_endpoint.h",
-    "process/nexus_process_bridge_adapter.cc",
-    "process/nexus_process_bridge_adapter.h",
-    "process/nexus_shell_service_launcher.cc",
-    "process/nexus_shell_service_launcher.h",
-    "tools/browser_tool.cc",
-    "tools/browser_tool.h",
-    "tools/node_registry.cc",
-    "tools/node_registry.h",
+    "tools/browser_tool/browser_tool.cc",
+    "tools/browser_tool/browser_tool.h",
+    "tools/browser_tool/browser_tool_actions.cc",
+    "tools/browser_tool/browser_tool_internal.cc",
+    "tools/browser_tool/browser_tool_internal.h",
+    "tools/browser_tool/node_registry.cc",
+    "tools/browser_tool/node_registry.h",
+    "tools/file_tool/file_tool.cc",
+    "tools/file_tool/file_tool.h",
+    "tools/process_tool/nexus_shell_service_launcher.cc",
+    "tools/process_tool/nexus_shell_service_launcher.h",
+    "tools/process_tool/process_tool.cc",
+    "tools/process_tool/process_tool.h",
     "tools/nexus_tool_callback.cc",
     "tools/nexus_tool_callback.h",
-    "tools/nexus_tool_extract.cc",
-    "tools/nexus_tool_extract.h",
     "tools/nexus_tool_macros.h",
     "tools/nexus_tool_registry.cc",
     "tools/nexus_tool_registry.h",
-    "tools/nexus_tool_schema.cc",
-    "tools/nexus_tool_schema.h",
     "tools/nexus_tool_signature.cc",
     "tools/nexus_tool_signature.h",
     "tools/tool_base.cc",
@@ -69,14 +361,45 @@ source_set("bridge") {
     "tools/tool_session.h",
     "tools/tools_adapter.cc",
     "tools/tools_adapter.h",
-    "ui/nexus_ui_bridge_adapter.cc",
-    "ui/nexus_ui_bridge_adapter.h",
+    "api/ui/nexus_ui_bridge_adapter.cc",
+    "api/ui/nexus_ui_bridge_adapter.h",
     "ui/nexus_ui_broadcast.cc",
     "ui/nexus_ui_broadcast.h",
+
+    # Codegen output. Compiled into bridge so generated::AllSchemas()
+    # and the per-tool inline schema builders / extractors are linked
+    # into anything that consumes bridge. Phase 3 will start calling
+    # AllSchemas() from ToolCatalog::Get(); for now the symbol is
+    # defined-but-unused (linker keeps it; harmless).
+    "$target_gen_dir/tools/nexus_tools_registry.gen.cc",
+
+    # Bridge-API codegen (Phase 10c). The per-category .gen.cc holds
+    # `FsApiBase`/`LlmApiBase`'s ctor body — the Register() block that
+    # used to live in each adapter constructor. Compiled into bridge
+    # because the adapters (also in bridge) inherit those bases and
+    # need their ctors/dtors to link.
+    "$target_gen_dir/api/fs/fs_api.gen.cc",
+    "$target_gen_dir/api/llm/llm_api.gen.cc",
+    "$target_gen_dir/api/ui/ui_api.gen.cc",
+    "$target_gen_dir/api/catalog/catalog_api.gen.cc",
+    "$target_gen_dir/api/session/session_api.gen.cc",
+  ]
+
+  public_deps = [
+    # nexus_tool_schema's types appear in bridge's public headers
+    # (tool_base.h, tool_catalog.h, …) so consumers of bridge transitively
+    # need access to them. Promote to public_deps to keep that link.
+    ":tool_schema",
   ]
 
   deps = [
     ":fs",
+    # Run the tool-declaration codegen before compiling. Phase 1 only
+    # produces `screenshot.gen.h` (and nothing #includes it yet); the
+    # dep ensures the codegen action runs as part of every bridge
+    # build so we catch breakage early. Phase 2 onwards will start
+    # consuming the generated headers from C++ sources.
+    ":nexus_tools_codegen",
     "mojom",
     "//base",
     "//chrome/browser/actor",
@@ -86,11 +409,14 @@ source_set("bridge") {
     "//components/optimization_guide/proto:optimization_guide_proto",
     "//content/public/browser",
     "//crypto",
-    "//custom_browser/browser/nexus/llm:broker",
-    "//custom_browser/browser/nexus/llm:webui_host",
+    "//custom_browser/browser/nexus/api/llm:broker",
+    "//custom_browser/browser/nexus/api/llm:webui_host",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
     "//third_party/blink/public/common",
+    # FileTool::RunGlobOnThreadPool compiles glob patterns to RE2 and
+    # uses re2::RE2::FullMatch for path filtering.
+    "//third_party/re2",
     "//url",
   ]
 }
@@ -106,7 +432,7 @@ source_set("guest_config") {
     "//base",
     "//chrome/browser/profiles:profile",
     "//content/public/common",
-    "//custom_browser/browser/nexus/llm:pref_names",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
     "//url",
   ]
 
@@ -186,8 +512,8 @@ source_set("nexus_settings_handler") {
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/webui/settings",
     "//content/public/browser",
-    "//custom_browser/browser/nexus/llm",
-    "//custom_browser/browser/nexus/llm:webui_host",
+    "//custom_browser/browser/nexus/api/llm",
+    "//custom_browser/browser/nexus/api/llm:webui_host",
   ]
 }
 
@@ -199,27 +525,39 @@ source_set("unit_tests_lite") {
 
   sources = [
     "domain/domain_sandbox_manager_unittest.cc",
-    "llm/llm_line_splitter_unittest.cc",
-    "llm/llm_provider_factory_unittest.cc",
-    "llm/llm_text_helpers_unittest.cc",
-    "llm/llm_types_unittest.cc",
-    "llm/provider_config_unittest.cc",
+    "api/llm/llm_line_splitter_unittest.cc",
+    "api/llm/llm_provider_factory_unittest.cc",
+    "api/llm/llm_text_helpers_unittest.cc",
+    "api/llm/llm_types_unittest.cc",
+    "api/llm/provider_config_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
+    "codegen/codegen_smoke_unittest.cc",
   ]
 
   deps = [
     ":domain",
     ":permissions",
+    # Codegen smoke test exercises the inline Build<Name>Schema() and
+    # Extract() functions emitted into the per-tool *.gen.h files
+    # (under $target_gen_dir/tools/). The action dep ensures those
+    # headers exist + are regenerated when a *.tool.json changes.
+    ":nexus_tools_codegen",
+    # The schema-shape assertions construct a `nexus::ToolSchema`,
+    # whose out-of-line ctor/dtor live in nexus_tool_schema.cc. The
+    # `:tool_schema` source_set is deliberately tiny (only depends on
+    # //base) so adding it here doesn't drag bridge into the lite
+    # test binary.
+    ":tool_schema",
     "//base/test:test_support",
     "//components/prefs",
     "//components/prefs:test_support",
-    "//custom_browser/browser/nexus/llm:line_splitter",
-    "//custom_browser/browser/nexus/llm:pref_names",
-    "//custom_browser/browser/nexus/llm:provider",
-    "//custom_browser/browser/nexus/llm:provider_config",
-    "//custom_browser/browser/nexus/llm:provider_factory",
-    "//custom_browser/browser/nexus/llm:text_helpers",
-    "//custom_browser/browser/nexus/llm:types",
+    "//custom_browser/browser/nexus/api/llm:line_splitter",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
+    "//custom_browser/browser/nexus/api/llm:provider",
+    "//custom_browser/browser/nexus/api/llm:provider_config",
+    "//custom_browser/browser/nexus/api/llm:provider_factory",
+    "//custom_browser/browser/nexus/api/llm:text_helpers",
+    "//custom_browser/browser/nexus/api/llm:types",
     "//services/network/public/cpp",
     "//testing/gtest",
     "//url",
@@ -230,12 +568,12 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
-    "fs/nexus_fs_host_unittest.cc",
-    "llm/nexus_llm_bridge_support_unittest.cc",
+    "api/fs/nexus_fs_host_unittest.cc",
+    "api/llm/nexus_llm_bridge_support_unittest.cc",
     "nexus_guest_config_unittest.cc",
     "tools/nexus_tool_schema_unittest.cc",
     "tools/nexus_tool_signature_unittest.cc",
-    "tools/node_registry_unittest.cc",
+    "tools/browser_tool/node_registry_unittest.cc",
     "tools/tool_base_unittest.cc",
     "tools/tool_session_unittest.cc",
   ]
@@ -249,7 +587,7 @@ source_set("unit_tests") {
     "//chrome/test:test_support",
     "//components/prefs",
     "//components/sync_preferences:test_support",
-    "//custom_browser/browser/nexus/llm:pref_registration",
+    "//custom_browser/browser/nexus/api/llm:pref_registration",
     "//testing/gtest",
   ]
 }

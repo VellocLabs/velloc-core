@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "catalog",
+  "description": "Return the curated list of LLM provider+model entries available to the guest.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "Opaque request payload \u2014 currently unused."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "scroll_to",
+  "wire_name": "BrowserScrollToElement",
+  "description": "Scroll an element on the active tab into the viewport. Use when an element is in the observation but off-screen, or when an action needs the target visible (some click/keyboard actions skip elements that are not currently visible).",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": true,
+      "description": "Required element index from the latest observation's elements[] list."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "index": 27
+        }
+      ]
+    }
+  }
+}

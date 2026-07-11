@@ -1,0 +1,19 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "media_state",
+  "wire_name": "BrowserMediaState",
+  "description": "Read the active tab's MediaSession state — playback state (playing/paused), current position, duration, playback rate, and the title/artist/album supplied via navigator.mediaSession.metadata. Synchronous; does not go through the actor pipeline.",
+  "skill": "browser",
+  "inputs": [],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {}
+      ]
+    }
+  }
+}

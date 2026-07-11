@@ -1,0 +1,38 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "search",
+  "wire_name": "BrowserSearch",
+  "description": "Preferred first step for any 'find / look up / search the web' intent. Opens a search engine results page for `query` in a new tab. Default engine is google; pick another via the optional `engine` field (e.g. baidu for Chinese-language searches, duckduckgo for privacy-sensitive ones).",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true,
+      "description": "Required search query. Phrase it naturally; the framework picks the URL shape for the chosen engine."
+    },
+    {
+      "name": "engine",
+      "type": "string",
+      "required": false,
+      "description": "Optional engine: 'google' (default), 'bing', 'baidu', or 'duckduckgo'."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "query": "claude code release notes"
+        },
+        {
+          "query": "how to fix err_too_many_redirects",
+          "engine": "duckduckgo"
+        }
+      ]
+    }
+  }
+}

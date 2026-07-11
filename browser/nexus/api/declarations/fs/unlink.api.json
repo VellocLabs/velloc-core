@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "unlink",
+  "description": "Unlink a single file (non-directory).",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "File path to unlink."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

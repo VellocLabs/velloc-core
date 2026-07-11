@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setAgentLoopSettings",
+  "description": "Push agent-loop runtime tunables (per-action wall-clock budget, per-step budget, default cwd) onto the matching ToolSession. Lazily creates the session if absent so JS can push settings before the first tool call. Resolves with the applied values after C++-side clamping. Phase 12f moved this off the manual `browser.setAgentLoopSettings` handler in tools_adapter onto the codegen-driven session capability.",
+  "inputs": [
+    {
+      "name": "actionTimeoutMs",
+      "type": "integer",
+      "required": false,
+      "description": "Per-action wall-clock budget. Default if unset is 180000 ms (matches Browser-Use)."
+    },
+    {
+      "name": "stepTimeoutMs",
+      "type": "integer",
+      "required": false,
+      "description": "Per-step (full agent-loop iteration) budget. Default 600000 ms."
+    },
+    {
+      "name": "cwd",
+      "type": "string",
+      "required": false,
+      "description": "Optional default working directory for shell-style tools (Bash / Glob / Grep / Read / Write / Edit). Must be absolute; relative paths are silently ignored so a partial settings push doesn't clobber a previously-set cwd."
+    },
+    {
+      "name": "executionContext",
+      "type": "object",
+      "required": false,
+      "description": "Per-session metadata. Only `sessionId` is consulted; missing / empty falls through to '__default__'."
+    },
+    {
+      "name": "sessionId",
+      "type": "string",
+      "required": false,
+      "description": "Legacy top-level session id. Preferred path is `executionContext.sessionId`."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

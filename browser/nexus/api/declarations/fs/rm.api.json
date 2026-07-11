@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "rm",
+  "description": "Remove a path; payload carries options (recursive, force).",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Path to remove."
+    },
+    {
+      "name": "recursive",
+      "type": "boolean",
+      "required": false,
+      "description": "Recurse into directories."
+    },
+    {
+      "name": "force",
+      "type": "boolean",
+      "required": false,
+      "description": "Suppress 'does not exist' errors."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

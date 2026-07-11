@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexus.local/schemas/tool.schema.json",
+  "title": "Nexus tool declaration",
+  "description": "Schema for *.tool.json files consumed by codegen/generate.py. Each file declares one LLM-facing tool: identity, inputs, runtime properties, and per-provider variance. The C++ category class and method are inferred from the file path (parent folder = class in PascalCase, filename = method as Run<Name>) — no implementation block in the JSON.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "inputs"],
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor hint pointing at this file. Allows VS Code / similar editors to validate the document on save."
+    },
+
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "On-disk tool identifier. snake_case. Drives the filename (without .tool.json), the C++ method name (Run<PascalCase(name)>On<Thread>), and the generated header (<name>.gen.h). By default it is also the LLM-facing tool name on the wire — set `wire_name` to override that one axis without renaming the file or the C++ method."
+    },
+
+    "wire_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "description": "Optional override for the LLM-facing tool name. When omitted, the wire name equals `name`. Use to expose a PascalCase tool name to the model (e.g. wire_name='Read' for Claude-Code parity) while keeping the on-disk identifier lowercase. Only the schema's `name` field changes — codegen artifacts and dispatcher names continue to derive from `name`."
+    },
+
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human/LLM-facing description. Shipped on the tool definition; the LLM reads this to decide when to call the tool. Keep concise — long prose belongs in the skill instructions, not here."
+    },
+
+    "skill": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Skill scope. Tools share the same `skill` value belong to the same skill bucket and activate together when Skill('<name>') fires. Omit (or set to 'always_on') for tools that should be available without skill activation."
+    },
+
+    "inputs": {
+      "type": "array",
+      "description": "Ordered list of tool inputs. Order drives the C++ struct field order and the JSON-Schema 'required' list.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Field name. snake_case. Becomes both the JSON-Schema property key and the C++ struct field name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "string", "integer", "number", "boolean",
+              "array<string>", "array<integer>", "array<number>", "array<object>",
+              "object"
+            ],
+            "description": "Type. Mirrors `JsonSchemaKind` in nexus_tool_schema.h."
+          },
+          "required": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, the field is added to the JSON-Schema `required` list AND the C++ struct uses the bare type. When false (default), the C++ struct wraps the field in std::optional<T>."
+          },
+          "description": {
+            "type": "string",
+            "description": "Per-input description. Surfaced on the JSON-Schema property. The LLM reads this to fill in the field correctly."
+          },
+          "shape": {
+            "type": "object",
+            "description": "Optional advanced shape declaration for object / array<object> types. Currently supports discriminated-union variants for tools that genuinely need anyOf (rare).",
+            "additionalProperties": false,
+            "properties": {
+              "discriminator": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "Field name on each variant that identifies the variant kind."
+              },
+              "variants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "description": "Names of dedicated variant *.tool.json files (in a sibling 'variants/' subdirectory) that declare the per-variant shapes."
+              }
+            },
+            "required": ["discriminator", "variants"]
+          }
+        }
+      }
+    },
+
+    "output_kind": {
+      "type": "string",
+      "enum": ["string", "integer", "number", "boolean", "array", "object", "any"],
+      "default": "object",
+      "description": "Informational. Hints at the shape of the tool's result. Currently not emitted on the wire (the LLM doesn't need it), but reserved for future structured-output support."
+    },
+
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cross-cutting runtime concerns. Codegen wraps the dispatcher according to these. Timeout is intentionally NOT here — it lives in nexus_web's session-level config (agentLoopConfig.actionTimeoutMs) and is threaded through per-call.",
+      "properties": {
+        "thread": {
+          "type": "string",
+          "enum": ["ui", "io", "any", "thread_pool"],
+          "default": "ui",
+          "description": "Which Chromium thread the implementation runs on. For 'ui'/'io'/'any' the generated trampoline DCHECKs this invariant on entry; the upstream dispatcher (ToolsAdapter) is responsible for posting to the correct thread before invoking. 'ui' is the default — required for browser/tabs/WebContents APIs. 'io' for network/disk-bound work on the IO thread. 'any' for pure-CPU tools. 'thread_pool' is for blocking I/O (filesystem, etc.); no thread DCHECK is emitted — the implementation is expected to post to base::ThreadPool itself (typically via base::ThreadPool::PostTaskAndReplyWithResult with base::MayBlock())."
+        }
+      }
+    },
+
+    "providers": {
+      "type": "object",
+      "description": "Per-provider variance. Each block is OPTIONAL; missing means the provider takes defaults.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "strict": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt into provider-side grammar-constrained sampling (Anthropic 'Strict tool use', OpenAI 'Structured Outputs'). Only set true when the tool's schema is provider-strict-compliant: additionalProperties:false on every nested object, no maxItems/minItems/pattern/format."
+          },
+          "input_examples": {
+            "type": "array",
+            "description": "Optional canonical example calls. Surfaced on the wire as Anthropic's `input_examples` (other providers silently drop). Each entry must validate against the tool's `inputs` schema; Anthropic returns 400 on any violation.",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["section", "line"],
+      "description": "Optional per-tool prompt-section content. When present, codegen emits an entry into `prompt_tool_entries.gen.h` consumed by `api/catalog/prompt_section_renderer.cc` to compose the `{{TOOL_CATALOG}}` placeholder content. Tools without a `prompt` block are silently skipped — they remain available on the wire but aren't advertised in the system prompt. Replaces the hand-maintained per-tool prose that pre-Phase-12 lived as constexpr blocks in C++ + a parallel BROWSER_TOOL_NAMES set in TS.",
+      "properties": {
+        "section": {
+          "type": "string",
+          "enum": [
+            "browser-tools",
+            "file-shell-tools",
+            "task-tracking",
+            "skills"
+          ],
+          "description": "Which section of the system prompt this tool surfaces in. The renderer composes sections in the order browser-tools → file-shell-tools → task-tracking → skills → parallelism (parallelism is always emitted from a static C++ trailer)."
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional sub-group label within a section. Browser-tools sub-groups today: 'Navigation' / 'Element interaction' / 'Search' / 'Media' / 'Observation' / 'Termination'. Other sections currently don't subdivide and should omit this field."
+        },
+        "line": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The bullet line shown to the LLM. One or two short sentences naming the tool's signature and intended usage. The renderer prefixes a single '- ' bullet marker — do not include it in the line itself."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "publishStatus",
+  "description": "Guest pushes a SessionStatus snapshot to C++. Cached by LlmBroker so the WebUI quick-settings popup can render the active model + thread metadata without round-tripping into the guest.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "Session status dict (sessionId, selection, agentRunning?, threadTitle?, unreadCount?, …)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

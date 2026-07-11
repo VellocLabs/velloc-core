@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "broadcastCurrentSessionState",
+  "description": "Re-broadcast the JS-supplied session-state payload as a 'nexusCurrentSessionState' WebUI listener event so the topbar and quick-settings can update.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "Opaque session-state snapshot (phase, selection, busy flags, etc.). Re-broadcast verbatim."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

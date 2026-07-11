@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "writeFile",
+  "description": "Write a file; payload carries the bytes (overwrites any existing content). Bytes may arrive inline as `content` (array<integer>) or via a transferred message port.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Destination path."
+    },
+    {
+      "name": "content",
+      "type": "bytes",
+      "required": true,
+      "description": "Bytes to write. May arrive inline as an array of integers in the payload, OR via a transferred MessagePort that delivers an ArrayBuffer."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

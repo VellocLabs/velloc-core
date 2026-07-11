@@ -9,11 +9,13 @@ class Profile;
 
 namespace nexus {
 
+class ToolSession;
+
 // `ToolBase` — common base for every per-LLM-session tool category
-// (BrowserTool, future SkillTool, etc.). Holds the shared (Profile*,
-// session_key) pair every category needs and exposes the OnStop()
-// notification hook the framework cascades when a session is being
-// torn down.
+// (BrowserTool, future SkillTool, etc.). Holds the shared (ToolSession*,
+// Profile*, session_key) trio every category needs and exposes the
+// OnStop() notification hook the framework cascades when a session is
+// being torn down.
 //
 // Subclasses override OnStop to clean up category-specific state
 // (BrowserTool stops its actor::TaskId; future categories do their
@@ -28,15 +30,23 @@ namespace nexus {
 // destructor-time cleanup is also a defensive fallback path
 // (~ToolSession invokes OnStop("destructor") on every member if no
 // explicit OnStop happened first).
+//
+// The `session` raw_ptr lets a category read session-level state
+// (cwd, action_timeout, …) without category-specific plumbing.
+// `GetSession()` is non-null for the lifetime of the tool category
+// instance because ToolSession owns the category by value (members
+// outlive the session no longer than `*this` does).
 class ToolBase {
  public:
-  ToolBase(Profile* profile, const std::string& session_key);
+  ToolBase(ToolSession* session, Profile* profile,
+           const std::string& session_key);
   virtual ~ToolBase();
 
   ToolBase(const ToolBase&) = delete;
   ToolBase& operator=(const ToolBase&) = delete;
 
   // Common accessors used by tool method implementations.
+  ToolSession* GetSession() const { return session_.get(); }
   Profile* GetProfile() const { return profile_.get(); }
   const std::string& GetSessionKey() const { return session_key_; }
 
@@ -59,6 +69,7 @@ class ToolBase {
   virtual void OnStop(const std::string& reason);
 
  private:
+  raw_ptr<ToolSession> session_;
   raw_ptr<Profile> profile_;
   std::string session_key_;
 };

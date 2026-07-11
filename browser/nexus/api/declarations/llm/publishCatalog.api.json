@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "publishCatalog",
+  "description": "Guest pushes the curated NEXUS_MODEL_CONFIG snapshot to C++.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "Catalog snapshot dict."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

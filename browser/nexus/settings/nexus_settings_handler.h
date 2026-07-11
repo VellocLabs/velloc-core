@@ -16,8 +16,8 @@
 #include "base/scoped_observation.h"
 #include "base/values.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
-#include "custom_browser/browser/nexus/llm/llm_broker.h"
-#include "custom_browser/browser/nexus/llm/llm_types.h"
+#include "custom_browser/browser/nexus/api/llm/llm_broker.h"
+#include "custom_browser/browser/nexus/api/llm/llm_types.h"
 
 class Profile;
 

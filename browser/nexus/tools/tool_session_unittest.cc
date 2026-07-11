@@ -5,7 +5,7 @@
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 
 #include "base/time/time.h"
-#include "custom_browser/browser/nexus/tools/browser_tool.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {

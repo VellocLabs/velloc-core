@@ -16,10 +16,11 @@
 //   - `ToolBuilder` / `ToolRegistry`         (defined below)
 //   - `ToolEntry` { schema, dispatcher }     (defined below)
 //
-// The macro DSL (`NEXUS_TOOL` / `NEXUS_INPUT` / `NEXUS_END_TOOL` —
-// see nexus_tool_macros.h) populates a `ToolRegistry`; the global
-// `ToolCatalog` (`tool_catalog.h`) owns the registry, exposes its
-// schemas to the manifest builder, and hands its entries to
+// The codegen pipeline (see tools/codegen/generate.py +
+// tools/declarations/) populates a `ToolRegistry` via
+// `generated::PopulateRegistry()` — one entry per `*.tool.json`. The
+// global `ToolCatalog` (`tool_catalog.h`) owns the registry, exposes
+// its schemas to the manifest builder, and hands its entries to
 // `ToolsAdapter` (`tools_adapter.h`) — which wraps each entry with a
 // session-routing bridge handler.
 
@@ -36,10 +37,10 @@ class ToolSession;
 // elsewhere if needed and resolving the callback when ready.
 //
 // The first parameter is the `ToolSession` the request is being routed
-// to. The dispatcher's inner trampoline (built by the macro DSL via
-// `BindTypedCategoryMethod`) descends to the matching per-category
-// member via `CategoryAccessor<Category>::Get(session)` before
-// invoking the typed tool method.
+// to. The dispatcher's inner trampoline (codegen-emitted in
+// nexus_tools_registry.gen.cc) descends to the matching per-category
+// member via `CategoryAccessor<Category>::Get(session)` (declared in
+// nexus_tool_macros.h) before invoking the typed `Run<Name>` virtual.
 using ToolDispatcher = base::RepeatingCallback<void(
     ToolSession* session, base::DictValue args, ToolCallback done)>;
 

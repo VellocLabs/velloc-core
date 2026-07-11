@@ -10,8 +10,9 @@ namespace {
 // Layout: { "type": "<json schema type>", "description": "...", ... }
 // Array kinds also emit `"items": { "type": "<element type>" }` so the
 // LLM-facing schema is closed over the element type. The `description`
-// field flows straight from the macro's `NEXUS_INPUT(kind, name, desc)`
-// third argument and is what the model reads to understand the slot.
+// field flows straight from the .tool.json declaration's `inputs[].description`
+// (carried into `ToolParameter::description` by codegen) and is what the
+// model reads to understand the slot.
 base::DictValue BuildPropertyDict(const ToolParameter& param) {
   base::DictValue prop;
   prop.Set("type", JsonSchemaTypeString(param.kind));

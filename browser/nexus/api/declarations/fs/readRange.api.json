@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readRange",
+  "description": "Read a byte range of a file; payload carries offset+length, response is binary.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "File path."
+    },
+    {
+      "name": "offset",
+      "type": "integer",
+      "required": false,
+      "description": "Byte offset within the file (default 0)."
+    },
+    {
+      "name": "length",
+      "type": "integer",
+      "required": false,
+      "description": "Number of bytes to read (default 0)."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

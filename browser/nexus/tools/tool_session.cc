@@ -9,9 +9,16 @@ namespace nexus {
 ToolSession::ToolSession(Profile* profile, std::string session_key)
     : profile_(profile),
       session_key_(std::move(session_key)),
-      browser_tool_(profile, session_key_) {
+      // `this` is well-formed at this point — the storage is allocated
+      // and the vptrs / non-static-member init has finished. Each
+      // category stores the back-pointer for later session-level reads
+      // (cwd, action_timeout, …); none of them dereference `this`
+      // during their own ctor body.
+      browser_tool_(this, profile, session_key_),
+      file_tool_(this, profile, session_key_),
+      process_tool_(this, profile, session_key_) {
   // Future categories construct here too:
-  //   skill_tool_(profile, session_key_)
+  //   skill_tool_(this, profile, session_key_)
 }
 
 ToolSession::~ToolSession() {
@@ -25,6 +32,8 @@ void ToolSession::OnStop(const std::string& reason) {
   LOG(INFO) << "[ToolSession] OnStop session=" << session_key_
             << " reason=" << reason;
   browser_tool_.OnStop(reason);
+  file_tool_.OnStop(reason);
+  process_tool_.OnStop(reason);
   // skill_tool_.OnStop(reason);  // future
 }
 
@@ -59,6 +68,22 @@ void ToolSession::set_step_timeout(base::TimeDelta timeout) {
     step_timeout_ = timeout;
   }
   browser_tool_.set_step_timeout(step_timeout_);
+}
+
+void ToolSession::set_cwd(base::FilePath cwd) {
+  // Reject relative paths early — accepting one and letting downstream
+  // tools resolve it against the process cwd would be a stealth misfire
+  // (the agent's intended cwd is almost never the browser process's
+  // launch directory). An empty path also short-circuits here so a
+  // caller can clear the session cwd by passing `base::FilePath()`.
+  if (!cwd.empty() && !cwd.IsAbsolute()) {
+    LOG(WARNING) << "[ToolSession] set_cwd ignored non-absolute path: "
+                 << cwd.AsUTF8Unsafe();
+    return;
+  }
+  cwd_ = std::move(cwd);
+  LOG(INFO) << "[ToolSession] set_cwd session=" << session_key_
+            << " cwd=" << cwd_.AsUTF8Unsafe();
 }
 
 }  // namespace nexus

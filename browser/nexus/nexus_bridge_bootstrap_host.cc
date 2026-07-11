@@ -4,7 +4,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/span.h"
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/message_port_provider.h"
@@ -12,7 +11,6 @@
 #include "custom_browser/browser/nexus/nexus_bridge_port_service.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/nexus_host_manifest.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
 #include "url/origin.h"
 
 namespace nexus {
@@ -51,20 +49,16 @@ void NexusBridgeBootstrapHost::GuestReady() {
   const url::Origin host_origin =
       url::Origin::Create(render_frame_host_->GetLastCommittedURL());
 
-  // Pull the macro-DSL-declared tool catalog. After Phase D the
-  // schemas are process-global (`ToolCatalog::Get()`), but we read
-  // through the worker bridge's accessor — same view, keeps the
-  // call site stable for now.
-  base::span<const ToolSchema> hosted_tools =
-      worker_bridge_->GetBrowserToolSchemas();
-
+  // Phase 12c: hostedTools no longer ride the bootstrap message.
+  // The JS guest pulls them post-bootstrap via the `catalog` bridge
+  // capability (`nexus.catalog.listHostedTools`). Bootstrap stays
+  // minimal — capabilities + transferred ports.
   content::MessagePortProvider::PostMessageToFrame(
       render_frame_host_->GetPage(), &host_origin, &host_origin,
-      bridge_support::Utf8Payload(
-          BuildNexusBridgeBootstrapMessageWithTools(hosted_tools)),
+      bridge_support::Utf8Payload(BuildNexusBridgeBootstrapMessage()),
       std::move(ports));
-  LOG(INFO) << "[NexusTrace][BootstrapHost] Posted bootstrap message with "
-            << hosted_tools.size() << " hosted tools and 2 ports to host page";
+  LOG(INFO) << "[NexusTrace][BootstrapHost] Posted bootstrap message + 2 "
+            << "ports to host page (hostedTools fetched via catalog API)";
 }
 
 }  // namespace nexus

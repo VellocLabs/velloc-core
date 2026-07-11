@@ -28,24 +28,56 @@ export type NexusTopbarSurfaceMode = 'nexus-view'|'settings'|'warning';
 
 const PERMISSIONS_TOTAL = 5;
 
-// Wire format for `nexusAgentStateChanged`. Two C++ producers fire this
-// event with different subsets of fields; the topbar only updates the
-// fields actually present in each payload, so producers stay decoupled.
-//   - `ToolsAdapter::BroadcastAgentState`     — `running` (a tool is in
-//     flight), `toolName`, `isBrowserTool`, `successful`, `total`.
-//   - `NexusLlmBridgeAdapter::BroadcastModelBusyIfChanged` — `modelBusy`
-//     (a model.call is in flight or any stream is active).
-// Render priority is `running` > `modelBusy` > idle, so a tool dispatched
-// during model streaming surfaces as `running : <tool>` rather than
-// `thinking`.
-export interface NexusAgentStatePayload {
-  running?: boolean;
-  toolName?: string;
-  isBrowserTool?: boolean;
-  successful?: number;
-  total?: number;
-  modelBusy?: boolean;
+// Wire format for `nexusCurrentSessionState`. Sourced from
+// `SharedWorkerSessionManager` (TS-side); see `bridge/protocol/ui.ts`
+// in nexus_web for the canonical type. Mirrored here because the
+// in-browser WebUI build cannot import from the nexus_web tree
+// directly.
+//
+// Snapshot lands on session open / switch / late subscriber; subsequent
+// emissions are deltas with only the fields that changed (`active: null`
+// clears the active tool when phase → idle; `model` is omitted unless it
+// changed).
+export interface NexusCurrentSessionModel {
+  providerId: string;
+  modelId: string;
+  thinkingTier?: string;
 }
+
+export interface NexusCurrentSessionActive {
+  name: string;
+  actionType?: string;
+}
+
+export interface NexusCurrentSessionCounters {
+  tool: number;
+  toolFail: number;
+  mcp: number;
+  mcpFail: number;
+}
+
+export type NexusCurrentSessionPhase = 'idle'|'thinking'|'tool'|'mcp';
+
+export interface NexusCurrentSessionSnapshot {
+  kind: 'snapshot';
+  sessionId: string;
+  model: NexusCurrentSessionModel|null;
+  phase: NexusCurrentSessionPhase;
+  active: NexusCurrentSessionActive|null;
+  counters: NexusCurrentSessionCounters;
+}
+
+export interface NexusCurrentSessionDelta {
+  kind: 'delta';
+  sessionId: string;
+  model?: NexusCurrentSessionModel|null;
+  phase?: NexusCurrentSessionPhase;
+  active?: NexusCurrentSessionActive|null;
+  counters?: Partial<NexusCurrentSessionCounters>;
+}
+
+export type NexusCurrentSessionPayload =
+    NexusCurrentSessionSnapshot|NexusCurrentSessionDelta;
 
 export interface NexusPermissionsPayload {
   granted: number;
@@ -56,8 +88,12 @@ export interface NexusPermissionsPayload {
 // dispatches via FireWebUIListener("..."). Mirrors the
 // 'nexusDismissBootWelcome' pattern in nexus_view.ts (registered in the
 // constructor, not firstUpdated, so we win the C++ broadcast race).
-const AGENT_STATE_EVENT = 'nexusAgentStateChanged';
+const CURRENT_SESSION_EVENT = 'nexusCurrentSessionState';
 const PERMISSIONS_EVENT = 'nexusPermissionsChanged';
+
+const ZERO_COUNTERS: NexusCurrentSessionCounters =
+    Object.freeze({tool: 0, toolFail: 0, mcp: 0, mcpFail: 0}) as
+    NexusCurrentSessionCounters;
 
 export class NexusTopbar extends CrLitElement {
   static get is() {
@@ -73,18 +109,17 @@ export class NexusTopbar extends CrLitElement {
   declare surfaceMode: NexusTopbarSurfaceMode;
   declare agentZoneVisible: boolean;
 
-  // Internal state.
-  private agentRunning_ = false;
-  private agentModelBusy_ = false;
-  private agentToolName_ = '';
-  private agentIsBrowserTool_ = false;
-  // Last value of `agentRunning_ && agentIsBrowserTool_`. Used to fire
-  // `nexus-show-agent-zone-transient` only on the false → true edge, so
-  // each browser-tool dispatch triggers exactly one show — no paired
-  // hide when the tool ends.
+  // Unified per-session snapshot. Replaces the prior split fields
+  // (`agentRunning_`, `agentModelBusy_`, `agentToolName_`,
+  // `agentIsBrowserTool_`, `toolsSuccessful_`, `toolsTotal_`). Always
+  // holds the latest fully-merged snapshot; deltas are merged in
+  // `onCurrentSessionState_`.
+  private current_: NexusCurrentSessionSnapshot|null = null;
+  // Last value of `(phase === 'tool') && active.name starts with 'browser_'`.
+  // Used to fire `nexus-show-agent-zone-transient` only on the false → true
+  // edge, so each browser-tool dispatch triggers exactly one show — no
+  // paired hide when the tool ends.
   private lastBrowserToolRunning_ = false;
-  private toolsSuccessful_ = 0;
-  private toolsTotal_ = 0;
   // Whether the permissions badge has received any real data yet. The
   // C++ broadcaster for `nexusPermissionsChanged` is not wired, so until
   // someone calls `setPermissionsCount` (or that event arrives) the
@@ -215,10 +250,63 @@ export class NexusTopbar extends CrLitElement {
       height: 30px;
       letter-spacing: -0.005em;
       padding: 0 14px;
+      position: relative;
+      isolation: isolate;
     }
+    .header__status--running { overflow: hidden; }
     .header__status code {
       color: var(--ink-2);
       font-family: var(--font-mono);
+    }
+    /* Border runner — animated conic-gradient ring on the pill while
+     * a tool / MCP call is inflight.
+     *
+     * Implementation: TWO stacked pseudos clipped by the pill's own
+     * overflow:hidden and border-radius.
+     *   - ::before is an oversized square that fills the pill from
+     *     corner to corner. It paints a conic gradient (a 90deg
+     *     bright wedge) and rotates around its own center via
+     *     transform. The square is large enough to cover the whole
+     *     pill at any rotation so no empty corners show.
+     *   - ::after is an opaque inner fill at inset 2px, covering
+     *     everything EXCEPT a 2px ring along the pill inner edge.
+     *     The visible ring is where ::before peeks through.
+     * Both pseudos sit at negative z-index so the pill content
+     * (text, dots, badge) paints on top. */
+    .header__status--running::before {
+      animation: header-status-runner 2.8s linear infinite;
+      aspect-ratio: 1;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        transparent 270deg,
+        var(--accent) 330deg,
+        #ffffff 350deg,
+        transparent 360deg
+      );
+      content: "";
+      left: 50%;
+      pointer-events: none;
+      position: absolute;
+      top: 50%;
+      width: 200%;
+      z-index: -2;
+    }
+    .header__status--running::after {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: var(--radius-pill);
+      content: "";
+      inset: 1px;
+      pointer-events: none;
+      position: absolute;
+      z-index: -1;
+    }
+    @keyframes header-status-runner {
+      from { transform: translate(-50%, -50%) rotate(0deg); }
+      to   { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .header__status--running::before { animation: none; }
     }
     .dot {
       background: var(--ink-4);
@@ -289,23 +377,6 @@ export class NexusTopbar extends CrLitElement {
     }
     .sysbtn:hover { background: var(--hover); color: var(--ink-1); }
 
-    /* Hairline loading bar — only when agent is running. */
-    .header__loadbar {
-      animation: nexus-prog 1.2s infinite linear;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      background-repeat: no-repeat;
-      background-size: 40% 100%;
-      bottom: -1px;
-      height: 2px;
-      left: 0;
-      position: absolute;
-      right: 0;
-    }
-    @keyframes nexus-prog {
-      0%   { background-position: -40% 0; }
-      100% { background-position: 140% 0; }
-    }
-
     /* Native window controls and browser-button are 37px tall C++ Views;
      * vertically center them in the 40px header. */
     caption-browser-button,
@@ -327,9 +398,9 @@ export class NexusTopbar extends CrLitElement {
     // setters below (or DevTools / the React guest using sendWithPromise
     // proxies, when those land).
     this.agentStateListener_ = addWebUiListener(
-        AGENT_STATE_EVENT,
-        (payload: NexusAgentStatePayload) =>
-            this.onAgentStateChanged_(payload));
+        CURRENT_SESSION_EVENT,
+        (payload: NexusCurrentSessionPayload) =>
+            this.onCurrentSessionState_(payload));
     this.permissionsListener_ = addWebUiListener(
         PERMISSIONS_EVENT,
         (payload: NexusPermissionsPayload) =>
@@ -350,39 +421,40 @@ export class NexusTopbar extends CrLitElement {
 
   // --- IPC handlers ----------------------------------------------------
 
-  private onAgentStateChanged_(payload: NexusAgentStatePayload): void {
+  private onCurrentSessionState_(payload: NexusCurrentSessionPayload): void {
     if (!payload) {
       return;
     }
-    let touched = false;
-    if (typeof payload.running === 'boolean') {
-      this.agentRunning_ = payload.running;
-      touched = true;
+    if (payload.kind === 'snapshot') {
+      // Replace whole — every field on the snapshot is authoritative.
+      this.current_ = payload;
+    } else {
+      // Merge delta into the prior snapshot. If we receive a delta
+      // before any snapshot (shouldn't happen, but defensive), promote
+      // it to a sparse snapshot using zeros so the renderer has
+      // something to draw.
+      const base: NexusCurrentSessionSnapshot = this.current_ ?? {
+        kind: 'snapshot',
+        sessionId: payload.sessionId,
+        model: null,
+        phase: 'idle',
+        active: null,
+        counters: {...ZERO_COUNTERS},
+      };
+      const counters = payload.counters
+          ? {...base.counters, ...payload.counters}
+          : base.counters;
+      this.current_ = {
+        kind: 'snapshot',
+        sessionId: payload.sessionId,
+        model: 'model' in payload ? payload.model ?? null : base.model,
+        phase: payload.phase ?? base.phase,
+        active: 'active' in payload ? payload.active ?? null : base.active,
+        counters,
+      };
     }
-    if (typeof payload.modelBusy === 'boolean') {
-      this.agentModelBusy_ = payload.modelBusy;
-      touched = true;
-    }
-    if (typeof payload.toolName === 'string') {
-      this.agentToolName_ = payload.toolName;
-      touched = true;
-    }
-    if (typeof payload.isBrowserTool === 'boolean') {
-      this.agentIsBrowserTool_ = payload.isBrowserTool;
-      touched = true;
-    }
-    if (typeof payload.successful === 'number') {
-      this.toolsSuccessful_ = Math.max(0, payload.successful);
-      touched = true;
-    }
-    if (typeof payload.total === 'number') {
-      this.toolsTotal_ = Math.max(0, payload.total);
-      touched = true;
-    }
-    if (touched) {
-      this.maybeDispatchBrowserToolTransient_();
-      this.requestUpdate();
-    }
+    this.maybeDispatchBrowserToolTransient_();
+    this.requestUpdate();
   }
 
   // Fires `nexus-show-agent-zone-transient` once on the leading edge of
@@ -392,8 +464,8 @@ export class NexusTopbar extends CrLitElement {
   // until the user manually clicks the globe (the only thing that
   // updates the saved state, via `nexus-toggle-agent-zone`).
   private maybeDispatchBrowserToolTransient_() {
-    const browserToolRunning =
-        this.agentRunning_ && this.agentIsBrowserTool_;
+    const browserToolRunning = this.current_?.phase === 'tool' &&
+        !!this.current_?.active?.name?.startsWith('browser_');
     const wasRunning = this.lastBrowserToolRunning_;
     this.lastBrowserToolRunning_ = browserToolRunning;
     if (!wasRunning && browserToolRunning) {
@@ -466,10 +538,6 @@ export class NexusTopbar extends CrLitElement {
       <div class="header__drag"></div>
       <caption-browser-button align-x="right"></caption-browser-button>
       <caption-button-container align-x="right"></caption-button-container>
-      ${(this.agentRunning_ || this.agentModelBusy_) &&
-            this.surfaceMode === 'nexus-view'
-          ? html`<div class="header__loadbar"></div>`
-          : nothing}
     `;
   }
 
@@ -477,23 +545,37 @@ export class NexusTopbar extends CrLitElement {
     const showPermBadge =
         this.surfaceMode === 'nexus-view' && this.permissionsInitialized_;
     const liveSurface = this.surfaceMode === 'nexus-view';
-    const showRunning = liveSurface && this.agentRunning_;
-    const showThinking =
-        liveSurface && !this.agentRunning_ && this.agentModelBusy_;
-    const toolsSegment = this.toolsTotal_ > 0
-        ? html` · tools : <code>${this.toolsSuccessful_}/${this.toolsTotal_}</code>`
+    const phase = this.current_?.phase ?? 'idle';
+    const active = this.current_?.active ?? null;
+    const counters = this.current_?.counters ?? ZERO_COUNTERS;
+    const isRunningTool = liveSurface && (phase === 'tool' || phase === 'mcp');
+    const isThinking = liveSurface && phase === 'thinking';
+
+    // Compose the counter chip. `tools` covers both browser and local
+    // tool invocations; `mcp` is shown alongside only when present.
+    const toolsSeg = counters.tool > 0
+        ? html` · tools : <code>${
+            Math.max(0, counters.tool - counters.toolFail)}/${
+            counters.tool}</code>`
         : nothing;
+    const mcpSeg = counters.mcp > 0
+        ? html` · mcp : <code>${
+            Math.max(0, counters.mcp - counters.mcpFail)}/${
+            counters.mcp}</code>`
+        : nothing;
+    const countersSeg = html`${toolsSeg}${mcpSeg}`;
+
     let statusBody;
-    if (showRunning) {
-      statusBody = html`<span class="dot dot--blue"></span> Agent · running${
-          this.agentToolName_
-              ? html` : <code>${this.agentToolName_}</code>`
-              : nothing}${toolsSegment}`;
-    } else if (showThinking) {
-      statusBody = html`<span class="dot dot--amber"></span> Agent · thinking${
-          toolsSegment}`;
+    if (isRunningTool && active) {
+      const label = active.actionType
+          ? `${active.name} / ${active.actionType}`
+          : active.name;
+      statusBody = html`<span class="dot dot--blue"></span> Agent · running : <code>${label}</code>${countersSeg}`;
+    } else if (isThinking) {
+      statusBody =
+          html`<span class="dot dot--amber"></span> Agent · thinking${countersSeg}`;
     } else {
-      statusBody = html`<span class="dot"></span> Agent · idle${toolsSegment}`;
+      statusBody = html`<span class="dot"></span> Agent · idle${countersSeg}`;
     }
     return html`
       <button
@@ -506,7 +588,7 @@ export class NexusTopbar extends CrLitElement {
         ${this.agentZoneVisible ? globeIcon : globeOffIcon}
       </button>
       <div class="header__spacer"></div>
-      <div class="header__status">
+      <div class="header__status${isRunningTool ? ' header__status--running' : ''}">
         ${statusBody}
         ${showPermBadge ? this.renderPermissionsBadge_() : nothing}
       </div>

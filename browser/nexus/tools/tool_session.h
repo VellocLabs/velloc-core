@@ -3,9 +3,12 @@
 
 #include <string>
 
+#include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
-#include "custom_browser/browser/nexus/tools/browser_tool.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
+#include "custom_browser/browser/nexus/tools/file_tool/file_tool.h"
+#include "custom_browser/browser/nexus/tools/process_tool/process_tool.h"
 
 class Profile;
 
@@ -37,6 +40,8 @@ class ToolSession {
   // adapter). Returns mutable refs because tool method bodies modify
   // per-category state.
   BrowserTool& browser_tool() { return browser_tool_; }
+  FileTool& file_tool() { return file_tool_; }
+  ProcessTool& process_tool() { return process_tool_; }
   // SkillTool& skill_tool() { return skill_tool_; }   // future
 
   Profile* profile() const { return profile_.get(); }
@@ -66,6 +71,20 @@ class ToolSession {
   base::TimeDelta step_timeout() const { return step_timeout_; }
   void set_step_timeout(base::TimeDelta timeout);
 
+  // Session-level current working directory. Read by tool bodies that
+  // need a default cwd for shell / fs operations (Bash, Glob, Grep,
+  // and any future tool whose call payload doesn't carry an absolute
+  // path). Set via the existing `setAgentLoopSettings` bridge route
+  // (parsed in `ToolsAdapter::HandleSetAgentLoopSettings`).
+  //
+  // The setter only accepts absolute paths — relative paths are
+  // dropped silently with a [ToolSession] log entry. An unset cwd
+  // returns an empty `base::FilePath()`; tool bodies are expected to
+  // surface a clean error rather than silently falling back to the
+  // process cwd, which is rarely what the agent's host wants.
+  const base::FilePath& cwd() const { return cwd_; }
+  void set_cwd(base::FilePath cwd);
+
  private:
   raw_ptr<Profile> profile_;
   std::string session_key_;
@@ -75,11 +94,24 @@ class ToolSession {
   base::TimeDelta action_timeout_ = base::Seconds(180);
   base::TimeDelta step_timeout_ = base::Seconds(180);
 
+  // Default-empty so the unset state is observable by tool bodies.
+  // Populated by `set_cwd(...)` from the bridge.
+  base::FilePath cwd_;
+
   // Each per-category class is a member. Construction order is
   // declaration order; destruction reverses. ToolSession::OnStop
   // explicitly cascades so cleanup happens in a controlled order
   // (and at a point in lifetime where Profile is guaranteed alive).
+  //
+  // Order rationale: BrowserTool first because it owns actor-task
+  // teardown that may call into Profile's actor service; FileTool
+  // second because its OnStop only invalidates WeakPtrs and has no
+  // cross-category dependencies; ProcessTool last because its only
+  // outbound dep is the NexusShellService mojo Remote (no other
+  // category dependency).
   BrowserTool browser_tool_;
+  FileTool file_tool_;
+  ProcessTool process_tool_;
   // SkillTool skill_tool_;   // future
 };
 

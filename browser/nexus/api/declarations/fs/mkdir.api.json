@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "mkdir",
+  "description": "Create a directory; payload may carry a recursive flag.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Directory to create."
+    },
+    {
+      "name": "mode",
+      "type": "integer",
+      "required": false,
+      "description": "Optional Unix file mode."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

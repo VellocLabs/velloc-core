@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getProviderMissingPrompt",
+  "description": "Return the localized strings for the 'no model provider configured' prompt (header icon + dialog copy).",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

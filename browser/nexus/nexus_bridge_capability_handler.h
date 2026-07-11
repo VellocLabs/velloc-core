@@ -9,14 +9,37 @@
 #include <utility>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "third_party/blink/public/common/messaging/message_port_descriptor.h"
 
 namespace nexus {
 
+class BridgeResponseCallback;
 class NexusBridgeResponseDelegate;
+class NexusMessagePortEndpoint;
+
+// Result of a binary-port byte-receive operation. Returned via the
+// callback passed to AwaitBinaryFromPort. `ok` distinguishes "got bytes"
+// from "port disconnected / wrong payload type" — on `!ok`, `error`
+// carries a one-line description suitable for InvalidArgs / Error.
+struct BinaryReceiveResult {
+  bool ok = false;
+  std::vector<uint8_t> bytes;
+  std::string error;
+
+  // BigBuffer-free → trivially copyable, but we move because the bytes
+  // can be large.
+  BinaryReceiveResult();
+  BinaryReceiveResult(BinaryReceiveResult&&) noexcept;
+  BinaryReceiveResult& operator=(BinaryReceiveResult&&) noexcept;
+  BinaryReceiveResult(const BinaryReceiveResult&) = delete;
+  BinaryReceiveResult& operator=(const BinaryReceiveResult&) = delete;
+  ~BinaryReceiveResult();
+};
 
 class NexusBridgeCapabilityHandler {
  public:
@@ -32,6 +55,39 @@ class NexusBridgeCapabilityHandler {
                 const base::DictValue& route,
                 const base::DictValue& payload,
                 std::vector<blink::MessagePortDescriptor> ports);
+
+  // Returns a WeakPtr<NexusBridgeCapabilityHandler> bound to this object's
+  // home sequence (UI). Used by the codegen-emitted dispatcher to
+  // manufacture BridgeResponseCallbacks; those callbacks are safe to
+  // store / move across threads, but they always dereference back on
+  // UI to invoke Send*Response.
+  base::WeakPtr<NexusBridgeCapabilityHandler> AsWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
+  // Receive a binary buffer from a transferred message port, then
+  // invoke `on_done` with the result. Used by codegen-emitted
+  // dispatchers when an action's input declares a `bytes` type and
+  // the inline-payload variant wasn't sent (i.e. the guest chose to
+  // transfer the bytes via a MessagePort instead of encoding them as
+  // an array<integer> in the JSON payload).
+  //
+  // The callback fires exactly once on UI:
+  //   - With `ok=true` and `bytes` populated when the port delivers a
+  //     binary `MessageEvent` (an ArrayBuffer).
+  //   - With `ok=false` and `error` populated if the port disconnects
+  //     before delivering, or delivers a non-binary message.
+  //
+  // The endpoint and the callback are owned by this handler until the
+  // callback fires; if THIS handler is destroyed first, the callback
+  // is silently dropped (the pending entry destructs along with the
+  // adapter).
+  //
+  // Thread: must be called on this object's home sequence (UI). The
+  // callback also fires on UI.
+  void AwaitBinaryFromPort(
+      blink::MessagePortDescriptor port,
+      base::OnceCallback<void(BinaryReceiveResult)> on_done);
 
  protected:
   template <typename Derived>
@@ -134,8 +190,45 @@ class NexusBridgeCapabilityHandler {
       const std::array<std::string_view, N>& required_keys,
       std::array<std::string, N>* out) const;
 
+  // BridgeResponseCallback needs to invoke our protected Send*Response
+  // family from a UI-thread reply trampoline it owns. Friend the
+  // callback rather than promoting the methods to public — keeps
+  // direct call sites under the existing access discipline.
+  friend class BridgeResponseCallback;
+
+  // Per-pending-receive state for AwaitBinaryFromPort. The endpoint
+  // and the on_done callback are stored together; whichever path
+  // (OnMessage with bytes / OnError with disconnect) fires first
+  // moves on_done out, runs it, and erases the entry.
+  struct PendingBinaryReceive {
+    std::unique_ptr<NexusMessagePortEndpoint> endpoint;
+    base::OnceCallback<void(BinaryReceiveResult)> on_done;
+
+    PendingBinaryReceive();
+    PendingBinaryReceive(PendingBinaryReceive&&) noexcept;
+    PendingBinaryReceive& operator=(PendingBinaryReceive&&) noexcept;
+    PendingBinaryReceive(const PendingBinaryReceive&) = delete;
+    PendingBinaryReceive& operator=(const PendingBinaryReceive&) = delete;
+    ~PendingBinaryReceive();
+  };
+
+  // Resolve a pending receive (called by the closures inside
+  // AwaitBinaryFromPort).
+  void FinishPendingBinaryReceive(int receive_id, BinaryReceiveResult result);
+
   raw_ptr<NexusBridgeResponseDelegate> delegate_;
   std::map<std::string, DispatchHandler, std::less<>> handlers_;
+
+  // Pending binary receives, keyed by an internal counter. Each entry
+  // outlives its dispatcher closure until the port delivers bytes or
+  // disconnects; on adapter destruction, this map clears, dropping any
+  // unanswered binary receives cleanly.
+  std::map<int, PendingBinaryReceive> pending_binary_receives_;
+  int next_binary_receive_id_ = 0;
+
+  // Last member per chromium-style. Used by AsWeakPtr() above to mint
+  // WeakPtrs for the BridgeResponseCallback machinery.
+  base::WeakPtrFactory<NexusBridgeCapabilityHandler> weak_factory_{this};
 };
 
 template <typename Derived>

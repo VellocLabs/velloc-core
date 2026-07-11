@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setDefaultSelection",
+  "description": "Persist the user's default provider+model selection.",
+  "inputs": [
+    {
+      "name": "providerId",
+      "type": "string",
+      "required": true,
+      "description": "Provider id (anthropic / openai / ...)."
+    },
+    {
+      "name": "modelId",
+      "type": "string",
+      "required": true,
+      "description": "Model id within the provider."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

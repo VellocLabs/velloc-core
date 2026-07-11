@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readdir",
+  "description": "List directory entries; returns json-encoded array of dirent rows.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Directory path to list."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

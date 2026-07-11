@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexus.local/schemas/api.schema.json",
+  "title": "Nexus bridge-API declaration",
+  "description": "Schema for *.api.json files consumed by codegen/generate.py. Each file declares one bridge handler (a wire action under a category like fs / llm). Mirrors tool_schema.json closely so authors only learn one declarative form. Codegen emits a per-action input struct + extractor + dispatcher (in <category>_api.gen.{h,cc}); the implementation receives `(InputT input, ports, BridgeResponseCallback done)` and never sees the raw payload dict, the request id, or the route — those are handled by the framework.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "inputs"],
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor hint pointing at this file. Allows VS Code / similar editors to validate the document on save."
+    },
+
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+      "description": "Wire-format action name. CamelCase by convention (matches the JS guest's calls: fs.readFileBytes, llm.streamStart). Must match the filename (without .api.json) so codegen path-inference is unambiguous."
+    },
+
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One-line description of what this action does. Surfaced in generated code comments."
+    },
+
+    "inputs": {
+      "type": "array",
+      "description": "Ordered list of action inputs. Order drives the C++ input-struct field order. Each entry becomes one field on `<Name>Input` and one extraction step in the codegen-emitted Extract<Name>Input function. Empty array is valid (action takes no extracted inputs — typically because it only consumes ports, or its payload is opaque).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+            "description": "Field name. Matches the wire-format JSON key under the action's payload (camelCase: `streamId`, `providerId`). Used verbatim as the C++ struct field — non-idiomatic in Chromium-style but unambiguous and grep-friendly."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "string", "integer", "number", "boolean",
+              "array<string>", "array<integer>", "array<number>", "array<object>",
+              "object",
+              "bytes",
+              "passthrough_payload"
+            ],
+            "description": "Type. Mirrors tool_schema.json's enum, plus two API-only pseudo-types: `bytes` and `passthrough_payload`. `bytes` is `std::vector<uint8_t>` and uniquely supports DUAL TRANSPORT — the codegen-emitted dispatcher resolves the field by trying inline `array<integer>` in the payload first, then falling back to a transferred MessagePort that delivers an ArrayBuffer. The dispatch to the target thread is deferred until the bytes are actually in hand, so the implementation receives a fully-populated `std::vector<uint8_t>` and never touches ports. `passthrough_payload` captures the ENTIRE payload dict (used by LLM actions whose payload is opaque/provider-translated)."
+          },
+          "required": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, the field is added to the JSON-Schema `required` list AND the C++ struct uses the bare type. When false (default), the C++ struct wraps the field in std::optional<T>. `passthrough_payload` is implicitly always-required (the bridge always delivers a payload, even an empty one)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Per-input description. Surfaced in generated code comments."
+          }
+        }
+      }
+    },
+
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cross-cutting runtime properties. Mirrors the tools-side runtime block.",
+      "properties": {
+        "thread": {
+          "type": "string",
+          "enum": ["ui", "io", "any", "thread_pool"],
+          "default": "ui",
+          "description": "Which thread the implementation's Handle*() method runs on. The codegen-emitted dispatcher PostTasks to this thread before invoking the virtual (extracting required keys synchronously on UI first), so the implementation never has to PostTask itself for the entry hop. Method names get a suffix matching the value (HandleStatOnThreadPool, HandleCallOnUI). The response back to UI is handled by `BridgeResponseCallback` — implementations call done.Success/Error/Binary from any thread; the callback marshals to UI internally."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "grep",
+  "wire_name": "Grep",
+  "description": "Powerful content search across files using the host ripgrep binary. Supports full regex (rg syntax), glob filters, file-type filters, three output modes ('content' / 'files_with_matches' (default) / 'count'), and contextual matches. Pattern syntax is ripgrep — not POSIX grep — so escape literal braces as needed and use `(?s)` for dotall multiline.",
+  "inputs": [
+    {
+      "name": "pattern",
+      "type": "string",
+      "required": true,
+      "description": "Regex pattern. Uses ripgrep / Rust-regex syntax (close to PCRE; backreferences not supported)."
+    },
+    {
+      "name": "path",
+      "type": "string",
+      "required": false,
+      "description": "File or directory to search in. Absolute paths used as-is; relative paths resolved against the session cwd. Defaults to the session cwd."
+    },
+    {
+      "name": "glob",
+      "type": "string",
+      "required": false,
+      "description": "Optional glob filter on file paths (e.g. \"*.cc\", \"*.{ts,tsx}\"). Maps to rg --glob; multiple patterns can be space-separated."
+    },
+    {
+      "name": "type",
+      "type": "string",
+      "required": false,
+      "description": "Built-in file-type filter (rg --type). Common values: cc, h, js, ts, py, rust, go, java, md."
+    },
+    {
+      "name": "output_mode",
+      "type": "string",
+      "required": false,
+      "description": "One of 'content' | 'files_with_matches' | 'count'. Default 'files_with_matches'. 'content' returns matching lines (with optional context); 'files_with_matches' returns paths only (cheapest); 'count' returns per-file totals."
+    },
+    {
+      "name": "context",
+      "type": "integer",
+      "required": false,
+      "description": "Lines of context around each match (rg -C). Only meaningful when output_mode='content'. Overrides before_context/after_context if set."
+    },
+    {
+      "name": "before_context",
+      "type": "integer",
+      "required": false,
+      "description": "Lines of context before each match (rg -B). Only meaningful when output_mode='content'."
+    },
+    {
+      "name": "after_context",
+      "type": "integer",
+      "required": false,
+      "description": "Lines of context after each match (rg -A). Only meaningful when output_mode='content'."
+    },
+    {
+      "name": "case_insensitive",
+      "type": "boolean",
+      "required": false,
+      "description": "Case-insensitive search (rg -i). Default false."
+    },
+    {
+      "name": "show_line_numbers",
+      "type": "boolean",
+      "required": false,
+      "description": "Include line numbers in 'content' mode (rg -n). Defaults to true. Ignored in other modes."
+    },
+    {
+      "name": "head_limit",
+      "type": "integer",
+      "required": false,
+      "description": "Cap output: in 'content' mode max N matching lines; in other modes max N files. Default 250; pass 0 for unlimited."
+    },
+    {
+      "name": "offset",
+      "type": "integer",
+      "required": false,
+      "description": "Skip first N entries before applying head_limit (for pagination)."
+    },
+    {
+      "name": "multiline",
+      "type": "boolean",
+      "required": false,
+      "description": "Enable multiline matching with dotall (rg -U --multiline-dotall). Default false. Use when patterns must span line boundaries."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "pattern": "TODO|FIXME",
+          "type": "ts"
+        },
+        {
+          "pattern": "function\\s+\\w+",
+          "output_mode": "content",
+          "context": 1
+        },
+        {
+          "pattern": "kRetryCount",
+          "glob": "*.cc",
+          "head_limit": 50
+        }
+      ]
+    }
+  }
+}

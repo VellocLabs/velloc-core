@@ -1,0 +1,31 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "find_text",
+  "wire_name": "BrowserFindText",
+  "description": "Search the active tab's visible page for text matching `query` (case-insensitive substring match). Returns each match's text plus the nearest clickable ancestor's index, so you can click the result directly without doing a separate observation pass. Number of results is capped server-side.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true,
+      "description": "Required text to search for. Case-insensitive substring match."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "query": "sign in"
+        },
+        {
+          "query": "next page"
+        }
+      ]
+    }
+  }
+}

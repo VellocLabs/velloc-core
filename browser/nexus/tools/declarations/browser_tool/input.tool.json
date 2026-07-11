@@ -1,0 +1,46 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "input",
+  "wire_name": "BrowserType",
+  "description": "Type text into a focusable input element on the active tab (text field, textarea, contenteditable). The index must come from the most recent observation's `elements[]`. Set `submit: true` to press Enter immediately after typing — useful for search boxes that submit on Enter. For filling multiple fields at once, prefer `BrowserFillForm`.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": true,
+      "description": "Required element index from the latest observation's elements[] list."
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "required": true,
+      "description": "Required text to type. The framework focuses the element first; existing content is replaced if the field is selected on focus."
+    },
+    {
+      "name": "submit",
+      "type": "boolean",
+      "required": false,
+      "description": "If true, press Enter after typing. Useful for search boxes."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "index": 5,
+          "text": "hello world"
+        },
+        {
+          "index": 5,
+          "text": "search query",
+          "submit": true
+        }
+      ]
+    }
+  }
+}

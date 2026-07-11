@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "openNexusSettings",
+  "description": "Open the Nexus settings WebUI surface in the most-recently-active browser window for the calling profile.",
+  "inputs": [
+    {
+      "name": "section",
+      "type": "string",
+      "required": false,
+      "description": "Settings tab to focus. One of 'models' / 'webapp'; invalid or missing values fall back to 'models'."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

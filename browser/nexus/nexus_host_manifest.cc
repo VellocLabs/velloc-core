@@ -5,7 +5,6 @@
 
 #include "base/values.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
-#include "custom_browser/browser/nexus/nexus_features.h"
 
 namespace nexus {
 
@@ -13,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 4> kBridgeCapabilities = {
+constexpr std::array<const char*, 6> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -24,9 +23,22 @@ constexpr std::array<const char*, 4> kBridgeCapabilities = {
     //
     // Replaced the legacy `glic` capability that used to be advertised
     // here. Every browser-actor tool now arrives via
-    // `browser.<tool_name>` and per-session lifecycle uses
-    // `browser.endSession`.
+    // `browser.<tool_name>`. Session lifecycle (`onStop`,
+    // `setAgentLoopSettings`) moved to the dedicated `session`
+    // capability in Phase 12f.
     "browser",
+    // Phase 12f: dedicated session capability. `publishStatus` (cache
+    // for the WebUI quick-settings popup), `onStop` (LLM-session
+    // OnStop cascade — renamed from `browser.endSession`),
+    // `setAgentLoopSettings` (per-session wall-clock budgets). See
+    // custom_browser/browser/nexus/api/session/.
+    "session",
+    // Phase 12: catalog metadata served lazily over the bridge. JS
+    // pulls `listHostedTools` (replacing the bootstrap manifest's
+    // hostedTools field) and `renderPromptSection` (replacing TS-side
+    // getUsingYourToolsSection rendering). See
+    // custom_browser/browser/nexus/api/catalog/.
+    "catalog",
 };
 
 template <size_t N>
@@ -40,29 +52,22 @@ base::ListValue BuildStringList(const std::array<const char*, N>& entries) {
 
 }  // namespace
 
-base::DictValue BuildNexusHostManifest(
-    base::span<const ToolSchema> hosted_tools) {
+base::DictValue BuildNexusHostManifest() {
   base::DictValue manifest;
   manifest.Set("hostKind", kHostKind);
 
   base::ListValue capabilities = BuildStringList(kBridgeCapabilities);
-  // The `process` capability is gated behind PrereleaseNexusProcessCapability
-  // — only advertise it when the bridge will actually register the
-  // adapter (see NexusBridgePortService). Both surfaces must agree:
-  // advertising "process" here without registering the adapter would
-  // make every `process.*` call hang waiting for a handler.
-  if (features::IsNexusProcessCapabilityEnabled()) {
-    capabilities.Append("process");
-  }
+  // Phase 12g: dropped the `process` capability advertisement.
+  // The bridge surface had no JS-side callers (Phase 11b deleted the
+  // only consumers — TS BashTool / GrepTool / GlobTool). The C++
+  // ProcessTool calls into NexusShellService directly via its own
+  // launcher; nothing in the bridge serializes those calls.
   manifest.Set("capabilities", std::move(capabilities));
 
-  // Emit the catalog the LLM-facing JS reads as `manifest.hostedTools`.
-  // Skip the field entirely if empty so the JS-side fallback path
-  // (`getToolsForHostManifest` in `nexus_web/src/tools.ts`) is exercised
-  // unchanged when no C++ tools are advertised.
-  if (!hosted_tools.empty()) {
-    manifest.Set("hostedTools", BuildHostedToolsList(hosted_tools));
-  }
+  // Phase 12c: hostedTools used to live here. They now flow through the
+  // `catalog` capability — JS calls `nexus.catalog.listHostedTools`
+  // post-bootstrap to fetch the same array. Bootstrap message stays
+  // minimal: hostKind + capabilities only.
   return manifest;
 }
 
@@ -71,15 +76,6 @@ std::string BuildNexusBridgeBootstrapMessage() {
   message.Set("type", "nexus-bridge-bootstrap");
   message.Set("nexus", true);
   message.Set("manifest", BuildNexusHostManifest());
-  return bridge_support::SerializeJson(base::Value(std::move(message)));
-}
-
-std::string BuildNexusBridgeBootstrapMessageWithTools(
-    base::span<const ToolSchema> hosted_tools) {
-  base::DictValue message;
-  message.Set("type", "nexus-bridge-bootstrap");
-  message.Set("nexus", true);
-  message.Set("manifest", BuildNexusHostManifest(hosted_tools));
   return bridge_support::SerializeJson(base::Value(std::move(message)));
 }
 

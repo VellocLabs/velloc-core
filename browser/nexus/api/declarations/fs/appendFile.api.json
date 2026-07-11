@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "appendFile",
+  "description": "Append bytes to a file; creates the file if missing. Bytes may arrive inline as `data` or via a transferred message port.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Destination path."
+    },
+    {
+      "name": "data",
+      "type": "bytes",
+      "required": true,
+      "description": "Bytes to append. May arrive inline as an array of integers in the payload, OR via a transferred MessagePort that delivers an ArrayBuffer."
+    },
+    {
+      "name": "mode",
+      "type": "integer",
+      "required": false,
+      "description": "Optional Unix file mode (currently ignored)."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

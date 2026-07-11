@@ -241,9 +241,28 @@ base::Value WrapResultWithAgentMeta(base::Value observation,
     agent_meta.Set("terminates_sequence", true);
   }
 
-  if (!agent_meta.empty()) {
-    out.Set("agent_meta", std::move(agent_meta));
-  }
+  // Phase 13.1: ALWAYS emit `agent_meta`, even when empty. The JS-side
+  // unwrapper (`hostedTools.ts::unwrapData`) keys envelope detection
+  // off the presence of this field:
+  //
+  //     if ('agent_meta' in rawResult) return rawResult.data;
+  //     return rawResult;  // unwrapped — pass through
+  //
+  // When `agent_meta` is omitted (which happened on any call where
+  // `meta` was all-empty — e.g. fresh session before any observation,
+  // or the empty-observation race in `OnCreateTabActionDone`), JS
+  // treated the response as already-unwrapped and forwarded `{ data:
+  // <observation> }` to the LLM verbatim. Successful calls with
+  // populated meta got correctly unwrapped to `{ action, observation,
+  // ok }`. The LLM saw two different envelope shapes within one
+  // session.
+  //
+  // Setting an empty dict here keeps the wire shape consistent: every
+  // tool response is `{ data: ..., agent_meta: ... }`, and the JS
+  // unwrapper always fires. Telemetry consumers that look at specific
+  // sub-fields of agent_meta still see the absent fields as missing
+  // (the dict is just empty), so this is backward-compatible.
+  out.Set("agent_meta", std::move(agent_meta));
   return base::Value(std::move(out));
 }
 

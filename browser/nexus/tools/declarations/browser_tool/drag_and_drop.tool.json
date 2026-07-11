@@ -1,0 +1,35 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "drag_and_drop",
+  "wire_name": "BrowserDragAndDrop",
+  "description": "Press the mouse on `from_index`, drag, and release on `to_index` on the active tab. Both elements must be on the same (active) tab. Use for reordering lists, drag-style sliders, kanban-board moves, or any UI that listens for drag events instead of clicks.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "from_index",
+      "type": "integer",
+      "required": true,
+      "description": "Required source element index (where the drag starts)."
+    },
+    {
+      "name": "to_index",
+      "type": "integer",
+      "required": true,
+      "description": "Required destination element index (where the drag ends)."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "from_index": 3,
+          "to_index": 8
+        }
+      ]
+    }
+  }
+}

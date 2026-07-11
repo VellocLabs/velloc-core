@@ -7,11 +7,9 @@
 #include <string_view>
 #include <vector>
 
-#include "base/containers/span.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "third_party/blink/public/common/messaging/message_port_descriptor.h"
 #include "third_party/blink/public/common/messaging/string_message_codec.h"
@@ -21,11 +19,11 @@ class Profile;
 namespace nexus {
 
 class NexusBridgeCapabilityHandler;
+class NexusCatalogBridgeAdapter;
 class NexusFsBridgeAdapter;
 class NexusLlmBridgeAdapter;
 class NexusMessagePortEndpoint;
-class NexusProcessBridgeAdapter;
-class NexusShellServiceLauncher;
+class NexusSessionBridgeAdapter;
 class NexusUiBridgeAdapter;
 class ToolsAdapter;
 
@@ -64,13 +62,6 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // receiving messages.
   bool IsConnected() const;
 
-  // Returns the list of macro-DSL-declared tool schemas. Used by the
-  // bootstrap host to populate the bootstrap manifest's `hostedTools`
-  // array — the LLM-facing tool catalog the guest delivers to the
-  // model. Reads from the process-global `ToolCatalog::Get()` —
-  // schemas are stable across instances.
-  base::span<const ToolSchema> GetBrowserToolSchemas() const;
-
   void SendSuccessResponse(const std::string& id,
                            const base::DictValue& route,
                            base::Value result) override;
@@ -99,6 +90,12 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   std::unique_ptr<NexusFsBridgeAdapter> fs_adapter_;
   std::unique_ptr<NexusLlmBridgeAdapter> llm_adapter_;
   std::unique_ptr<NexusUiBridgeAdapter> ui_adapter_;
+  // Phase 12: serves the `catalog` capability — listHostedTools (lazy-
+  // pull replacement for the bootstrap manifest's hostedTools field)
+  // and renderPromptSection / listPromptSections (C++ side now owns
+  // the prose-rendering that pre-Phase-12 lived in
+  // nexus_web/src/constants/systemPromptToolSection.ts).
+  std::unique_ptr<NexusCatalogBridgeAdapter> catalog_adapter_;
   // Owns the per-LLM-session sessions map (`ToolSession` per sessionId)
   // and routes catalog dispatchers from `ToolCatalog::Get()` through
   // session lookup before invoking the per-category methods (currently
@@ -106,13 +103,21 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // `NexusGlicBridgeAdapter` and the `glic` capability it served have
   // been retired — every browser-actor tool call now arrives via
   // `browser.<tool_name>` and lifecycle cleanup arrives via
-  // `browser.endSession`.
+  // `session.onStop` (Phase 12f, formerly `browser.endSession`).
   std::unique_ptr<ToolsAdapter> tools_adapter_;
-
-  // Lifetime: launcher must outlive `process_adapter_` because the
-  // adapter holds a callback that derefs the launcher's remote.
-  std::unique_ptr<NexusShellServiceLauncher> shell_service_launcher_;
-  std::unique_ptr<NexusProcessBridgeAdapter> process_adapter_;
+  // Phase 12f: serves the `session` capability — `publishStatus`
+  // (broker cache; pre-12f lived under `llm/`), `onStop` (rename of
+  // pre-12f `browser.endSession`; cascades through ToolsAdapter), and
+  // `setAgentLoopSettings` (per-session wall-clock budgets). Holds a
+  // raw back-pointer to `tools_adapter_`; the two adapters share a
+  // lifetime under this port service so the back-ref is safe.
+  std::unique_ptr<NexusSessionBridgeAdapter> session_adapter_;
+  // Phase 12g: dropped `process_adapter_` + `shell_service_launcher_`.
+  // The bridge `process` capability had no JS-side callers (Phase 11b
+  // deleted the only consumers — TS BashTool / GrepTool / GlobTool).
+  // The C++ ProcessTool (under `tools/process_tool/`) talks to
+  // NexusShellService directly through its own launcher; that path
+  // is unchanged.
   std::map<std::string, NexusBridgeCapabilityHandler*, std::less<>>
       capability_handlers_;
   std::unique_ptr<NexusMessagePortEndpoint> browser_port_;

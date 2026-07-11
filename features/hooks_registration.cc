@@ -1,6 +1,6 @@
 #include "custom_browser/features/hooks_registration.h"
 
-#include "custom_browser/browser/nexus/llm/llm_broker_factory.h"
+#include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/features/patch_webui/register_hooks.h"
 

@@ -6,26 +6,54 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_extract.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_registry.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_signature.h"
 #include "custom_browser/browser/nexus/tools/tool_catalog.h"
-#include "custom_browser/browser/nexus/ui/nexus_ui_broadcast.h"
 
 namespace nexus {
+
+namespace {
+
+// Pull the session id out of a tool-dispatch payload. Two accepted
+// shapes:
+//   * preferred (what the JS guest's `buildHostedToolExecutionContext`
+//     produces): `{ executionContext: { sessionId: "..." } }`
+//   * legacy: top-level `{ sessionId: "..." }`
+// A missing or empty session id falls through to the "__default__"
+// sentinel so single-session callers don't have to thread the field
+// every call. Multi-session callers always populate it.
+//
+// Phase 12f shrank the call sites: this helper now only services the
+// model-facing tool dispatcher in `RegisterCatalogDispatchers`. The
+// session-lifecycle path (`session.onStop`,
+// `session.setAgentLoopSettings`) lives in
+// `api/session/nexus_session_bridge_adapter.cc` and reads the same
+// shape via the codegen-extracted typed input.
+std::string ExtractSessionKey(const base::DictValue& payload) {
+  if (const base::DictValue* ctx = payload.FindDict("executionContext")) {
+    if (const std::string* session_id = ctx->FindString("sessionId")) {
+      if (!session_id->empty()) {
+        return *session_id;
+      }
+    }
+  }
+  if (const std::string* top_level = payload.FindString("sessionId")) {
+    if (!top_level->empty()) {
+      return *top_level;
+    }
+  }
+  return "__default__";
+}
+
+}  // namespace
 
 ToolsAdapter::ToolsAdapter(NexusBridgeResponseDelegate* delegate,
                             Profile* profile)
     : NexusBridgeCapabilityHandler(delegate), profile_(profile) {
+  // Phase 12f: the session-lifecycle handlers (`endSession`,
+  // `setAgentLoopSettings`) moved to `NexusSessionBridgeAdapter`.
+  // ToolsAdapter only owns the model-facing tool dispatch table.
   RegisterCatalogDispatchers();
-  // Session lifecycle action — JS calls `browser.endSession` to
-  // cleanly trigger the OnStop cascade for one sessionId.
-  Register("endSession", &ToolsAdapter::HandleEndSession);
-  // Agent-loop tunables push — JS calls `browser.setAgentLoopSettings`
-  // once per session to push `actionTimeoutMs` (and future fields)
-  // into the matching ToolSession. See agent-loop integration plan
-  // §C in C:/Users/myyyb/.claude/plans/ for the full design.
-  Register("setAgentLoopSettings", &ToolsAdapter::HandleSetAgentLoopSettings);
 }
 
 ToolsAdapter::~ToolsAdapter() {
@@ -53,6 +81,10 @@ ToolSession& ToolsAdapter::GetOrCreateSession(
   return *raw;
 }
 
+bool ToolsAdapter::HasSession(const std::string& session_key) const {
+  return sessions_.find(session_key) != sessions_.end();
+}
+
 void ToolsAdapter::OnSessionStopped(const std::string& session_key,
                                      const std::string& reason) {
   auto it = sessions_.find(session_key);
@@ -68,7 +100,10 @@ void ToolsAdapter::OnSessionStopped(const std::string& session_key,
 void ToolsAdapter::ForwardSuccess(std::string id,
                                    base::DictValue route,
                                    base::Value result) {
-  OnToolDispatchFinished(id, /*success=*/true);
+  // Tool-state telemetry to the topbar is now driven JS-side by
+  // `SharedWorkerSessionManager.markToolEnd`, which fires the unified
+  // `nexusCurrentSessionState` broadcast. The C++ side just forwards
+  // the bridge response.
   SendSuccessResponse(id, route, std::move(result));
 }
 
@@ -110,124 +145,7 @@ void ToolsAdapter::ForwardError(std::string id,
                                  base::DictValue route,
                                  std::string code,
                                  std::string message) {
-  OnToolDispatchFinished(id, /*success=*/false);
   SendErrorResponse(id, route, code, message);
-}
-
-void ToolsAdapter::OnToolDispatchStarted(const std::string& id,
-                                          const std::string& tool_name) {
-  pending_tool_names_[id] = tool_name;
-  ++total_invocations_;
-  ++running_count_;
-  current_tool_name_ = tool_name;
-  BroadcastAgentState();
-}
-
-void ToolsAdapter::OnToolDispatchFinished(const std::string& id,
-                                           bool success) {
-  // The dispatch may resolve after the adapter has stopped tracking it
-  // (e.g. webview reload races); a missing entry just means there's
-  // nothing to credit.
-  auto it = pending_tool_names_.find(id);
-  if (it == pending_tool_names_.end()) {
-    return;
-  }
-  pending_tool_names_.erase(it);
-
-  if (success) {
-    ++successful_invocations_;
-  }
-  // Defensive clamp — `pending_tool_names_` membership is the source of
-  // truth for "is this resolution counted", but `running_count_` is
-  // tracked separately to avoid map-size linear scans.
-  running_count_ = std::max(0, running_count_ - 1);
-  BroadcastAgentState();
-}
-
-void ToolsAdapter::BroadcastAgentState() {
-  // Tool category is encoded in the schema-name prefix — every browser-
-  // category tool starts with `browser_` (see `BrowserTool::DefineTools`
-  // in `browser_tool.h`). The topbar uses this flag to decide whether to
-  // transiently reveal the agent zone for the duration of the tool call.
-  const bool is_browser_tool =
-      current_tool_name_.starts_with("browser_");
-
-  base::DictValue payload;
-  payload.Set("running", running_count_ > 0);
-  payload.Set("toolName", current_tool_name_);
-  payload.Set("isBrowserTool", is_browser_tool);
-  payload.Set("successful", successful_invocations_);
-  payload.Set("total", total_invocations_);
-  BroadcastWebUiListenerEventToProfile(
-      profile_, "nexusAgentStateChanged", base::Value(std::move(payload)));
-}
-
-void ToolsAdapter::HandleSetAgentLoopSettings(
-    const std::string& id,
-    const base::DictValue& route,
-    const base::DictValue& payload,
-    std::vector<blink::MessagePortDescriptor> /*ports*/) {
-  std::string session_key = ExtractSessionKey(payload);
-
-  // Lazily create the session so JS can push settings before the
-  // first tool call. The OnStop cascade still cleans this up if the
-  // session is later torn down without ever running a tool.
-  ToolSession& session = GetOrCreateSession(session_key);
-
-  // `actionTimeoutMs` may arrive as int or double depending on JS
-  // serialization. Try int first, fall back to double.
-  std::optional<int> as_int = payload.FindInt("actionTimeoutMs");
-  std::optional<double> as_double = payload.FindDouble("actionTimeoutMs");
-  if (as_int.has_value()) {
-    session.set_action_timeout(base::Milliseconds(*as_int));
-  } else if (as_double.has_value()) {
-    session.set_action_timeout(
-        base::Milliseconds(static_cast<int>(*as_double)));
-  }
-
-  as_int = payload.FindInt("stepTimeoutMs");
-  as_double = payload.FindDouble("stepTimeoutMs");
-  if (as_int.has_value()) {
-    session.set_step_timeout(base::Milliseconds(*as_int));
-  } else if (as_double.has_value()) {
-    session.set_step_timeout(
-        base::Milliseconds(static_cast<int>(*as_double)));
-  }
-
-  base::DictValue result;
-  result.Set("ok", true);
-  // Echo the applied value (after clamp). Lets JS confirm what the
-  // host actually set without an extra round trip.
-  result.Set("appliedActionTimeoutMs",
-             static_cast<int>(session.action_timeout().InMilliseconds()));
-  result.Set("appliedStepTimeoutMs",
-             static_cast<int>(session.step_timeout().InMilliseconds()));
-  SendSuccessResponse(id, route, base::Value(std::move(result)));
-}
-
-void ToolsAdapter::HandleEndSession(
-    const std::string& id,
-    const base::DictValue& route,
-    const base::DictValue& payload,
-    std::vector<blink::MessagePortDescriptor> /*ports*/) {
-  std::string session_key = ExtractSessionKey(payload);
-
-  std::string reason = "user_stopped";
-  if (const std::string* r = payload.FindString("reason"); r && !r->empty()) {
-    reason = *r;
-  }
-
-  // Was the session actually live before this call? Useful for the JS
-  // caller to know whether anything was stopped (the JS surface
-  // surfaces this as `{ ok, stopped }`, where `stopped` is `false` for
-  // the second call when the session was already torn down).
-  bool was_live = sessions_.find(session_key) != sessions_.end();
-  OnSessionStopped(session_key, reason);
-
-  base::DictValue result;
-  result.Set("ok", true);
-  result.Set("stopped", was_live);
-  SendSuccessResponse(id, route, base::Value(std::move(result)));
 }
 
 void ToolsAdapter::RegisterCatalogDispatchers() {
@@ -250,12 +168,10 @@ void ToolsAdapter::RegisterCatalogDispatchers() {
           std::string session_key = ExtractSessionKey(payload);
           ToolSession& session = adapter->GetOrCreateSession(session_key);
 
-          // Record the dispatch so the topbar's `nexusAgentStateChanged`
-          // listener can flip to `running : <tool_name>` and bump the
-          // total counter. The matching decrement (and success bump)
-          // happens in ForwardSuccess / ForwardError, which run when the
-          // tool's `ToolCallback` resolves.
-          adapter->OnToolDispatchStarted(id, tool_name);
+          // Tool-state telemetry to the topbar is now driven JS-side by
+          // `SharedWorkerSessionManager.markToolStart/End` and routed
+          // through the `ui.broadcastCurrentSessionState` bridge action.
+          // No native counter bookkeeping here.
 
           // Per-request callback bound to (id, route, weak adapter).
           // Each invocation gets a fresh ToolCallback; the dispatcher's

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "streamStart",
+  "description": "Begin a streamed LLM completion; returns a streamId for subsequent reads.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "Same shape as `call`'s payload."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

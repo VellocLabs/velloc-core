@@ -27,8 +27,8 @@ class NexusBridgeResponseDelegate;
 //
 // On construction, iterates `ToolCatalog::Get().entries()` and registers
 // a session-routing bridge handler for each tool. Each handler:
-//   1. Extracts `executionContext.sessionId` from the payload (via
-//      `ExtractSessionKey`).
+//   1. Extracts `executionContext.sessionId` from the payload (via the
+//      file-local `ExtractSessionKey` in tools_adapter.cc).
 //   2. Looks up (or lazily creates) the matching `ToolSession`.
 //   3. Runs the catalog entry's dispatcher with `&session` as the
 //      instance; the dispatcher's inner trampoline uses
@@ -58,6 +58,15 @@ class ToolsAdapter : public NexusBridgeCapabilityHandler {
   // (and therefore a fresh per-category state, e.g. a fresh
   // `BrowserTool` with no `actor::TaskId` yet).
   ToolSession& GetOrCreateSession(const std::string& session_key);
+
+  // True iff a session keyed by `session_key` is currently in the map.
+  // Used by `NexusSessionBridgeAdapter::HandleOnStopOnUI` to surface
+  // the `{ ok, stopped }` shape — `stopped` is `true` only when the
+  // session was live at the time of the call. Phase 12f exposed this
+  // method so the bridge-side `onStop` handler (which lives outside
+  // ToolsAdapter) can read the answer without reaching into the
+  // private `sessions_` map.
+  bool HasSession(const std::string& session_key) const;
 
   // Cascades the OnStop notification through the session and erases
   // it from the map. Idempotent — no-op if `session_key` isn't present.
@@ -90,69 +99,19 @@ class ToolsAdapter : public NexusBridgeCapabilityHandler {
                                    std::string session_key,
                                    base::Value result);
 
-  // Records that a tool dispatch is starting. Bumps `total_invocations_`
-  // and `running_count_`, remembers the tool name keyed by request `id`,
-  // and broadcasts `nexusAgentStateChanged`. Called from the dispatcher
-  // handler, where the tool's `schema.name` is in scope.
-  void OnToolDispatchStarted(const std::string& id,
-                             const std::string& tool_name);
-
  private:
   // Iterates `ToolCatalog::Get().entries()` and registers each as a
   // session-routing bridge handler.
-  void RegisterCatalogDispatchers();
-
-  // Resolves the pending tool entry for `id` (set in
-  // `OnToolDispatchStarted`), decrements `running_count_`, optionally
-  // bumps `successful_invocations_`, and broadcasts the new agent state.
-  void OnToolDispatchFinished(const std::string& id, bool success);
-
-  // Builds the `nexusAgentStateChanged` payload from the current counters
-  // and pushes it to every WebUI in this profile via
-  // `BroadcastWebUiListenerEventToProfile`.
-  void BroadcastAgentState();
-
-  // Registered under the `browser` capability as the `endSession`
-  // action. Reads `executionContext.sessionId` (or top-level
-  // `sessionId`) plus an optional string `reason`, runs the OnStop
-  // cascade through the matching `ToolSession`, drops the session
-  // from the map, and resolves with `{ ok: true, stopped: <bool> }`.
   //
-  // This is the canonical way for the JS side to invoke the tool
-  // framework's OnStop hook. `BrowserTool::OnStop` stops the actor
-  // task and clears the per-session element registry as part of the
-  // cleanup, so a single `browser.endSession` call is enough to wind
-  // a session down end-to-end. The handler is idempotent — calling it
-  // twice for the same session_key is safe (the second call returns
-  // `stopped: false`).
-  void HandleEndSession(const std::string& id,
-                        const base::DictValue& route,
-                        const base::DictValue& payload,
-                        std::vector<blink::MessagePortDescriptor> ports);
-
-  // Registered under the `browser` capability as
-  // `setAgentLoopSettings`. Pushes JS-side AgentLoopSettings
-  // (`actionTimeoutMs`, `stepTimeoutMs`) onto the matching `ToolSession`. Lazily
-  // creates the session if absent so JS can push settings before the
-  // first tool call. Resolves with the applied values after C++-side clamping.
-  void HandleSetAgentLoopSettings(
-      const std::string& id,
-      const base::DictValue& route,
-      const base::DictValue& payload,
-      std::vector<blink::MessagePortDescriptor> ports);
+  // Phase 12f moved the manual `endSession` and `setAgentLoopSettings`
+  // handlers off this adapter onto the codegen-driven `session`
+  // capability (see `api/session/nexus_session_bridge_adapter.{h,cc}`).
+  // ToolsAdapter now ONLY hosts the model-facing tool dispatch — every
+  // entry registered here is an LLM-callable browser tool.
+  void RegisterCatalogDispatchers();
 
   raw_ptr<Profile> profile_;
   std::map<std::string, std::unique_ptr<ToolSession>> sessions_;
-
-  // Aggregate tool-call telemetry surfaced to the topbar via
-  // `nexusAgentStateChanged`. Aggregated across all sessions served by
-  // this adapter (one per `NexusBridgePortService`, i.e. one per
-  // webview); reset implicitly when the adapter is destroyed.
-  int total_invocations_ = 0;
-  int successful_invocations_ = 0;
-  int running_count_ = 0;
-  std::string current_tool_name_;
-  std::map<std::string, std::string> pending_tool_names_;
 
   base::WeakPtrFactory<ToolsAdapter> weak_ptr_factory_{this};
 };

@@ -60,6 +60,33 @@ interface SessionStatus {
   selection?: SessionSelection;
 }
 
+// Mirror of the unified topbar feed payload. Defined inline rather than
+// shared because the in-browser WebUI build cannot import from
+// `nexus_topbar.ts` cleanly — both components are siblings under the
+// same surface and only need the subset of fields they consume.
+type NexusCurrentSessionWirePayload =
+  | {
+      kind: 'snapshot';
+      sessionId: string;
+      model: SessionSelection|null;
+      phase: 'idle'|'thinking'|'tool'|'mcp';
+      active: {name: string; actionType?: string}|null;
+      counters: {tool: number; toolFail: number; mcp: number; mcpFail: number};
+    }
+  | {
+      kind: 'delta';
+      sessionId: string;
+      model?: SessionSelection|null;
+      phase?: 'idle'|'thinking'|'tool'|'mcp';
+      active?: {name: string; actionType?: string}|null;
+      counters?: Partial<{
+        tool: number;
+        toolFail: number;
+        mcp: number;
+        mcpFail: number;
+      }>;
+    };
+
 interface PickFailedPayload {
   providerId?: string;
   modelId?: string;
@@ -164,6 +191,7 @@ export class NexusQuickSettingsElement extends CrLitElement {
     open_: {type: Boolean, state: true},
     query_: {type: String, state: true},
     pendingPickKey_: {type: String, state: true},
+    phase_: {type: String, state: true},
   };
 
   // Internal state.
@@ -176,6 +204,14 @@ export class NexusQuickSettingsElement extends CrLitElement {
   // status broadcast) the option key is stored here so we can render
   // a dim/disabled state on that row.
   private declare pendingPickKey_: string;
+  // Active session's phase, sourced from `nexusCurrentSessionState`.
+  // Drives the trigger's border-runner animation while the model is
+  // thinking (no tool dispatched). Other phases — `tool` / `mcp` /
+  // `idle` — leave the trigger plain; the topbar pill carries those
+  // states. Typed as `string` rather than a literal union so the
+  // Chromium WebUI's TS preprocessor (which doesn't support union
+  // types on Lit reactive properties) accepts the declaration.
+  private declare phase_: string;
   private lastError_: string|null = null;
 
   // WebUI listener handles — cleared in disconnectedCallback.
@@ -228,10 +264,56 @@ export class NexusQuickSettingsElement extends CrLitElement {
           background-color 120ms ease,
           border-color 120ms ease,
           box-shadow 120ms ease;
+      position: relative;
+      isolation: isolate;
     }
     .qs-trigger:hover {
       background: var(--qs-hover);
       border-color: var(--qs-fg-muted);
+    }
+    /* Border runner — animated conic-gradient ring on the trigger
+     * while the active session is in the "thinking" phase. See
+     * nexus_topbar.ts for the implementation comment — same
+     * overflow:hidden + oversized rotating ::before + opaque
+     * ::after inner fill pattern. */
+    .qs-trigger--thinking { overflow: hidden; }
+    .qs-trigger--thinking::before {
+      animation: qs-trigger-runner 2.8s linear infinite;
+      aspect-ratio: 1;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        transparent 270deg,
+        var(--qs-accent) 330deg,
+        #ffffff 350deg,
+        transparent 360deg
+      );
+      content: "";
+      left: 50%;
+      pointer-events: none;
+      position: absolute;
+      top: 50%;
+      width: 200%;
+      z-index: -2;
+    }
+    .qs-trigger--thinking::after {
+      background: var(--qs-bg);
+      border-radius: var(--qs-radius);
+      content: "";
+      inset: 1px;
+      pointer-events: none;
+      position: absolute;
+      z-index: -1;
+    }
+    .qs-trigger--thinking[aria-expanded="true"]::after {
+      background: var(--qs-accent-soft);
+    }
+    @keyframes qs-trigger-runner {
+      from { transform: translate(-50%, -50%) rotate(0deg); }
+      to   { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .qs-trigger--thinking::before { animation: none; }
     }
     .qs-trigger:focus-visible {
       border-color: var(--qs-accent);
@@ -532,15 +614,21 @@ export class NexusQuickSettingsElement extends CrLitElement {
     this.open_ = false;
     this.query_ = '';
     this.pendingPickKey_ = '';
+    this.phase_ = 'idle';
 
     // Register WebUI listeners as early as possible so a fast C++
     // broadcast cannot land before we're ready (mirrors nexus_topbar.ts).
     this.catalogListener_ = addWebUiListener(
         'nexusCatalogChanged',
         (catalog: EnrichedCatalog) => this.onCatalogChanged_(catalog));
+    // Subscribe to the unified per-session feed for the active model.
+    // The selection lives on `payload.model` of `nexusCurrentSessionState`
+    // (snapshot or delta). The previous `nexusSessionStatusChanged`
+    // path was retired as part of the unified-state refactor.
     this.statusListener_ = addWebUiListener(
-        'nexusSessionStatusChanged',
-        (status: SessionStatus) => this.onStatusChanged_(status));
+        'nexusCurrentSessionState',
+        (payload: NexusCurrentSessionWirePayload) =>
+            this.onCurrentSessionState_(payload));
     this.pickFailedListener_ = addWebUiListener(
         'nexusPickFailed',
         (payload: PickFailedPayload) => this.onPickFailed_(payload));
@@ -599,6 +687,40 @@ export class NexusQuickSettingsElement extends CrLitElement {
     this.lastError_ = null;
     this.maybeAutoPickDefault_();
     this.requestUpdate();
+  }
+
+  // Adapter from the unified `nexusCurrentSessionState` payload onto the
+  // existing `status_` shape. We only care about `sessionId` + `model` —
+  // the picker's other state (catalog, options, autoPick) is unchanged.
+  // Snapshot replaces `status_`; delta only updates fields that were
+  // actually present (model omitted when only counters/phase/active
+  // changed).
+  private onCurrentSessionState_(
+      payload: NexusCurrentSessionWirePayload): void {
+    if (!payload) return;
+    // Track phase regardless of model — drives the thinking-state
+    // border-runner animation on the trigger. Snapshot always carries
+    // a phase; deltas only when phase changed.
+    if (payload.kind === 'snapshot') {
+      this.phase_ = payload.phase ?? 'idle';
+      this.onStatusChanged_({
+        sessionId: payload.sessionId,
+        ...(payload.model ? {selection: payload.model} : {}),
+      });
+      return;
+    }
+    if ('phase' in payload && payload.phase) {
+      this.phase_ = payload.phase;
+      // Phase-only deltas still need a re-render to flip the
+      // thinking-state class on the trigger; requestUpdate is cheap.
+      this.requestUpdate();
+    }
+    // For status_ updates only react if `model` is actually present.
+    if (!('model' in payload)) return;
+    this.onStatusChanged_({
+      sessionId: payload.sessionId,
+      ...(payload.model ? {selection: payload.model} : {}),
+    });
   }
 
   // If the active session's stored selection points at a provider/model
@@ -824,8 +946,10 @@ export class NexusQuickSettingsElement extends CrLitElement {
         (showTier ? `${selectedOption.modelLabel} · ${activeTier}` :
                     selectedOption.modelLabel) :
         'Select model';
+    const triggerClasses =
+        `qs-trigger${this.phase_ === 'thinking' ? ' qs-trigger--thinking' : ''}`;
     return html`
-      <button class="qs-trigger"
+      <button class=${triggerClasses}
           @click=${this.onTriggerClick_}
           aria-haspopup="listbox"
           aria-expanded=${this.open_ ? 'true' : 'false'}

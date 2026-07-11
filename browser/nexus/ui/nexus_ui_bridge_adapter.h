@@ -1,63 +1,10 @@
-#ifndef CUSTOM_BROWSER_BROWSER_NEXUS_UI_NEXUS_UI_BRIDGE_ADAPTER_H_
-#define CUSTOM_BROWSER_BROWSER_NEXUS_UI_NEXUS_UI_BRIDGE_ADAPTER_H_
+// Compatibility stub. The real header lives at
+// `api/ui/nexus_ui_bridge_adapter.h` after the Phase 11h move
+// (ui bridge adapter -> api/ui/). Siso's deps DB retains stale
+// dependency records on this old path until each .obj that ever
+// included it gets recompiled. The stub satisfies the pre-flight
+// deps check in the meantime; once the affected .objs rebuild,
+// their fresh deps records point at the new path and this stub
+// becomes orphaned and can be deleted on the next clean build.
 
-#include <string>
-#include <vector>
-
-#include "base/memory/raw_ptr.h"
-#include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
-
-class Profile;
-
-namespace nexus {
-
-class NexusBridgeResponseDelegate;
-
-class NexusUiBridgeAdapter : public NexusBridgeCapabilityHandler {
- public:
-  NexusUiBridgeAdapter(NexusBridgeResponseDelegate* delegate, Profile* profile);
-  ~NexusUiBridgeAdapter() override;
-
-  NexusUiBridgeAdapter(const NexusUiBridgeAdapter&) = delete;
-  NexusUiBridgeAdapter& operator=(const NexusUiBridgeAdapter&) = delete;
-
- private:
-  void HandleOpenNexusSettings(
-      const std::string& id,
-      const base::DictValue& route,
-      const base::DictValue& payload,
-      std::vector<blink::MessagePortDescriptor> ports);
-
-  void HandleGetProviderMissingPrompt(
-      const std::string& id,
-      const base::DictValue& route,
-      const base::DictValue& payload,
-      std::vector<blink::MessagePortDescriptor> ports);
-
-  void HandleDismissBootWelcome(
-      const std::string& id,
-      const base::DictValue& route,
-      const base::DictValue& payload,
-      std::vector<blink::MessagePortDescriptor> ports);
-
-  void HandleShowMainContents(
-      const std::string& id,
-      const base::DictValue& route,
-      const base::DictValue& payload,
-      std::vector<blink::MessagePortDescriptor> ports);
-
-  // Boot instrumentation. Returns wall-clock millisecond timestamps so the
-  // React side can attribute pre-React boot cost. Legacy pre-React timings
-  // sourced from the deleted chrome://glic side panel are reported as 0.
-  void HandleGetBootTimings(
-      const std::string& id,
-      const base::DictValue& route,
-      const base::DictValue& payload,
-      std::vector<blink::MessagePortDescriptor> ports);
-
-  raw_ptr<Profile> profile_;
-};
-
-}  // namespace nexus
-
-#endif  // CUSTOM_BROWSER_BROWSER_NEXUS_UI_NEXUS_UI_BRIDGE_ADAPTER_H_
+#include "custom_browser/browser/nexus/api/ui/nexus_ui_bridge_adapter.h"

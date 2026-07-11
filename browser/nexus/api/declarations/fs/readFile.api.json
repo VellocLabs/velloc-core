@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readFile",
+  "description": "Read a file; returns the entire contents over a binary response.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "File path to read."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "bash",
+  "wire_name": "Bash",
+  "description": "Execute a shell command on the host machine through the sandboxed nexus shell service. Runs through the host default shell (bash on POSIX, cmd on Windows) so pipes, &&, ||, and shell built-ins are permitted. Default timeout 120s; stdout/stderr each capped at 30 KB. Background execution is not supported.",
+  "inputs": [
+    {
+      "name": "command",
+      "type": "string",
+      "required": true,
+      "description": "The shell command line to execute. Forwarded verbatim to the host shell, so pipes, redirects, environment-variable assignments, and shell built-ins all work."
+    },
+    {
+      "name": "timeout",
+      "type": "integer",
+      "required": false,
+      "description": "Per-call wall-clock timeout in milliseconds. Defaults to 120000ms (2 minutes); maximum 600000ms (10 minutes). The service hard-caps at the maximum regardless of the requested value."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false,
+      "description": "Short human-readable description (5-12 words) of what the command does. Surfaced in tool-call telemetry; does not affect execution."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "command": "git status",
+          "description": "Show working tree status"
+        },
+        {
+          "command": "npm install",
+          "description": "Install package dependencies"
+        },
+        {
+          "command": "ls -la /tmp",
+          "description": "List files in /tmp",
+          "timeout": 5000
+        }
+      ]
+    }
+  }
+}

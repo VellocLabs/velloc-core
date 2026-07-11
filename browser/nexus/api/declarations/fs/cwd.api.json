@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "cwd",
+  "description": "Returns the host process current working directory.",
+  "inputs": [],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

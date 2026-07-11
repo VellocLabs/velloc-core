@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "streamRead",
+  "description": "Pull the next chunk of an in-flight stream identified by streamId.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "Identifier returned by streamStart."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

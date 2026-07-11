@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readFileBytes",
+  "description": "Read a file as raw bytes; returns the contents over a binary response port.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "File path to read."
+    },
+    {
+      "name": "maxBytes",
+      "type": "integer",
+      "required": false,
+      "description": "Optional cap on bytes read; 0 / absent means no cap."
+    }
+  ],
+  "runtime": {
+    "thread": "thread_pool"
+  }
+}

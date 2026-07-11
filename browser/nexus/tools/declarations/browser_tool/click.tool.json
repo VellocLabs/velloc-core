@@ -1,0 +1,28 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "click",
+  "wire_name": "BrowserClick",
+  "description": "Click an element on the active tab by its observation index. The index must come from the most recent observation's `elements[]` (or via `BrowserFindText` / `BrowserReadElement`). Always left-button single-click; for context menus or other button semantics use dedicated tools when available.",
+  "skill": "browser",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": true,
+      "description": "Required element index from the latest observation's elements[] list."
+    }
+  ],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {
+          "index": 12
+        }
+      ]
+    }
+  }
+}

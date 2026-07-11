@@ -11,18 +11,15 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
-#include "custom_browser/browser/nexus/fs/nexus_fs_bridge_adapter.h"
-#include "custom_browser/browser/nexus/llm/nexus_llm_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/catalog/nexus_catalog_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
-#include "custom_browser/browser/nexus/tools/tool_catalog.h"
 #include "custom_browser/browser/nexus/tools/tools_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/nexus_message_port_endpoint.h"
-#include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
-#include "custom_browser/browser/nexus/nexus_features.h"
-#include "custom_browser/browser/nexus/process/nexus_process_bridge_adapter.h"
-#include "custom_browser/browser/nexus/process/nexus_shell_service_launcher.h"
-#include "custom_browser/browser/nexus/ui/nexus_ui_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/ui/nexus_ui_bridge_adapter.h"
 
 namespace nexus {
 
@@ -76,47 +73,45 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
   fs_adapter_ = std::make_unique<NexusFsBridgeAdapter>(this, cwd);
   llm_adapter_ = std::make_unique<NexusLlmBridgeAdapter>(this, profile);
   ui_adapter_ = std::make_unique<NexusUiBridgeAdapter>(this, profile);
+  catalog_adapter_ = std::make_unique<NexusCatalogBridgeAdapter>(this);
   // The `browser` capability is the single dispatch surface for the
   // macro-DSL-declared tool catalog (see `ToolCatalog::Get()`).
   // `ToolsAdapter` owns the per-session `ToolSession` instances (one
   // `BrowserTool` per session) and routes each request through
-  // `executionContext.sessionId`. The previous `glic` capability
-  // (served by `NexusGlicBridgeAdapter`) has been retired entirely —
-  // every browser-actor tool call now arrives via `browser.<name>`
-  // and per-session cleanup runs through `browser.endSession`.
+  // `executionContext.sessionId`. Session lifecycle (`onStop`,
+  // `setAgentLoopSettings`) lives on the dedicated `session`
+  // capability below, not under `browser`.
   tools_adapter_ = std::make_unique<ToolsAdapter>(this, profile);
+  // Phase 12f: dedicated `session` capability. Hosts `publishStatus`
+  // (broker cache), `onStop` (rename of pre-12f `browser.endSession`),
+  // and `setAgentLoopSettings`. Holds a back-pointer to
+  // `tools_adapter_` for the lifecycle handlers.
+  session_adapter_ = std::make_unique<NexusSessionBridgeAdapter>(
+      this, profile, tools_adapter_.get());
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
-  // The `session` capability is currently served by the LLM adapter — it
-  // owns the broker that caches SessionStatus. If/when sessions grow more
-  // responsibilities (presence, history, etc.), split this off into a
-  // dedicated NexusSessionBridgeAdapter and re-point the registration.
-  RegisterCapability("session", llm_adapter_.get());
+  RegisterCapability("session", session_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());
+  // Phase 12: `catalog` capability — listHostedTools, renderPromptSection,
+  // listPromptSections. Exports to the JS guest what the bootstrap
+  // manifest used to push (hostedTools) and what the TS prompt-loader
+  // used to render in-process.
+  RegisterCapability("catalog", catalog_adapter_.get());
 
-  // The `process` capability is gated behind a Chromium feature flag.
-  // When the flag is off we skip both the launcher *and* the adapter so
-  // the utility process is never spawned and the guest's
-  // `requireCapability('process')` rejects with PROCESS_UNAVAILABLE
-  // instead of silently appearing to work. The flag has no kill-switch
-  // dependency on profile state — we re-check at construction so that
-  // toggling via about:flags on a relaunch is sufficient.
-  if (features::IsNexusProcessCapabilityEnabled()) {
-    shell_service_launcher_ = std::make_unique<NexusShellServiceLauncher>();
-    process_adapter_ = std::make_unique<NexusProcessBridgeAdapter>(
-        this, base::BindRepeating(
-                  [](NexusShellServiceLauncher* launcher)
-                      -> mojo::Remote<mojom::NexusShellService>& {
-                    return launcher->GetService();
-                  },
-                  shell_service_launcher_.get()));
-    RegisterCapability("process", process_adapter_.get());
-  } else {
-    LOG(INFO) << "[NexusBridgePortService] process capability disabled "
-                 "(PrereleaseNexusProcessCapability flag off); guest "
-                 "process tools will receive PROCESS_UNAVAILABLE.";
-  }
+  // Phase 12g: the `process` bridge capability has been retired.
+  // History: `NexusProcessBridgeAdapter` + a separate
+  // `NexusShellServiceLauncher` instance lived here to serve the
+  // pre-Phase-11b TS BashTool / GrepTool / GlobTool implementations.
+  // Phase 11b deleted those TS tools (their C++ FileTool /
+  // ProcessTool counterparts under `tools/{file_tool,process_tool}/`
+  // are the LLM-callable tools today). The bridge surface kept
+  // running behind a `PrereleaseNexusProcessCapability` flag with no
+  // remaining JS callers; Phase 12g deleted the adapter, the flag,
+  // and the (separate) launcher instance owned here. The C++
+  // `ProcessTool` still talks to `NexusShellService` via its own
+  // `NexusShellServiceLauncher` (now living next to it under
+  // `tools/process_tool/`); that path is unchanged.
 }
 
 NexusBridgePortService::~NexusBridgePortService() {
@@ -149,15 +144,6 @@ void NexusBridgePortService::ResetPort() {
 
 bool NexusBridgePortService::IsConnected() const {
   return browser_port_ && browser_port_->IsConnected();
-}
-
-base::span<const ToolSchema>
-NexusBridgePortService::GetBrowserToolSchemas() const {
-  // Schemas are process-global — every port service shares the same
-  // catalog. Reading from the singleton avoids per-instance catalog
-  // duplication and makes the manifest-builder side easier (no need
-  // for a port-service handle).
-  return ToolCatalog::Get().schemas();
 }
 
 void NexusBridgePortService::RegisterCapability(

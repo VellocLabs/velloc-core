@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "onStop",
+  "description": "Notify the host that an LLM session has stopped. Cascades through ToolsAdapter::OnSessionStopped → ToolSession::OnStop → each per-category OnStop (e.g. BrowserTool::OnStop stops the actor task and clears its element registry). Idempotent — stopping a session that's already gone is a no-op. Phase 12f renamed this from `browser.endSession`; the JS-side stop hook in nexus_web fires on conversation completion (`reason: 'completed'`) and the user-stop button fires it with `reason: 'user_stopped'`.",
+  "inputs": [
+    {
+      "name": "reason",
+      "type": "string",
+      "required": false,
+      "description": "Why the session stopped. Surfaces in `[BrowserTool] OnStop session=… reason=…` log lines and is mapped to actor::ActorTask::StoppedReason for UMA. Conventional values: 'user_stopped' (Stop button), 'completed' (stop hook fires when the conversation finishes naturally), 'disconnected' (port reset; rarely a JS-side trigger), 'shutdown' (browser teardown). Empty / missing falls through to 'user_stopped'."
+    },
+    {
+      "name": "executionContext",
+      "type": "object",
+      "required": false,
+      "description": "Per-session metadata. Only `sessionId` is consulted today; missing / empty falls through to the '__default__' session-key sentinel."
+    },
+    {
+      "name": "sessionId",
+      "type": "string",
+      "required": false,
+      "description": "Legacy top-level session id. Preferred path is `executionContext.sessionId`; this top-level form remains accepted for older guest builds."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

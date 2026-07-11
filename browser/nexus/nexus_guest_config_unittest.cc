@@ -9,7 +9,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "components/prefs/pref_service.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
-#include "custom_browser/browser/nexus/llm/llm_pref_registration.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_registration.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 

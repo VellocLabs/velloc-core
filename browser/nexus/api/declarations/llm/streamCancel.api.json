@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "streamCancel",
+  "description": "Tear down an in-flight stream so the upstream socket closes server-side.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "Identifier returned by streamStart."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "screenshot",
+  "wire_name": "BrowserScreenshot",
+  "description": "Capture a screenshot of the active tab and return it alongside a fresh page observation. Use when visual context is needed; the default observation already lists every actionable element.",
+  "skill": "browser",
+  "inputs": [],
+  "output_kind": "object",
+  "runtime": {
+    "thread": "ui"
+  },
+  "providers": {
+    "anthropic": {
+      "input_examples": [
+        {}
+      ]
+    }
+  }
+}

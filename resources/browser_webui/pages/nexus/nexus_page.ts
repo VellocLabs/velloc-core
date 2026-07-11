@@ -21,6 +21,11 @@ import type {NexusViewElement} from './nexus_view.js';
 import './nexus_warning.js';
 import './nexus_topbar.js';
 import type {NexusTopbarSurfaceMode} from './nexus_topbar.js';
+// Session-list custom element. Registered for global use so any surface
+// inside this page (today: nothing renders it by default; the user can
+// place `<nexus-session-list>` wherever the multi-session sidebar lives)
+// receives `nexusSessionsSummary` updates from the SharedWorker.
+import './nexus_session_list.js';
 
 export class NexusPage extends CrLitElement {
   static override styles: CSSResultGroup = css`

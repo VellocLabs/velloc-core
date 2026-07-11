@@ -17,14 +17,14 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "custom_browser/browser/nexus/llm/llm_broker.h"
-#include "custom_browser/browser/nexus/llm/llm_broker_factory.h"
-#include "custom_browser/browser/nexus/llm/llm_pref_names.h"
-#include "custom_browser/browser/nexus/llm/llm_provider.h"
-#include "custom_browser/browser/nexus/llm/nexus_llm_host.h"
-#include "custom_browser/browser/nexus/llm/llm_provider_factory.h"
-#include "custom_browser/browser/nexus/llm/llm_types.h"
-#include "custom_browser/browser/nexus/llm/provider_config.h"
+#include "custom_browser/browser/nexus/api/llm/llm_broker.h"
+#include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/api/llm/llm_provider.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
+#include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
+#include "custom_browser/browser/nexus/api/llm/llm_types.h"
+#include "custom_browser/browser/nexus/api/llm/provider_config.h"
 
 namespace settings {
 
@@ -301,11 +301,13 @@ void NexusSettingsHandler::OnTsModelCatalogChanged(
 }
 
 void NexusSettingsHandler::OnSessionStatusChanged(
-    const base::DictValue& status) {
-  if (IsJavascriptAllowed()) {
-    FireWebUIListener("nexusSessionStatusChanged",
-                      base::Value(status.Clone()));
-  }
+    const base::DictValue& /*status*/) {
+  // The model selection is now broadcast as part of the unified
+  // `nexusCurrentSessionState` event sourced from the SharedWorker's
+  // session manager (see `SharedWorkerSessionManager.setModel`). The
+  // legacy `nexusSessionStatusChanged` fan-out is retired; the broker's
+  // session-status cache is still updated for any non-WebUI consumer
+  // that reads it via `LlmBroker::GetSessionStatus`.
 }
 
 Profile* NexusSettingsHandler::GetProfile() {

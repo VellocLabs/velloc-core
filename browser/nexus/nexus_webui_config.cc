@@ -9,7 +9,7 @@ namespace nexus {
 const char kDefaultNexusGuestURL[] = "https://nexus.velloc.app/index.html";
 #else
 const char kDefaultNexusGuestURL[] =
-    "http://localhost:5173/index.html?log=1&trace=1&logCallModel=1";
+    "http://localhost:5173/index.html?log=1&trace=1";
 #endif
 const char kNexusHost[] = "nexus";
 

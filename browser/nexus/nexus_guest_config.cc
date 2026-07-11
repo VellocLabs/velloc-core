@@ -6,7 +6,7 @@
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
-#include "custom_browser/browser/nexus/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "url/gurl.h"
 

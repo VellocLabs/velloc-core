@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getBootTimings",
+  "description": "Return wall-clock millisecond timestamps captured during boot, so the React side can correlate pre-React phase costs.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

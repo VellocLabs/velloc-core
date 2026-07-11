@@ -705,16 +705,6 @@ FileTool::EditResult::~EditResult() = default;
 // Construction / lifecycle
 // =============================================================================
 
-// static
-void FileTool::DefineTools(ToolRegistry& /*registry*/) {
-  // Body intentionally empty. Same staging pattern as
-  // `BrowserTool::DefineTools` — every tool in this category is
-  // registered via the codegen-emitted `generated::PopulateRegistry()`
-  // that ToolCatalog calls right after this no-op. Kept around so a
-  // future macro-DSL category (if anyone ever needs one again) has a
-  // clean place to register from.
-}
-
 FileTool::FileTool(ToolSession* session,
                    Profile* profile,
                    const std::string& session_key)

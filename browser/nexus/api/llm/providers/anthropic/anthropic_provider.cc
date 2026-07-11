@@ -1,5 +1,6 @@
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_provider.h"
 
+#include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_schema_sanitizer.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
 #include <array>
@@ -43,12 +44,12 @@ constexpr size_t kMaxResponseSizeBytes =
 constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("nexus_anthropic_provider", R"(
       semantics {
-        sender: "Nexus AI Agent Platform"
+        sender: "Velloc AI Agent Platform"
         description:
           "Sends prompts to the Anthropic Messages API for AI text "
-          "generation as part of the Nexus agent platform."
+          "generation as part of the Velloc agent platform."
         trigger:
-          "User interacts with the Nexus AI agent panel, which "
+          "User interacts with the Velloc AI agent panel, which "
           "triggers LLM inference through the configured Anthropic "
           "provider."
         data:
@@ -1158,8 +1159,17 @@ base::ListValue AnthropicProvider::TranslateTools(
       d.Set("name", *name);
     if (const auto* desc = tool->FindString("description"))
       d.Set("description", *desc);
-    if (const auto* params = tool->FindDict("parameters"))
-      d.Set("input_schema", params->Clone());
+    if (const auto* params = tool->FindDict("parameters")) {
+      // Strict schemas are authored in OpenAI's structured-outputs dialect
+      // (nullable-required: type ["T","null"], enum [null, ...]), which the
+      // Anthropic API rejects. Derive the Anthropic form (plain optionals,
+      // matching claude_code's zod output) mechanically; non-strict schemas
+      // already use plain optionals and pass through unchanged.
+      const bool is_strict = tool->FindBool("strict").value_or(false);
+      d.Set("input_schema", is_strict
+                                ? SanitizeStrictSchemaForAnthropic(*params)
+                                : params->Clone());
+    }
 
     // Forward `strict: true` when the JS layer has opted into Anthropic
     // Strict tool use (grammar-constrained sampling). When set, the

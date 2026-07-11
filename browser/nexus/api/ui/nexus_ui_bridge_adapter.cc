@@ -51,6 +51,7 @@
 #include "ui/message_center/public/cpp/notifier_id.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/common/branding_constants.h"
 #include "url/gurl.h"
 
 namespace nexus {
@@ -533,7 +534,7 @@ void NexusUiBridgeAdapter::HandleSetInspectMenuEnabledOnUI(
 gfx::Image GetNexusNotificationHeaderIcon() {
   // The branded product logo (IDR_PRODUCT_LOGO_64 — the Nexus "V") drawn inset
   // within an 18-dip badge. This is the toast HEADER icon (the small image next
-  // to "Nexus"), replacing message_center's default `kProductIcon` (the
+  // to the product name), replacing message_center's default `kProductIcon` (the
   // unbranded Chromium spiral). On non-ChromeOS (Windows) message_center renders
   // the small_image as-is (GenerateMaskedSmallIcon only accent-masks on
   // ChromeOS), so the full-color brand logo shows directly; NexusHeaderIconSource
@@ -541,6 +542,43 @@ gfx::Image GetNexusNotificationHeaderIcon() {
   // filling the box edge-to-edge.
   return gfx::Image(
       gfx::CanvasImageSource::MakeImageSkia<NexusHeaderIconSource>());
+}
+
+message_center::Notification BuildNexusToastNotification(
+    const std::optional<std::string>& title,
+    const std::string& message,
+    const std::optional<std::string>& notification_type,
+    scoped_refptr<message_center::NotificationDelegate> delegate) {
+  // The toast HEADER text (display_source, "<name> • now") and the fallback
+  // bold line are the user-visible product name from branding_constants.h —
+  // never the internal "Nexus" codename.
+  const std::u16string product_name =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
+  const std::u16string bold_line = title && !title->empty()
+                                       ? base::UTF8ToUTF16(*title)
+                                       : product_name;
+  // Stable id keyed on the category so repeated notifications of the same
+  // kind (e.g. successive turn-completions) replace rather than stack.
+  const std::string category =
+      notification_type && !notification_type->empty() ? *notification_type
+                                                       : "default";
+  const std::string notification_id = "nexus." + category;
+
+  // `icon` (the 5th arg) is the LARGE image message_center draws on the RIGHT
+  // of the toast — left empty so the toast stays compact (an empty icon hides
+  // the right-side image entirely; see NotificationViewBase::CreateOrUpdateIconView).
+  message_center::Notification notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE, notification_id, bold_line,
+      base::UTF8ToUTF16(message),
+      /*icon=*/ui::ImageModel(), /*display_source=*/product_name, GURL(),
+      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
+                                 "nexus"),
+      message_center::RichNotificationData(), std::move(delegate));
+  // The small header icon (next to the product name) otherwise falls back to
+  // message_center's kProductIcon — the unbranded Chromium spiral. Set it to the
+  // branded Nexus logo instead.
+  notification.SetSmallImage(GetNexusNotificationHeaderIcon());
+  return notification;
 }
 
 void NexusUiBridgeAdapter::HandleShowNotificationOnUI(
@@ -566,18 +604,6 @@ void NexusUiBridgeAdapter::HandleShowNotificationOnUI(
     return;
   }
 
-  const std::u16string title = input.title && !input.title->empty()
-                                   ? base::UTF8ToUTF16(*input.title)
-                                   : u"Nexus";
-  const std::u16string message = base::UTF8ToUTF16(input.message);
-  // Stable id keyed on the category so repeated notifications of the same
-  // kind (e.g. successive turn-completions) replace rather than stack.
-  const std::string category =
-      input.notificationType && !input.notificationType->empty()
-          ? *input.notificationType
-          : "default";
-  const std::string notification_id = "nexus." + category;
-
   // Clicking the toast brings the Nexus browser window back to the
   // foreground. The profile is bound as an opaque identity token (see
   // ActivateNexusWindowForProfileId) so this deferred click can never
@@ -587,21 +613,10 @@ void NexusUiBridgeAdapter::HandleShowNotificationOnUI(
   base::RepeatingClosure on_click = base::BindRepeating(
       &ActivateNexusWindowForProfileId,
       reinterpret_cast<uintptr_t>(profile_.get()));
-  // `icon` (the 5th arg) is the LARGE image message_center draws on the RIGHT
-  // of the toast — left empty so the toast stays compact (an empty icon hides
-  // the right-side image entirely; see NotificationViewBase::CreateOrUpdateIconView).
-  message_center::Notification notification(
-      message_center::NOTIFICATION_TYPE_SIMPLE, notification_id, title, message,
-      /*icon=*/ui::ImageModel(), u"Nexus", GURL(),
-      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
-                                 "nexus"),
-      message_center::RichNotificationData(),
+  message_center::Notification notification = BuildNexusToastNotification(
+      input.title, input.message, input.notificationType,
       base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
           on_click));
-  // The small header icon (next to "Nexus") otherwise falls back to
-  // message_center's kProductIcon — the unbranded Chromium spiral. Set it to the
-  // branded Nexus logo instead.
-  notification.SetSmallImage(GetNexusNotificationHeaderIcon());
 
   service->Display(NotificationHandler::Type::TRANSIENT, notification,
                    /*metadata=*/nullptr);

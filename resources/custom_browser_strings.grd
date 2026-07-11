@@ -60,12 +60,6 @@ translated for each locale.
       <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION" desc="Description for the compact standard layout option" use_name_for_id="true">
         Horizontal tabs that appear on hover.
       </message>
-      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS" desc="Product mode option label" use_name_for_id="true">
-        <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph>
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION" desc="Description for the product layout option" use_name_for_id="true">
-        Keep <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> beside the active page in a dedicated workspace.
-      </message>
       <!-- Customize Chrome side panel -->
       <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE" desc="Header for the New Tab Page section in the Customize Chrome side panel" use_name_for_id="true">
         New Tab
@@ -109,12 +103,6 @@ translated for each locale.
       </message>
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON" desc="Label for the import button on the Settings Get started page" use_name_for_id="true">
         Import
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP" desc="Label for the skip button on the Settings Get started import section" use_name_for_id="true">
-        Skip for now
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY" desc="Microcopy under import button explaining local processing" use_name_for_id="true">
-        Import happens locally on your device.
       </message>
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE" desc="Title for the layout section on the Settings Get started page" use_name_for_id="true">
         Step 2. Choose your layout
@@ -233,9 +221,6 @@ translated for each locale.
       <message name="IDS_CUSTOM_BROWSER_BADGE_ADVANCED" desc="Badge label for advanced items" use_name_for_id="true">
         Advanced
       </message>
-      <message name="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL" desc="Badge label for optional items" use_name_for_id="true">
-        Optional
-      </message>
       <message name="IDS_CUSTOM_BROWSER_CLOSE" desc="Label for a close button or action" use_name_for_id="true">
         Close
       </message>
@@ -291,24 +276,6 @@ translated for each locale.
         Based on Chromium <ph name="CHROMIUM_VERSION">$1</ph>
       </message>
       <!-- Nexus AI agent platform -->
-      <message name="IDS_NEXUS_PANEL_TOOLTIP" desc="Tooltip for the Nexus AI agent panel toolbar button" use_name_for_id="true">
-        <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>
-      </message>
-      <message name="IDS_NEXUS_PANEL_ACCESSIBLE_NAME" desc="Accessible name for the Nexus AI panel button" use_name_for_id="true">
-        Open the <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph> panel
-      </message>
-      <message name="IDS_NEXUS_CONSENT_TITLE" desc="Title of the Nexus consent/onboarding screen" use_name_for_id="true">
-        <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>
-      </message>
-      <message name="IDS_NEXUS_CONSENT_BODY" desc="Body text for the Nexus consent/onboarding screen explaining the feature" use_name_for_id="true">
-        Enable <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph> to automate browser tasks, generate content, and interact with web pages using your preferred AI provider.
-      </message>
-      <message name="IDS_NEXUS_CONSENT_ACCEPT" desc="Accept button on the Nexus consent screen" use_name_for_id="true">
-        Enable <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>
-      </message>
-      <message name="IDS_NEXUS_CONSENT_DECLINE" desc="Decline button on the Nexus consent screen" use_name_for_id="true">
-        Not now
-      </message>
       <message name="IDS_NEXUS_SETTINGS_TITLE" desc="Title for the Nexus settings subpage at chrome://settings/nexus" use_name_for_id="true">
         <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph>
       </message>
@@ -337,7 +304,7 @@ translated for each locale.
         Custom <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> web app URL
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER" desc="Placeholder for the custom webapp URL field" use_name_for_id="true">
-        https://your-nexus-app.example.com
+        https://your-app.example.com
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET" desc="Button to reset webapp URL to default" use_name_for_id="true">
         Reset to default
@@ -356,42 +323,6 @@ translated for each locale.
       </message>
       <message name="IDS_NEXUS_PROVIDER_OLLAMA" desc="Display name for the Ollama provider" use_name_for_id="true">
         Ollama (Local)
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_FILES_TITLE" desc="Title for the file system permission prompt" use_name_for_id="true">
-        File System Access
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_FILES_BODY" desc="Body text for the file system permission prompt" use_name_for_id="true">
-        This agent wants to read and write files on your computer.
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE" desc="Title for the clipboard permission prompt" use_name_for_id="true">
-        Clipboard Access
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY" desc="Body text for the clipboard permission prompt" use_name_for_id="true">
-        This agent wants to access your clipboard.
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE" desc="Title for the browser data permission prompt" use_name_for_id="true">
-        Browser Data Access
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY" desc="Body text for the browser data permission prompt" use_name_for_id="true">
-        This agent wants to access your bookmarks, history, and downloads.
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE" desc="Title for the notifications permission prompt" use_name_for_id="true">
-        Notifications
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY" desc="Body text for the notifications permission prompt" use_name_for_id="true">
-        This agent wants to send you notifications.
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_ALLOW" desc="Allow button on permission prompts" use_name_for_id="true">
-        Allow
-      </message>
-      <message name="IDS_NEXUS_PERMISSION_DENY" desc="Deny button on permission prompts" use_name_for_id="true">
-        Deny
-      </message>
-      <message name="IDS_NEXUS_SETUP_PROVIDER_TITLE" desc="Title for the in-panel provider setup during first run" use_name_for_id="true">
-        Set up your AI provider
-      </message>
-      <message name="IDS_NEXUS_SETUP_PROVIDER_BODY" desc="Body text for the in-panel provider setup" use_name_for_id="true">
-        Choose an AI provider and enter your credentials to get started.
       </message>
       <message name="IDS_NEXUS_SETTINGS_MODEL_LABEL" desc="Label for the model selection dropdown in Nexus settings" use_name_for_id="true">
         Model

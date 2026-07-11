@@ -487,12 +487,6 @@ SliceResult ApplyHeadLimit(std::vector<std::string>&& items,
 // Construction / lifecycle
 // =============================================================================
 
-// static
-void ProcessTool::DefineTools(ToolRegistry& /*registry*/) {
-  // Body intentionally empty. All process-tool registration flows
-  // through `generated::PopulateRegistry()`.
-}
-
 ProcessTool::ProcessTool(ToolSession* session,
                          Profile* profile,
                          const std::string& session_key)

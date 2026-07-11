@@ -4,11 +4,14 @@
 #include <string_view>
 
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/nexus_interface_version.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace nexus {
 
@@ -38,6 +41,32 @@ GURL GetDefaultGuestUrl() {
   return GURL(kDefaultNexusGuestURL);
 }
 
+// True when `path` already ends in a "/v<digits>/" segment — i.e. the base
+// is a hand-pasted version-pinned URL that must not get a second segment
+// appended. Mirrors the guest's TRAILING_VERSION_SEGMENT parse
+// (nexus_web/src/browser/bridge/protocol/interfaceVersion.ts).
+bool EndsWithInterfaceVersionSegment(std::string_view path) {
+  if (path.size() < 4 || path.back() != '/') {  // shortest match: "/v1/"
+    return false;
+  }
+  path.remove_suffix(1);
+  const size_t slash = path.rfind('/');
+  if (slash == std::string_view::npos) {
+    return false;
+  }
+  std::string_view segment = path.substr(slash + 1);
+  if (segment.size() < 2 || segment[0] != 'v') {
+    return false;
+  }
+  segment.remove_prefix(1);
+  for (const char c : segment) {
+    if (!base::IsAsciiDigit(c)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // The `log` / `trace` URL-param mapping off the `nexus.agent_config`
 // pref used to live here — layering `?log=1` / `?trace=1` onto the
 // guest URL at panel load time. It's been removed: the nexus_web
@@ -53,6 +82,28 @@ GURL GetDefaultGuestUrl() {
 
 }  // namespace
 
+GURL AppendNexusInterfaceVersionToBase(const GURL& base) {
+  // http is only reachable for localhost dev bases (IsAllowedCustomGuestUrl
+  // and the debug default) — the Vite dev server serves at `/` with no
+  // version segment, so dev bases pass through verbatim.
+  if (!base.is_valid() || !base.SchemeIs(url::kHttpsScheme)) {
+    return base;
+  }
+
+  std::string path(base.path());
+  if (EndsWithInterfaceVersionSegment(path)) {
+    return base;
+  }
+  if (path.empty() || path.back() != '/') {
+    path += '/';
+  }
+  path += "v" NEXUS_IF_VERSION_STR(NEXUS_INTERFACE_VERSION) "/";
+
+  GURL::Replacements replacements;
+  replacements.SetPathStr(path);
+  return base.ReplaceComponents(replacements);
+}
+
 GURL GetResolvedNexusGuestURL(Profile* profile) {
   const GURL default_url = GetDefaultGuestUrl();
 
@@ -62,28 +113,26 @@ GURL GetResolvedNexusGuestURL(Profile* profile) {
     return GURL();
   }
 
-  if (!profile) {
-    return default_url;
-  }
-
-  PrefService* prefs = profile->GetPrefs();
-  if (!prefs) {
-    return default_url;
-  }
-
   // Resolve the base URL: the user's custom Agent URL override, else default.
   GURL base = default_url;
-  const std::string custom_url_spec = prefs->GetString(prefs::kNexusWebappUrl);
-  if (!custom_url_spec.empty()) {
-    const GURL custom_url(custom_url_spec);
-    if (IsAllowedCustomGuestUrl(custom_url)) {
-      base = custom_url;
-    } else {
-      LOG(WARNING) << "Ignoring invalid Nexus guest URL: " << custom_url_spec;
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  if (prefs) {
+    const std::string custom_url_spec =
+        prefs->GetString(prefs::kNexusWebappUrl);
+    if (!custom_url_spec.empty()) {
+      const GURL custom_url(custom_url_spec);
+      if (IsAllowedCustomGuestUrl(custom_url)) {
+        base = custom_url;
+      } else {
+        LOG(WARNING) << "Ignoring invalid Nexus guest URL: " << custom_url_spec;
+      }
     }
   }
 
-  return base;
+  // The configured URL is a BASE; the binary always pins the guest to its
+  // own bridge interface version by path so an updated web deploy can never
+  // silently change the contract under a shipped binary.
+  return AppendNexusInterfaceVersionToBase(base);
 }
 
 }  // namespace nexus

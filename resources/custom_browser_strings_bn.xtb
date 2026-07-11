@@ -79,16 +79,12 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">প্রদানকারী সেটিংস সংরক্ষণ করা হচ্ছে...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">প্রদানকারী সেটিংস আপডেট করা যায়নি।</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">ডিফল্ট আচরণ</translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">একটি ডেডিকেটেড ওয়ার্কস্পেসে সক্রিয় পৃষ্ঠার পাশে <ph name="PRODUCT_NAME"/> রাখুন।</translation>
   <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">সার্চ প্রদানকারীর লোগো দেখান</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Chromium দিয়ে শুরু করুন</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">এক মিনিটে Chromium সেট আপ করুন: আপনার ডেটা ইম্পোর্ট করুন, একটি লেআউট বেছে নিন, এবং আপনার নতুন ট্যাব টিউন করুন।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">ধাপ ১. আপনার জিনিসপত্র নিয়ে আসুন</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">অন্য ব্রাউজার থেকে বুকমার্ক, পাসওয়ার্ড এবং সেটিংস ইম্পোর্ট করুন—কোনও অ্যাকাউন্টের প্রয়োজন নেই।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">ইম্পোর্ট করুন</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">আপাতত এড়িয়ে যান</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">ইম্পোর্ট আপনার ডিভাইসে স্থানীয়ভাবে ঘটে।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">ধাপ ২. আপনার লেআউট বেছে নিন</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">আপনার কাজের ধরনের সাথে মানানসই ট্যাব স্টাইল বেছে নিন। আপনি যেকোনও সময় পরিবর্তন করতে পারেন।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">সাইডবার ট্যাব</translation>
@@ -128,31 +124,12 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">শীঘ্রই আসছে</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">স্বয়ংক্রিয়</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">উন্নত</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">ঐচ্ছিক</translation>
   <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">সংস্করণ <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
   <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Chromium <ph name="CHROMIUM_VERSION"/> এর উপর ভিত্তি করে</translation>
-  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME"><ph name="PRODUCT_LONG_NAME"/> প্যানেল খুলুন</translation>
-  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_BODY">ব্রাউজারের কাজ স্বয়ংক্রিয় করতে, কন্টেন্ট তৈরি করতে এবং আপনার পছন্দের AI প্রদানকারী ব্যবহার করে ওয়েব পৃষ্ঠার সাথে ইন্টারঅ্যাক্ট করতে <ph name="PRODUCT_LONG_NAME"/> সক্রিয় করুন।</translation>
-  <translation id="IDS_NEXUS_CONSENT_ACCEPT"><ph name="PRODUCT_LONG_NAME"/> সক্রিয় করুন</translation>
-  <translation id="IDS_NEXUS_CONSENT_DECLINE">এখন নয়</translation>
   <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">মডেল প্রদানকারী</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">কাস্টম <ph name="PRODUCT_NAME"/> ওয়েব অ্যাপ URL</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">ফাইল সিস্টেম অ্যাক্সেস</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">এই এজেন্ট আপনার কম্পিউটারে ফাইল পড়তে ও লিখতে চায়।</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">ক্লিপবোর্ড অ্যাক্সেস</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">এই এজেন্ট আপনার ক্লিপবোর্ড অ্যাক্সেস করতে চায়।</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">ব্রাউজার ডেটা অ্যাক্সেস</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">এই এজেন্ট আপনার বুকমার্ক, ইতিহাস এবং ডাউনলোড অ্যাক্সেস করতে চায়।</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">বিজ্ঞপ্তি</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">এই এজেন্ট আপনাকে বিজ্ঞপ্তি পাঠাতে চায়।</translation>
-  <translation id="IDS_NEXUS_PERMISSION_ALLOW">অনুমতি দিন</translation>
-  <translation id="IDS_NEXUS_PERMISSION_DENY">অস্বীকার করুন</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">আপনার AI প্রদানকারী সেট আপ করুন</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">শুরু করতে একটি AI প্রদানকারী বেছে নিন এবং আপনার পরিচয়পত্র লিখুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">এই ফিচারটি ব্রাউজারেই সরাসরি <ph name="PRODUCT_NAME"/> চালায়, WhatsApp, Telegram, Discord এবং iMessage-এর মতো অ্যাপগুলোকে AI কোডিং সহায়কের সাথে সংযুক্ত করে।</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> অনেক LLM প্রদানকারী ব্যবহার করতে পারে। একটি প্রদানকারী বেছে নিন, প্রমাণীকরণ করুন, তারপর ডিফল্ট মডেল সেট করুন।</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> অনেক LLM প্রদানকারী ব্যবহার করতে পারে। একটি প্রদানকারী বেছে নিন, প্রমাণীকরণ করুন, তারপর ডিফল্ট মডেল সেট করুন।</translation>

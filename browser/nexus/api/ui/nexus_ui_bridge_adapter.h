@@ -1,6 +1,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_UI_NEXUS_UI_BRIDGE_ADAPTER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_UI_NEXUS_UI_BRIDGE_ADAPTER_H_
 
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
@@ -19,6 +21,11 @@ namespace gfx {
 class Image;
 }
 
+namespace message_center {
+class Notification;
+class NotificationDelegate;
+}  // namespace message_center
+
 namespace nexus {
 
 class NexusBridgeResponseDelegate;
@@ -31,6 +38,19 @@ class NexusBridgeResponseDelegate;
 // at namespace scope so the custom_browser_nexus_browser_unittests regression
 // test can assert it resolves to a non-empty image.
 gfx::Image GetNexusNotificationHeaderIcon();
+
+// Builds the toast surfaced via ui.showNotification (e.g. the turn-end "your
+// turn" nudge). The toast HEADER text (message_center display_source — what
+// Windows renders as "<name> • now") and the bold-line fallback (used when the
+// guest supplies no session title) are both the branded product name from
+// branding_constants.h, never the internal "Nexus" codename. Exposed at
+// namespace scope so the custom_browser_nexus_browser_unittests regression
+// test can assert that branding.
+message_center::Notification BuildNexusToastNotification(
+    const std::optional<std::string>& title,
+    const std::string& message,
+    const std::optional<std::string>& notification_type,
+    scoped_refptr<message_center::NotificationDelegate> delegate);
 
 // Concrete adapter implementing the generated `UiApiBase` virtuals.
 //

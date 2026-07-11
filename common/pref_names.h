@@ -3,7 +3,6 @@
 
 extern const char kCustomChildLayoutsPrefPath[];
 extern const char kCustomBrowserPrefPath[];
-extern const char kUIModePrefPathKey[];
 extern const char kCustomUIModePrefPath[];
 extern const char kCustomNewTabShowSearchPrefPath[];
 extern const char kCustomNewTabShowLogoPrefPath[];

@@ -386,6 +386,154 @@ TEST(NexusShellServiceImplTest, SpawnReturnsPartialOutputWhileRunning) {
       << "Got stdout: " << final_str;
 }
 
+// Regression: the guest's Stop flow (SharedWorkerSessionManager
+// stopBackgroundShell) marks a background task 'stopped' ONLY when, after
+// `Kill` acks `{found:true, was_running:true}`, a `shell.status` poll observes
+// `running:false` with `exit.killed:true` within ~5 s. This is the C++ half of
+// that contract: Kill must promptly terminate the tree, and the recorded
+// outcome must carry the forced `killed` flag (OnBackgroundComplete).
+TEST(NexusShellServiceImplTest, KillTerminatesRunningBackgroundShellPromptly) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+
+  const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+  const std::string shell_id_tool = FindAllowlistedShellId(caps);
+  if (shell_id_tool.empty()) {
+    GTEST_SKIP() << "No allowlisted shell on host; cannot exercise Kill";
+  }
+
+  // Long-lived command with a grandchild in the tree (mirrors the e2e's
+  // `(sleep …) & wait` shape) — Kill must take down the whole tree, not
+  // just the immediate shell.
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+  options->args = {"/C", "echo nexus-kill-start & ping -n 30 127.0.0.1 >NUL"};
+#else
+  options->args = {"-c", "echo nexus-kill-start; sleep 30"};
+#endif
+  options->cwd = tmp.GetPath();
+  options->use_shell = false;
+  options->timeout_ms = 60000;
+  options->max_output_bytes = 4096;
+
+  std::string bg_id;
+  base::RunLoop spawn_loop;
+  remote->Spawn(
+      std::move(options),
+      base::BindLambdaForTesting(
+          [&](bool ok, const std::optional<std::string>& shell_id,
+              const std::optional<std::string>& error_code,
+              const std::optional<std::string>& error_message,
+              const std::optional<std::string>& install_hint) {
+            ASSERT_TRUE(ok) << error_code.value_or("") << ": "
+                            << error_message.value_or("");
+            ASSERT_TRUE(shell_id.has_value());
+            bg_id = *shell_id;
+            spawn_loop.Quit();
+          }));
+  spawn_loop.Run();
+  ASSERT_FALSE(bg_id.empty());
+
+  // Wait until the child is observably RUNNING (stdout marker) so Kill hits a
+  // live launched process, not the pre-launch race path.
+  bool saw_running = false;
+  for (int i = 0; i < 100 && !saw_running; ++i) {
+    base::RunLoop poll;
+    remote->ReadBackgroundOutput(
+        bg_id,
+        base::BindLambdaForTesting([&](mojom::ShellBackgroundOutputPtr out) {
+          ASSERT_TRUE(out);
+          ASSERT_TRUE(out->found);
+          const base::span<const uint8_t> out_span =
+              base::span<const uint8_t>(out->stdout_buffer);
+          const std::string out_str(out_span.begin(), out_span.end());
+          saw_running = out->running &&
+              out_str.find("nexus-kill-start") != std::string::npos;
+          poll.Quit();
+        }));
+    poll.Run();
+    if (!saw_running) {
+      base::RunLoop wait;
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE, wait.QuitClosure(), base::Milliseconds(50));
+      wait.Run();
+    }
+  }
+  ASSERT_TRUE(saw_running) << "background shell never reached running state";
+
+  // Kill must ack found + was_running (the guest treats anything else as
+  // stop_failed and leaves the row running).
+  const base::TimeTicks kill_at = base::TimeTicks::Now();
+  base::RunLoop kill_loop;
+  remote->Kill(bg_id, base::BindLambdaForTesting(
+                          [&](bool found, bool was_running) {
+                            EXPECT_TRUE(found);
+                            EXPECT_TRUE(was_running);
+                            kill_loop.Quit();
+                          }));
+  kill_loop.Run();
+
+  // The guest confirms termination via status polls with a 5 s budget
+  // (SHELL_STOP_CONFIRM_TIMEOUT_MS). Poll up to 10 s here but ASSERT the
+  // 5 s contract — a slower kill means the drawer row never leaves
+  // 'running' even though the process eventually dies.
+  mojom::ShellBackgroundOutputPtr terminal;
+  for (int i = 0; i < 200 && !terminal; ++i) {
+    base::RunLoop poll;
+    remote->ReadBackgroundOutput(
+        bg_id,
+        base::BindLambdaForTesting([&](mojom::ShellBackgroundOutputPtr out) {
+          ASSERT_TRUE(out);
+          ASSERT_TRUE(out->found);
+          if (!out->running) {
+            terminal = std::move(out);
+          }
+          poll.Quit();
+        }));
+    poll.Run();
+    if (!terminal) {
+      base::RunLoop wait;
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE, wait.QuitClosure(), base::Milliseconds(50));
+      wait.Run();
+    }
+  }
+  const base::TimeDelta kill_to_terminal = base::TimeTicks::Now() - kill_at;
+  ASSERT_TRUE(terminal) << "killed background shell never reported terminal";
+  EXPECT_LT(kill_to_terminal, base::Seconds(5))
+      << "kill→terminal took " << kill_to_terminal
+      << " — exceeds the guest's stop-confirm budget";
+  ASSERT_TRUE(terminal->exit);
+  EXPECT_TRUE(terminal->exit->killed)
+      << "a Kill-terminated shell must report exit.killed (the guest maps "
+         "killed→'stopped'; signal/exit-code map to 'error')";
+  EXPECT_FALSE(terminal->exit->timed_out);
+}
+
+// Kill on an unknown id and on an already-completed shell must stay
+// idempotent — `{found:false}` / `{found:true, was_running:false}` — the
+// guest surfaces these as 'not_found' / 'already_finished', never a crash.
+TEST(NexusShellServiceImplTest, KillIsIdempotentOnUnknownAndCompletedShells) {
+  base::test::TaskEnvironment task_environment;
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+
+  base::RunLoop unknown_loop;
+  remote->Kill("bg_does-not-exist", base::BindLambdaForTesting(
+                                        [&](bool found, bool was_running) {
+                                          EXPECT_FALSE(found);
+                                          EXPECT_FALSE(was_running);
+                                          unknown_loop.Quit();
+                                        }));
+  unknown_loop.Run();
+}
+
 TEST(NexusShellServiceImplTest, BackgroundShellIdsAreUniqueAcrossServiceRestarts) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir tmp;

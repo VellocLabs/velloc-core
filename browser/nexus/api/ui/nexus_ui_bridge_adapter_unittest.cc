@@ -4,8 +4,14 @@
 
 #include "custom_browser/browser/nexus/api/ui/nexus_ui_bridge_adapter.h"
 
+#include <optional>
+#include <string>
+
+#include "base/strings/utf_string_conversions.h"
+#include "custom_browser/common/branding_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/image/image.h"
+#include "ui/message_center/public/cpp/notification.h"
 
 namespace nexus {
 namespace {
@@ -13,7 +19,7 @@ namespace {
 // Regression guard for the turn-end OS-notification HEADER icon.
 //
 // HandleShowNotificationOnUI sets the notification's small_image (the icon next
-// to "Nexus" in the toast header) to the branded Nexus logo. Without it,
+// to the product name in the toast header) to the branded Nexus logo. Without it,
 // message_center falls back to its default kProductIcon — the unbranded
 // Chromium spiral. The main icon() (the large right-side image) is left empty
 // on purpose. This asserts GetNexusNotificationHeaderIcon() resolves
@@ -28,6 +34,32 @@ TEST(NexusNotificationIconTest, HeaderIconResolvesToNonEmptyBrandedLogo) {
   EXPECT_FALSE(icon.IsEmpty());
   EXPECT_GT(icon.Width(), 0);
   EXPECT_GT(icon.Height(), 0);
+}
+
+// Regression guard for the toast HEADER text ("<name> • now" on Windows) and
+// the bold-line fallback: both must carry the user-visible product name from
+// branding_constants.h, never the internal "Nexus" codename, which was
+// previously hardcoded here. Delegate is null — only
+// NotificationDisplayServiceImpl::Display requires one, not construction.
+TEST(NexusNotificationBrandingTest, ToastHeaderUsesBrandedProductName) {
+  const std::u16string product_name =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
+  ASSERT_NE(product_name, u"Nexus");
+
+  const message_center::Notification with_title = BuildNexusToastNotification(
+      "My session", "Velloc is waiting for your input", "turn_complete",
+      /*delegate=*/nullptr);
+  EXPECT_EQ(with_title.display_source(), product_name);
+  EXPECT_EQ(with_title.title(), u"My session");
+  EXPECT_EQ(with_title.id(), "nexus.turn_complete");
+
+  // No session title yet → the bold line falls back to the product name.
+  const message_center::Notification without_title =
+      BuildNexusToastNotification(std::nullopt, "message", std::nullopt,
+                                  /*delegate=*/nullptr);
+  EXPECT_EQ(without_title.display_source(), product_name);
+  EXPECT_EQ(without_title.title(), product_name);
+  EXPECT_EQ(without_title.id(), "nexus.default");
 }
 
 }  // namespace

@@ -53,10 +53,6 @@ class ProcessTool : public ToolBase,
   ProcessTool(const ProcessTool&) = delete;
   ProcessTool& operator=(const ProcessTool&) = delete;
 
-  // No-op for symmetry with BrowserTool / FileTool. All registration
-  // flows through the codegen-emitted generated::PopulateRegistry.
-  static void DefineTools(ToolRegistry& registry);
-
   // Invalidates WeakPtrs and releases per-tool helpers. Idempotent.
   void OnStop(OnStopReason reason) override;
 

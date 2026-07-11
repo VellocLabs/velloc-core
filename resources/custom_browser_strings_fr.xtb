@@ -79,16 +79,12 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">Enregistrement des paramètres du fournisseur...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">Échec de la mise à jour des paramètres du fournisseur.</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">Comportement par défaut</translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">Gardez <ph name="PRODUCT_NAME"/> à côté de la page active dans un espace de travail dédié.</translation>
   <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">Afficher le logo du moteur de recherche</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Commencez avec Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">Configurez Chromium en une minute : importez vos données, choisissez une disposition et personnalisez votre nouvel onglet.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">Étape 1. Apportez vos données</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">Importez vos favoris, mots de passe et paramètres depuis un autre navigateur, sans compte requis.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">Importer</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">Ignorer pour l'instant</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">L'importation s'effectue localement sur votre appareil.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">Étape 2. Choisissez votre disposition</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">Choisissez le style d'onglets adapté à votre façon de travailler. Vous pouvez en changer à tout moment.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">Onglets latéraux</translation>
@@ -128,31 +124,12 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Bientôt disponible</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automatique</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Avancé</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">Facultatif</translation>
   <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">Version <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
   <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Basé sur Chromium <ph name="CHROMIUM_VERSION"/></translation>
-  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">Ouvrir le panneau <ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_BODY">Activez <ph name="PRODUCT_LONG_NAME"/> pour automatiser des tâches du navigateur, générer du contenu et interagir avec les pages Web à l'aide de votre fournisseur d'IA préféré.</translation>
-  <translation id="IDS_NEXUS_CONSENT_ACCEPT">Activer <ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_DECLINE">Pas maintenant</translation>
   <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">Fournisseurs de modèles</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">URL personnalisée de l'application Web <ph name="PRODUCT_NAME"/></translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">Accès au système de fichiers</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">Cet agent souhaite lire et écrire des fichiers sur votre ordinateur.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">Accès au presse-papiers</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">Cet agent souhaite accéder à votre presse-papiers.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">Accès aux données du navigateur</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">Cet agent souhaite accéder à vos favoris, votre historique et vos téléchargements.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">Notifications</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">Cet agent souhaite vous envoyer des notifications.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_ALLOW">Autoriser</translation>
-  <translation id="IDS_NEXUS_PERMISSION_DENY">Refuser</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">Configurez votre fournisseur d'IA</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">Choisissez un fournisseur d'IA et saisissez vos identifiants pour commencer.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">Cette fonctionnalité exécute <ph name="PRODUCT_NAME"/> directement dans le navigateur, en connectant des applications comme WhatsApp, Telegram, Discord et iMessage à des assistants de codage IA.</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> peut utiliser de nombreux fournisseurs de LLM. Choisissez un fournisseur, authentifiez-vous, puis définissez le modèle par défaut.</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> peut utiliser de nombreux fournisseurs de LLM. Choisissez un fournisseur, authentifiez-vous, puis définissez le modèle par défaut.</translation>

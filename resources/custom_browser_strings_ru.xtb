@@ -79,16 +79,12 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">Сохранение настроек поставщика...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">Не удалось обновить настройки поставщика.</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">Поведение по умолчанию</translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">Держите <ph name="PRODUCT_NAME"/> рядом с активной страницей в отдельном рабочем пространстве.</translation>
   <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">Показывать логотип поисковой системы</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Начните с Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">Настройте Chromium за минуту: импортируйте данные, выберите макет и настройте новую вкладку.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">Шаг 1. Перенесите свои данные</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">Импортируйте закладки, пароли и настройки из другого браузера — без учётной записи.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">Импортировать</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">Пропустить</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">Импорт выполняется локально на вашем устройстве.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">Шаг 2. Выберите макет</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">Выберите стиль вкладок, который подходит вашей работе. Его можно изменить в любой момент.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">Вкладки сбоку</translation>
@@ -128,31 +124,12 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Скоро</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Автоматически</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Для опытных</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">Необязательно</translation>
   <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">Версия <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
   <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">На основе Chromium <ph name="CHROMIUM_VERSION"/></translation>
-  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">Открыть панель <ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_BODY">Включите <ph name="PRODUCT_LONG_NAME"/>, чтобы автоматизировать задачи в браузере, создавать контент и взаимодействовать с веб-страницами с помощью предпочитаемого поставщика ИИ.</translation>
-  <translation id="IDS_NEXUS_CONSENT_ACCEPT">Включить <ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_DECLINE">Не сейчас</translation>
   <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">Поставщики моделей</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">Пользовательский URL веб-приложения <ph name="PRODUCT_NAME"/></translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">Доступ к файловой системе</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">Этот агент хочет читать и записывать файлы на вашем компьютере.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">Доступ к буферу обмена</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">Этот агент хочет получить доступ к вашему буферу обмена.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">Доступ к данным браузера</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">Этот агент хочет получить доступ к вашим закладкам, истории и загрузкам.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">Уведомления</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">Этот агент хочет отправлять вам уведомления.</translation>
-  <translation id="IDS_NEXUS_PERMISSION_ALLOW">Разрешить</translation>
-  <translation id="IDS_NEXUS_PERMISSION_DENY">Запретить</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">Настройте поставщика ИИ</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">Выберите поставщика ИИ и введите свои учётные данные, чтобы начать.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">Эта функция запускает <ph name="PRODUCT_NAME"/> прямо в браузере, подключая такие приложения, как WhatsApp, Telegram, Discord и iMessage, к ИИ-ассистентам для программирования.</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> может использовать множество поставщиков LLM. Выберите поставщика, выполните аутентификацию, затем задайте модель по умолчанию.</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> может использовать множество поставщиков LLM. Выберите поставщика, выполните аутентификацию, затем задайте модель по умолчанию.</translation>

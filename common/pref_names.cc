@@ -3,7 +3,6 @@
 const char kCustomChildLayoutsPrefPath[] = "custom_browser.ui.data";
 const char kCustomBrowserPrefPath[] = "custom_browser.pref";
 const char kCustomUIModePrefPath[] = "custom_browser.pref.kUIMode";
-const char kUIModePrefPathKey[] = "customBrowserUIModePrefPath";
 const char kCustomComponentExtensionsPrefPath[] =
     "custom_browser.extensions.enabled";
 const char kCustomNewTabShowSearchPrefPath[] = "custom_browser.pref.new_tab.show_search";

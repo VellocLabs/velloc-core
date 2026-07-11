@@ -89,13 +89,6 @@ class FileTool : public ToolBase,
   FileTool(const FileTool&) = delete;
   FileTool& operator=(const FileTool&) = delete;
 
-  // No-op for symmetry with `BrowserTool::DefineTools` — every category
-  // exposes this static so `ToolCatalog::Get()` can call it. All
-  // file-tool registration goes through the codegen-emitted
-  // `generated::PopulateRegistry()`; nothing macro-DSL-flavored is
-  // registered here.
-  static void DefineTools(ToolRegistry& registry);
-
   // Cancels in-flight reply lambdas via the weak-ptr factory so
   // anything queued on `base::ThreadPool` quietly drops on completion
   // instead of resolving a stale `ToolCallback`. Idempotent.

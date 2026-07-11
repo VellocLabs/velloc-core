@@ -10,8 +10,6 @@
 <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">Horizontale Tabs in der oberen Leiste.</translation>
 <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">Tabs oben · Kompakt</translation>
 <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">Horizontale Tabs, die beim Überfahren erscheinen.</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">Behalte <ph name="PRODUCT_NAME"/> in einem eigenen Arbeitsbereich neben der aktiven Seite.</translation>
 <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">Neuer Tab</translation>
 <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">Suchfeld anzeigen</translation>
 <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">Logo des Suchanbieters anzeigen</translation>
@@ -26,8 +24,6 @@
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">Schritt 1. Bring deine Sachen mit</translation>
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">Importiere Lesezeichen, Passwörter und Einstellungen aus einem anderen Browser – kein Konto erforderlich.</translation>
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">Importieren</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">Vorerst überspringen</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">Der Import erfolgt lokal auf deinem Gerät.</translation>
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">Schritt 2. Wähle dein Layout</translation>
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">Wähle den Tab-Stil, der zu deiner Arbeitsweise passt. Du kannst jederzeit wechseln.</translation>
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">Seitenleisten-Tabs</translation>
@@ -67,7 +63,6 @@
 <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Demnächst</translation>
 <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automatisch</translation>
 <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Erweitert</translation>
-<translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">Optional</translation>
 <translation id="IDS_CUSTOM_BROWSER_CLOSE">Schließen</translation>
 <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Erste Schritte mit Chromium</translation>
 <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium-Logo</translation>
@@ -86,12 +81,6 @@
 <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">Nicht verfügbar</translation>
 <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">Version <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
 <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Basiert auf Chromium <ph name="CHROMIUM_VERSION"/></translation>
-<translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
-<translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">Das <ph name="PRODUCT_LONG_NAME"/>-Panel öffnen</translation>
-<translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
-<translation id="IDS_NEXUS_CONSENT_BODY">Aktiviere <ph name="PRODUCT_LONG_NAME"/>, um Browseraufgaben zu automatisieren, Inhalte zu erstellen und mit deinem bevorzugten KI-Anbieter mit Webseiten zu interagieren.</translation>
-<translation id="IDS_NEXUS_CONSENT_ACCEPT"><ph name="PRODUCT_LONG_NAME"/> aktivieren</translation>
-<translation id="IDS_NEXUS_CONSENT_DECLINE">Jetzt nicht</translation>
 <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
 <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">Modellanbieter</translation>
 <translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">KI-Anbieter</translation>
@@ -101,25 +90,13 @@
 <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">Verbindung erfolgreich</translation>
 <translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">Verbindung fehlgeschlagen</translation>
 <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">Benutzerdefinierte <ph name="PRODUCT_NAME"/>-Web-App-URL</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
+<translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
 <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">Auf Standard zurücksetzen</translation>
 <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">Web-App-URL des Agenten</translation>
 <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
 <translation id="IDS_NEXUS_PROVIDER_ANTHROPIC">Anthropic</translation>
 <translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google AI</translation>
 <translation id="IDS_NEXUS_PROVIDER_OLLAMA">Ollama (Lokal)</translation>
-<translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">Dateisystemzugriff</translation>
-<translation id="IDS_NEXUS_PERMISSION_FILES_BODY">Dieser Agent möchte Dateien auf deinem Computer lesen und schreiben.</translation>
-<translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">Zwischenablagezugriff</translation>
-<translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">Dieser Agent möchte auf deine Zwischenablage zugreifen.</translation>
-<translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">Zugriff auf Browserdaten</translation>
-<translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">Dieser Agent möchte auf deine Lesezeichen, deinen Verlauf und deine Downloads zugreifen.</translation>
-<translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">Benachrichtigungen</translation>
-<translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">Dieser Agent möchte dir Benachrichtigungen senden.</translation>
-<translation id="IDS_NEXUS_PERMISSION_ALLOW">Zulassen</translation>
-<translation id="IDS_NEXUS_PERMISSION_DENY">Ablehnen</translation>
-<translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">Richte deinen KI-Anbieter ein</translation>
-<translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">Wähle einen KI-Anbieter und gib deine Zugangsdaten ein, um loszulegen.</translation>
 <translation id="IDS_NEXUS_SETTINGS_MODEL_LABEL">Modell</translation>
 <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">Basis-URL</translation>
 <translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>

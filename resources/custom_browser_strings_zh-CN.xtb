@@ -81,16 +81,12 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">正在保存提供方设置...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">更新提供方设置失败。</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">默认行为</translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
-  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">在专属工作区中将 <ph name="PRODUCT_NAME"/> 保持在当前页面旁边。</translation>
   <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">显示搜索提供方标志</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">开始使用 Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">一分钟完成 Chromium 设置：导入数据、选择布局并调整新标签页。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">第 1 步：带上你的内容</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">从其他浏览器导入书签、密码和设置——无需账号。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">导入</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">暂时跳过</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">导入在你的设备本地进行。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">第 2 步：选择你的布局</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">选择适合你工作方式的标签页样式。你可以随时切换。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">侧边栏标签页</translation>
@@ -130,29 +126,10 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">即将推出</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">自动</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">高级</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">可选</translation>
-  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">打开 <ph name="PRODUCT_LONG_NAME"/> 面板</translation>
-  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_BODY">启用 <ph name="PRODUCT_LONG_NAME"/>，即可使用你偏好的 AI 提供方自动执行浏览器任务、生成内容并与网页交互。</translation>
-  <translation id="IDS_NEXUS_CONSENT_ACCEPT">启用 <ph name="PRODUCT_LONG_NAME"/></translation>
-  <translation id="IDS_NEXUS_CONSENT_DECLINE">暂不</translation>
   <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">模型提供方</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">自定义 <ph name="PRODUCT_NAME"/> Web 应用 URL</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">文件系统访问</translation>
-  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">此代理希望读取和写入你计算机上的文件。</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">剪贴板访问</translation>
-  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">此代理希望访问你的剪贴板。</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">浏览器数据访问</translation>
-  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">此代理希望访问你的书签、历史记录和下载内容。</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">通知</translation>
-  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">此代理希望向你发送通知。</translation>
-  <translation id="IDS_NEXUS_PERMISSION_ALLOW">允许</translation>
-  <translation id="IDS_NEXUS_PERMISSION_DENY">拒绝</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">设置你的 AI 提供方</translation>
-  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">选择一个 AI 提供方并输入你的凭据即可开始。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">此功能直接在浏览器中运行 <ph name="PRODUCT_NAME"/>，将 WhatsApp、Telegram、Discord 和 iMessage 等应用连接到 AI 编程助手。</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> 可使用多种 LLM 提供方。选择一个提供方，完成身份验证，然后设置默认模型。</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> 可使用多种 LLM 提供方。选择一个提供方，完成身份验证，然后设置默认模型。</translation>

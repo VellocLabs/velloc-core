@@ -194,6 +194,19 @@ source_set("openai_provider") {
   ]
 }
 
+# OpenAI-strict → Anthropic strict-schema dialect transform. Deliberately a
+# tiny base-only source_set (same pattern as
+# //custom_browser/browser/nexus:tool_schema) so the lite unit-test binary can
+# link it without dragging in the full provider.
+source_set("anthropic_schema_sanitizer") {
+  sources = [
+    "providers/anthropic/anthropic_schema_sanitizer.cc",
+    "providers/anthropic/anthropic_schema_sanitizer.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 source_set("anthropic_provider") {
   sources = [
     "providers/anthropic/anthropic_provider.cc",
@@ -201,6 +214,7 @@ source_set("anthropic_provider") {
   ]
 
   deps = [
+    ":anthropic_schema_sanitizer",
     ":provider",
     ":types",
     "//base",

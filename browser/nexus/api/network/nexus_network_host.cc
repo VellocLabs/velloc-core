@@ -154,7 +154,7 @@ void NexusNetworkHost::Start() {
           net::HttpRequestHeaders::kUserAgent)) {
     resource_request->headers.SetHeader(
         net::HttpRequestHeaders::kUserAgent,
-        "Mozilla/5.0 (Nexus WebFetch)");
+        "Mozilla/5.0 (Velloc WebFetch)");
   }
 
   loader_ = network::SimpleURLLoader::Create(std::move(resource_request),

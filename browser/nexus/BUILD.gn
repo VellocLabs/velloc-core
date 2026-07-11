@@ -7,6 +7,63 @@ import("//testing/test.gni")
 
 assert(enable_custom_browser)
 
+declare_args() {
+  # Directory of the nexus_web checkout whose bridge interface version the
+  # ninja-time gate (`:check_interface_version`) verifies against
+  # nexus_interface_version.h. Empty = the script derives the sibling
+  # checkout from the monorepo layout (<root>/nexus_web).
+  nexus_web_dir = ""
+
+  # Escape hatch for builds without a nexus_web checkout (isolated CI):
+  # the gate then stamps with a warning instead of verifying the pairing.
+  skip_nexus_interface_version_check = false
+}
+
+# =============================================================================
+# Bridge interface version
+#
+# `nexus_interface_version.h` holds the binary side of the host<->guest
+# compatibility contract (see docs/agents/nexus-interface-versioning.md).
+# Release pairing is URL-pinned (GetResolvedNexusGuestURL appends /v<N>/);
+# the dev flow (localhost, unversioned path) is covered by this ninja-time
+# gate instead: any build fails if the sibling nexus_web checkout declares
+# a different NEXUS_INTERFACE_VERSION. The guest-side constant is reported
+# through a depfile, so editing either side's constant re-runs the check.
+# =============================================================================
+action("check_interface_version") {
+  script = "scripts/check_interface_version.py"
+
+  inputs = [ "nexus_interface_version.h" ]
+
+  _stamp = "$target_gen_dir/interface_version_check.stamp"
+  outputs = [ _stamp ]
+  depfile = "$target_gen_dir/interface_version_check.d"
+
+  args = [
+    "--header",
+    rebase_path("nexus_interface_version.h", root_build_dir),
+    "--stamp",
+    rebase_path(_stamp, root_build_dir),
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+  ]
+  if (nexus_web_dir != "") {
+    args += [
+      "--nexus-web-dir",
+      rebase_path(nexus_web_dir, root_build_dir),
+    ]
+  }
+  if (skip_nexus_interface_version_check) {
+    args += [ "--skip" ]
+  }
+}
+
+source_set("interface_version") {
+  sources = [ "nexus_interface_version.h" ]
+
+  deps = [ ":check_interface_version" ]
+}
+
 # =============================================================================
 # Tool declaration codegen
 #
@@ -753,6 +810,7 @@ source_set("guest_config") {
   ]
 
   public_deps = [
+    ":interface_version",
     ":nexus_webui_config",
     "//base",
     "//chrome/browser/profiles:profile",
@@ -825,16 +883,6 @@ source_set("nexus_webui_config") {
   deps = [ "//base" ]
 }
 
-# Nexus toolbar button — placed next to the GLIC button (T011b).
-source_set("nexus_toolbar_button") {
-  sources = [
-    "nexus_toolbar_button.cc",
-    "nexus_toolbar_button.h",
-  ]
-
-  deps = [ "//base" ]
-}
-
 # Per-domain permission manager for Nexus capabilities (T012).
 source_set("permissions") {
   sources = [
@@ -859,16 +907,6 @@ source_set("domain") {
     "//base",
     "//components/keyed_service/core",
     "//crypto",
-    "//url",
-  ]
-}
-
-# Session types (header-only for now).
-source_set("session_types") {
-  sources = [ "session/session_types.h" ]
-
-  deps = [
-    "//base",
     "//url",
   ]
 }
@@ -983,6 +1021,7 @@ source_set("unit_tests_lite") {
     "api/llm/oauth/oauth_providers_unittest.cc",
     "api/llm/oauth/oauth_token_store_unittest.cc",
     "api/llm/provider_config_unittest.cc",
+    "api/llm/providers/anthropic/anthropic_schema_sanitizer_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1014,6 +1053,7 @@ source_set("unit_tests_lite") {
     "//components/os_crypt/async/browser:test_support",
     "//components/prefs",
     "//components/prefs:test_support",
+    "//custom_browser/browser/nexus/api/llm:anthropic_schema_sanitizer",
     "//custom_browser/browser/nexus/api/llm:line_splitter",
     "//custom_browser/browser/nexus/api/llm:oauth",
     "//custom_browser/browser/nexus/api/llm:pref_names",

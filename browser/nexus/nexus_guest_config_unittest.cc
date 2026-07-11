@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/prefs/pref_service.h"
@@ -15,6 +16,7 @@
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_registration.h"
+#include "custom_browser/browser/nexus/nexus_interface_version.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "net/base/url_util.h"
@@ -44,22 +46,78 @@ std::unique_ptr<TestingProfile> CreateTestingProfileWithNexusPrefs() {
   return builder.Build();
 }
 
+// The "v<N>/" path segment the binary pins https guest bases to.
+std::string VersionSegment() {
+  return std::string("v") + kNexusInterfaceVersionStr + "/";
+}
+
 // TestingProfile creation needs a content task environment (UI/IO threads).
 class NexusGuestConfigTest : public testing::Test {
  private:
   content::BrowserTaskEnvironment task_environment_;
 };
 
-TEST_F(NexusGuestConfigTest, GetResolvedNexusGuestURLFallsBackWithoutProfile) {
-  EXPECT_EQ(GURL(kDefaultNexusGuestURL), GetResolvedNexusGuestURL(nullptr));
+// The stringified macro and the int constant must always agree — they both
+// derive from the single NEXUS_INTERFACE_VERSION #define, and the URL path
+// is built from the string form.
+TEST_F(NexusGuestConfigTest, InterfaceVersionStringMatchesInt) {
+  EXPECT_EQ(base::NumberToString(kNexusInterfaceVersion),
+            std::string(kNexusInterfaceVersionStr));
 }
+
+TEST_F(NexusGuestConfigTest, AppendInterfaceVersionPinsHttpsBases) {
+  // Trailing-slash base.
+  EXPECT_EQ(GURL("https://nexus.velloc.app/" + VersionSegment()),
+            AppendNexusInterfaceVersionToBase(GURL("https://nexus.velloc.app/")));
+  // Subpath base without a trailing slash (self-hosted mirror).
+  EXPECT_EQ(GURL("https://mirror.example/nexus/" + VersionSegment()),
+            AppendNexusInterfaceVersionToBase(GURL("https://mirror.example/nexus")));
+}
+
+TEST_F(NexusGuestConfigTest, AppendInterfaceVersionPassesThroughDevAndPinnedBases) {
+  // http (localhost dev server): unversioned on purpose — the guest skips
+  // its URL version check there; drift is caught by the ninja build gate.
+  EXPECT_EQ(GURL("http://localhost:5173/index.html"),
+            AppendNexusInterfaceVersionToBase(
+                GURL("http://localhost:5173/index.html")));
+  // A hand-pasted already-pinned base must not get a second segment; the
+  // guest still validates the pinned number against its own constant.
+  EXPECT_EQ(GURL("https://nexus.velloc.app/v7/"),
+            AppendNexusInterfaceVersionToBase(GURL("https://nexus.velloc.app/v7/")));
+  // Version-like but malformed trailing segments still get pinned.
+  EXPECT_EQ(GURL("https://host.example/version2/" + VersionSegment()),
+            AppendNexusInterfaceVersionToBase(GURL("https://host.example/version2/")));
+  EXPECT_EQ(GURL("https://host.example/v/" + VersionSegment()),
+            AppendNexusInterfaceVersionToBase(GURL("https://host.example/v/")));
+}
+
+TEST_F(NexusGuestConfigTest, GetResolvedNexusGuestURLFallsBackWithoutProfile) {
+  // The default is a base; https defaults (release) resolve with the
+  // interface version appended, the http localhost default (debug) stays
+  // verbatim. AppendNexusInterfaceVersionToBase encodes exactly that rule,
+  // so the expectation holds in both build configs.
+  EXPECT_EQ(AppendNexusInterfaceVersionToBase(GURL(kDefaultNexusGuestURL)),
+            GetResolvedNexusGuestURL(nullptr));
+}
+
+#if defined(NDEBUG)
+// Release builds only: the default guest URL must resolve to the pinned
+// production path. (The debug default is localhost and unversioned; the
+// consistency is covered by the append tests above.)
+TEST_F(NexusGuestConfigTest, ReleaseDefaultGuestURLIsVersionPinned) {
+  EXPECT_EQ(GURL("https://nexus.velloc.app/" + VersionSegment()),
+            GetResolvedNexusGuestURL(nullptr));
+}
+#endif
 
 TEST_F(NexusGuestConfigTest, GetResolvedNexusGuestURLAcceptsConfiguredHttpsUrl) {
   std::unique_ptr<TestingProfile> profile = CreateTestingProfileWithNexusPrefs();
   profile->GetPrefs()->SetString(prefs::kNexusWebappUrl,
                                  "https://example.com/agent");
 
-  EXPECT_EQ(GURL("https://example.com/agent"),
+  // The pref is a BASE: https overrides get the binary's interface version
+  // appended so a rehosted deploy stays version-correct across updates.
+  EXPECT_EQ(GURL("https://example.com/agent/" + VersionSegment()),
             GetResolvedNexusGuestURL(profile.get()));
 }
 
@@ -82,11 +140,11 @@ TEST_F(NexusGuestConfigTest, GetResolvedNexusGuestURLRejectsInvalidCustomUrls) {
 
   profile->GetPrefs()->SetString(prefs::kNexusWebappUrl,
                                  "http://example.com/not-allowed");
-  EXPECT_EQ(GURL(kDefaultNexusGuestURL),
+  EXPECT_EQ(AppendNexusInterfaceVersionToBase(GURL(kDefaultNexusGuestURL)),
             GetResolvedNexusGuestURL(profile.get()));
 
   profile->GetPrefs()->SetString(prefs::kNexusWebappUrl, "ftp://localhost/app");
-  EXPECT_EQ(GURL(kDefaultNexusGuestURL),
+  EXPECT_EQ(AppendNexusInterfaceVersionToBase(GURL(kDefaultNexusGuestURL)),
             GetResolvedNexusGuestURL(profile.get()));
 }
 

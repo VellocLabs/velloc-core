@@ -546,20 +546,17 @@ TEST(CodegenSmokeTest, GrepStrictSchemaUsesProviderCompatibleNullOptionals) {
 
   ExpectRequiredListEquals(
       *schema.strict_input_schema,
-      {"pattern", "path", "glob", "output_mode", "type", "head_limit"});
+      {"pattern", "path", "glob", "output_mode", "-B", "-A", "-C",
+       "context", "-n", "-i", "type", "head_limit", "offset", "multiline"});
 
   const base::DictValue* output_mode = properties->FindDict("output_mode");
-  ASSERT_NE(output_mode, nullptr);
-  const std::string* output_mode_type = output_mode->FindString("type");
-  ASSERT_NE(output_mode_type, nullptr);
-  EXPECT_EQ(*output_mode_type, "string");
+  ExpectNullableType(output_mode, "string");
   const std::string* output_mode_description =
       output_mode->FindString("description");
   ASSERT_NE(output_mode_description, nullptr);
   EXPECT_NE(output_mode_description->find("\"count\" shows match counts"),
             std::string::npos);
-  EXPECT_NE(output_mode_description->find(
-                "Use \"files_with_matches\" to select the default"),
+  EXPECT_NE(output_mode_description->find("Use null to select the default"),
             std::string::npos);
   const base::DictValue* head_limit = properties->FindDict("head_limit");
   const std::string* head_limit_description =
@@ -570,26 +567,13 @@ TEST(CodegenSmokeTest, GrepStrictSchemaUsesProviderCompatibleNullOptionals) {
       std::string::npos);
   const base::ListValue* modes = output_mode->FindList("enum");
   ASSERT_NE(modes, nullptr);
-  ASSERT_EQ(modes->size(), 3u);
-  EXPECT_EQ((*modes)[0].GetString(), "files_with_matches");
-  EXPECT_EQ((*modes)[1].GetString(), "content");
-  EXPECT_EQ((*modes)[2].GetString(), "count");
-  for (const base::Value& mode : *modes) {
-    EXPECT_FALSE(mode.is_none())
-        << "Anthropic rejects null enum members in strict tool schemas.";
-  }
-  ExpectNullableType(properties->FindDict("path"), "string");
-  ExpectNullableType(properties->FindDict("glob"), "string");
-  ExpectNullableType(properties->FindDict("type"), "string");
+  ASSERT_EQ(modes->size(), 4u);
+  EXPECT_TRUE((*modes)[0].is_none());
+  EXPECT_EQ((*modes)[1].GetString(), "files_with_matches");
+  EXPECT_EQ((*modes)[2].GetString(), "content");
+  EXPECT_EQ((*modes)[3].GetString(), "count");
   ExpectNullableType(properties->FindDict("head_limit"), "integer");
-  EXPECT_EQ(properties->FindDict("-B"), nullptr);
-  EXPECT_EQ(properties->FindDict("-A"), nullptr);
-  EXPECT_EQ(properties->FindDict("-C"), nullptr);
-  EXPECT_EQ(properties->FindDict("context"), nullptr);
-  EXPECT_EQ(properties->FindDict("-n"), nullptr);
-  EXPECT_EQ(properties->FindDict("-i"), nullptr);
-  EXPECT_EQ(properties->FindDict("offset"), nullptr);
-  EXPECT_EQ(properties->FindDict("multiline"), nullptr);
+  ExpectNullableType(properties->FindDict("-n"), "boolean");
 
   EXPECT_TRUE(
       schema.strict_input_schema->FindBool("additionalProperties").has_value());

@@ -103,7 +103,6 @@ class TopControlsSlideControllerTest;
 class WebAppFrameToolbarView;
 class WebUITabStripContainerView;
 class CustomBrowserWebUIView;
-class CustomBrowserContainerView;
 class MouseEventHandler;
 
 namespace aura {

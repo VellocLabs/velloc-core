@@ -150,14 +150,6 @@ void BrowserTool::DefineTools(ToolRegistry& /*registry*/) {
   // empty-args failure mode that motivated the migration: each tool
   // has at least one required field whose absence produces a clean
   // `invalid_args` reject before reaching the body.
-  //
-  // The orchestration helpers + `BrowserTool::browser_actions(...)`
-  // method below are now unreachable through the LLM tool path. They
-  // are kept around one more commit so this change is small enough to
-  // bisect cleanly; a follow-up commit deletes them along with the
-  // anonymous-namespace strict-schema / input-examples helpers above.
-  // (See the [[maybe_unused]] annotations on those helpers for
-  // pointers to what gets removed next.)
 }
 
 BrowserTool::BrowserTool(ToolSession* session, Profile* profile,

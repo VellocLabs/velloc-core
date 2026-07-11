@@ -77,6 +77,4 @@ browser_view_webui_sources = [
   "//custom_browser/ui/web_ui/custom_browser_webui_embedder.h",
   "//custom_browser/ui/web_ui/custom_component_extensions_handler.cc",
   "//custom_browser/ui/web_ui/custom_component_extensions_handler.h",
-  # "//custom_browser/ui/custom_contents_web_view.cc",
-  # "//custom_browser/ui/custom_contents_web_view.h",
 ]

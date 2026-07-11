@@ -34,20 +34,12 @@
   <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">হ্যাঁ</translation>
   <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">না</translation>
   <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">প্রযোজ্য নয়</translation>
-  <translation id="IDS_NEXUS_PANEL_TOOLTIP">OpenClaw in Chrome</translation>
-  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">OpenClaw in Chrome প্যানেল খুলুন</translation>
-  <translation id="IDS_NEXUS_CONSENT_TITLE">OpenClaw in Chrome</translation>
-  <translation id="IDS_NEXUS_CONSENT_BODY">আপনার পছন্দের AI প্রদানকারী ব্যবহার করে ব্রাউজারের কাজ স্বয়ংক্রিয় করতে, কনটেন্ট তৈরি করতে এবং ওয়েব পেজের সঙ্গে ইন্টারঅ্যাক্ট করতে OpenClaw in Chrome চালু করুন।</translation>
-  <translation id="IDS_NEXUS_CONSENT_ACCEPT">OpenClaw in Chrome চালু করুন</translation>
-  <translation id="IDS_NEXUS_SETTINGS_TITLE">OpenClaw in Chrome</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">AI প্রদানকারী</translation>
   <translation id="IDS_NEXUS_SETTINGS_API_KEY_LABEL">API কী</translation>
   <translation id="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER">আপনার API কী লিখুন</translation>
   <translation id="IDS_NEXUS_SETTINGS_TEST_CONNECTION">সংযোগ পরীক্ষা করুন</translation>
   <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">সংযোগ সফল</translation>
   <translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">সংযোগ ব্যর্থ</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">কাস্টম OpenClaw ওয়েব অ্যাপ URL</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-openclaw-app.example.com</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">ডিফল্টে রিসেট করুন</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">ওয়েব অ্যাপ URL</translation>
   <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
@@ -59,20 +51,13 @@
   <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">বেস URL</translation>
   <translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0">এই ফিচারগুলো AI ব্যবহার করে, এখনও প্রাথমিক উন্নয়ন পর্যায়ে আছে, তাই সব সময় সঠিক নাও হতে পারে।</translation>
-  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">এই ফিচারটি ব্রাউজারের ভেতরেই OpenClaw চালায় এবং WhatsApp, Telegram, Discord ও iMessage-এর মতো অ্যাপকে AI কোডিং সহকারীদের সঙ্গে যুক্ত করে।</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2">এটি আপনার ব্রাউজারকে এমন একটি কেন্দ্রীয় জায়গায় পরিণত করে যেখানে আপনি চ্যাট করতে পারেন এবং অনলাইনে সাধারণত যা করেন তাতে সহায়তার জন্য AI ব্যবহার করতে পারেন।</translation>
-  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION">OpenClaw in Chrome চালানোর জন্য প্রদানকারী বেছে নিন এবং তার এন্ডপয়েন্ট, পরিচয়পত্র ও মডেল ক্যাটালগ পরিচালনা করুন।</translation>
-  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL">সক্রিয় প্রদানকারী, API কী, বেস URL এবং লোড করা মডেল সেট করুন।</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL">OpenClaw in Chrome যে ওয়েব অ্যাপ URL ব্যবহার করে সেগুলো কনফিগার করুন।</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">একটি কাস্টম OpenClaw ওয়েব অ্যাপ URL সেট করুন। ডিফল্ট অভিজ্ঞতা ব্যবহার করতে এটি খালি রাখুন।</translation>
-  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">API কী প্রয়োজন নেই। OpenClaw in Chrome কনফিগার করা Ollama সার্ভার থেকে মডেল লোড করে।</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROXY_NOTE">আপনার সাইন-ইন করা Shift অ্যাকাউন্টের পরিচয়পত্র স্বয়ংক্রিয়ভাবে ব্যবহার করে।</translation>
   <translation id="IDS_NEXUS_SETTINGS_API_KEY_HINT">বর্তমান সংরক্ষিত কী বজায় রাখতে API কী খালি রাখুন।</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL">প্রদানকারীর অবস্থা</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED">কনফিগার করা হয়েছে</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED">কনফিগার করা হয়নি</translation>
   <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDERS">কোনও প্রদানকারী উপলভ্য নয়</translation>
-  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">এই প্রোফাইলের জন্য OpenClaw in Chrome প্রদানকারী তথ্য উপলভ্য নয়।</translation>
   <translation id="IDS_NEXUS_SETTINGS_MODEL_LOADING">উপলভ্য মডেল লোড করা হচ্ছে...</translation>
   <translation id="IDS_NEXUS_SETTINGS_TESTING_CONNECTION">সংযোগ পরীক্ষা করা হচ্ছে...</translation>
   <translation id="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX">ডিফল্ট:</translation>
@@ -94,5 +79,4 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">প্রদানকারী সেটিংস সংরক্ষণ করা হচ্ছে...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">প্রদানকারী সেটিংস আপডেট করা যায়নি।</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">ডিফল্ট আচরণ</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">কাস্টম URL মুছে বিল্ট-ইন OpenClaw ওয়েব অ্যাপ ব্যবহার করুন।</translation>
 </translationbundle>

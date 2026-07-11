@@ -34,20 +34,12 @@
   <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">Да</translation>
   <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">Нет</translation>
   <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">Н/Д</translation>
-  <translation id="IDS_NEXUS_PANEL_TOOLTIP">OpenClaw in Chrome</translation>
-  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">Открыть панель OpenClaw in Chrome</translation>
-  <translation id="IDS_NEXUS_CONSENT_TITLE">OpenClaw in Chrome</translation>
-  <translation id="IDS_NEXUS_CONSENT_BODY">Включите OpenClaw in Chrome, чтобы автоматизировать задачи браузера, создавать контент и взаимодействовать с веб-страницами с помощью предпочитаемого поставщика ИИ.</translation>
-  <translation id="IDS_NEXUS_CONSENT_ACCEPT">Включить OpenClaw in Chrome</translation>
-  <translation id="IDS_NEXUS_SETTINGS_TITLE">OpenClaw in Chrome</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">Поставщик ИИ</translation>
   <translation id="IDS_NEXUS_SETTINGS_API_KEY_LABEL">API-ключ</translation>
   <translation id="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER">Введите API-ключ</translation>
   <translation id="IDS_NEXUS_SETTINGS_TEST_CONNECTION">Проверить подключение</translation>
   <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">Подключение успешно</translation>
   <translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">Не удалось подключиться</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">Пользовательский URL веб-приложения OpenClaw</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-openclaw-app.example.com</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">Сбросить по умолчанию</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">URL-адреса веб-приложения</translation>
   <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
@@ -59,20 +51,13 @@
   <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">Базовый URL</translation>
   <translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0">Эти функции используют ИИ, находятся на ранней стадии разработки и не всегда дают верный результат.</translation>
-  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">Эта функция запускает OpenClaw прямо в браузере, подключая приложения вроде WhatsApp, Telegram, Discord и iMessage к ИИ-помощникам для программирования.</translation>
   <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2">Она превращает браузер в центральное место, где можно общаться и использовать ИИ для помощи во всем, что вы обычно делаете в интернете.</translation>
-  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION">Выберите поставщика для OpenClaw in Chrome и управляйте его конечной точкой, учетными данными и каталогом моделей.</translation>
-  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL">Настройте активного поставщика, API-ключ, базовый URL и загруженную модель.</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL">Настройте URL-адреса веб-приложения, которые использует OpenClaw in Chrome.</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">Укажите пользовательский URL веб-приложения OpenClaw. Оставьте поле пустым, чтобы использовать вариант по умолчанию.</translation>
-  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">API-ключ не требуется. OpenClaw in Chrome загружает модели с настроенного сервера Ollama.</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROXY_NOTE">Автоматически использует учетные данные вашей вошедшей учетной записи Shift.</translation>
   <translation id="IDS_NEXUS_SETTINGS_API_KEY_HINT">Оставьте API-ключ пустым, чтобы сохранить текущий сохраненный ключ.</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL">Статус поставщика</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED">Настроен</translation>
   <translation id="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED">Не настроен</translation>
   <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDERS">Нет доступных поставщиков</translation>
-  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">Сведения о поставщике OpenClaw in Chrome недоступны для этого профиля.</translation>
   <translation id="IDS_NEXUS_SETTINGS_MODEL_LOADING">Загрузка доступных моделей...</translation>
   <translation id="IDS_NEXUS_SETTINGS_TESTING_CONNECTION">Проверка подключения...</translation>
   <translation id="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX">По умолчанию:</translation>
@@ -94,5 +79,4 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">Сохранение настроек поставщика...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">Не удалось обновить настройки поставщика.</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">Поведение по умолчанию</translation>
-  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">Очистите пользовательский URL и используйте встроенное веб-приложение OpenClaw.</translation>
 </translationbundle>

@@ -5,20 +5,14 @@
 
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/webui_url_constants.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
-#include "content/public/common/url_constants.h"
-#include "net/base/url_util.h"
 #include "url/gurl.h"
 
 namespace nexus {
 
 namespace {
-
-constexpr std::string_view kNexusModeQueryKey = "openclaw";
-constexpr std::string_view kNexusModeQueryValue = "1";
 
 bool IsAllowedDevHost(std::string_view host) {
   return host == "localhost" || host == "127.0.0.1";
@@ -45,18 +39,6 @@ GURL GetDefaultGuestUrl() {
 }
 
 }  // namespace
-
-bool IsNexusGlicMode(const GURL& webui_url) {
-  if (!webui_url.is_valid() || !webui_url.SchemeIs(content::kChromeUIScheme) ||
-      webui_url.host() != chrome::kChromeUIGlicHost) {
-    return false;
-  }
-
-  std::string query_value;
-  return net::GetValueForKeyInQuery(webui_url, kNexusModeQueryKey,
-                                    &query_value) &&
-         query_value == kNexusModeQueryValue;
-}
 
 GURL GetResolvedNexusGuestURL(Profile* profile) {
   const GURL default_url = GetDefaultGuestUrl();

@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_layout.h"
 #include "chrome/common/webui_url_constants.h"
+#include "chrome/grit/chrome_unscaled_resources.h"
 #include "chrome/grit/custom_browser_resources.h"
 #include "chrome/grit/custom_browser_resources_map.h"
 #include "chrome/grit/generated_resources.h"
@@ -26,7 +27,10 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "content/public/common/url_constants.h"
+#include "custom_browser/browser/nexus/nexus_guest_config.h"
+#include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "custom_browser/browser/nexus/settings/nexus_settings_handler.h"
+#include "custom_browser/common/branding_constants.h"
 #include "custom_browser/common/product_version.h"
 #include "custom_browser/resources/grit/custom_browser_strings.h"
 #include "custom_browser/ui/mojom/browser_constants.mojom-forward.h"
@@ -34,7 +38,9 @@
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_handler.h"
 #include "custom_browser/ui/web_ui/native_view_handler.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/url_util.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/theme_provider.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/webui/web_ui_util.h"
@@ -45,14 +51,42 @@
 namespace {
 
 void AddNexusStrings(content::WebUIDataSource* html_source) {
+  // IDS strings that contain the centralized PRODUCT_NAME / PRODUCT_LONG_NAME
+  // placeholder (see custom_browser/common/branding_constants.h) cannot be
+  // registered via the AddLocalizedStrings array below — that path passes the
+  // raw template through unchanged, so loadTimeData would receive literal "$1".
+  // Substitute those via GetStringFUTF16 + AddString instead.
+  const std::u16string product_name =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
+  const std::u16string product_long_name =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductLongName);
+  html_source->AddString(
+      "customBrowserNexusProviderDescription",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION,
+                                 product_name));
+  html_source->AddString(
+      "customBrowserNexusProviderConnectionDescription",
+      l10n_util::GetStringFUTF16(
+          IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION, product_name));
+  html_source->AddString(
+      "customBrowserNexusOllamaNote",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_OLLAMA_NOTE,
+                                 product_long_name));
+  html_source->AddString(
+      "customBrowserNexusWarningIntro",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_WARNING_INTRO, product_name));
+  html_source->AddString(
+      "customBrowserNexusWarningBody1",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_WARNING_BODY_1, product_name));
+  html_source->AddString(
+      "customBrowserNexusWarningAcknowledgment",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_WARNING_ACKNOWLEDGMENT,
+                                 product_name));
+
   static constexpr webui::LocalizedString kNexusStrings[] = {
       {"customBrowserLoadingLabel", IDS_CUSTOM_BROWSER_LOADING},
       {"customBrowserNexusProviderPageTitle",
        IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE},
-      {"customBrowserNexusProviderDescription",
-       IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION},
-      {"customBrowserNexusProviderConnectionDescription",
-       IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION},
       {"customBrowserNexusProviderLabel", IDS_NEXUS_SETTINGS_PROVIDER_LABEL},
       {"customBrowserNexusNoProviders", IDS_NEXUS_SETTINGS_NO_PROVIDERS},
       {"customBrowserNexusProviderOpenai", IDS_NEXUS_PROVIDER_OPENAI},
@@ -138,10 +172,7 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
       {"customBrowserNexusErrorNoModels", IDS_NEXUS_SETTINGS_ERROR_NO_MODELS},
       {"customBrowserNexusErrorUnexpectedResponse",
        IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE},
-      {"customBrowserNexusOllamaNote", IDS_NEXUS_SETTINGS_OLLAMA_NOTE},
       {"customBrowserNexusWarningTitle", IDS_NEXUS_WARNING_TITLE},
-      {"customBrowserNexusWarningIntro", IDS_NEXUS_WARNING_INTRO},
-      {"customBrowserNexusWarningBody1", IDS_NEXUS_WARNING_BODY_1},
       {"customBrowserNexusWarningBody2", IDS_NEXUS_WARNING_BODY_2},
       {"customBrowserNexusWarningBody3", IDS_NEXUS_WARNING_BODY_3},
       {"customBrowserNexusWarningRecommendationsTitle",
@@ -158,8 +189,6 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
        IDS_NEXUS_WARNING_RECOMMENDATION_USE_SAFEGUARDS},
       {"customBrowserNexusWarningSharedDevice",
        IDS_NEXUS_WARNING_SHARED_DEVICE},
-      {"customBrowserNexusWarningAcknowledgment",
-       IDS_NEXUS_WARNING_ACKNOWLEDGMENT},
       {"customBrowserNexusWarningContinue", IDS_NEXUS_WARNING_CONTINUE},
       {"customBrowserCancel", IDS_CANCEL},
   };
@@ -192,6 +221,10 @@ CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
   CustomBrowserUiPrefs::InitMainUI(html_source, profile->GetPrefs());
   html_source->AddString("customBrowserProductVersion",
                          custom_browser::kCustomBrowserProductVersion);
+  html_source->AddString("customBrowserProductName",
+                         custom_browser::kCustomBrowserProductName);
+  html_source->AddString("customBrowserProductLongName",
+                         custom_browser::kCustomBrowserProductLongName);
 
   html_source->AddString("tabIdDataType", kCustomWebUITabIdDataType);
   html_source->AddString("tabGroupIdDataType", kCustomWebUITabGroupIdDataType);
@@ -222,6 +255,29 @@ CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
   };
   html_source->AddLocalizedStrings(kStrings);
   AddNexusStrings(html_source);
+  html_source->AddString("customBrowserNexusWebappDefaultUrl",
+                         nexus::kDefaultNexusGuestURL);
+  // Resolved Nexus guest URL (prefs::kNexusWebappUrl override or default
+  // localhost dev URL). Read by `nexus_runtime_bootstrap.ts` to set the
+  // <webview src> for the nexus_web guest. Injected as loadTimeData so the
+  // page can read it synchronously at boot via loadTimeData.getString().
+  html_source->AddString("customBrowserNexusGuestUrl",
+                         nexus::GetResolvedNexusGuestURL(profile).spec());
+
+  // Boot-welcome product logo. The unscaled product_logo_*.png resources
+  // (IDR_PRODUCT_LOGO_128 / _256) are registered in
+  // chrome/app/theme/chrome_unscaled_resources.grd as raw BINDATA — they are
+  // NOT exposed by the chrome://theme/ handler (theme_source.cc only routes
+  // entries from theme_resources.grd). To make them addressable from the
+  // browser_webui pages, expose them under stable WebUI paths via
+  // AddResourcePath. The Velloc branding override at
+  //   chromium_overrides/velloc/symlink/chrome/app/theme/velloc/product_logo_*.png
+  // is picked up at build time via the product-logo branding path
+  // substitution, so this URL resolves to the Velloc-branded PNG.
+  html_source->AddResourcePath("nexus_welcome_logo.png",
+                               IDR_PRODUCT_LOGO_128);
+  html_source->AddResourcePath("nexus_welcome_logo@2x.png",
+                               IDR_PRODUCT_LOGO_256);
 
   web_ui->AddMessageHandler(std::make_unique<settings::NexusSettingsHandler>());
 

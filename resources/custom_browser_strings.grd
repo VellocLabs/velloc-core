@@ -58,11 +58,11 @@ translated for each locale.
       <message name="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION" desc="Description for the compact standard layout option" use_name_for_id="true">
         Horizontal tabs that appear on hover.
       </message>
-      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS" desc="OpenClaw mode option label" use_name_for_id="true">
-        OpenClaw
+      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS" desc="Product mode option label" use_name_for_id="true">
+        <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph>
       </message>
-      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION" desc="Description for the OpenClaw layout option" use_name_for_id="true">
-        Keep OpenClaw beside the active page in a dedicated workspace.
+      <message name="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION" desc="Description for the product layout option" use_name_for_id="true">
+        Keep <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> beside the active page in a dedicated workspace.
       </message>
       <!-- Customize Chrome side panel -->
       <message name="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE" desc="Header for the New Tab Page section in the Customize Chrome side panel" use_name_for_id="true">
@@ -290,19 +290,19 @@ translated for each locale.
       </message>
       <!-- Nexus AI agent platform -->
       <message name="IDS_NEXUS_PANEL_TOOLTIP" desc="Tooltip for the Nexus AI agent panel toolbar button" use_name_for_id="true">
-        OpenClaw in Chrome
+        <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>
       </message>
       <message name="IDS_NEXUS_PANEL_ACCESSIBLE_NAME" desc="Accessible name for the Nexus AI panel button" use_name_for_id="true">
-        Open the OpenClaw in Chrome panel
+        Open the <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph> panel
       </message>
       <message name="IDS_NEXUS_CONSENT_TITLE" desc="Title of the Nexus consent/onboarding screen" use_name_for_id="true">
-        OpenClaw in Chrome
+        <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>
       </message>
       <message name="IDS_NEXUS_CONSENT_BODY" desc="Body text for the Nexus consent/onboarding screen explaining the feature" use_name_for_id="true">
-        Enable OpenClaw in Chrome to automate browser tasks, generate content, and interact with web pages using your preferred AI provider.
+        Enable <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph> to automate browser tasks, generate content, and interact with web pages using your preferred AI provider.
       </message>
       <message name="IDS_NEXUS_CONSENT_ACCEPT" desc="Accept button on the Nexus consent screen" use_name_for_id="true">
-        Enable OpenClaw in Chrome
+        Enable <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>
       </message>
       <message name="IDS_NEXUS_CONSENT_DECLINE" desc="Decline button on the Nexus consent screen" use_name_for_id="true">
         Not now
@@ -311,10 +311,10 @@ translated for each locale.
         Security warning
       </message>
       <message name="IDS_NEXUS_WARNING_INTRO" desc="Introductory sentence shown under the Nexus security warning title in the custom browser UI" use_name_for_id="true">
-        Please read before enabling OpenClaw.
+        Please read before enabling <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph>.
       </message>
       <message name="IDS_NEXUS_WARNING_BODY_1" desc="First warning paragraph for the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
-        OpenClaw can connect external messaging apps and services to AI-powered actions inside the browser. Depending on configuration, it may read message content, interact with connected services, and perform actions on your behalf.
+        <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> can connect external messaging apps and services to AI-powered actions inside the browser. Depending on configuration, it may read message content, interact with connected services, and perform actions on your behalf.
       </message>
       <message name="IDS_NEXUS_WARNING_BODY_2" desc="Second warning paragraph for the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
         Because of this, a bad prompt, unsafe configuration, or untrusted message source could cause unintended behavior, data exposure, or actions you did not expect.
@@ -344,13 +344,13 @@ translated for each locale.
         If this browser is used on a shared or unmanaged device, enabling this feature may increase security and privacy risk.
       </message>
       <message name="IDS_NEXUS_WARNING_ACKNOWLEDGMENT" desc="Acknowledgment checkbox label on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
-        I understand that OpenClaw is powerful and may introduce security and privacy risks.
+        I understand that <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> is powerful and may introduce security and privacy risks.
       </message>
       <message name="IDS_NEXUS_WARNING_CONTINUE" desc="Continue button label on the embedded Nexus security warning in the custom browser UI" use_name_for_id="true">
         Continue
       </message>
       <message name="IDS_NEXUS_SETTINGS_TITLE" desc="Title for the Nexus settings subpage at chrome://settings/nexus" use_name_for_id="true">
-        OpenClaw
+        <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph>
       </message>
       <message name="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE" desc="Title for the Nexus provider settings subpage and landing section" use_name_for_id="true">
         Model Providers
@@ -374,10 +374,10 @@ translated for each locale.
         Connection failed
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL" desc="Label for the custom webapp URL field" use_name_for_id="true">
-        Custom OpenClaw web app URL
+        Custom <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> web app URL
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER" desc="Placeholder for the custom webapp URL field" use_name_for_id="true">
-        https://your-openclaw-app.example.com
+        https://your-nexus-app.example.com
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET" desc="Button to reset webapp URL to default" use_name_for_id="true">
         Reset to default
@@ -445,29 +445,29 @@ translated for each locale.
       <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0" desc="Introductory warning line describing OpenClaw in Chrome on the Nexus settings landing page" use_name_for_id="true">
         These features use AI, are in early development, and won't always get it right.
       </message>
-      <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1" desc="First paragraph describing OpenClaw in Chrome on the Nexus settings landing page" use_name_for_id="true">
-        This feature runs OpenClaw directly in the browser, connecting apps like WhatsApp, Telegram, Discord, and iMessage to AI coding assistants.
+      <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1" desc="First paragraph describing the product on the Nexus settings landing page" use_name_for_id="true">
+        This feature runs <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> directly in the browser, connecting apps like WhatsApp, Telegram, Discord, and iMessage to AI coding assistants.
       </message>
       <message name="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2" desc="Second paragraph describing OpenClaw in Chrome on the Nexus settings landing page" use_name_for_id="true">
         It turns your browser into a central place where you can chat and use AI to help with anything you normally do online.
       </message>
       <message name="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION" desc="Description on the Nexus provider subpage" use_name_for_id="true">
-        OpenClaw can use many LLM providers. Pick a provider, authenticate, then set the default model.
+        <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> can use many LLM providers. Pick a provider, authenticate, then set the default model.
       </message>
       <message name="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL" desc="Description for the provider row on the Nexus settings landing page" use_name_for_id="true">
-        OpenClaw can use many LLM providers. Pick a provider, authenticate, then set the default model.
+        <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> can use many LLM providers. Pick a provider, authenticate, then set the default model.
       </message>
       <message name="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION" desc="Description shown above the connection controls on the Nexus provider settings page" use_name_for_id="true">
-        Choose the service Nexus should connect to and verify the connection.
+        Choose the service <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> should connect to and verify the connection.
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL" desc="Description for the web app row on the Nexus settings landing page" use_name_for_id="true">
-        Configure the web app URL used by OpenClaw in Chrome.
+        Configure the web app URL used by <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph>.
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION" desc="Description on the Nexus web app subpage" use_name_for_id="true">
-        Set a custom OpenClaw web app URL. Leave it empty to use the default experience.
+        Set a custom <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> web app URL. Leave it empty to use the default experience.
       </message>
       <message name="IDS_NEXUS_SETTINGS_OLLAMA_NOTE" desc="Helper text for the Ollama provider on the Nexus settings page" use_name_for_id="true">
-        No API key is required. OpenClaw in Chrome loads models from the configured Ollama server.
+        No API key is required. <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph> loads models from the configured Ollama server.
       </message>
       <message name="IDS_NEXUS_SETTINGS_API_KEY_HINT" desc="Helper text below the API key field on the Nexus settings page" use_name_for_id="true">
         Leave the API key empty to keep the current stored key.
@@ -485,7 +485,7 @@ translated for each locale.
         No providers available
       </message>
       <message name="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE" desc="Message shown when provider state is unavailable on the Nexus settings page" use_name_for_id="true">
-        OpenClaw in Chrome provider information is not available for this profile.
+        <ph name="PRODUCT_LONG_NAME">$1<ex>Nexus in Chrome</ex></ph> provider information is not available for this profile.
       </message>
       <message name="IDS_NEXUS_SETTINGS_MODEL_LOADING" desc="Status message shown while models are loading on the Nexus settings page" use_name_for_id="true">
         Loading available models...
@@ -778,7 +778,7 @@ This removes the stored provider, saved endpoint, and saved model selections.
         Default behavior
       </message>
       <message name="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION" desc="Description for the default web app behavior row on the Nexus settings page" use_name_for_id="true">
-        Clear the custom URL and use the built-in OpenClaw web app.
+        Clear the custom URL and use the built-in <ph name="PRODUCT_NAME">$1<ex>Nexus</ex></ph> web app.
       </message>
     </messages>
   </release>

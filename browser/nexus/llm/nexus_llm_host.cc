@@ -1,6 +1,8 @@
 #include "custom_browser/browser/nexus/llm/nexus_llm_host.h"
 
 #include <algorithm>
+#include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -51,6 +53,48 @@ bool IsModelEnabled(PrefService* prefs,
   return false;
 }
 
+// Mirror of `deriveModelId` in nexus_quick_settings.ts. The TS curated
+// catalog stores each model's `model` field as either a plain id or a
+// regex source (anchored, optionally suffixed with a date pattern that
+// the OpenAI/Anthropic helpers add). The worker's `isSelectionEnabled`
+// gate compares against the literal id the picker sends — so we strip
+// the anchors / common date suffixes, then bail if the result still has
+// regex metacharacters we don't know how to flatten.
+std::string DeriveTsModelId(const std::string& pattern) {
+  if (pattern.empty()) return std::string();
+  std::string s = pattern;
+  if (!s.empty() && s.front() == '^') s.erase(s.begin());
+  if (!s.empty() && s.back() == '$') s.pop_back();
+  // (?:-\d{4}-\d{2}-\d{2})? — OpenAI date suffix.
+  constexpr std::string_view kDateY = "(?:-\\d{4}-\\d{2}-\\d{2})?";
+  constexpr std::string_view kDate8 = "(?:-\\d{8})?";
+  if (s.size() >= kDateY.size() &&
+      s.compare(s.size() - kDateY.size(), kDateY.size(), kDateY) == 0) {
+    s.resize(s.size() - kDateY.size());
+  }
+  if (s.size() >= kDate8.size() &&
+      s.compare(s.size() - kDate8.size(), kDate8.size(), kDate8) == 0) {
+    s.resize(s.size() - kDate8.size());
+  }
+  // If anything regex-y remains, skip — the picker won't synthesize this
+  // entry on the WebUI side either, so the catalog stays in sync.
+  if (s.find_first_of("()[]{}|?+*") != std::string::npos) {
+    return std::string();
+  }
+  // Unescape `\.` etc.
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '\\' && i + 1 < s.size()) {
+      out.push_back(s[i + 1]);
+      ++i;
+    } else {
+      out.push_back(s[i]);
+    }
+  }
+  return out;
+}
+
 bool IsProviderVerified(PrefService* prefs, const std::string& provider_id) {
   const base::DictValue* config = GetStoredProviderConfig(prefs, provider_id);
   if (!config) {
@@ -77,9 +121,26 @@ std::string BuildSystemInstruction(
     const mojom::NexusLlmRequestParams& request) {
   std::vector<std::string> sections;
   if (request.system_prompt.has_value()) {
-    const std::string flattened = FlattenTextValue(&request.system_prompt.value());
-    if (!flattened.empty()) {
-      sections.push_back(flattened);
+    // nexus_web sends systemPrompt as an array of independent prompt
+    // blocks (role / tools / style / memory / ...). Push each element as
+    // its own section so the outer "\n\n" join below preserves paragraph
+    // breaks between them. Flattening the whole array into one section
+    // here would glue blocks with single newlines (FlattenTextValue's
+    // join behavior), which suppresses Markdown headings at block
+    // boundaries.
+    const base::Value& sp = request.system_prompt.value();
+    if (const base::ListValue* list = sp.GetIfList()) {
+      for (const base::Value& entry : *list) {
+        const std::string flattened = FlattenTextValue(&entry);
+        if (!flattened.empty()) {
+          sections.push_back(flattened);
+        }
+      }
+    } else {
+      const std::string flattened = FlattenTextValue(&sp);
+      if (!flattened.empty()) {
+        sections.push_back(flattened);
+      }
     }
   }
   if (request.user_context.has_value()) {
@@ -394,6 +455,25 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
     return catalog;
   }
 
+  // Index the TS-pushed catalog by providerId so we can graft its
+  // curated models into providers whose own `info.models` came back
+  // empty (the common case after we removed `RefreshAllCatalogs` —
+  // `GetSupportedModels()` returns nothing). Without this, the worker's
+  // `isSelectionEnabled` gate (BrowserRuntimeWorker.ts:73) refuses
+  // every pick the WebUI quick-settings popup makes because no model
+  // is "enabled" in the bridge catalog the worker consumes.
+  const base::DictValue& ts_catalog = broker->GetTsModelCatalog();
+  std::map<std::string, const base::DictValue*> ts_by_provider;
+  if (const base::ListValue* providers = ts_catalog.FindList("providers")) {
+    for (const base::Value& entry : *providers) {
+      const base::DictValue* p = entry.GetIfDict();
+      if (!p) continue;
+      if (const std::string* pid = p->FindString("providerId")) {
+        ts_by_provider[*pid] = p;
+      }
+    }
+  }
+
   for (const ProviderInfo& info : broker->GetRegisteredProviders()) {
     LlmProvider* provider = broker->GetProvider(info.id);
     const bool provider_configured = provider && provider->IsConfigured();
@@ -402,6 +482,7 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
 
     bool has_enabled_model = false;
     std::vector<mojom::NexusLlmModelPtr> models;
+    std::set<std::string> seen_ids;
     for (const ModelInfo& model : info.models) {
       const bool model_enabled =
           provider_verified && IsModelEnabled(prefs, info.id, model.id);
@@ -415,7 +496,55 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
           provider ? provider->SupportsStreaming() : false;
       model_ptr->supports_tools =
           model.supports_tools || (provider ? provider->SupportsTools() : false);
+      seen_ids.insert(model.id);
       models.push_back(std::move(model_ptr));
+    }
+
+    // Always splice in TS-curated models — the popup picks from this
+    // list, so the worker's `isSelectionEnabled` gate must accept every
+    // id the popup advertises. Previously this graft only ran when
+    // `info.models` was empty, which silently dropped curated entries
+    // for any provider whose `/v1/models` returned a non-empty list
+    // that didn't already contain the curated ids (e.g. an OpenAI
+    // endpoint that doesn't yet list gpt-5.5, or a Gemini endpoint that
+    // names models with a `models/` prefix). Mirrors `deriveModelId` on
+    // the WebUI side so the ids the picker sends match the ids the
+    // worker accepts.
+    auto it = ts_by_provider.find(info.id);
+    if (it != ts_by_provider.end() && it->second) {
+      if (const base::ListValue* ts_models =
+              it->second->FindList("models")) {
+        for (const base::Value& m_val : *ts_models) {
+          const base::DictValue* m = m_val.GetIfDict();
+          if (!m) continue;
+          const std::string* pattern = m->FindString("model");
+          if (!pattern) continue;
+          std::string id = DeriveTsModelId(*pattern);
+          if (id.empty()) continue;
+          // Skip ids already added from `info.models` so we don't
+          // duplicate. The worker only inspects id + enabled, so we
+          // keep the first entry as-is.
+          if (!seen_ids.insert(id).second) continue;
+
+          // Honour the user's per-provider enabled-models allowlist
+          // when present; if absent or empty, all curated models are
+          // enabled for this verified provider.
+          const bool model_enabled =
+              provider_verified && IsModelEnabled(prefs, info.id, id);
+          has_enabled_model = has_enabled_model || model_enabled;
+
+          auto model_ptr = mojom::NexusLlmModel::New();
+          model_ptr->id = id;
+          const std::string* name = m->FindString("name");
+          model_ptr->label = (name && !name->empty()) ? *name : id;
+          model_ptr->enabled = model_enabled;
+          model_ptr->supports_streaming =
+              provider ? provider->SupportsStreaming() : false;
+          model_ptr->supports_tools =
+              provider ? provider->SupportsTools() : false;
+          models.push_back(std::move(model_ptr));
+        }
+      }
     }
 
     const base::DictValue* stored_config_for_model =
@@ -1294,6 +1423,23 @@ void NexusLlmHost::OnStreamDone(const std::string& stream_id,
   }
 
   it->second.done = true;
+}
+
+// --- Public helpers re-exported from the anonymous namespace ----------------
+
+bool IsNexusProviderVerified(PrefService* prefs,
+                             const std::string& provider_id) {
+  return IsProviderVerified(prefs, provider_id);
+}
+
+bool IsNexusModelEnabled(PrefService* prefs,
+                         const std::string& provider_id,
+                         const std::string& model_id) {
+  return IsModelEnabled(prefs, provider_id, model_id);
+}
+
+std::string GetNexusProviderIconSvg(const std::string& provider_id) {
+  return ResolveProviderIconSvg(provider_id);
 }
 
 }  // namespace nexus

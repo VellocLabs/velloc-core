@@ -25,6 +25,14 @@ class NexusBridgeResponseDelegate {
                                  const base::DictValue& route,
                                  const std::string& code,
                                  const std::string& message) = 0;
+
+  // Host-initiated event push (no client request to correlate with). The
+  // envelope mirrors a normal bridge response except `direction: "event"`
+  // and the `id` field is host-assigned (callers usually pass an empty
+  // string; the transport will fill in a synthetic id). Used by the
+  // LLM bridge to deliver `session.applySelection` and `session.pickFailed`
+  // events from the WebUI quick-settings popup down to nexus_web.
+  virtual void SendEvent(const base::DictValue& route, base::Value payload) = 0;
 };
 
 }  // namespace nexus

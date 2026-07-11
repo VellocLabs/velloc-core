@@ -28,6 +28,7 @@ action("generate_product_version") {
 
 source_set("common") {
   sources = [
+    "branding_constants.h",
     "pref_names.cc",
     "pref_names.h",
     "product_version.h",

@@ -13,8 +13,10 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/values.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
+#include "custom_browser/browser/nexus/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/llm/llm_types.h"
 
 class Profile;
@@ -45,7 +47,8 @@ namespace settings {
 //   - setActiveProvider         → switches the active LLM provider
 //   - getNexusViewState         → reports whether LlmBroker has an active
 //                                 provider for the embedded Nexus view
-class NexusSettingsHandler : public SettingsPageUIHandler {
+class NexusSettingsHandler : public SettingsPageUIHandler,
+                             public nexus::LlmBroker::Observer {
  public:
   NexusSettingsHandler();
 
@@ -58,6 +61,10 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   void RegisterMessages() override;
   void OnJavascriptAllowed() override;
   void OnJavascriptDisallowed() override;
+
+  // nexus::LlmBroker::Observer:
+  void OnTsModelCatalogChanged(const base::DictValue& catalog) override;
+  void OnSessionStatusChanged(const base::DictValue& status) override;
 
  private:
   // Returns the LlmBroker for the current profile. May return nullptr
@@ -113,6 +120,37 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // JS: cr.sendWithPromise('getNexusViewState')
   void HandleGetNexusViewState(const base::ListValue& args);
 
+  // --- WebUI quick-settings popup support ---
+  //
+  // The Lit `<nexus-quick-settings>` popup in the Nexus topbar reads the
+  // catalog + session status that nexus_web has pushed into the broker,
+  // and writes user picks back into the system. The webui side never
+  // talks to the broker directly — these handlers do the relay.
+  //
+  // Returns the cached NEXUS_MODEL_CONFIG snapshot pushed by nexus_web.
+  // JS: cr.sendWithPromise('getNexusCatalog')
+  void HandleGetNexusCatalog(const base::ListValue& args);
+
+  // Returns the most-recent SessionStatus pushed by nexus_web.
+  // JS: cr.sendWithPromise('getNexusSessionStatus')
+  void HandleGetNexusSessionStatus(const base::ListValue& args);
+
+  // Validates the pick, persists the global default for future new
+  // threads, and pushes a `session.applySelection` event over the bridge
+  // so nexus_web rebinds the active session.
+  // JS: cr.sendWithPromise('pickNexusSelection',
+  //                        {providerId, modelId, thinkingTier?})
+  void HandlePickNexusSelection(const base::ListValue& args);
+
+  // Builds the enriched popup catalog (TS-pushed model list +
+  // per-provider iconSvg / isConfigured / isVerified / enabledModels)
+  // used by both `getNexusCatalog` and the live-broadcast path.
+  base::DictValue BuildEnrichedNexusCatalog_();
+
+  // Re-emits `nexusCatalogChanged` with the enriched catalog. Called
+  // on TS catalog updates and on provider-config writes.
+  void BroadcastEnrichedCatalog_();
+
   // Callback for asynchronous Ollama model fetch.
   void OnOllamaModelsFetched(const std::string& callback_id,
                              std::vector<nexus::ModelInfo> models);
@@ -143,6 +181,13 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   };
 
   std::map<std::string, PendingVerification> pending_verifications_;
+
+  // Observes the broker so we can fan out catalog + session-status changes
+  // to the WebUI quick-settings popup via FireWebUIListener. The
+  // observation is set up in OnJavascriptAllowed (after JS is ready) and
+  // torn down in OnJavascriptDisallowed.
+  base::ScopedObservation<nexus::LlmBroker, nexus::LlmBroker::Observer>
+      broker_observation_{this};
 
   base::WeakPtrFactory<NexusSettingsHandler> weak_factory_{this};
 };

@@ -16,10 +16,10 @@ source_set("feature") {
   sources = [
     "extensions_hooks.cc",
     "extensions_hooks.h",
-    "glic_hooks.cc",
-    "glic_hooks.h",
     "navigation_hooks.cc",
     "navigation_hooks.h",
+    "nexus_bootstrap_hooks.cc",
+    "nexus_bootstrap_hooks.h",
     "ntp_hooks.cc",
     "ntp_hooks.h",
     "register_hooks.cc",

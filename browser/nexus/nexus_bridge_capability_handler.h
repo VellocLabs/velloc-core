@@ -99,19 +99,33 @@ class NexusBridgeCapabilityHandler {
   void SendInvalidArgsResponse(const std::string& id,
                                const base::DictValue& route,
                                std::string_view message) const;
+  // Host-pushed event (no client request to correlate with). Subclasses
+  // use this to deliver server-initiated notifications to the guest.
+  void SendEvent(const base::DictValue& route, base::Value payload) const;
   bool CopyRequiredStringOrSendInvalidArgs(const std::string& id,
                                            const base::DictValue& route,
                                            const base::DictValue& payload,
                                            std::string_view key,
                                            std::string* out) const;
 
- private:
+  // Type alias for the shape that goes into the dispatch table. Exposed
+  // protected so the macro-DSL adapter (`ToolsAdapter`) can synthesize
+  // its own session-routing dispatcher lambdas via `RegisterHandler`
+  // below without duplicating the parent class's dispatch machinery.
   using DispatchHandler = std::function<void(
       const std::string& id,
       const base::DictValue& route,
       const base::DictValue& payload,
       std::vector<blink::MessagePortDescriptor> ports)>;
 
+  // Registers an arbitrary callable under `action`. The existing typed
+  // `Register(...)` overloads above are sugar over this primitive; the
+  // tool framework uses it directly to bind the macro-generated
+  // dispatcher closures (which decode args + manufacture a
+  // `ToolCallback` per request and forward to a `ToolDispatcher`).
+  void RegisterHandler(std::string_view action, DispatchHandler handler);
+
+ private:
   template <size_t N>
   bool CopyRequiredStringsOrSendInvalidArgs(
       const std::string& id,
@@ -119,8 +133,6 @@ class NexusBridgeCapabilityHandler {
       const base::DictValue& payload,
       const std::array<std::string_view, N>& required_keys,
       std::array<std::string, N>* out) const;
-
-  void RegisterHandler(std::string_view action, DispatchHandler handler);
 
   raw_ptr<NexusBridgeResponseDelegate> delegate_;
   std::map<std::string, DispatchHandler, std::less<>> handlers_;

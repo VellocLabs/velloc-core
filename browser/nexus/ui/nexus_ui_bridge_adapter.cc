@@ -3,6 +3,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -10,6 +11,7 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "custom_browser/browser/nexus/ui/nexus_ui_broadcast.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 
@@ -84,6 +86,12 @@ NexusUiBridgeAdapter::NexusUiBridgeAdapter(
   Register("openNexusSettings", &NexusUiBridgeAdapter::HandleOpenNexusSettings);
   Register("getProviderMissingPrompt",
            &NexusUiBridgeAdapter::HandleGetProviderMissingPrompt);
+  Register("dismissBootWelcome",
+           &NexusUiBridgeAdapter::HandleDismissBootWelcome);
+  Register("showMainContents",
+           &NexusUiBridgeAdapter::HandleShowMainContents);
+  Register("getBootTimings",
+           &NexusUiBridgeAdapter::HandleGetBootTimings);
 }
 
 NexusUiBridgeAdapter::~NexusUiBridgeAdapter() = default;
@@ -129,6 +137,75 @@ void NexusUiBridgeAdapter::HandleGetProviderMissingPrompt(
   base::DictValue result;
   result.Set("header", std::move(header));
   result.Set("dialog", std::move(dialog));
+  SendSuccessResponse(id, route, base::Value(std::move(result)));
+}
+
+void NexusUiBridgeAdapter::HandleDismissBootWelcome(
+    const std::string& id,
+    const base::DictValue& route,
+    const base::DictValue& /*payload*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/) {
+  // Tells the parent WebUI to dismiss its boot welcome overlay and reveal
+  // <nexus-view-container>. Does NOT show <main-contents-view> or
+  // <cr-splitter> — those stay hidden until the model explicitly invokes
+  // `showMainContents`. Called by the React guest on initial boot once
+  // sessions and worker snapshot are ready.
+  BroadcastWebUiListenerEventToProfile(profile_, "nexusDismissBootWelcome");
+
+  base::DictValue result;
+  result.Set("ok", true);
+  SendSuccessResponse(id, route, base::Value(std::move(result)));
+}
+
+void NexusUiBridgeAdapter::HandleShowMainContents(
+    const std::string& id,
+    const base::DictValue& route,
+    const base::DictValue& /*payload*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/) {
+  // Reveals <main-contents-view> + <cr-splitter> in the parent WebUI. The
+  // boot path does NOT call this — only the model code calls it (e.g. when
+  // the agent decides to surface the main browser content alongside the
+  // chat pane). Idempotent: the parent latches its visibility flag.
+  BroadcastWebUiListenerEventToProfile(profile_, "nexusShowMainContents");
+
+  base::DictValue result;
+  result.Set("ok", true);
+  SendSuccessResponse(id, route, base::Value(std::move(result)));
+}
+
+void NexusUiBridgeAdapter::HandleGetBootTimings(
+    const std::string& id,
+    const base::DictValue& route,
+    const base::DictValue& /*payload*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/) {
+  // Returns wall-clock millisecond timestamps the C++ side has captured
+  // during boot, so the React side can correlate them with its own marks
+  // (see globalThis.__nexusBootMarks in main.tsx / index.html). Used to
+  // attribute the ~1.8 s pre-React phase: how much was browser startup,
+  // chrome://glic load, webview spawn, vs. React bundle fetch+parse.
+  //
+  //   nexusViewContainerFirstCreatedMs
+  //     ms-since-epoch when the very first NexusViewContainer
+  //     (a views::WebView) was constructed in this process. This is
+  //     roughly when the parent WebUI first triggered chrome://glic to
+  //     load. Compare to the React side's `htmlParsedMs` to see how
+  //     long the chrome://glic + webview-spawn + bundle-fetch chain
+  //     took.
+  //
+  //   bridgeRespondedMs
+  //     ms-since-epoch when this handler ran. Compare to the request's
+  //     dispatch time on the React side to measure bridge round-trip.
+  // Legacy pre-React timings sourced from the now-deleted chrome://glic
+  // side-panel container are reported as 0 to keep the wire shape stable
+  // for the React-side `globalThis.__nexusBootMarks` consumers in
+  // main.tsx / index.html.
+  base::DictValue result;
+  result.Set("nexusViewContainerFirstCreatedMs", 0.0);
+  result.Set("loadInitialUrlReturnedMs", 0.0);
+  result.Set("glicNavigationCommittedMs", 0.0);
+  result.Set(
+      "bridgeRespondedMs",
+      static_cast<double>(base::Time::Now().InMillisecondsSinceUnixEpoch()));
   SendSuccessResponse(id, route, base::Value(std::move(result)));
 }
 

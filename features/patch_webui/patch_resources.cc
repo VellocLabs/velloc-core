@@ -3,10 +3,13 @@
 #include <string>
 #include <string_view>
 
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/grit/patch_webui_resources_map.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "custom_browser/common/branding_constants.h"
 #include "custom_browser/common/pref_names.h"
 #include "custom_browser/resources/grit/custom_browser_strings.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace custom_browser::patch_webui {
 
@@ -28,8 +31,14 @@ void AddLocalizedModeStrings(content::WebUIDataSource* data_source) {
                                   IDS_CUSTOM_BROWSER_MODE_STANDARD);
   data_source->AddLocalizedString("modeCompactStandard",
                                   IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD);
-  data_source->AddLocalizedString("modeNexus",
-                                  IDS_CUSTOM_BROWSER_MODE_NEXUS);
+  // IDS_CUSTOM_BROWSER_MODE_NEXUS contains the centralized PRODUCT_NAME
+  // placeholder (see custom_browser/common/branding_constants.h). Substitute
+  // it here so loadTimeData receives the resolved string.
+  data_source->AddString(
+      "modeNexus",
+      l10n_util::GetStringFUTF16(
+          IDS_CUSTOM_BROWSER_MODE_NEXUS,
+          base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName)));
   data_source->AddLocalizedString("modeSidebarDescription",
                                   IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION);
   data_source->AddLocalizedString(
@@ -40,9 +49,11 @@ void AddLocalizedModeStrings(content::WebUIDataSource* data_source) {
   data_source->AddLocalizedString(
       "modeCompactStandardDescription",
       IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION);
-  data_source->AddLocalizedString(
+  data_source->AddString(
       "modeNexusDescription",
-      IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION);
+      l10n_util::GetStringFUTF16(
+          IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION,
+          base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName)));
 }
 
 }  // namespace

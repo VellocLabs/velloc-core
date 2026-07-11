@@ -24,20 +24,6 @@ build_webui("build") {
     "./new-tab-page/custom_new_tab.ts",
     "./new-tab-page/get_started.ts",
     "./version/version_patch.ts",
-
-    "./glic/browser-actor-tools/actionsConverter.ts",
-    "./glic/browser-actor-tools/elementRegistry.ts",
-    "./glic/browser-actor-tools/hostTypes.ts",
-    "./glic/browser-actor-tools/index.ts",
-    "./glic/browser-actor-tools/observationParser.ts",
-    "./glic/browser-actor-tools/protoCodec.ts",
-    "./glic/browser-actor-tools/skillDefinitions.ts",
-    "./glic/browser-actor-tools/toolDefinitions.ts",
-    "./glic/browser-actor-tools/toolExecutor.ts",
-    "./glic/browser-actor-tools/types.ts",
-    "./glic/hostedActorTaskManager.ts",
-    "./glic/nexus_boot.ts",
-    "./glic/nexusTrace.ts",
   ]
   extra_grdp_files = [ "$target_gen_dir/new-tab-page/icons/resources.grdp" ]
   extra_grdp_deps = [ "new-tab-page/icons:build_grdp" ]
@@ -56,9 +42,6 @@ build_webui("build") {
     "//ui/webui/resources/js:build_ts",
     "//ui/webui/resources/mojo:build_ts",
   ]
-  mojo_files_deps =
-      [ "//custom_browser/browser/nexus/mojom:mojom_ts__generator" ]
-  mojo_files = [ "$root_gen_dir/custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom-webui.ts" ]
   ts_path_mappings = [
     "chrome://customize-chrome-side-panel.top-chrome/shared/*|" +
         rebase_path(
@@ -70,8 +53,6 @@ build_webui("build") {
     "chrome://settings/*|" +
         rebase_path("$root_gen_dir/chrome/browser/resources/settings/tsc/*",
                     target_gen_dir),
-    "/*|" + rebase_path("$root_gen_dir/custom_browser/browser/nexus/mojom/*",
-                        target_gen_dir),
   ]
   webui_context_type = "trusted"
 }

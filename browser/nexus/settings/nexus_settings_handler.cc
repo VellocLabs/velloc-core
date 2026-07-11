@@ -21,6 +21,7 @@
 #include "custom_browser/browser/nexus/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/llm/llm_provider.h"
+#include "custom_browser/browser/nexus/llm/nexus_llm_host.h"
 #include "custom_browser/browser/nexus/llm/llm_provider_factory.h"
 #include "custom_browser/browser/nexus/llm/llm_types.h"
 #include "custom_browser/browser/nexus/llm/provider_config.h"
@@ -259,13 +260,52 @@ void NexusSettingsHandler::RegisterMessages() {
       "setActiveProvider",
       base::BindRepeating(&NexusSettingsHandler::HandleSetActiveProvider,
                           base::Unretained(this)));
+  // Quick-settings popup support — read-side handlers + the user-pick
+  // write-side handler. See nexus_settings_handler.h for full contracts.
+  web_ui()->RegisterMessageCallback(
+      "getNexusCatalog",
+      base::BindRepeating(&NexusSettingsHandler::HandleGetNexusCatalog,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getNexusSessionStatus",
+      base::BindRepeating(&NexusSettingsHandler::HandleGetNexusSessionStatus,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "pickNexusSelection",
+      base::BindRepeating(&NexusSettingsHandler::HandlePickNexusSelection,
+                          base::Unretained(this)));
 }
 
-void NexusSettingsHandler::OnJavascriptAllowed() {}
+void NexusSettingsHandler::OnJavascriptAllowed() {
+  // Subscribe to broker change signals so we can fan them out to the
+  // Lit `<nexus-quick-settings>` popup. The observation only fires while
+  // JS is allowed; if JS gets disabled (page reload mid-session) we
+  // tear down in OnJavascriptDisallowed.
+  if (nexus::LlmBroker* broker = GetBroker()) {
+    broker_observation_.Observe(broker);
+  }
+}
 
 void NexusSettingsHandler::OnJavascriptDisallowed() {
+  broker_observation_.Reset();
   pending_verifications_.clear();
   weak_factory_.InvalidateWeakPtrs();
+}
+
+void NexusSettingsHandler::OnTsModelCatalogChanged(
+    const base::DictValue& /*catalog*/) {
+  // The popup wants the *enriched* catalog (with iconSvg, isVerified,
+  // etc.), not the raw TS-pushed dict. Rebuild it the same way
+  // HandleGetNexusCatalog does and broadcast.
+  BroadcastEnrichedCatalog_();
+}
+
+void NexusSettingsHandler::OnSessionStatusChanged(
+    const base::DictValue& status) {
+  if (IsJavascriptAllowed()) {
+    FireWebUIListener("nexusSessionStatusChanged",
+                      base::Value(status.Clone()));
+  }
 }
 
 Profile* NexusSettingsHandler::GetProfile() {
@@ -438,6 +478,11 @@ void NexusSettingsHandler::HandleUpdateProviderConfig(
     }
   }
 
+  // Re-emit the enriched catalog so the WebUI quick-settings popup sees
+  // the new isVerified / enabledModels / baseUrl state without waiting
+  // for the next open.
+  BroadcastEnrichedCatalog_();
+
   base::DictValue result;
   result.Set("success", success);
   result.Set("isConfigured", provider->IsConfigured());
@@ -576,6 +621,10 @@ void NexusSettingsHandler::HandleResetProviderConfig(
   result.Set("success", true);
   result.Set("activeProviderId", broker->GetActiveProviderId());
   ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
+
+  // The reset cleared verification + enabled-models — re-emit so the
+  // popup hides the now-unverified provider without a re-open.
+  BroadcastEnrichedCatalog_();
 }
 
 void NexusSettingsHandler::HandleRefreshProviderModels(
@@ -834,6 +883,176 @@ void NexusSettingsHandler::HandleSetActiveProvider(
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             std::move(result));
+  if (success) {
+    BroadcastEnrichedCatalog_();
+  }
+}
+
+// --- Quick-settings popup handlers ------------------------------------------
+
+base::DictValue NexusSettingsHandler::BuildEnrichedNexusCatalog_() {
+  base::DictValue result;
+  Profile* profile = GetProfile();
+  nexus::LlmBroker* broker = GetBroker();
+  if (!profile || !broker) {
+    return result;
+  }
+  PrefService* prefs = profile->GetPrefs();
+
+  // The wire-from-TS catalog is the source of truth for the model list.
+  // Index it by providerId so we can splice each provider's curated
+  // models into the enriched response below.
+  const base::DictValue& ts_catalog = broker->GetTsModelCatalog();
+  std::map<std::string, const base::DictValue*> ts_by_provider;
+  if (const base::ListValue* providers = ts_catalog.FindList("providers")) {
+    for (const base::Value& entry : *providers) {
+      const base::DictValue* provider = entry.GetIfDict();
+      if (!provider) continue;
+      const std::string* id = provider->FindString("providerId");
+      if (id) ts_by_provider[*id] = provider;
+    }
+  }
+
+  base::ListValue providers;
+  for (const nexus::ProviderInfo& info : broker->GetRegisteredProviders()) {
+    nexus::LlmProvider* provider = broker->GetProvider(info.id);
+    const bool is_configured = provider && provider->IsConfigured();
+    const bool is_verified =
+        is_configured && nexus::IsNexusProviderVerified(prefs, info.id);
+
+    base::DictValue provider_dict;
+    provider_dict.Set("providerId", info.id);
+    provider_dict.Set("label", info.name);
+    provider_dict.Set("iconSvg", nexus::GetNexusProviderIconSvg(info.id));
+    provider_dict.Set("isConfigured", is_configured);
+    provider_dict.Set("isVerified", is_verified);
+
+    // Pass through the user's enabled-models allowlist so the popup can
+    // hide models the user explicitly turned off in Settings.
+    base::DictValue stored_config = GetStoredProviderConfigCopy(prefs, info.id);
+    if (const base::ListValue* enabled =
+            stored_config.FindList("enabled_models")) {
+      provider_dict.Set("enabledModels", enabled->Clone());
+    }
+
+    // Splice the model list (+ any filterMode) from the TS-pushed catalog.
+    auto it = ts_by_provider.find(info.id);
+    if (it != ts_by_provider.end() && it->second) {
+      if (const std::string* filter_mode =
+              it->second->FindString("filterMode")) {
+        provider_dict.Set("filterMode", *filter_mode);
+      }
+      if (const base::ListValue* models = it->second->FindList("models")) {
+        provider_dict.Set("models", models->Clone());
+      } else {
+        provider_dict.Set("models", base::ListValue());
+      }
+    } else {
+      provider_dict.Set("models", base::ListValue());
+    }
+
+    providers.Append(std::move(provider_dict));
+  }
+
+  result.Set("providers", std::move(providers));
+  result.Set("activeProviderId", broker->GetActiveProviderId());
+  return result;
+}
+
+void NexusSettingsHandler::BroadcastEnrichedCatalog_() {
+  if (!IsJavascriptAllowed()) return;
+  FireWebUIListener("nexusCatalogChanged",
+                    base::Value(BuildEnrichedNexusCatalog_()));
+}
+
+void NexusSettingsHandler::HandleGetNexusCatalog(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string& callback_id = args[0].GetString();
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(BuildEnrichedNexusCatalog_()));
+}
+
+void NexusSettingsHandler::HandleGetNexusSessionStatus(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string& callback_id = args[0].GetString();
+
+  nexus::LlmBroker* broker = GetBroker();
+  if (!broker) {
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(base::DictValue()));
+    return;
+  }
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(broker->GetSessionStatus().Clone()));
+}
+
+void NexusSettingsHandler::HandlePickNexusSelection(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string& callback_id = args[0].GetString();
+  const base::Value& selection_value = args[1];
+  if (!selection_value.is_dict()) {
+    RejectJavascriptCallback(
+        base::Value(callback_id),
+        base::Value("pickNexusSelection expected a {providerId,modelId,…} dict"));
+    return;
+  }
+  const base::DictValue& selection = selection_value.GetDict();
+
+  const std::string* provider_id = selection.FindString("providerId");
+  const std::string* model_id = selection.FindString("modelId");
+  if (!provider_id || provider_id->empty() || !model_id || model_id->empty()) {
+    RejectJavascriptCallback(
+        base::Value(callback_id),
+        base::Value("pickNexusSelection requires non-empty providerId+modelId"));
+    return;
+  }
+  std::string thinking_tier;
+  if (const std::string* tier = selection.FindString("thinkingTier")) {
+    thinking_tier = *tier;
+  }
+
+  nexus::LlmBroker* broker = GetBroker();
+  if (!broker) {
+    RejectJavascriptCallback(
+        base::Value(callback_id),
+        base::Value("Nexus LLM Broker is not available"));
+    return;
+  }
+
+  nexus::LlmBroker::DispatchPickResult dispatch =
+      broker->DispatchUserPick(*provider_id, *model_id, thinking_tier);
+
+  base::DictValue result;
+  result.Set("ok", dispatch.ok);
+  if (!dispatch.ok) {
+    result.Set("errorCode", dispatch.error_code);
+    result.Set("error", dispatch.error_message);
+    // Mirror the failure to anyone listening for live updates so a popup
+    // anchor that's already showing a pending state can recover.
+    if (IsJavascriptAllowed()) {
+      base::DictValue payload;
+      payload.Set("providerId", *provider_id);
+      payload.Set("modelId", *model_id);
+      payload.Set("errorCode", dispatch.error_code);
+      payload.Set("error", dispatch.error_message);
+      FireWebUIListener("nexusPickFailed", base::Value(std::move(payload)));
+    }
+  } else {
+    result.Set("requestId", dispatch.request_id);
+    // Echo whether the bridge-event pusher was registered + invoked.
+    // Lets the WebUI / e2e harness distinguish "C++ accepted but
+    // nexus_web isn't subscribed yet" from "C++ accepted and event
+    // pushed". When false, the popup pick is durable in prefs but the
+    // active-session rebind is not happening (guest webview not ready
+    // or its bridge port isn't alive).
+    result.Set("pusherInvoked", dispatch.pusher_invoked);
+  }
+  ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
 }
 
 }  // namespace settings

@@ -27,7 +27,7 @@ TEST(NexusLlmBridgeSupportTest,
   tool_call.Set("toolCallId", "call-1");
   tool_call.Set("toolName", "browser_type");
   base::DictValue tool_args;
-  tool_args.Set("element_id", 1011);
+  tool_args.Set("node_id", 1011);
   tool_args.Set("text", "Peking University official website");
   tool_call.Set("args", std::move(tool_args));
   assistant_content.Append(std::move(tool_call));
@@ -86,7 +86,7 @@ TEST(NexusLlmBridgeSupportTest,
   const base::DictValue* parsed_args =
       request->messages[0]->content[0]->input->GetIfDict();
   ASSERT_TRUE(parsed_args);
-  EXPECT_EQ(parsed_args->FindInt("element_id"), 1011);
+  EXPECT_EQ(parsed_args->FindInt("node_id"), 1011);
   EXPECT_EQ(parsed_args->FindString("text"),
             std::optional<std::string>(
                 "Peking University official website"));

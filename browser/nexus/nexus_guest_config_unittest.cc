@@ -26,14 +26,6 @@ std::unique_ptr<TestingProfile> CreateTestingProfileWithNexusPrefs() {
   return builder.Build();
 }
 
-TEST(NexusGuestConfigTest, IsNexusGlicModeMatchesOpenclawQuery) {
-  EXPECT_TRUE(IsNexusGlicMode(GURL("chrome://glic/?openclaw=1")));
-  EXPECT_TRUE(IsNexusGlicMode(GURL("chrome://glic/?foo=bar&openclaw=1")));
-  EXPECT_FALSE(IsNexusGlicMode(GURL("chrome://glic/")));
-  EXPECT_FALSE(IsNexusGlicMode(GURL("chrome://glic/?openclaw=0")));
-  EXPECT_FALSE(IsNexusGlicMode(GURL("chrome://settings/?openclaw=1")));
-}
-
 TEST(NexusGuestConfigTest, GetResolvedNexusGuestURLFallsBackWithoutProfile) {
   EXPECT_EQ(GURL(kDefaultNexusGuestURL), GetResolvedNexusGuestURL(nullptr));
 }

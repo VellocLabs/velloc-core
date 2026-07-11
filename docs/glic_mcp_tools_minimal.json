@@ -1,0 +1,273 @@
+{
+  "version": "0.1.0",
+  "tools": [
+    {
+      "name": "glic_create_task",
+      "description": "Create a new GLIC actor task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskOptions": {
+            "type": "object",
+            "description": "Optional actor task options. Passed through to browser.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "glic_perform_actions_proto",
+      "description": "Execute actor actions encoded as base64 serialized optimization_guide::proto::Actions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actionsProtoBase64": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionsProtoBase64"
+        ],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "actionsResultProtoBase64": {
+            "type": "string",
+            "description": "Base64 serialized optimization_guide::proto::ActionsResult."
+          }
+        },
+        "required": [
+          "actionsResultProtoBase64"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "glic_get_context_for_actor_from_tab",
+      "description": "Fetch tab context for actor use, including optional screenshot/APC.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "integer"
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "innerText": {
+                "type": "boolean"
+              },
+              "innerTextBytesLimit": {
+                "type": "integer"
+              },
+              "viewportScreenshot": {
+                "type": "boolean"
+              },
+              "annotatedPageContent": {
+                "type": "boolean"
+              },
+              "maxMetaTags": {
+                "type": "integer"
+              },
+              "pdfData": {
+                "type": "boolean"
+              },
+              "pdfSizeLimit": {
+                "type": "integer"
+              },
+              "annotatedPageContentMode": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "tabId",
+          "options"
+        ],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "description": "Bridge should return JSON-safe context fields. Large binaries should be base64 encoded.",
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "glic_cancel_actions",
+      "description": "Cancel ongoing actions for a task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "integer",
+            "description": "CancelActionsResult enum value."
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "glic_stop_actor_task",
+      "description": "Stop an actor task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer"
+          },
+          "stopReason": {
+            "type": "string",
+            "enum": [
+              "TASK_COMPLETE",
+              "STOPPED_BY_USER",
+              "MODEL_ERROR",
+              "USER_STARTED_NEW_CHAT",
+              "USER_LOADED_PREVIOUS_CHAT"
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "stopReason"
+        ],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "glic_pause_actor_task",
+      "description": "Pause an actor task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer"
+          },
+          "pauseReason": {
+            "type": "string",
+            "enum": [
+              "PAUSED_BY_MODEL",
+              "PAUSED_BY_USER"
+            ]
+          },
+          "tabId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "taskId",
+          "pauseReason"
+        ],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "glic_resume_actor_task",
+      "description": "Resume a paused actor task and optionally fetch current tab context.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer"
+          },
+          "contextOptions": {
+            "type": "object",
+            "properties": {
+              "innerText": {
+                "type": "boolean"
+              },
+              "innerTextBytesLimit": {
+                "type": "integer"
+              },
+              "viewportScreenshot": {
+                "type": "boolean"
+              },
+              "annotatedPageContent": {
+                "type": "boolean"
+              },
+              "maxMetaTags": {
+                "type": "integer"
+              },
+              "pdfData": {
+                "type": "boolean"
+              },
+              "pdfSizeLimit": {
+                "type": "integer"
+              },
+              "annotatedPageContentMode": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "taskId",
+          "contextOptions"
+        ],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "description": "Includes action result code and tab context fields.",
+        "additionalProperties": true
+      }
+    }
+  ]
+}
+

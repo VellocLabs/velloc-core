@@ -11,16 +11,16 @@ import {BoolKey} from '../../browser_constants.mojom-webui.js';
 import '../../components/native/native_view_aliases.js';
 
 import './nexus_settings.js';
-import './nexus_subpage_layout.js';
 import {
   getInitialWarningAcknowledged,
-  getString,
   type NexusPaneState,
   type NexusSettingsSection,
 } from './nexus_shared.js';
 import './nexus_view.js';
+import type {NexusViewElement} from './nexus_view.js';
 import './nexus_warning.js';
-import {NexusTopbar, NexusTopbarMode} from './nexus_topbar.js';
+import './nexus_topbar.js';
+import type {NexusTopbarSurfaceMode} from './nexus_topbar.js';
 
 export class NexusPage extends CrLitElement {
   static override styles: CSSResultGroup = css`
@@ -36,27 +36,10 @@ export class NexusPage extends CrLitElement {
       overflow: hidden;
       background: var(--app-bg);
       color: var(--text-primary);
-      -webkit-app-region: drag;
     }
 
-    #topContainer {
-      display: flex;
-      flex-direction: row;
-      padding: 2px 5px;
-      width: 100%;
-      border-bottom: 1px solid var(--app-bg);
-      align-items: center;
-    }
-
-    #topContainer.settings-surface {
-      background: var(--md-background-color);
-      border-bottom-color: var(--md-background-color);
-    }
-
-    #topContainer nexus-topbar {
-      flex: 1 1 auto;
-      min-width: 0;
-      -webkit-app-region: drag;
+    nexus-topbar {
+      flex: 0 0 auto;
     }
 
     #pane {
@@ -70,6 +53,7 @@ export class NexusPage extends CrLitElement {
 
     #pane.settings-surface {
       background: var(--md-background-color);
+      margin: 0;
     }
 
     #pane > * {
@@ -81,14 +65,17 @@ export class NexusPage extends CrLitElement {
     #pane > [hidden] {
       display: none !important;
     }
-
   `;
 
   private paneState_: NexusPaneState =
       getInitialWarningAcknowledged() ? 'nexus-view' : 'warning';
   private selectedSettingsSection_: NexusSettingsSection = 'models';
+  // Mirror of <nexus-view>'s agentZoneVisible_, kept in sync via the
+  // 'nexus-agent-zone-changed' event so we can push the value to the
+  // topbar's `agentZoneVisible` reactive prop.
+  private agentZoneVisible_ = false;
   private readonly openSettingsFromHost_ = (section?: string) => {
-    this.openSettings_(section === 'webapp' ? 'webapp' : 'models');
+    this.openSettings_(this.normalizeSection_(section));
   };
 
   override connectedCallback(): void {
@@ -103,8 +90,17 @@ export class NexusPage extends CrLitElement {
     super.disconnectedCallback();
   }
 
-  override firstUpdated() {
-    this.updateTopbarMode_();
+  private normalizeSection_(section?: string): NexusSettingsSection {
+    // Legacy alias from C++ host: 'webapp' now lives under About.
+    if (section === 'webapp') {
+      return 'about';
+    }
+    if (section === 'mcp' || section === 'permissions' ||
+        section === 'tools' || section === 'shortcuts' ||
+        section === 'about') {
+      return section;
+    }
+    return 'models';
   }
 
   private onWarningAccepted_() {
@@ -112,25 +108,23 @@ export class NexusPage extends CrLitElement {
         BoolKey.kNexusWarningAcknowledged, true);
     this.paneState_ = 'nexus-view';
     this.requestUpdate();
-    this.updateTopbarMode_();
   }
 
   private onSettingsClose_() {
     this.paneState_ = 'nexus-view';
     this.requestUpdate();
-    this.updateTopbarMode_();
-    this.getTopbar_()?.refresh();
   }
 
-  private onOpenSettings_() {
-    this.openSettings_('models');
+  private onOpenSettings_(event: Event) {
+    const detail = (event as CustomEvent).detail as
+        {section?: string} | undefined;
+    this.openSettings_(this.normalizeSection_(detail?.section));
   }
 
   private openSettings_(section: NexusSettingsSection = 'models') {
     this.selectedSettingsSection_ = section;
     this.paneState_ = 'settings';
     this.requestUpdate();
-    this.updateTopbarMode_();
   }
 
   private onSettingsSectionChange_(
@@ -142,68 +136,74 @@ export class NexusPage extends CrLitElement {
 
     this.selectedSettingsSection_ = event.detail.section;
     this.requestUpdate();
-    this.updateTopbarMode_();
   }
 
-  private getSettingsSectionTitle_(): string {
-    switch (this.selectedSettingsSection_) {
-      case 'webapp':
-        return getString('customBrowserNexusWebappPageTitle', 'Web App URL');
-      case 'models':
+  // Forward the topbar's "+" button click to anything that wants to listen.
+  // The React guest inside <nexus-view-container> is the intended consumer
+  // (a future pass will route this through the bridge port). For now we
+  // just log so the wiring is observable in DevTools.
+  // TODO(nexus-new-thread): forward to React guest via bridge port.
+  private onNewThread_() {
+    console.debug('[nexus] new thread requested');
+  }
+
+  // Topbar's agent-zone toggle (globe button) → forward to <nexus-view>.
+  // <nexus-view> mutates its flag and fires 'nexus-agent-zone-changed'
+  // which we receive in onAgentZoneChanged_ to mirror into the topbar's
+  // `agentZoneVisible` reactive prop.
+  private onToggleAgentZone_() {
+    const view =
+        this.shadowRoot?.querySelector<NexusViewElement>('nexus-view');
+    view?.toggleAgentZone();
+  }
+
+  // Topbar fires this on the leading edge of every browser-category
+  // tool dispatch (see `ToolsAdapter` → `nexusAgentStateChanged` ->
+  // `isBrowserTool`). One-direction: reveals the zone without writing
+  // through to the saved preference. There is no paired hide — the
+  // zone stays open until the user manually clicks the globe.
+  private onShowAgentZoneTransient_() {
+    const view =
+        this.shadowRoot?.querySelector<NexusViewElement>('nexus-view');
+    view?.showAgentZoneTransient();
+  }
+
+  private onAgentZoneChanged_(event: Event) {
+    const detail = (event as CustomEvent).detail as
+        {visible?: boolean} | undefined;
+    this.agentZoneVisible_ = !!detail?.visible;
+    this.requestUpdate();
+  }
+
+  private getSurfaceMode_(): NexusTopbarSurfaceMode {
+    switch (this.paneState_) {
+      case 'warning':
+        return 'warning';
+      case 'settings':
+        return 'settings';
+      case 'nexus-view':
       default:
-        return getString(
-            'customBrowserNexusProviderPageTitle', 'Model Providers');
+        return 'nexus-view';
     }
-  }
-
-  private getTopbar_(): NexusTopbar | null {
-    return this.shadowRoot?.querySelector('nexus-topbar');
-  }
-
-  private updateTopbarMode_() {
-    requestAnimationFrame(() => {
-      const topbar = this.getTopbar_();
-      if (!topbar) return;
-
-      switch (this.paneState_) {
-        case 'warning':
-          topbar.setMode(NexusTopbarMode.TITLE, {
-            icon: '🔒',
-            title: 'Security Warning',
-          });
-          break;
-        case 'settings':
-          topbar.setMode(NexusTopbarMode.TITLE, {
-            icon: '⚙️',
-            closeLabel: getString(
-                'customBrowserNexusCloseSettings', 'Close settings'),
-            showCloseButton: true,
-            title: `Settings - ${this.getSettingsSectionTitle_()}`,
-          });
-          break;
-        case 'nexus-view':
-          topbar.setMode(NexusTopbarMode.NEXUS_VIEW);
-          break;
-        default:
-          break;
-      }
-    });
   }
 
   protected override render() {
     const showSettingsSurface = this.paneState_ === 'settings';
-    const showTopbar = this.paneState_ !== 'nexus-view';
     return html`
-      ${showTopbar ? html`
-        <div id="topContainer" class=${showSettingsSurface ? 'settings-surface' : ''}>
-          <nexus-topbar
-              @nexus-open-settings=${this.onOpenSettings_}
-              @nexus-settings-close=${this.onSettingsClose_}>
-          </nexus-topbar>
-        </div>
-      ` : nothing}
+      <nexus-topbar
+          .surfaceMode=${this.getSurfaceMode_()}
+          .agentZoneVisible=${this.agentZoneVisible_}
+          @nexus-open-settings=${this.onOpenSettings_}
+          @nexus-settings-close=${this.onSettingsClose_}
+          @nexus-new-thread=${this.onNewThread_}
+          @nexus-toggle-agent-zone=${this.onToggleAgentZone_}
+          @nexus-show-agent-zone-transient=${this.onShowAgentZoneTransient_}>
+      </nexus-topbar>
       <div id="pane" class=${showSettingsSurface ? 'settings-surface' : ''}>
-        <nexus-view ?hidden=${this.paneState_ !== 'nexus-view'}></nexus-view>
+        <nexus-view
+            ?hidden=${this.paneState_ !== 'nexus-view'}
+            @nexus-agent-zone-changed=${this.onAgentZoneChanged_}>
+        </nexus-view>
         ${this.paneState_ === 'warning' ? html`
           <nexus-warning
               @nexus-warning-accepted=${this.onWarningAccepted_}>

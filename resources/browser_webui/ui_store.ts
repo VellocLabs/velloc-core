@@ -134,6 +134,10 @@ export class UiStore {
     }
   }
 
+  setMode(mode: UIMode): void {
+    this.setMode_(mode, /*syncToNative=*/true);
+  }
+
   private setMode_(mode: UIMode, syncToNative = true) {
     if (this.mode_ === mode) {
       return;

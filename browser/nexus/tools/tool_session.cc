@@ -1,0 +1,64 @@
+#include "custom_browser/browser/nexus/tools/tool_session.h"
+
+#include <utility>
+
+#include "base/logging.h"
+
+namespace nexus {
+
+ToolSession::ToolSession(Profile* profile, std::string session_key)
+    : profile_(profile),
+      session_key_(std::move(session_key)),
+      browser_tool_(profile, session_key_) {
+  // Future categories construct here too:
+  //   skill_tool_(profile, session_key_)
+}
+
+ToolSession::~ToolSession() {
+  // Defensive cascade — if the session is destructed without an
+  // explicit OnStop having run first (e.g. profile shutdown bypasses
+  // the bridge layer), each category still gets a final notification.
+  OnStop("destructor");
+}
+
+void ToolSession::OnStop(const std::string& reason) {
+  LOG(INFO) << "[ToolSession] OnStop session=" << session_key_
+            << " reason=" << reason;
+  browser_tool_.OnStop(reason);
+  // skill_tool_.OnStop(reason);  // future
+}
+
+void ToolSession::set_action_timeout(base::TimeDelta timeout) {
+  // Clamp to a sane window so a misconfigured caller can't disable
+  // the budget (zero/negative) or set an unreasonably-long one. Range
+  // matches the JS-side validation contract:
+  // 1s .. 600s.
+  constexpr base::TimeDelta kMin = base::Seconds(1);
+  constexpr base::TimeDelta kMax = base::Seconds(600);
+  if (timeout < kMin) {
+    action_timeout_ = kMin;
+  } else if (timeout > kMax) {
+    action_timeout_ = kMax;
+  } else {
+    action_timeout_ = timeout;
+  }
+  // Propagate to per-category members so each tool method's actor
+  // wrapper sees the freshly-set value without the category needing
+  // to keep a back-pointer to ToolSession.
+  browser_tool_.set_action_timeout(action_timeout_);
+}
+
+void ToolSession::set_step_timeout(base::TimeDelta timeout) {
+  constexpr base::TimeDelta kMin = base::Seconds(1);
+  constexpr base::TimeDelta kMax = base::Seconds(600);
+  if (timeout < kMin) {
+    step_timeout_ = kMin;
+  } else if (timeout > kMax) {
+    step_timeout_ = kMax;
+  } else {
+    step_timeout_ = timeout;
+  }
+  browser_tool_.set_step_timeout(step_timeout_);
+}
+
+}  // namespace nexus

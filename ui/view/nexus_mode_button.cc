@@ -4,10 +4,13 @@
 #include <string_view>
 
 #include "base/functional/bind.h"
+#include "base/strings/strcat.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_action_container.h"
 #include "components/prefs/pref_service.h"
+#include "custom_browser/common/branding_constants.h"
 #include "custom_browser/common/pref_names.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
@@ -30,8 +33,15 @@ namespace {
 
 constexpr std::u16string_view kOpenClawEmoji = u"\U0001F99E";
 constexpr std::u16string_view kBrowserEmoji = u"\U0001F310";
-constexpr std::u16string_view kSwitchToOpenClawLabel = u"Switch to OpenClaw";
 constexpr std::u16string_view kSwitchToBrowserLabel = u"Switch to Browser";
+
+// Composed at call time so the centralized product name from
+// custom_browser/common/branding_constants.h is the single source of truth.
+std::u16string SwitchToProductLabel() {
+  return base::StrCat(
+      {u"Switch to ",
+       base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName)});
+}
 constexpr float kButtonCornerRadius = 10.0f;
 constexpr int kButtonTextSizeDelta = 4;
 
@@ -228,8 +238,9 @@ void NexusModeButton::ApplyModeState(custom_browser::mojom::UIMode ui_mode) {
 
 void NexusModeButton::UpdateForMode(custom_browser::mojom::UIMode mode) {
   const bool is_nexus = (mode == custom_browser::mojom::UIMode::kNexus);
-  const std::u16string action_label(is_nexus ? kSwitchToBrowserLabel
-                                             : kSwitchToOpenClawLabel);
+  const std::u16string action_label(is_nexus
+                                        ? std::u16string(kSwitchToBrowserLabel)
+                                        : SwitchToProductLabel());
   SetText(is_nexus ? kBrowserEmoji : kOpenClawEmoji);
   SetTooltipText(action_label);
   GetViewAccessibility().SetName(action_label);

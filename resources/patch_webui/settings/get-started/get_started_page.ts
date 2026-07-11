@@ -237,10 +237,10 @@ function getStrings(): GetStartedStrings {
         'A slimmer top layout that leaves more room for what matters: the ' +
             'page.'),
     layoutNexusTitle: getString(
-        'modeNexus', 'OpenClaw'),
+        'modeNexus', 'Nexus'),
     layoutNexusDescription: getString(
         'modeNexusDescription',
-        'Keep OpenClaw beside the active page in a dedicated workspace.'),
+        'Keep Nexus beside the active page in a dedicated workspace.'),
     newTabTitle: getString(
         'customBrowserGetStartedNewTabTitle', 'Step 3. Customize your New Tab'),
     newTabDescription: getString(

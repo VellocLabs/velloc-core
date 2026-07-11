@@ -5,7 +5,12 @@
 
 namespace nexus {
 
-const char kDefaultNexusGuestURL[] = "http://localhost:5173/glic.html";
+#if defined(NDEBUG)
+const char kDefaultNexusGuestURL[] = "https://nexus.velloc.app/index.html";
+#else
+const char kDefaultNexusGuestURL[] =
+    "http://localhost:5173/index.html?log=1&trace=1&logCallModel=1";
+#endif
 const char kNexusHost[] = "nexus";
 
 namespace {

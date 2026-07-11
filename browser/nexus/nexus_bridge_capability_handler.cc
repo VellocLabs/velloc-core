@@ -60,6 +60,11 @@ void NexusBridgeCapabilityHandler::SendInvalidArgsResponse(
   SendErrorResponse(id, route, "INVALID_ARGS", std::string(message));
 }
 
+void NexusBridgeCapabilityHandler::SendEvent(const base::DictValue& route,
+                                             base::Value payload) const {
+  delegate_->SendEvent(route, std::move(payload));
+}
+
 bool NexusBridgeCapabilityHandler::CopyRequiredStringOrSendInvalidArgs(
     const std::string& id,
     const base::DictValue& route,

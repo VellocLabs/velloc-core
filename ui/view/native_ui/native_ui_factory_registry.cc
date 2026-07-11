@@ -13,7 +13,6 @@
 #include "custom_browser/ui/view/native_ui/create_toolbar_button_native_ui.h"
 #include "custom_browser/ui/view/native_ui/location_bar_auto_size_native_ui.h"
 #include "custom_browser/ui/view/native_ui/main_contents_native_ui.h"
-#include "custom_browser/ui/view/native_ui/nexus_view_container_native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui.h"
 #include "custom_browser/ui/view/native_ui/new_tab_button_native_ui.h"
 #include "custom_browser/ui/view/native_ui/pinned_toolbar_actions_container_native_ui.h"
@@ -27,7 +26,6 @@ namespace custom_browser::native_ui {
 namespace {
 
 REGISTER_NATIVE_UI_CLASS(MainContentsNativeUI)
-REGISTER_NATIVE_UI_CLASS(NexusViewContainerNativeUI)
 REGISTER_NATIVE_UI_CLASS(PinnedToolbarActionsContainerNativeUI)
 REGISTER_NATIVE_UI_CLASS(ViewsContainerNativeUI)
 REGISTER_NATIVE_UI_CLASS(CreateToolbarButtonNativeUI)

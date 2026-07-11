@@ -257,8 +257,6 @@ export class NexusSettingsModelsElement extends CrLitElement {
   private announce_(text: string) {
     this.liveAnnouncement_ = '';
     this.requestUpdate();
-    // Allow the DOM to clear before setting new text so screen readers
-    // re-announce even if the text is identical.
     requestAnimationFrame(() => {
       this.liveAnnouncement_ = text;
       this.requestUpdate();

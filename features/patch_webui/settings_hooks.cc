@@ -6,6 +6,7 @@
 
 #include "base/debug/debugging_buildflags.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/chrome_unscaled_resources.h"
@@ -13,9 +14,12 @@
 #include "components/strings/grit/components_strings.h"
 #include "components/version_info/version_info.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "custom_browser/browser/nexus/nexus_webui_config.h"
+#include "custom_browser/common/branding_constants.h"
 #include "custom_browser/common/product_version.h"
 #include "custom_browser/features/patch_webui/patch_resources.h"
 #include "custom_browser/resources/grit/custom_browser_strings.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace custom_browser::patch_webui {
 
@@ -163,24 +167,40 @@ void AddSettingsGetStartedStrings(content::WebUIDataSource* data_source) {
 }
 
 void AddSettingsNexusStrings(content::WebUIDataSource* data_source) {
-  data_source->AddLocalizedString("customBrowserNexusMenuLabel",
-                                  IDS_NEXUS_SETTINGS_TITLE);
-  data_source->AddLocalizedString("customBrowserNexusSectionTitle",
-                                  IDS_NEXUS_SETTINGS_TITLE);
+  // Several IDS_NEXUS_* strings contain the centralized PRODUCT_NAME or
+  // PRODUCT_LONG_NAME placeholder (see custom_browser/common/branding_constants.h).
+  // Substitute them via GetStringFUTF16 + AddString so loadTimeData receives
+  // resolved strings; non-placeholder IDS_* keep using AddLocalizedString.
+  const std::u16string product_name =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
+  const std::u16string product_long_name =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductLongName);
+  data_source->AddString(
+      "customBrowserNexusMenuLabel",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_TITLE, product_name));
+  data_source->AddString(
+      "customBrowserNexusSectionTitle",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_TITLE, product_name));
   data_source->AddLocalizedString("customBrowserNexusSectionDescriptionLine0",
                                   IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0);
-  data_source->AddLocalizedString("customBrowserNexusSectionDescriptionLine1",
-                                  IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1);
+  data_source->AddString(
+      "customBrowserNexusSectionDescriptionLine1",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1,
+                                 product_name));
   data_source->AddLocalizedString("customBrowserNexusSectionDescriptionLine2",
                                   IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2);
   data_source->AddLocalizedString("customBrowserNexusProviderPageTitle",
                                   IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE);
   data_source->AddLocalizedString("customBrowserNexusProviderLabel",
                                   IDS_NEXUS_SETTINGS_PROVIDER_LABEL);
-  data_source->AddLocalizedString("customBrowserNexusProviderDescription",
-                                  IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION);
-  data_source->AddLocalizedString("customBrowserNexusProviderRowSubLabel",
-                                  IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL);
+  data_source->AddString(
+      "customBrowserNexusProviderDescription",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION,
+                                 product_name));
+  data_source->AddString(
+      "customBrowserNexusProviderRowSubLabel",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL,
+                                 product_name));
   data_source->AddLocalizedString("customBrowserNexusApiKeyLabel",
                                   IDS_NEXUS_SETTINGS_API_KEY_LABEL);
   data_source->AddLocalizedString("customBrowserNexusApiKeyPlaceholder",
@@ -213,8 +233,10 @@ void AddSettingsNexusStrings(content::WebUIDataSource* data_source) {
                                   IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED);
   data_source->AddLocalizedString("customBrowserNexusNoProviders",
                                   IDS_NEXUS_SETTINGS_NO_PROVIDERS);
-  data_source->AddLocalizedString("customBrowserNexusNoProviderState",
-                                  IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE);
+  data_source->AddString(
+      "customBrowserNexusNoProviderState",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE,
+                                 product_long_name));
   data_source->AddLocalizedString("customBrowserNexusModelLoading",
                                   IDS_NEXUS_SETTINGS_MODEL_LOADING);
   data_source->AddLocalizedString("customBrowserNexusModelLoadFailed",
@@ -233,22 +255,32 @@ void AddSettingsNexusStrings(content::WebUIDataSource* data_source) {
                                   IDS_NEXUS_SETTINGS_SAVING_PROVIDER);
   data_source->AddLocalizedString("customBrowserNexusProviderUpdateFailed",
                                   IDS_NEXUS_SETTINGS_UPDATE_FAILED);
-  data_source->AddLocalizedString("customBrowserNexusWebappUrlLabel",
-                                  IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL);
+  data_source->AddString(
+      "customBrowserNexusWebappUrlLabel",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL,
+                                 product_name));
   data_source->AddLocalizedString("customBrowserNexusWebappUrlPlaceholder",
                                   IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER);
+  data_source->AddString("customBrowserNexusWebappDefaultUrl",
+                         nexus::kDefaultNexusGuestURL);
   data_source->AddLocalizedString("customBrowserNexusWebappUrlReset",
                                   IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET);
   data_source->AddLocalizedString("customBrowserNexusWebappPageTitle",
                                   IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE);
-  data_source->AddLocalizedString("customBrowserNexusWebappRowSubLabel",
-                                  IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL);
-  data_source->AddLocalizedString("customBrowserNexusWebappDescription",
-                                  IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION);
+  data_source->AddString(
+      "customBrowserNexusWebappRowSubLabel",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL,
+                                 product_long_name));
+  data_source->AddString(
+      "customBrowserNexusWebappDescription",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION,
+                                 product_name));
   data_source->AddLocalizedString("customBrowserNexusWebappDefaultTitle",
                                   IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE);
-  data_source->AddLocalizedString("customBrowserNexusWebappDefaultDescription",
-                                  IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION);
+  data_source->AddString(
+      "customBrowserNexusWebappDefaultDescription",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION,
+                                 product_name));
   data_source->AddLocalizedString("customBrowserNexusDefaultUrlPrefix",
                                   IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX);
   data_source->AddLocalizedString("customBrowserNexusInvalidWebappUrl",
@@ -265,8 +297,10 @@ void AddSettingsNexusStrings(content::WebUIDataSource* data_source) {
                                   IDS_NEXUS_SETTINGS_INVALID_BASE_URL);
   data_source->AddLocalizedString("customBrowserNexusInvalidBaseUrlFormat",
                                   IDS_NEXUS_SETTINGS_INVALID_BASE_URL_FORMAT);
-  data_source->AddLocalizedString("customBrowserNexusOllamaNote",
-                                  IDS_NEXUS_SETTINGS_OLLAMA_NOTE);
+  data_source->AddString(
+      "customBrowserNexusOllamaNote",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_OLLAMA_NOTE,
+                                 product_long_name));
   data_source->AddLocalizedString("customBrowserNexusSelectProvider",
                                   IDS_NEXUS_SETTINGS_SELECT_PROVIDER);
   data_source->AddLocalizedString("customBrowserNexusConnectionSectionTitle",

@@ -4,6 +4,7 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/uuid.h"
 #include "base/values.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -15,6 +16,17 @@
 
 namespace nexus {
 
+LlmBroker::DispatchPickResult::DispatchPickResult() = default;
+LlmBroker::DispatchPickResult::~DispatchPickResult() = default;
+LlmBroker::DispatchPickResult::DispatchPickResult(const DispatchPickResult&) =
+    default;
+LlmBroker::DispatchPickResult& LlmBroker::DispatchPickResult::operator=(
+    const DispatchPickResult&) = default;
+LlmBroker::DispatchPickResult::DispatchPickResult(DispatchPickResult&&) =
+    default;
+LlmBroker::DispatchPickResult& LlmBroker::DispatchPickResult::operator=(
+    DispatchPickResult&&) = default;
+
 LlmBroker::LlmBroker(
     PrefService* prefs,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
@@ -22,6 +34,12 @@ LlmBroker::LlmBroker(
   DETACH_FROM_SEQUENCE(sequence_checker_);
   InitializeProviders();
   LoadProviderConfigs();
+  // Warm-load the TS-pushed caches from prefs so the WebUI quick-settings
+  // popup can render *something* on cold boot before nexus_web has had a
+  // chance to push fresh data via `model.publishCatalog` /
+  // `session.publishStatus`.
+  ts_model_catalog_ = prefs_->GetDict(prefs::kNexusTsModelCatalogCache).Clone();
+  session_status_ = prefs_->GetDict(prefs::kNexusLastSessionStatus).Clone();
   // Model catalogues are TS-authoritative (see
   // `nexus_web/src/browser/config/nexusModelConfig.ts`). No network discovery
   // is performed — the hard-coded config supplies every id, context window,
@@ -35,6 +53,126 @@ LlmBroker::~LlmBroker() {
 // static
 void LlmBroker::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   RegisterNexusProfilePrefs(registry);
+}
+
+void LlmBroker::SetTsModelCatalog(base::DictValue catalog) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ts_model_catalog_ = std::move(catalog);
+  // Persist a clone so cold-boot has the latest snapshot ready before the
+  // guest reconnects. Cheap (catalog is small JSON) and keeps the WebUI
+  // popup correct across browser restarts.
+  prefs_->SetDict(prefs::kNexusTsModelCatalogCache, ts_model_catalog_.Clone());
+
+  for (auto& observer : observers_) {
+    observer.OnTsModelCatalogChanged(ts_model_catalog_);
+  }
+}
+
+const base::DictValue& LlmBroker::GetTsModelCatalog() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return ts_model_catalog_;
+}
+
+void LlmBroker::SetSessionStatus(base::DictValue status) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  session_status_ = std::move(status);
+  prefs_->SetDict(prefs::kNexusLastSessionStatus, session_status_.Clone());
+
+  for (auto& observer : observers_) {
+    observer.OnSessionStatusChanged(session_status_);
+  }
+}
+
+const base::DictValue& LlmBroker::GetSessionStatus() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return session_status_;
+}
+
+void LlmBroker::AddObserver(Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  observers_.AddObserver(observer);
+}
+
+void LlmBroker::RemoveObserver(Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  observers_.RemoveObserver(observer);
+}
+
+LlmBroker::PickEventPusherToken LlmBroker::AddPickEventPusher(
+    PickEventPusher pusher) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  PickEventPusherToken token = next_pusher_token_++;
+  pick_event_pushers_.emplace(token, std::move(pusher));
+  return token;
+}
+
+void LlmBroker::RemovePickEventPusher(PickEventPusherToken token) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  pick_event_pushers_.erase(token);
+}
+
+LlmBroker::DispatchPickResult LlmBroker::DispatchUserPick(
+    const std::string& provider_id,
+    const std::string& model_id,
+    const std::string& thinking_tier) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  DispatchPickResult result;
+
+  LlmProvider* provider = GetProvider(provider_id);
+  if (!provider) {
+    result.error_code = "UNKNOWN_PROVIDER";
+    result.error_message = "Unknown provider: " + provider_id;
+    return result;
+  }
+  if (!provider->IsConfigured()) {
+    result.error_code = "PROVIDER_NOT_CONFIGURED";
+    result.error_message =
+        "Provider " + provider_id +
+        " has no API key configured. Open settings to add one.";
+    return result;
+  }
+
+  // Persist the global default *before* notifying nexus_web. Even if the
+  // guest is unreachable, the user's pick is durable across restarts.
+  // Mirrors `NexusLlmHost::SetDefaultSelection` semantics: write both
+  // `nexus.active_provider_id` and `provider_configs[id].default_model`.
+  base::DictValue all_configs =
+      prefs_->GetDict(prefs::kNexusProviderConfigs).Clone();
+  base::DictValue* config = all_configs.EnsureDict(provider_id);
+  config->Set("default_model", model_id);
+  config->Set("model", model_id);
+  prefs_->SetDict(prefs::kNexusProviderConfigs, std::move(all_configs));
+
+  if (!SetActiveProvider(provider_id)) {
+    result.error_code = "INTERNAL";
+    result.error_message = "Failed to switch active provider";
+    return result;
+  }
+
+  result.ok = true;
+  result.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
+
+  // Push the rebind event into nexus_web. nexus_web's React shell
+  // calls `setModelSelection` on the active session client, which posts
+  // `worker.setModelSelection` to the SharedWorker, which updates the
+  // engine and re-pushes a fresh SessionStatus. That status broadcast
+  // is what the WebUI quick-settings popup listens for. We deliberately
+  // do NOT update `session_status_` optimistically here — doing so
+  // makes the popup trigger label flip before the worker has actually
+  // applied the pick, which lies to anyone (test or human) who reads
+  // it as "the next request will use this model". The global-default
+  // pref write above is the only durable guarantee.
+  // Fan out to every registered pusher (one per live bridge port).
+  // The page surface where MultiSessionShell subscribes might be on a
+  // different port than the worker surface that fielded the original
+  // chrome.send, so a single-pusher slot would race-and-lose.
+  for (const auto& [token, pusher] : pick_event_pushers_) {
+    pusher.Run(result.request_id, provider_id, model_id, thinking_tier,
+               /*also_update_default=*/true);
+    result.pusher_invoked = true;
+  }
+  return result;
 }
 
 LlmProvider* LlmBroker::GetActiveProvider() const {

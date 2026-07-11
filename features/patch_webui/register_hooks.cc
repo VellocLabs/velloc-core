@@ -17,7 +17,7 @@
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/features/patch_webui/extensions_hooks.h"
-#include "custom_browser/features/patch_webui/glic_hooks.h"
+#include "custom_browser/features/patch_webui/nexus_bootstrap_hooks.h"
 #include "custom_browser/features/patch_webui/navigation_hooks.h"
 #include "custom_browser/features/patch_webui/ntp_hooks.h"
 #include "custom_browser/features/patch_webui/settings_hooks.h"
@@ -85,7 +85,7 @@ void BindHookedRenderFrameInterface(
 template <typename Interface>
 void RegisterPatchWebUIRenderFrameInterface(HookRegistrar* registrar) {
   registrar->AddRenderFrameInterfaceBinder(
-      Interface::Name_, base::BindRepeating(&BindNexusBridgeBootstrapForGlic));
+      Interface::Name_, base::BindRepeating(&BindNexusBridgeBootstrap));
 }
 
 template <typename Interface>
@@ -117,9 +117,6 @@ void RegisterHooks(custom_browser::HookRegistrar* registrar) {
   registrar->AddWebUIDataSourceConfiguringCallback(
       chrome::kChromeUICustomizeChromeSidePanelHost,
       base::BindRepeating(&OnCustomizeChromeSidePanelDataSourceConfiguring));
-  registrar->AddWebUIDataSourceConfiguringCallback(
-      chrome::kChromeUIGlicHost,
-      base::BindRepeating(&OnGlicDataSourceConfiguring));
   registrar->AddWebUIRenderFrameBinderMapPopulator(
       base::BindRepeating(&PopulatePatchWebUIRenderFrameBinders));
 #define REGISTER_PATCH_WEBUI_INTERFACE(Interface) \

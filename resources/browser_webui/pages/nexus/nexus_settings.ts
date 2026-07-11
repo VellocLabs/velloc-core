@@ -1,4 +1,4 @@
-import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_ripple/cr_ripple.js';
 import 'chrome://resources/cr_elements/icons.html.js';
 
@@ -10,14 +10,26 @@ import {
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {
+  browserModeIcon,
+  cpuIcon,
+  cubeIcon,
+  infoIcon,
+  keyboardIcon,
+  shieldIcon,
+} from './nexus_icons.js';
+import {
   getString,
   type NexusSettingsSection,
 } from './nexus_shared.js';
+import './nexus_settings_about.js';
+import './nexus_settings_mcp.js';
 import './nexus_settings_models.js';
-import './nexus_settings_webapp.js';
+import './nexus_settings_permissions.js';
+import './nexus_settings_shortcuts.js';
+import './nexus_settings_tools.js';
 
 type SettingsNavItem = {
-  icon: string;
+  icon: ReturnType<typeof html>;
   id: NexusSettingsSection;
   title: string;
 };
@@ -44,11 +56,39 @@ export class NexusSettingsElement extends CrLitElement {
 
       display: flex;
       flex: 1 1 auto;
+      flex-direction: column;
       background: var(--md-background-color);
       min-height: 0;
       overflow: hidden;
       width: 100%;
       -webkit-app-region: no-drag;
+    }
+
+    /* ===== Settings header (back button + title) ===== */
+    #settings-header {
+      align-items: center;
+      background: var(--md-background-color);
+      border-bottom: 1px solid var(--cr-separator-color);
+      box-sizing: border-box;
+      display: flex;
+      flex-shrink: 0;
+      gap: 12px;
+      height: 56px;
+      padding: 0 16px;
+    }
+
+    #back-button {
+      --cr-icon-button-fill-color: var(--cr-primary-text-color);
+      --cr-icon-button-icon-size: 20px;
+      --cr-icon-button-size: 36px;
+      flex-shrink: 0;
+    }
+
+    #settings-title {
+      color: var(--cr-primary-text-color, var(--text-primary));
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: -0.005em;
     }
 
     #container {
@@ -61,7 +101,6 @@ export class NexusSettingsElement extends CrLitElement {
       width: 100%;
     }
 
-    #left,
     #main,
     #right {
       flex: 1 1 0;
@@ -70,30 +109,12 @@ export class NexusSettingsElement extends CrLitElement {
     }
 
     #left {
+      flex: 0 0 var(--settings-menu-width);
+      min-height: 0;
+      min-width: 0;
       overflow-x: hidden;
       overflow-y: auto;
-    }
-
-    #leftSpacer {
-      align-items: center;
-      box-sizing: border-box;
-      display: flex;
-      padding-bottom: 24px;
-      padding-inline-start: 24px;
-      padding-top: 24px;
-    }
-
-    #leftSpacer h1 {
-      color: var(--cr-secondary-text-color, var(--text-secondary));
-      font-size: 1.1rem;
-      font-weight: 500;
-      margin: 0;
-      padding-inline-start: 12px;
-    }
-
-    #product-logo {
-      height: 24px;
-      width: 24px;
+      padding-top: 16px;
     }
 
     #main {
@@ -119,7 +140,6 @@ export class NexusSettingsElement extends CrLitElement {
     }
 
     .cr-nav-menu-item {
-      --iron-icon-fill-color: var(--google-grey-700);
       --cr-icon-ripple-size: 20px;
       align-items: center;
       background: transparent;
@@ -153,10 +173,10 @@ export class NexusSettingsElement extends CrLitElement {
     }
 
     .cr-nav-menu-item[selected] {
-      --iron-icon-fill-color: var(--google-blue-600);
       background: var(--google-blue-50);
       color: var(--google-blue-700);
     }
+
 
     .cr-nav-menu-item:focus {
       outline: auto 5px -webkit-focus-ring-color;
@@ -167,22 +187,26 @@ export class NexusSettingsElement extends CrLitElement {
       background: transparent;
     }
 
-    .cr-nav-menu-item cr-icon {
-      flex-shrink: 0;
-      margin-inline-end: 20px;
+    .cr-nav-menu-item > svg {
+      color: var(--google-grey-700) !important;
+      display: block !important;
+      flex-shrink: 0 !important;
+      height: 20px !important;
+      margin-inline-end: 20px !important;
       pointer-events: none;
-      vertical-align: top;
+      width: 20px !important;
+    }
+
+    .cr-nav-menu-item[selected] > svg {
+      color: var(--google-blue-600) !important;
     }
 
     .cr-nav-menu-item span {
+      flex: 1;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .menu-spacer {
-      min-height: 8px;
     }
 
     #main > * {
@@ -202,19 +226,28 @@ export class NexusSettingsElement extends CrLitElement {
       }
 
       .cr-nav-menu-item {
-        --iron-icon-fill-color: var(--google-grey-500);
         color: white;
       }
 
+      .cr-nav-menu-item > svg {
+        color: var(--google-grey-500) !important;
+      }
+
       .cr-nav-menu-item:hover {
-        --iron-icon-fill-color: white;
         background: var(--google-grey-800);
       }
 
+      .cr-nav-menu-item:hover > svg {
+        color: white !important;
+      }
+
       .cr-nav-menu-item[selected] {
-        --iron-icon-fill-color: black;
         background: var(--google-blue-300);
         color: var(--google-grey-900);
+      }
+
+      .cr-nav-menu-item[selected] > svg {
+        color: black !important;
       }
     }
 
@@ -258,15 +291,37 @@ export class NexusSettingsElement extends CrLitElement {
     return [
       {
         id: 'models',
-        icon: 'cr:domain',
+        icon: cubeIcon,
         title: getString(
             'customBrowserNexusProviderPageTitle', 'Model Providers'),
       },
       {
-        id: 'webapp',
-        icon: 'cr:open-in-new',
+        id: 'mcp',
+        icon: cpuIcon,
+        title: getString('customBrowserNexusMcpPageTitle', 'Agent · MCP'),
+      },
+      {
+        id: 'permissions',
+        icon: shieldIcon,
         title: getString(
-            'customBrowserNexusWebappPageTitle', 'Web App URL'),
+            'customBrowserNexusPermissionsPageTitle', 'Permissions'),
+      },
+      {
+        id: 'tools',
+        icon: browserModeIcon,
+        title: getString(
+            'customBrowserNexusToolsPageTitle', 'Tools · Browser'),
+      },
+      {
+        id: 'shortcuts',
+        icon: keyboardIcon,
+        title: getString(
+            'customBrowserNexusShortcutsPageTitle', 'Keyboard Shortcuts'),
+      },
+      {
+        id: 'about',
+        icon: infoIcon,
+        title: getString('customBrowserNexusAboutPageTitle', 'About'),
       },
     ];
   }
@@ -288,25 +343,32 @@ export class NexusSettingsElement extends CrLitElement {
     this.updateSelectedSection_(section);
   }
 
+  private onBackClick_() {
+    this.dispatchEvent(new CustomEvent(
+        'nexus-settings-close', {bubbles: true, composed: true}));
+  }
+
   protected override render() {
     const navItems = this.getNavItems_();
 
     return html`
+      <div id="settings-header">
+        <cr-icon-button id="back-button"
+            iron-icon="cr:arrow-back"
+            aria-label=${getString(
+                'customBrowserNexusCloseSettings', 'Close settings')}
+            title=${getString(
+                'customBrowserNexusCloseSettings', 'Close settings')}
+            @click=${this.onBackClick_}>
+        </cr-icon-button>
+        <div id="settings-title">${getString(
+            'customBrowserNexusSettingsTitle', 'Settings')}</div>
+      </div>
+
       <div id="container">
         <div id="left">
-          <div id="leftSpacer">
-            <slot name="product-logo">
-              <picture>
-                <source media="(prefers-color-scheme: dark)" srcset="//resources/images/chrome_logo_dark.svg">
-                <img id="product-logo" srcset="chrome://theme/current-channel-logo@1x 1x,
-                            chrome://theme/current-channel-logo@2x 2x" role="presentation">
-              </picture>
-            </slot>
-            <h1>Settings</h1>
-          </div>
           <nav aria-label=${getString(
-              'customBrowserNexusSectionTitle', 'OpenClaw settings')}>
-            <div class="menu-spacer"></div>
+              'customBrowserNexusSectionTitle', 'Nexus settings')}>
             ${navItems.map(item => html`
               <button class="cr-nav-menu-item"
                   type="button"
@@ -314,7 +376,7 @@ export class NexusSettingsElement extends CrLitElement {
                   aria-current=${item.id === this.selectedSection ? 'page' :
                                                                   'false'}
                   @click=${() => this.onNavItemClick_(item.id)}>
-                <cr-icon icon=${item.icon}></cr-icon>
+                ${item.icon}
                 <span>${item.title}</span>
                 <cr-ripple></cr-ripple>
               </button>
@@ -326,9 +388,21 @@ export class NexusSettingsElement extends CrLitElement {
           <nexus-settings-models
               ?hidden=${this.selectedSection !== 'models'}>
           </nexus-settings-models>
-          <nexus-settings-webapp
-              ?hidden=${this.selectedSection !== 'webapp'}>
-          </nexus-settings-webapp>
+          <nexus-settings-mcp
+              ?hidden=${this.selectedSection !== 'mcp'}>
+          </nexus-settings-mcp>
+          <nexus-settings-permissions
+              ?hidden=${this.selectedSection !== 'permissions'}>
+          </nexus-settings-permissions>
+          <nexus-settings-tools
+              ?hidden=${this.selectedSection !== 'tools'}>
+          </nexus-settings-tools>
+          <nexus-settings-shortcuts
+              ?hidden=${this.selectedSection !== 'shortcuts'}>
+          </nexus-settings-shortcuts>
+          <nexus-settings-about
+              ?hidden=${this.selectedSection !== 'about'}>
+          </nexus-settings-about>
         </section>
 
         <div id="right"></div>

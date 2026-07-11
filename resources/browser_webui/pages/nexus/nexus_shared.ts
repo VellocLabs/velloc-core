@@ -61,7 +61,8 @@ export interface VerifyProviderConfigResult {
 }
 
 export type NexusPaneState = 'warning'|'settings'|'nexus-view';
-export type NexusSettingsSection = 'models'|'webapp';
+export type NexusSettingsSection =
+    'models'|'mcp'|'permissions'|'tools'|'shortcuts'|'about';
 export type SettingsStatus = 'idle'|'draft'|'verifying'|'ready'|'error';
 export type StatusTone = 'error'|'info'|'success'|'warning';
 

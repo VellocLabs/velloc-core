@@ -14,6 +14,8 @@
 #include "custom_browser/browser/nexus/fs/nexus_fs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/llm/nexus_llm_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
+#include "custom_browser/browser/nexus/tools/tool_catalog.h"
+#include "custom_browser/browser/nexus/tools/tools_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/nexus_message_port_endpoint.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
@@ -74,9 +76,24 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
   fs_adapter_ = std::make_unique<NexusFsBridgeAdapter>(this, cwd);
   llm_adapter_ = std::make_unique<NexusLlmBridgeAdapter>(this, profile);
   ui_adapter_ = std::make_unique<NexusUiBridgeAdapter>(this, profile);
+  // The `browser` capability is the single dispatch surface for the
+  // macro-DSL-declared tool catalog (see `ToolCatalog::Get()`).
+  // `ToolsAdapter` owns the per-session `ToolSession` instances (one
+  // `BrowserTool` per session) and routes each request through
+  // `executionContext.sessionId`. The previous `glic` capability
+  // (served by `NexusGlicBridgeAdapter`) has been retired entirely —
+  // every browser-actor tool call now arrives via `browser.<name>`
+  // and per-session cleanup runs through `browser.endSession`.
+  tools_adapter_ = std::make_unique<ToolsAdapter>(this, profile);
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
+  // The `session` capability is currently served by the LLM adapter — it
+  // owns the broker that caches SessionStatus. If/when sessions grow more
+  // responsibilities (presence, history, etc.), split this off into a
+  // dedicated NexusSessionBridgeAdapter and re-point the registration.
+  RegisterCapability("session", llm_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
+  RegisterCapability("browser", tools_adapter_.get());
 
   // The `process` capability is gated behind a Chromium feature flag.
   // When the flag is off we skip both the launcher *and* the adapter so
@@ -132,6 +149,15 @@ void NexusBridgePortService::ResetPort() {
 
 bool NexusBridgePortService::IsConnected() const {
   return browser_port_ && browser_port_->IsConnected();
+}
+
+base::span<const ToolSchema>
+NexusBridgePortService::GetBrowserToolSchemas() const {
+  // Schemas are process-global — every port service shares the same
+  // catalog. Reading from the singleton avoids per-instance catalog
+  // duplication and makes the manifest-builder side easier (no need
+  // for a port-service handle).
+  return ToolCatalog::Get().schemas();
 }
 
 void NexusBridgePortService::RegisterCapability(
@@ -282,6 +308,21 @@ void NexusBridgePortService::SendErrorResponse(const std::string& id,
                                                const std::string& message) {
   SendResponse(bridge_support::SerializeJson(
       Value(BuildErrorResponse(id, route, code, message))));
+}
+
+void NexusBridgePortService::SendEvent(const Dict& route, Value payload) {
+  // Event envelope mirrors `DirectPortEventEnvelope` on the TS side
+  // (`nexus_web/src/browser/bridge/DirectPortBridgeTransport.ts`):
+  //   { claudeBridge: true, direction: "event", route, payload }
+  // No `id` field — events are not request-correlated. The TS dispatcher
+  // routes by `route.capability` + `route.action`.
+  Dict envelope;
+  envelope.Set("claudeBridge", true);
+  envelope.Set("direction", "event");
+  envelope.Set("route", route.Clone());
+  envelope.Set("payload", std::move(payload));
+
+  SendResponse(bridge_support::SerializeJson(Value(std::move(envelope))));
 }
 
 }  // namespace nexus

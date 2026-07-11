@@ -142,11 +142,11 @@ export class NexusWarningElement extends CrLitElement {
           <p class="panel-description">
             ${getString(
                 'customBrowserNexusWarningIntro',
-                'Please read before enabling OpenClaw.')}
+                'Please read before enabling Nexus.')}
           </p>
           ${this.renderFormattedText_(getString(
               'customBrowserNexusWarningText',
-              'OpenClaw is an experimental feature that provides advanced autonomous browser automation capabilities.\n\nBy enabling this feature, you understand and agree to the following:\n- You are solely responsible for actions performed by OpenClaw on your behalf\n- Some websites may restrict or block automated access\n- Your session data may be used to improve feature accuracy\n- This tool should not be used on shared or public devices without explicit consent\n- Sensitive operations should be monitored manually\n\nPlease ensure you are running this in a controlled environment.'))}
+              'Nexus is an experimental feature that provides advanced autonomous browser automation capabilities.\n\nBy enabling this feature, you understand and agree to the following:\n- You are solely responsible for actions performed by Nexus on your behalf\n- Some websites may restrict or block automated access\n- Your session data may be used to improve feature accuracy\n- This tool should not be used on shared or public devices without explicit consent\n- Sensitive operations should be monitored manually\n\nPlease ensure you are running this in a controlled environment.'))}
           <label class="acknowledge-row">
             <input class="acknowledge-checkbox" type="checkbox"
                 @change=${this.onAcknowledgeChange_}>

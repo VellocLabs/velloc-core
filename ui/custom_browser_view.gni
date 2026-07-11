@@ -1,8 +1,6 @@
 
 
 browser_view_sources = [
-  "//custom_browser/browser/nexus/view/nexus_view_container.h",
-  "//custom_browser/browser/nexus/view/nexus_view_container.cc",
   "//custom_browser/ui/view/custom_browser_view.h",
   "//custom_browser/ui/view/custom_browser_view.cc",
   "//custom_browser/ui/view/custom_browser_view_layout.h",
@@ -19,8 +17,6 @@ browser_view_sources = [
   "//custom_browser/ui/view/native_ui/location_bar_auto_size_native_ui.cc",
   "//custom_browser/ui/view/native_ui/main_contents_native_ui.h",
   "//custom_browser/ui/view/native_ui/main_contents_native_ui.cc",
-  "//custom_browser/ui/view/native_ui/nexus_view_container_native_ui.h",
-  "//custom_browser/ui/view/native_ui/nexus_view_container_native_ui.cc",
   "//custom_browser/ui/view/native_ui/navigation_container_native_ui.h",
   "//custom_browser/ui/view/native_ui/navigation_container_native_ui.cc",
   "//custom_browser/ui/view/native_ui/caption_container_native_ui_win.h",

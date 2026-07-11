@@ -1,6 +1,9 @@
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
-import 'chrome://resources/cr_elements/icons.html.js';
-import {sendWithPromise} from 'chrome://resources/js/cr.js';
+// Copyright 2025 The Custom Browser Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+import {addWebUiListener, removeWebUiListener} from 'chrome://resources/js/cr.js';
+import type {WebUiListener} from 'chrome://resources/js/cr.js';
 import {
   CrLitElement,
   css,
@@ -10,651 +13,527 @@ import {
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import '../../components/native/native_view_aliases.js';
+import './nexus_quick_settings.js';
+import {uiStore} from '../../ui_store.js';
+import {UIMode} from '../../ui_view_controller.mojom-webui.js';
 import {
-  getProviderDisplayName,
-  loadModelHistory,
-  pushModelHistory,
-  type ModelHistoryEntry,
-  type ModelInfo,
-  type ProviderInfo,
-  type ProviderResult,
-} from './nexus_shared.js';
+  browserModeIcon,
+  globeIcon,
+  globeOffIcon,
+  shieldIcon,
+} from './nexus_icons.js';
+import type {NexusSettingsSection} from './nexus_shared.js';
 
-// ----------------------------------------------------------------
-// Topbar mode enum
-// ----------------------------------------------------------------
+export type NexusTopbarSurfaceMode = 'nexus-view'|'settings'|'warning';
 
-export enum NexusTopbarMode {
-  TITLE = 'title',
-  NEXUS_VIEW = 'nexus_view',
+const PERMISSIONS_TOTAL = 5;
+
+// Wire format for `nexusAgentStateChanged`. Two C++ producers fire this
+// event with different subsets of fields; the topbar only updates the
+// fields actually present in each payload, so producers stay decoupled.
+//   - `ToolsAdapter::BroadcastAgentState`     — `running` (a tool is in
+//     flight), `toolName`, `isBrowserTool`, `successful`, `total`.
+//   - `NexusLlmBridgeAdapter::BroadcastModelBusyIfChanged` — `modelBusy`
+//     (a model.call is in flight or any stream is active).
+// Render priority is `running` > `modelBusy` > idle, so a tool dispatched
+// during model streaming surfaces as `running : <tool>` rather than
+// `thinking`.
+export interface NexusAgentStatePayload {
+  running?: boolean;
+  toolName?: string;
+  isBrowserTool?: boolean;
+  successful?: number;
+  total?: number;
+  modelBusy?: boolean;
 }
 
-export interface NexusTopbarTitleConfig {
-  closeLabel?: string;
-  icon?: string;  // emoji or short text for leading position
-  showCloseButton?: boolean;
-  title: string;
+export interface NexusPermissionsPayload {
+  granted: number;
+  total?: number;
 }
 
-// ----------------------------------------------------------------
-// Component
-// ----------------------------------------------------------------
+// IPC events the topbar listens for. Names must match what the C++ side
+// dispatches via FireWebUIListener("..."). Mirrors the
+// 'nexusDismissBootWelcome' pattern in nexus_view.ts (registered in the
+// constructor, not firstUpdated, so we win the C++ broadcast race).
+const AGENT_STATE_EVENT = 'nexusAgentStateChanged';
+const PERMISSIONS_EVENT = 'nexusPermissionsChanged';
 
 export class NexusTopbar extends CrLitElement {
+  static get is() {
+    return 'nexus-topbar';
+  }
+
+  static override properties = {
+    surfaceMode: {type: String},
+    agentZoneVisible: {type: Boolean},
+  };
+
+  // Public reactive props set by parent.
+  declare surfaceMode: NexusTopbarSurfaceMode;
+  declare agentZoneVisible: boolean;
+
+  // Internal state.
+  private agentRunning_ = false;
+  private agentModelBusy_ = false;
+  private agentToolName_ = '';
+  private agentIsBrowserTool_ = false;
+  // Last value of `agentRunning_ && agentIsBrowserTool_`. Used to fire
+  // `nexus-show-agent-zone-transient` only on the false → true edge, so
+  // each browser-tool dispatch triggers exactly one show — no paired
+  // hide when the tool ends.
+  private lastBrowserToolRunning_ = false;
+  private toolsSuccessful_ = 0;
+  private toolsTotal_ = 0;
+  // Whether the permissions badge has received any real data yet. The
+  // C++ broadcaster for `nexusPermissionsChanged` is not wired, so until
+  // someone calls `setPermissionsCount` (or that event arrives) the
+  // badge would otherwise show a meaningless `5/5` default. Hide it
+  // until initialized.
+  private permissionsInitialized_ = false;
+  private permissionsGranted_ = PERMISSIONS_TOTAL;
+  private permissionsTotal_ = PERMISSIONS_TOTAL;
+
+  // WebUI listener handles — owned for the lifetime of the element.
+  private agentStateListener_: WebUiListener|null = null;
+  private permissionsListener_: WebUiListener|null = null;
+
   static override styles: CSSResultGroup = css`
     :host {
-      --topbar-text-color: var(--cr-primary-text-color, var(--text-primary));
-      --topbar-surface: color-mix(
-          in srgb,
-          var(--app-bg, #ffffff) 82%,
-          var(--topbar-text-color) 18%);
-      --topbar-surface-hover: color-mix(
-          in srgb,
-          var(--app-bg, #ffffff) 74%,
-          var(--topbar-text-color) 26%);
-      --topbar-surface-soft: color-mix(
-          in srgb,
-          var(--app-bg, #ffffff) 88%,
-          var(--topbar-text-color) 12%);
-      --topbar-outline:
-          color-mix(in srgb, var(--topbar-text-color) 14%, transparent);
-      --topbar-shadow:
-          0 8px 20px color-mix(in srgb, var(--topbar-text-color) 10%, transparent);
+      /* Design tokens — scoped to this component, not :root. Verbatim hex
+       * values from nexus/project/styles.css to keep pixel-perfect identity. */
+      --chrome-frame: #eef0f4;
+      --chrome-toolbar: #ffffff;
+      --chrome-canvas: #f8f9fc;
+      --chrome-divider: #e5e7eb;
+      --chrome-divider-strong: #d6dae0;
+
+      --ink-1: #1f2024;
+      --ink-2: #4b5159;
+      --ink-3: #707682;
+      --ink-4: #9aa0a8;
+
+      --hover: rgba(15, 23, 42, 0.05);
+      --accent: #1a73e8;
+      --accent-soft: #e8f0fe;
+      --accent-soft-2: #d2e3fc;
+
+      --success: #137333;
+      --danger: #c5221f;
+
+      --radius-md: 8px;
+      --radius-pill: 999px;
+
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+              "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+
       align-items: center;
+      background: var(--chrome-toolbar);
+      border-bottom: 1px solid var(--chrome-divider);
+      box-sizing: border-box;
+      color: var(--ink-1);
       display: flex;
-      gap: 8px;
-      min-height: 44px;
-      position: relative;
-      width: 100%;
-    }
-
-    /* --- Shared cluster ----------------------------------------- */
-
-    .cluster {
-      align-items: center;
-      display: flex;
-      flex: 1 1 auto;
-      min-height: 40px;
-      min-width: 0;
-      padding: 4px;
-      position: relative;
-      width: 100%;
-    }
-
-    .caption {
-      flex: 0 0 auto;
-      justify-self: end;
-    }
-
-    /* --- TITLE mode --------------------------------------------- */
-
-    .title-bar {
-      align-items: center;
-      display: flex;
-      inset: 0;
-      justify-content: center;
-      pointer-events: none;
-      position: absolute;
-      padding: 0 8px;
-    }
-
-    .title-shell {
-      align-items: center;
-      display: flex;
-      gap: 8px;
-      max-width: min(100%, 560px);
-      min-width: 0;
-      pointer-events: auto;
-      -webkit-app-region: no-drag;
-    }
-
-    .title-pill {
-      align-items: center;
-      background: linear-gradient(
-          135deg, var(--topbar-surface), var(--topbar-surface-soft));
-      border: 1px solid var(--topbar-outline);
-      border-radius: 999px;
-      box-shadow: var(--topbar-shadow);
-      color: var(--topbar-text-color);
-      display: inline-flex;
-      flex: 1 1 auto;
-      gap: 8px;
-      max-width: min(100%, 460px);
-      min-height: 34px;
-      min-width: 0;
-      overflow: hidden;
-      padding: 0 14px;
-      white-space: nowrap;
-    }
-
-    .title-icon {
-      display: inline-flex;
-      flex: none;
-      font-size: 1.1rem;
-      line-height: 1;
-    }
-
-    .title-text {
-      font-size: 0.92rem;
-      font-weight: 600;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* --- NEXUS_VIEW mode ---------------------------------------- */
-
-    .nexus-view {
-      align-items: center;
-      display: flex;
-      gap: 10px;
-      min-width: 0;
-      width: 100%;
-      -webkit-app-region: no-drag;
-    }
-
-    .selector-shell {
-      flex: 0 1 360px;
-      max-width: 100%;
-      min-width: 0;
-      position: relative;
-    }
-
-    .selector-card {
-      align-items: center;
-      background: linear-gradient(
-          135deg, var(--topbar-surface), var(--topbar-surface-soft));
-      border: 1px solid var(--topbar-outline);
-      border-radius: 15px;
-      box-shadow: var(--topbar-shadow);
-      color: var(--topbar-text-color);
-      cursor: pointer;
-      display: flex;
-      gap: 12px;
-      min-width: 0;
-      padding: 6px 12px 6px 8px;
-      transition:
-          background 0.18s ease,
-          border-color 0.18s ease,
-          box-shadow 0.18s ease,
-          transform 0.18s ease;
-      width: 100%;
-    }
-
-    .selector-card:hover:not([disabled]),
-    .selector-card:focus-visible:not([disabled]) {
-      background: linear-gradient(
-          135deg, var(--topbar-surface-hover), var(--topbar-surface));
-      border-color:
-          color-mix(in srgb, var(--topbar-text-color) 22%, transparent);
-      box-shadow:
-          0 12px 24px color-mix(in srgb, var(--topbar-text-color) 12%, transparent);
-      outline: none;
-      transform: translateY(-1px);
-    }
-
-    .selector-card[disabled] {
-      box-shadow: none;
-      cursor: default;
-      opacity: 0.72;
-    }
-
-    .provider-badge {
-      align-items: center;
-      background: color-mix(
-          in srgb,
-          var(--app-bg, #ffffff) 72%,
-          var(--topbar-text-color) 28%);
-      border-radius: 12px;
-      box-shadow: inset 0 0 0 1px
-          color-mix(in srgb, var(--topbar-text-color) 10%, transparent);
-      display: flex;
-      flex: none;
-      height: 34px;
-      justify-content: center;
-      width: 34px;
-    }
-
-    .provider-logo {
-      height: 20px;
-      object-fit: contain;
-      width: 20px;
-    }
-
-    .selector-copy {
-      align-items: flex-start;
-      display: flex;
-      flex: 1 1 auto;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-
-    .selector-provider {
-      color: color-mix(in srgb, var(--topbar-text-color) 60%, transparent);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      line-height: 1.1;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .selector-model {
+      font-family: var(--font);
       font-size: 13px;
-      font-weight: 600;
-      line-height: 1.2;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      gap: 6px;
+      height: 41px;
+      overflow: visible;
+      position: relative;
+      width: 100%;
+      -webkit-app-region: drag;
     }
 
-    .selector-chevron {
-      border-block-end: 1.6px solid currentColor;
-      border-inline-end: 1.6px solid currentColor;
-      flex: none;
-      height: 9px;
-      margin-inline-start: 4px;
-      opacity: 0.72;
-      transform: rotate(45deg) translateY(-1px);
-      width: 9px;
-    }
-
-    .settings-button,
-    .title-close-button {
-      --cr-icon-button-fill-color: var(--topbar-text-color);
-      --cr-icon-button-hover-background-color: transparent;
-      --cr-icon-button-icon-size: 16px;
-      --cr-icon-button-size: 34px;
-      background: linear-gradient(
-          135deg, var(--topbar-surface-soft), var(--topbar-surface));
-      border: 1px solid var(--topbar-outline);
-      border-radius: 12px;
-      box-shadow: var(--topbar-shadow);
-      flex: none;
-      transition:
-          background 0.18s ease,
-          border-color 0.18s ease,
-          box-shadow 0.18s ease,
-          transform 0.18s ease;
+    :host > * {
       -webkit-app-region: no-drag;
     }
 
-    .settings-button:hover,
-    .settings-button:focus-visible,
-    .title-close-button:hover,
-    .title-close-button:focus-visible {
-      background: linear-gradient(
-          135deg, var(--topbar-surface-hover), var(--topbar-surface));
-      border-color:
-          color-mix(in srgb, var(--topbar-text-color) 22%, transparent);
-      box-shadow:
-          0 12px 24px color-mix(in srgb, var(--topbar-text-color) 12%, transparent);
-      outline: none;
-      transform: translateY(-1px);
+    /* Drag strip between status cluster and the native window controls.
+     * Stays draggable so the user can grab the right portion of the header. */
+    .header__drag {
+      align-self: stretch;
+      flex-shrink: 0;
+      width: 12px;
+      -webkit-app-region: drag;
     }
 
-    .picker-proxy-select {
-      -webkit-appearance: none;
-      appearance: none;
+    /* Generic header icon button. */
+    .hbtn {
+      align-items: center;
       background: transparent;
       border: 0;
-      inset: 0;
-      margin: 0;
-      opacity: 0;
-      pointer-events: none;
+      border-radius: var(--radius-md);
+      color: var(--ink-2);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      gap: 8px;
+      height: 32px;
+      min-width: 32px;
+      padding: 0 8px;
+      position: relative;
+      transition: background .12s, color .12s;
+      white-space: nowrap;
+    }
+    .hbtn:hover { background: var(--hover); color: var(--ink-1); }
+    .hbtn--active { background: var(--accent-soft); color: var(--accent); }
+    .hbtn--active:hover {
+      background: var(--accent-soft-2);
+      color: var(--accent);
+    }
+    /* Icons inherit their viewBox-intrinsic size (24x24) per the design.
+     * The design has no explicit .icon size rule for the header, and Chrome
+     * renders inline SVG with viewBox at viewBox-pixel dimensions. */
+
+    .header__divider {
+      background: var(--chrome-divider-strong);
+      height: 20px;
+      margin: 0 4px;
+      width: 1px;
+    }
+    .header__spacer { flex: 1; }
+    .header__sep {
+      align-self: stretch;
+      background: var(--ink-4);
+      margin: 6px 6px;
+      opacity: 0.35;
+      width: 1px;
+    }
+
+    /* Center status pill. */
+    .header__status {
+      align-items: center;
+      backdrop-filter: blur(8px);
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid var(--chrome-divider);
+      border-radius: var(--radius-pill);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+      color: var(--ink-2);
+      display: inline-flex;
+      font-size: 11.5px;
+      gap: 8px;
+      height: 30px;
+      letter-spacing: -0.005em;
+      padding: 0 14px;
+    }
+    .header__status code {
+      color: var(--ink-2);
+      font-family: var(--font-mono);
+    }
+    .dot {
+      background: var(--ink-4);
+      border-radius: 50%;
+      flex-shrink: 0;
+      height: 6px;
+      width: 6px;
+    }
+    .dot--blue {
+      animation: pulse-blue 1.6s infinite;
+      background: var(--accent);
+    }
+    @keyframes pulse-blue {
+      0%   { box-shadow: 0 0 0 0 rgba(26, 115, 232, .5); }
+      70%  { box-shadow: 0 0 0 5px rgba(26, 115, 232, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0); }
+    }
+    /* Amber dot — model is generating but no tool is dispatched yet
+     * ("thinking" phase). Distinct hue from blue so the user can tell
+     * at a glance whether they're waiting on the model vs a tool. */
+    .dot--amber {
+      animation: pulse-amber 1.6s infinite;
+      background: #f59e0b;
+    }
+    @keyframes pulse-amber {
+      0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, .5); }
+      70%  { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    }
+
+    /* Permissions badge — passive count, click navigates to settings. */
+    .perm-badge {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-left: 1px solid var(--chrome-divider);
+      border-radius: 6px;
+      color: var(--ink-3);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: 11px;
+      gap: 6px;
+      margin-left: 10px;
+      padding: 2px 6px 2px 10px;
+    }
+    .perm-badge:hover { background: var(--hover); }
+    .perm-badge__count {
+      color: var(--ink-2);
+      font-weight: 600;
+    }
+    .perm-badge--danger { color: var(--danger); }
+    .perm-badge--danger .perm-badge__count { color: var(--danger); }
+
+    /* System-aligned button (browser-mode switch). Sits flush right at the
+     * native window-controls height. */
+    .sysbtn {
+      align-self: stretch;
+      background: transparent;
+      border: 0;
+      color: var(--ink-2);
+      cursor: pointer;
+      display: grid;
+      height: 100%;
+      place-items: center;
+      transition: background .12s, color .12s;
+      width: 44px;
+    }
+    .sysbtn:hover { background: var(--hover); color: var(--ink-1); }
+
+    /* Hairline loading bar — only when agent is running. */
+    .header__loadbar {
+      animation: nexus-prog 1.2s infinite linear;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      background-repeat: no-repeat;
+      background-size: 40% 100%;
+      bottom: -1px;
+      height: 2px;
+      left: 0;
       position: absolute;
+      right: 0;
+    }
+    @keyframes nexus-prog {
+      0%   { background-position: -40% 0; }
+      100% { background-position: 140% 0; }
+    }
+
+    /* Native window controls and browser-button are 37px tall C++ Views;
+     * vertically center them in the 40px header. */
+    caption-browser-button,
+    caption-button-container {
+      align-self: center;
     }
   `;
 
-  // --- State -----------------------------------------------------
+  constructor() {
+    super();
+    this.surfaceMode = 'nexus-view';
+    this.agentZoneVisible = false;
 
-  private mode_: NexusTopbarMode = NexusTopbarMode.NEXUS_VIEW;
-  private titleConfig_: NexusTopbarTitleConfig = {title: ''};
-
-  private activeProviderId_ = '';
-  private providers_: ProviderInfo[] = [];
-  private historyEntries_: ModelHistoryEntry[] = [];
-
-  // --- Lifecycle -------------------------------------------------
-
-  override firstUpdated() {
-    void this.loadProviders_();
-    this.historyEntries_ = loadModelHistory();
+    // Register WebUI listeners as early as possible — before the element
+    // is even attached — so a fast C++ broadcast cannot race past us.
+    // Mirrors the `nexusDismissBootWelcome` pattern in nexus_view.ts:177.
+    // The C++ broadcaster (TODO) is not yet implemented; until then,
+    // these listeners are dormant and callers drive state via the public
+    // setters below (or DevTools / the React guest using sendWithPromise
+    // proxies, when those land).
+    this.agentStateListener_ = addWebUiListener(
+        AGENT_STATE_EVENT,
+        (payload: NexusAgentStatePayload) =>
+            this.onAgentStateChanged_(payload));
+    this.permissionsListener_ = addWebUiListener(
+        PERMISSIONS_EVENT,
+        (payload: NexusPermissionsPayload) =>
+            this.onPermissionsChanged_(payload));
   }
 
-  // --- Public API ------------------------------------------------
-
-  public setMode(mode: NexusTopbarMode, config?: NexusTopbarTitleConfig) {
-    this.mode_ = mode;
-    if (config) {
-      this.titleConfig_ = config;
+  override disconnectedCallback(): void {
+    if (this.agentStateListener_) {
+      removeWebUiListener(this.agentStateListener_);
+      this.agentStateListener_ = null;
     }
+    if (this.permissionsListener_) {
+      removeWebUiListener(this.permissionsListener_);
+      this.permissionsListener_ = null;
+    }
+    super.disconnectedCallback();
+  }
+
+  // --- IPC handlers ----------------------------------------------------
+
+  private onAgentStateChanged_(payload: NexusAgentStatePayload): void {
+    if (!payload) {
+      return;
+    }
+    let touched = false;
+    if (typeof payload.running === 'boolean') {
+      this.agentRunning_ = payload.running;
+      touched = true;
+    }
+    if (typeof payload.modelBusy === 'boolean') {
+      this.agentModelBusy_ = payload.modelBusy;
+      touched = true;
+    }
+    if (typeof payload.toolName === 'string') {
+      this.agentToolName_ = payload.toolName;
+      touched = true;
+    }
+    if (typeof payload.isBrowserTool === 'boolean') {
+      this.agentIsBrowserTool_ = payload.isBrowserTool;
+      touched = true;
+    }
+    if (typeof payload.successful === 'number') {
+      this.toolsSuccessful_ = Math.max(0, payload.successful);
+      touched = true;
+    }
+    if (typeof payload.total === 'number') {
+      this.toolsTotal_ = Math.max(0, payload.total);
+      touched = true;
+    }
+    if (touched) {
+      this.maybeDispatchBrowserToolTransient_();
+      this.requestUpdate();
+    }
+  }
+
+  // Fires `nexus-show-agent-zone-transient` once on the leading edge of
+  // every browser-category tool dispatch. The parent applies a one-shot
+  // "show" — it does NOT mutate the saved state, and there's no paired
+  // hide event when the tool ends. The zone therefore stays visible
+  // until the user manually clicks the globe (the only thing that
+  // updates the saved state, via `nexus-toggle-agent-zone`).
+  private maybeDispatchBrowserToolTransient_() {
+    const browserToolRunning =
+        this.agentRunning_ && this.agentIsBrowserTool_;
+    const wasRunning = this.lastBrowserToolRunning_;
+    this.lastBrowserToolRunning_ = browserToolRunning;
+    if (!wasRunning && browserToolRunning) {
+      this.dispatchEvent(new CustomEvent('nexus-show-agent-zone-transient', {
+        bubbles: true,
+        composed: true,
+      }));
+    }
+  }
+
+  private onPermissionsChanged_(payload: NexusPermissionsPayload): void {
+    if (!payload || typeof payload.granted !== 'number') {
+      return;
+    }
+    this.setPermissionsCount(
+        payload.granted, payload.total ?? PERMISSIONS_TOTAL);
+  }
+
+  // --- Public API ------------------------------------------------------
+
+  setPermissionsCount(granted: number, total: number = PERMISSIONS_TOTAL): void {
+    this.permissionsGranted_ = Math.max(0, Math.min(granted, total));
+    this.permissionsTotal_ = total;
+    this.permissionsInitialized_ = true;
     this.requestUpdate();
   }
 
-  public refresh() {
-    void this.loadProviders_();
-    this.historyEntries_ = loadModelHistory();
-    this.requestUpdate();
-  }
+  // --- Click handlers --------------------------------------------------
 
-  // --- Data loading ----------------------------------------------
-
-  private async loadProviders_() {
-    try {
-      const result = await sendWithPromise('getAgentProviders') as ProviderResult;
-      this.providers_ = Array.isArray(result.providers) ? result.providers : [];
-      this.activeProviderId_ = result.activeProviderId || '';
-      if (!this.activeProviderId_ && this.providers_.length > 0) {
-        this.activeProviderId_ = this.providers_[0]!.id;
-      }
-      this.requestUpdate();
-    } catch (e) {
-      console.error('Failed to load providers in topbar:', e);
-    }
-  }
-
-  private getCurrentProvider_(): ProviderInfo | null {
-    return this.providers_.find(p => p.id === this.activeProviderId_) || null;
-  }
-
-  private getCurrentModelId_(): string {
-    const p = this.getCurrentProvider_();
-    if (!p) {
-      return '';
-    }
-    return p.defaultModel || p.model || '';
-  }
-
-  private normalizeModelLookupKey_(value: string): string {
-    const normalized = value.trim().toLowerCase();
-    return normalized.startsWith('models/') ? normalized.slice(7) : normalized;
-  }
-
-  private getCurrentModelInfo_(): ModelInfo | null {
-    const provider = this.getCurrentProvider_();
-    const modelId = this.getCurrentModelId_();
-    if (!provider || !modelId) {
-      return null;
-    }
-
-    const normalizedModelId = this.normalizeModelLookupKey_(modelId);
-    return provider.models.find(model => {
-             return this.normalizeModelLookupKey_(model.id) ===
-                     normalizedModelId ||
-                 this.normalizeModelLookupKey_(model.name) ===
-                     normalizedModelId;
-           }) ||
-        null;
-  }
-
-  private getCurrentHistoryModelName_(): string {
-    const provider = this.getCurrentProvider_();
-    const modelId = this.getCurrentModelId_();
-    if (!provider || !modelId) {
-      return '';
-    }
-
-    const normalizedModelId = this.normalizeModelLookupKey_(modelId);
-    const historyEntry = this.historyEntries_.find(entry => {
-      return entry.providerId === provider.id &&
-          this.normalizeModelLookupKey_(entry.modelId) === normalizedModelId;
-    });
-    return historyEntry?.modelName || '';
-  }
-
-  private getCurrentModelName_(): string {
-    const modelId = this.getCurrentModelId_();
-    if (!modelId) {
-      return '';
-    }
-
-    return this.getCurrentModelInfo_()?.name ||
-        this.getCurrentHistoryModelName_() || modelId;
-  }
-
-  private getTooltip_(): string {
-    const p = this.getCurrentProvider_();
-    if (!p) {
-      return '';
-    }
-    return `Provider: ${getProviderDisplayName(p)}\nModel: ${this.getCurrentModelName_()}`;
-  }
-
-  private getCurrentSelectionEntry_(): ModelHistoryEntry | null {
-    const provider = this.getCurrentProvider_();
-    const modelId = this.getCurrentModelId_();
-    if (!provider || !modelId) {
-      return null;
-    }
-
-    return {
-      modelId,
-      modelName: this.getCurrentModelName_(),
-      providerId: provider.id,
-      providerName: getProviderDisplayName(provider),
-    };
-  }
-
-  private getHistoryEntryKey_(
-      entry: Pick<ModelHistoryEntry, 'modelId'|'providerId'>): string {
-    return `${entry.providerId}\u0000${entry.modelId}`;
-  }
-
-  private getHistoryEntryValue_(
-      entry: Pick<ModelHistoryEntry, 'modelId'|'providerId'>): string {
-    return JSON.stringify([entry.providerId, entry.modelId]);
-  }
-
-  private getHistoryEntriesForSelect_(): ModelHistoryEntry[] {
-    const currentEntry = this.getCurrentSelectionEntry_();
-    const entries = [...this.historyEntries_];
-    if (!currentEntry) {
-      return entries;
-    }
-
-    const currentKey = this.getHistoryEntryKey_(currentEntry);
-    if (entries.some(entry => this.getHistoryEntryKey_(entry) === currentKey)) {
-      return entries;
-    }
-
-    return [currentEntry, ...entries];
-  }
-
-  private getHistoryPicker_(): HTMLSelectElement | null {
-    return this.shadowRoot?.querySelector<HTMLSelectElement>(
-               '.picker-proxy-select') ||
-        null;
-  }
-
-  // --- Event handlers --------------------------------------------
-
-  private onSettingsClick_() {
+  // Globe button — drives agent-zone visibility. Click dispatches a toggle
+  // event; the parent (<nexus-page>) flips <nexus-view>'s flag and pushes
+  // the new value back to us via the `agentZoneVisible` reactive prop, so
+  // the icon (globe vs globe-off) and `hbtn--active` state stay in sync
+  // with reality without local mirror state.
+  private onAgentZoneToggleClick_() {
     this.dispatchEvent(new CustomEvent(
-        'nexus-open-settings', {bubbles: true, composed: true}));
+        'nexus-toggle-agent-zone', {bubbles: true, composed: true}));
   }
 
-  private onTitleCloseClick_() {
+  private onPermissionsBadgeClick_() {
+    const detail: {section: NexusSettingsSection} = {section: 'permissions'};
     this.dispatchEvent(new CustomEvent(
-        'nexus-settings-close', {bubbles: true, composed: true}));
+        'nexus-open-settings', {bubbles: true, composed: true, detail}));
   }
 
-  private onSelectorClick_() {
-    this.openHistoryPicker_();
+  // Sysbtn — switches the entire UI to plain Chrome (UIMode.kStandard).
+  // Goes through uiStore so BATCH.setPaused() and observers fire.
+  private onSwitchToStandardClick_() {
+    uiStore.setMode(UIMode.kStandard);
+    // Intentionally nothing else — <nexus-page> is about to be torn down.
   }
 
-  private onSelectorKeyDown_(event: KeyboardEvent) {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
-      return;
-    }
-
-    event.preventDefault();
-    this.openHistoryPicker_();
-  }
-
-  private openHistoryPicker_() {
-    const select = this.getHistoryPicker_();
-    if (!select || select.disabled) {
-      return;
-    }
-
-    try {
-      select.showPicker();
-    } catch (error) {
-      try {
-        select.focus({preventScroll: true});
-        select.click();
-      } catch (fallbackError) {
-        console.error('Failed to open model picker:', error, fallbackError);
-      }
-    }
-  }
-
-  private onHistorySelectChange_(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const entry = this.getHistoryEntriesForSelect_().find(
-        item => this.getHistoryEntryValue_(item) === select.value);
-    if (!entry) {
-      return;
-    }
-
-    if (entry.providerId === this.activeProviderId_ &&
-        entry.modelId === this.getCurrentModelId_()) {
-      return;
-    }
-
-    void this.selectHistoryEntry_(entry);
-  }
-
-  private async selectHistoryEntry_(entry: ModelHistoryEntry) {
-    try {
-      // Switch provider if needed.
-      if (entry.providerId !== this.activeProviderId_) {
-        await sendWithPromise('setActiveProvider', entry.providerId);
-        this.activeProviderId_ = entry.providerId;
-      }
-      // Set model.
-      await sendWithPromise(
-          'updateProviderConfig', entry.providerId,
-          {default_model: entry.modelId});
-      const p = this.getCurrentProvider_();
-      if (p) {
-        p.defaultModel = entry.modelId;
-      }
-      // Update history.
-      this.historyEntries_ = pushModelHistory(entry);
-      this.requestUpdate();
-    } catch (err) {
-      console.error('Failed to switch model via history:', err);
-      this.requestUpdate();
-    }
-  }
-
-  // --- Render ----------------------------------------------------
+  // --- Render ----------------------------------------------------------
 
   override render() {
     return html`
-      <div class="cluster">
-        ${this.mode_ === NexusTopbarMode.TITLE ? this.renderTitle_() :
-                                                this.renderNexusView_()}
-      </div>
+      ${this.surfaceMode === 'warning'
+          ? nothing
+          : html`<nexus-quick-settings></nexus-quick-settings>
+                 <div class="header__divider"></div>`}
+      ${this.surfaceMode === 'warning' ? nothing : this.renderCenterCluster_()}
+      <div class="header__sep"></div>
+      ${this.surfaceMode === 'warning' ? nothing :
+        html`<button class="sysbtn"
+                @click=${this.onSwitchToStandardClick_}
+                title="Switch to browser mode"
+                aria-label="Switch to browser mode">
+              ${browserModeIcon}
+            </button>`}
+      <div class="header__drag"></div>
       <caption-browser-button align-x="right"></caption-browser-button>
-      <caption-button-container class="caption" align-x="right">
-      </caption-button-container>
+      <caption-button-container align-x="right"></caption-button-container>
+      ${(this.agentRunning_ || this.agentModelBusy_) &&
+            this.surfaceMode === 'nexus-view'
+          ? html`<div class="header__loadbar"></div>`
+          : nothing}
     `;
   }
 
-  private renderTitle_() {
+  private renderCenterCluster_() {
+    const showPermBadge =
+        this.surfaceMode === 'nexus-view' && this.permissionsInitialized_;
+    const liveSurface = this.surfaceMode === 'nexus-view';
+    const showRunning = liveSurface && this.agentRunning_;
+    const showThinking =
+        liveSurface && !this.agentRunning_ && this.agentModelBusy_;
+    const toolsSegment = this.toolsTotal_ > 0
+        ? html` · tools : <code>${this.toolsSuccessful_}/${this.toolsTotal_}</code>`
+        : nothing;
+    let statusBody;
+    if (showRunning) {
+      statusBody = html`<span class="dot dot--blue"></span> Agent · running${
+          this.agentToolName_
+              ? html` : <code>${this.agentToolName_}</code>`
+              : nothing}${toolsSegment}`;
+    } else if (showThinking) {
+      statusBody = html`<span class="dot dot--amber"></span> Agent · thinking${
+          toolsSegment}`;
+    } else {
+      statusBody = html`<span class="dot"></span> Agent · idle${toolsSegment}`;
+    }
     return html`
-      <div class="title-bar">
-        <div class="title-shell">
-          <div class="title-pill">
-            ${this.titleConfig_.icon
-                ? html`<span class="title-icon">${this.titleConfig_.icon}</span>`
-                : nothing}
-            <span class="title-text">${this.titleConfig_.title}</span>
-          </div>
-          ${this.titleConfig_.showCloseButton ? html`
-            <cr-icon-button class="title-close-button"
-                iron-icon="cr:close"
-                aria-label=${this.titleConfig_.closeLabel || 'Close settings'}
-                title=${this.titleConfig_.closeLabel || 'Close settings'}
-                @click=${this.onTitleCloseClick_}>
-            </cr-icon-button>
-          ` : nothing}
-        </div>
+      <button
+          class="hbtn${this.agentZoneVisible ? ' hbtn--active' : ''}"
+          @click=${this.onAgentZoneToggleClick_}
+          title=${this.agentZoneVisible ? 'Hide agent zone' :
+                                            'Show agent zone'}
+          aria-label=${this.agentZoneVisible ? 'Hide agent zone' :
+                                                'Show agent zone'}>
+        ${this.agentZoneVisible ? globeIcon : globeOffIcon}
+      </button>
+      <div class="header__spacer"></div>
+      <div class="header__status">
+        ${statusBody}
+        ${showPermBadge ? this.renderPermissionsBadge_() : nothing}
       </div>
+      <div class="header__spacer"></div>
     `;
   }
 
-  private renderNexusView_() {
-    const hasProvider = this.activeProviderId_ !== '';
-    if (!hasProvider) {
-      return nothing;
-    }
-
-    const currentProvider = this.getCurrentProvider_();
-    if (!currentProvider) {
-      return nothing;
-    }
-
-    const currentEntry = this.getCurrentSelectionEntry_();
-    const entries = this.getHistoryEntriesForSelect_();
-    const selectedValue = currentEntry ?
-        this.getHistoryEntryValue_(currentEntry) :
-        (entries[0] ? this.getHistoryEntryValue_(entries[0]) : '');
-    const providerName = getProviderDisplayName(currentProvider);
-    const currentModelName = this.getCurrentModelName_();
-
+  private renderPermissionsBadge_() {
+    const danger = this.permissionsGranted_ === 0;
     return html`
-      <div class="nexus-view">
-        <div class="selector-shell">
-          <button class="selector-card"
-              type="button"
-              @click=${this.onSelectorClick_}
-              @keydown=${this.onSelectorKeyDown_}
-              aria-label=${entries.length > 1 ?
-                  `Switch model. Current selection: ${providerName}, ${currentModelName}` :
-                  `Current model: ${providerName}, ${currentModelName}`}
-              aria-haspopup="listbox"
-              title=${this.getTooltip_()}
-              ?disabled=${entries.length <= 1}>
-            <div class="provider-badge">
-              <img src="/components/nexus/${this.activeProviderId_}.svg"
-                  class="provider-logo" alt="">
-            </div>
-            <div class="selector-copy">
-              <span class="selector-provider">${providerName}</span>
-              <span class="selector-model">${currentModelName}</span>
-            </div>
-            <div class="selector-chevron"></div>
-          </button>
-          <select class="picker-proxy-select"
-              aria-label="Switch model"
-              tabindex="-1"
-              .value=${selectedValue}
-              ?disabled=${entries.length <= 1}
-              @change=${this.onHistorySelectChange_}>
-            ${entries.map(entry => html`
-              <option value=${this.getHistoryEntryValue_(entry)}>
-                ${entry.providerName} · ${entry.modelName}
-              </option>
-            `)}
-          </select>
-        </div>
-        <cr-icon-button class="settings-button"
-            iron-icon="cr:settings_icon"
-            @click=${this.onSettingsClick_}
-            aria-label="Open settings"
-            title="Settings">
-        </cr-icon-button>
-      </div>
+      <button
+          class="perm-badge${danger ? ' perm-badge--danger' : ''}"
+          @click=${this.onPermissionsBadgeClick_}
+          title=${`Permissions · ${this.permissionsGranted_}/${
+              this.permissionsTotal_} granted`}>
+        ${shieldIcon}
+        <span class="perm-badge__count">${this.permissionsGranted_}/${
+        this.permissionsTotal_}</span>
+      </button>
     `;
   }
 }
 
-customElements.define('nexus-topbar', NexusTopbar);
+declare global {
+  interface HTMLElementTagNameMap {
+    'nexus-topbar': NexusTopbar;
+  }
+}
+
+customElements.define(NexusTopbar.is, NexusTopbar);

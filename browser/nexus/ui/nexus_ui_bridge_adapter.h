@@ -34,6 +34,27 @@ class NexusUiBridgeAdapter : public NexusBridgeCapabilityHandler {
       const base::DictValue& payload,
       std::vector<blink::MessagePortDescriptor> ports);
 
+  void HandleDismissBootWelcome(
+      const std::string& id,
+      const base::DictValue& route,
+      const base::DictValue& payload,
+      std::vector<blink::MessagePortDescriptor> ports);
+
+  void HandleShowMainContents(
+      const std::string& id,
+      const base::DictValue& route,
+      const base::DictValue& payload,
+      std::vector<blink::MessagePortDescriptor> ports);
+
+  // Boot instrumentation. Returns wall-clock millisecond timestamps so the
+  // React side can attribute pre-React boot cost. Legacy pre-React timings
+  // sourced from the deleted chrome://glic side panel are reported as 0.
+  void HandleGetBootTimings(
+      const std::string& id,
+      const base::DictValue& route,
+      const base::DictValue& payload,
+      std::vector<blink::MessagePortDescriptor> ports);
+
   raw_ptr<Profile> profile_;
 };
 

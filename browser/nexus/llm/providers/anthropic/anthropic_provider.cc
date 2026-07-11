@@ -186,6 +186,8 @@ class AnthropicProvider::StreamSession
 
   void OnComplete(
       const network::URLLoaderCompletionStatus& status) override {
+    if (completed_)
+      return;
     ReadRemainingPipeData();
     ProcessBuffer();
 
@@ -232,6 +234,8 @@ class AnthropicProvider::StreamSession
   }
 
   void ReadRemainingPipeData() {
+    if (!body_pipe_.is_valid())
+      return;
     while (true) {
       std::array<uint8_t, 4096> buf;
       size_t num_bytes = buf.size();
@@ -770,10 +774,51 @@ base::DictValue AnthropicProvider::BuildRequestBody(
   body.Set("model", model ? *model : model_id_);
 
   std::string system_prompt;
-  if (const auto* messages = call_options.FindList("messages"))
-    body.Set("messages", TranslateMessages(*messages, system_prompt));
-  if (!system_prompt.empty())
-    body.Set("system", system_prompt);
+  if (const auto* messages = call_options.FindList("messages")) {
+    base::ListValue translated = TranslateMessages(*messages, system_prompt);
+    // Drop a third cache breakpoint at the end of the conversation so
+    // turns 2..N can also reuse the full message history. Anthropic
+    // allows up to 4 breakpoints per request; we use 3 (system, tools,
+    // conversation tail) — the 4th is reserved for future granular
+    // conversation caching (e.g. an additional breakpoint mid-history
+    // for very long sessions). Skip when the conversation is empty.
+    if (!translated.empty()) {
+      auto* last_msg = translated.back().GetIfDict();
+      if (last_msg) {
+        if (auto* content = last_msg->FindList("content")) {
+          if (!content->empty()) {
+            auto* last_part = content->back().GetIfDict();
+            if (last_part) {
+              base::DictValue cache_control;
+              cache_control.Set("type", "ephemeral");
+              last_part->Set("cache_control", std::move(cache_control));
+            }
+          }
+        }
+      }
+    }
+    body.Set("messages", std::move(translated));
+  }
+  if (!system_prompt.empty()) {
+    // Emit `system` as a content-block array with cache_control on the
+    // single text block. Anthropic prompt cache requires array form +
+    // explicit cache_control to register a breakpoint; a plain string
+    // (the previous behavior) is never cached. After the nexus_web
+    // cleanup the merged system instruction is session-stable
+    // (defaultSystemPrompt + locale/timezone/workspace/mcpClients +
+    // toolUseContext fields that don't change per turn), so caching it
+    // is the highest-ROI optimization available — turns 2..N read the
+    // entire system from cache for ~10% of the per-token price.
+    base::DictValue text_block;
+    text_block.Set("type", "text");
+    text_block.Set("text", system_prompt);
+    base::DictValue cache_control;
+    cache_control.Set("type", "ephemeral");
+    text_block.Set("cache_control", std::move(cache_control));
+    base::ListValue system_array;
+    system_array.Append(std::move(text_block));
+    body.Set("system", std::move(system_array));
+  }
 
   // Anthropic requires this field; TS always sends a resolved value.
   body.Set("max_tokens", call_options.FindInt("maxTokens").value_or(8192));
@@ -989,6 +1034,21 @@ base::ListValue AnthropicProvider::TranslateTools(
       d.Set("input_schema", params->Clone());
 
     result.Append(std::move(d));
+  }
+
+  // Mark the last tool with cache_control so the entire tools[] array
+  // becomes a cacheable prefix block. Tools rarely change within a
+  // session, so this is essentially a static block that pairs naturally
+  // with the cached system. Anthropic places the breakpoint at the END
+  // of the tagged content, so cache_control on the last tool covers all
+  // preceding tools too.
+  if (!result.empty()) {
+    auto* last = result.back().GetIfDict();
+    if (last) {
+      base::DictValue cache_control;
+      cache_control.Set("type", "ephemeral");
+      last->Set("cache_control", std::move(cache_control));
+    }
   }
 
   return result;

@@ -49,12 +49,21 @@ build_webui("build") {
     "pages/horizontal_compact/horizontal_compact_page.ts",
     "pages/nexus/nexus_shared.ts",
     "pages/nexus/nexus_subpage_layout.ts",
+    "pages/nexus/nexus_icons.ts",
     "pages/nexus/nexus_settings.ts",
     "pages/nexus/nexus_settings_models.ts",
-    "pages/nexus/nexus_settings_webapp.ts",
+    "pages/nexus/nexus_settings_mcp.ts",
+    "pages/nexus/nexus_settings_permissions.ts",
+    "pages/nexus/nexus_settings_tools.ts",
+    "pages/nexus/nexus_settings_shortcuts.ts",
+    "pages/nexus/nexus_settings_about.ts",
+    "pages/nexus/nexus_quick_settings.ts",
+    "pages/nexus/nexus_bg_tabs_strip.ts",
     "pages/nexus/nexus_view.ts",
     "pages/nexus/nexus_warning.ts",
+    "pages/nexus/nexus_welcome.ts",
     "pages/nexus/nexus_page.ts",
+    "pages/nexus/nexus_runtime_bootstrap.ts",
     "pages/nexus/nexus_topbar.ts",
     "controller/tabs_controller.ts",
     "components/tabs_panel/types.ts",
@@ -75,6 +84,7 @@ build_webui("build") {
 
   mojo_files_deps = [
     "//custom_browser/ui/mojom:mojo_bindings_ts__generator",
+    "//custom_browser/browser/nexus/mojom:mojom_ts__generator",
     "//chrome/browser/ui/webui/tabs:mojo_bindings_ts__generator",
     "//components/tab_groups/public/mojom:mojo_bindings_ts__generator",
   ]
@@ -83,6 +93,7 @@ build_webui("build") {
     "$root_gen_dir/custom_browser/ui/mojom/browser_controller.mojom-webui.ts",
     "$root_gen_dir/custom_browser/ui/mojom/browser_constants.mojom-webui.ts",
     "$root_gen_dir/custom_browser/ui/mojom/ui_view_controller.mojom-webui.ts",
+    "$root_gen_dir/custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom-webui.ts",
     "$root_gen_dir/chrome/browser/ui/webui/tabs/tabs.mojom-webui.ts",
     "$root_gen_dir/components/tab_groups/public/mojom/tab_group_types.mojom-webui.ts",
   ]

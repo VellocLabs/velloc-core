@@ -8,9 +8,12 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/scoped_environment_variable_override.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "custom_browser/common/nexus_runtime_paths.h"
 #include "custom_browser/utility/nexus/shell/shell_resolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -140,6 +143,62 @@ TEST(SafeCommandPolicyTest, ResolveCommandRejectsAbsolutePathNotMatchingAny) {
   EXPECT_EQ(decision.error_code, "COMMAND_NOT_ALLOWED");
 }
 
+// Points the runtime-path helper at a throwaway home so the managed-bin
+// dir (~/.velloc/bin) lands inside a ScopedTempDir for the test.
+class ScopedManagedHome {
+ public:
+  ScopedManagedHome() {
+    CHECK(home_.CreateUniqueTempDir());
+    const std::string path = home_.GetPath().AsUTF8Unsafe();
+    home_env_ = std::make_unique<base::ScopedEnvironmentVariableOverride>(
+        "HOME", path);
+    userprofile_env_ =
+        std::make_unique<base::ScopedEnvironmentVariableOverride>("USERPROFILE",
+                                                                  path);
+  }
+
+  // Creates ~/.velloc/bin/<id>/<id>[.exe] and returns its absolute path.
+  base::FilePath CreateManagedBinary(const std::string& id) {
+    base::FilePath exe = custom_browser::GetManagedBinaryPath(id);
+    CHECK(!exe.empty());
+    CHECK(base::CreateDirectory(exe.DirName()));
+    CHECK(base::WriteFile(exe, "binary"));
+    return exe;
+  }
+
+ private:
+  base::ScopedTempDir home_;
+  std::unique_ptr<base::ScopedEnvironmentVariableOverride> home_env_;
+  std::unique_ptr<base::ScopedEnvironmentVariableOverride> userprofile_env_;
+};
+
+TEST(SafeCommandPolicyTest, AcceptsExistingAbsolutePathUnderManagedBinDir) {
+  // A freshly-downloaded binary under ~/.velloc/bin is execable by its
+  // absolute path even though the cached capabilities don't list it —
+  // this is the seam that lets the first Grep run rg right after the
+  // installer writes it.
+  ScopedManagedHome home;
+  const base::FilePath rg = home.CreateManagedBinary("rg");
+  const ResolvedCapabilities caps = BuildFakeCaps();
+  PolicyDecision decision =
+      SafeCommandPolicy::ResolveCommand(rg.AsUTF8Unsafe(), caps);
+  EXPECT_TRUE(decision.ok()) << decision.error_message;
+  EXPECT_EQ(decision.resolved_path, rg);
+}
+
+TEST(SafeCommandPolicyTest, RejectsAbsolutePathUnderManagedBinDirThatIsAbsent) {
+  // The trust is "under managed-bin AND exists" — a non-existent path in
+  // the managed dir must still be rejected (no blind allow of the dir).
+  ScopedManagedHome home;
+  const base::FilePath rg = custom_browser::GetManagedBinaryPath("rg");
+  ASSERT_FALSE(rg.empty());
+  const ResolvedCapabilities caps = BuildFakeCaps();
+  PolicyDecision decision =
+      SafeCommandPolicy::ResolveCommand(rg.AsUTF8Unsafe(), caps);
+  ASSERT_FALSE(decision.ok());
+  EXPECT_EQ(decision.error_code, "COMMAND_NOT_ALLOWED");
+}
+
 TEST(SafeCommandPolicyTest, ResolveCommandRejectsEmpty) {
   const ResolvedCapabilities caps = BuildFakeCaps();
   PolicyDecision decision = SafeCommandPolicy::ResolveCommand("", caps);
@@ -204,6 +263,44 @@ TEST(SafeCommandPolicyTest, BuildSafeEnvironmentDropsForbiddenExtras) {
         << "Forbidden var must be dropped from sanitised env";
   }
 }
+
+TEST(SafeCommandPolicyTest, InheritedEnvNamesIncludesPathext) {
+  // Regression: PATHEXT must be inherited so cmd / PowerShell can resolve a
+  // bare executable name (`git` -> `git.exe`) on Windows. Without it EVERY bare
+  // PATH command ("git", "node", "npm", "python") fails with "not recognized"
+  // even though the binary is on PATH — the real cause of the project-folder
+  // branch chip staying empty on a host with git but no git-bash (PowerShell).
+  bool found = false;
+  for (const std::string& name : SafeCommandPolicy::InheritedEnvNames()) {
+    if (name == "PATHEXT") {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found)
+      << "PATHEXT must be inherited for Windows bare-name command resolution";
+}
+
+
+#if BUILDFLAG(IS_WIN)
+TEST(SafeCommandPolicyTest, AugmentsPathForGitBashResolvedCommand) {
+  base::FilePath git_root(FILE_PATH_LITERAL("C:\\Program Files\\Git"));
+  base::FilePath bash = git_root.AppendASCII("bin").AppendASCII("bash.exe");
+  base::EnvironmentMap env;
+  env[base::UTF8ToWide(std::string("PATH"))] = base::UTF8ToWide(std::string("C:\\Windows\\System32"));
+
+  SafeCommandPolicy::AugmentEnvironmentForResolvedCommand("bash", bash, &env);
+
+  const std::string path = base::WideToUTF8(env[base::UTF8ToWide(std::string("PATH"))]);
+  EXPECT_NE(path.find("C:\\Program Files\\Git\\usr\\bin"), std::string::npos);
+  EXPECT_NE(path.find("C:\\Program Files\\Git\\mingw64\\bin"), std::string::npos);
+  EXPECT_NE(path.find("C:\\Program Files\\Git\\bin"), std::string::npos);
+  EXPECT_NE(path.find("C:\\Program Files\\Git\\cmd"), std::string::npos);
+  EXPECT_NE(path.find("C:\\Windows\\System32"), std::string::npos);
+  EXPECT_EQ(base::WideToUTF8(env[base::UTF8ToWide(std::string("SHELL"))]),
+            bash.AsUTF8Unsafe());
+}
+#endif
 
 TEST(SafeCommandPolicyTest, ClampTimeoutMs) {
   EXPECT_EQ(SafeCommandPolicy::ClampTimeoutMs(0),

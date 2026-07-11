@@ -98,11 +98,29 @@ class InputDecl:
     type_kind: str           # one of CPP_TYPE_BY_KIND keys
     required: bool = False
     description: str = ""
+    # Optional override for the model-facing JSON property key. Keeps the
+    # generated C++ field name (`name`) snake_case while letting a tool expose
+    # CC-compatible wire keys that are not valid C++ identifiers, e.g. Grep's
+    # `-A`, `-B`, `-C`, `-n`, and `-i`.
+    wire_name: str | None = None
+    # Host-set transport field. When True the field stays in the C++ input
+    # struct AND the Extract() parser (so the host / runtime / hook-runner
+    # can populate it across the bridge) but is OMITTED from the model-facing
+    # schema — both `schema.parameters` and the PopulateRegistry tool-catalog
+    # builder. Mirrors Claude Code's BashTool, which keeps `_simulatedSedEdit`
+    # in the input *type* (`fullInputSchema`) but `.omit()`s it from the
+    # `inputSchema` sent to the model. Mutually exclusive with `required`
+    # (a model-required field the model can't see is a contradiction).
+    internal: bool = False
 
     @property
     def cpp_type(self) -> str:
         base = CPP_TYPE_BY_KIND[self.type_kind]
         return base if self.required else f"std::optional<{base}>"
+
+    @property
+    def schema_name(self) -> str:
+        return self.wire_name or self.name
 
 
 @dataclass
@@ -140,6 +158,10 @@ class ToolDecl:
     # C++ method names remain lowercase. When unset, the wire name
     # equals `name` (the existing convention for every browser_tool).
     wire_name: str | None = None
+    # Runtime scheduling hint. When true, the generated ToolSchema and
+    # PopulateRegistry path mark the tool as safe to overlap with adjacent
+    # tool_use blocks from the same assistant response.
+    concurrency_safe: bool = False
     # Per-provider variance, mirroring the .tool.json `providers` block.
     # Each value is the raw provider-specific config dict (e.g.
     # {"strict": true, "input_examples": [...]}). Schema-builder
@@ -194,14 +216,20 @@ class ToolDecl:
 
 # Map runtime.thread → suffix appended to the typed virtual's name. The
 # suffix makes the threading contract self-documenting on the call
-# site: a reader sees `RunReadOnThreadPool` and immediately knows the
+# site: a reader sees a `…OnThreadPool` suffix and immediately knows the
 # body runs off the UI thread; `RunNavigateOnUI` is unambiguously the
-# main-thread variant. The codegen also uses these to derive the
-# matching `Run<Name><Suffix>` virtual name everywhere it's emitted.
+# main-thread variant. The codegen also uses these to derive the matching
+# `Run<Name><Suffix>` / `Handle<Name><Suffix>` virtual name everywhere
+# it's emitted.
 #
-# `any` gets `OnAny` for symmetry — no current tools use that mode but
-# the suffix keeps the mapping total so a future `runtime.thread =
-# "any"` declaration doesn't surprise the codegen.
+# The map is shared by both pipelines and kept total, but the pipelines
+# allow different subsets:
+#   - Tools: only "ui" / "any" (parse_declaration rejects "io" /
+#     "thread_pool"). A per-session tool category can't be safely posted
+#     off-UI via base::Unretained, so it hops blocking work inside its
+#     body instead — see file_tool and docs/agents/nexus-tools-api.md §6.
+#   - API: "ui" / "thread_pool" (and "io" if ever needed). Its adapters'
+#     lifetime is the port service, so off-UI dispatch is permitted.
 THREAD_METHOD_SUFFIX_BY_VALUE: dict[str, str] = {
     "ui":          "OnUI",
     "io":          "OnIO",
@@ -248,27 +276,61 @@ def parse_declaration(decl_path: Path) -> ToolDecl:
                 f"{decl_path}: inputs[{i}].type '{raw_input['type']}' is not "
                 f"a known kind. Valid: {sorted(CPP_TYPE_BY_KIND)}"
             )
+        is_required = bool(raw_input.get("required", False))
+        is_internal = bool(raw_input.get("internal", False))
+        if is_internal and is_required:
+            raise ValueError(
+                f"{decl_path}: inputs[{i}] '{raw_input['name']}' is both "
+                f"'internal' and 'required'. An internal field is host-set and "
+                f"hidden from the model-facing schema, so it cannot also be a "
+                f"required model parameter."
+            )
+        wire_name = raw_input.get("wire_name")
+        if wire_name is not None:
+            if not isinstance(wire_name, str) or not wire_name:
+                raise ValueError(
+                    f"{decl_path}: inputs[{i}].wire_name must be a non-empty string")
         inputs.append(
             InputDecl(
                 name=raw_input["name"],
                 type_kind=raw_input["type"],
-                required=bool(raw_input.get("required", False)),
+                required=is_required,
                 description=raw_input.get("description", ""),
+                wire_name=wire_name,
+                internal=is_internal,
             )
         )
 
-    runtime = raw.get("runtime", {}) or {}
-    if not isinstance(runtime, dict):
-        raise ValueError(f"{decl_path}: 'runtime' must be an object")
-    thread = runtime.get("thread", "ui")
-    if thread not in ("ui", "io", "any", "thread_pool"):
+    # Tools always run SYNCHRONOUSLY on the bridge port service's UI
+    # sequence — thread selection was removed from the tool protocol.
+    # Rationale: a tool category is a per-session, value-member object on
+    # ToolSession that ToolsAdapter can destroy mid-flight (session delete
+    # / panel close). Posting its member function off-UI via
+    # base::Unretained(category) is a use-after-free — the worker can run
+    # the body against a freed object (see docs/agents/nexus-tools-api.md
+    # §6). The off-UI options ("io" / "thread_pool") were unsafe and "any"
+    # merely duplicated "ui", so a `runtime` block is no longer accepted.
+    # A tool that needs blocking work hops it inside the body with
+    # base::ThreadPool::PostTaskAndReplyWithResult + a static helper + a
+    # WeakPtr-bound reply (see tools/file_tool/file_tool.cc). (The API
+    # pipeline keeps "io" / "thread_pool" for its port-service-lifetime
+    # adapters — that validation lives in the *.api.json parser.)
+    if "runtime" in raw:
         raise ValueError(
-            f"{decl_path}: runtime.thread '{thread}' must be one of "
-            f"'ui', 'io', 'any', or 'thread_pool'")
+            f"{decl_path}: 'runtime' is no longer supported in tool "
+            f"declarations — tools always run synchronously on UI. Remove "
+            f"the block; for blocking work, hop to base::ThreadPool inside "
+            f"the body (see tools/file_tool/file_tool.cc and "
+            f"docs/agents/nexus-tools-api.md §6).")
+    thread = "ui"
 
     providers = raw.get("providers", {}) or {}
     if not isinstance(providers, dict):
         raise ValueError(f"{decl_path}: 'providers' must be an object")
+
+    raw_concurrency_safe = raw.get("concurrencySafe", False)
+    if not isinstance(raw_concurrency_safe, bool):
+        raise ValueError(f"{decl_path}: 'concurrencySafe' must be a boolean")
 
     # `wire_name` is optional. When present we sanity-check the basic
     # shape (non-empty string starting with a letter) here so the
@@ -338,6 +400,7 @@ def parse_declaration(decl_path: Path) -> ToolDecl:
         runtime_thread=thread,
         output_kind=raw.get("output_kind", "object"),
         wire_name=wire_name,
+        concurrency_safe=raw_concurrency_safe,
         providers=providers,
         prompt=prompt,
         parameters_strict=raw_parameters_strict,
@@ -352,20 +415,22 @@ def infer_implementation(decl: ToolDecl, decl_path: Path) -> None:
         →  category_pascal = PascalCase(<category_snake>)
         →  method_name     = Run + PascalCase(<tool_name>) + <thread suffix>
 
-    The thread suffix (`OnUI`, `OnIO`, `OnAny`, `OnThreadPool`) makes
-    the threading contract visible at every call site without forcing
-    readers to cross-reference the *.tool.json. It also lets a single
-    category class host methods that run on different threads without
-    name collisions — important if a category ever mixes UI- and
-    thread_pool-targeted tools.
+    The thread suffix makes the threading contract visible at every call
+    site without forcing readers to cross-reference the *.tool.json.
+    Tools always run synchronously on UI, so a tool method's suffix is
+    always `OnUI` (parse_declaration rejects any `runtime` block). The
+    API pipeline shares THREAD_METHOD_SUFFIX_BY_VALUE and may also emit
+    `OnAny`, but neither pipeline emits `OnIO` / `OnThreadPool` any more —
+    both reject off-UI threads (parse_declaration / parse_api_declaration);
+    those entries stay in the map only to keep it total.
 
     E.g. declarations/browser_tool/screenshot.tool.json (thread=ui) →
             category_pascal = "BrowserTool"
             method_name     = "RunScreenshotOnUI"
 
-         declarations/file_tool/read.tool.json (thread=thread_pool) →
+         declarations/file_tool/read.tool.json (thread=ui) →
             category_pascal = "FileTool"
-            method_name     = "RunReadOnThreadPool"
+            method_name     = "RunReadOnUI"
     """
     parent = decl_path.parent.name
     if not parent or parent == "declarations":
@@ -541,7 +606,7 @@ inline ::nexus::ToolSchema {schema_builder}() {{
   schema.description =
       {description_literal};
   schema.output_kind = {output_kind_enum};
-{parameters_emit}{input_examples_emit}{strict_input_schema_emit}  return schema;
+{concurrency_safe_emit}{skill_emit}{parameters_emit}{input_examples_emit}{strict_input_schema_emit}  return schema;
 }}
 
 // =============================================================================
@@ -614,19 +679,45 @@ def render_input_struct_fields(inputs: list[InputDecl]) -> str:
 
 
 def render_parameters_emit(inputs: list[InputDecl]) -> str:
-    """Emit `schema.parameters.emplace_back(...)` per input."""
-    if not inputs:
+    """Emit `schema.parameters.emplace_back(...)` per MODEL-FACING input.
+
+    `internal` inputs (host-set transport fields like the hook-runner's
+    hook_shell / hook_stdin / hook_env or the runtime-injected per-call cwd)
+    are deliberately omitted from the model-facing schema — they stay in the
+    typed input struct + Extract() so the host can still populate them. This
+    mirrors Claude Code's BashTool keeping `_simulatedSedEdit` in the input
+    type but omitting it from the schema sent to the model."""
+    visible = [inp for inp in inputs if not inp.internal]
+    if not visible:
         return "  // (no parameters)\n"
     lines = []
-    for inp in inputs:
+    for inp in visible:
         kind = JSON_KIND_BY_TYPE[inp.type_kind]
         req = "true" if inp.required else "false"
         lines.append(f"  schema.parameters.emplace_back(")
-        lines.append(f"      \"{inp.name}\",")
+        lines.append(f"      {cpp_string_literal(inp.schema_name)},")
         lines.append(f"      {cpp_string_literal(inp.description)},")
         lines.append(f"      {kind},")
         lines.append(f"      /*required=*/{req});")
     return "\n".join(lines) + "\n"
+
+
+def render_skill_emit(decl: ToolDecl) -> str:
+    """Emit `schema.skill = "<skill>";` when the tool declares a skill
+    bucket. A tool with no `skill` (or skill linked to an always-on
+    skill) leaves `schema.skill` at its default empty string, which the
+    wire builder treats as 'always loaded'. Skill-gating (omit deferred
+    tools until Skill() activates them) is driven by this field plus the
+    *.skill.json `default` state — see giggly-watching-pie.md Phase 4."""
+    if not decl.skill:
+        return ""
+    return f"  schema.skill = {cpp_string_literal(decl.skill)};\n"
+
+
+def render_concurrency_safe_emit(decl: ToolDecl) -> str:
+    if not decl.concurrency_safe:
+        return ""
+    return "  schema.concurrency_safe = true;\n"
 
 
 def render_input_examples_emit(decl: ToolDecl) -> str:
@@ -819,72 +910,76 @@ def render_extractor_body(inputs: list[InputDecl]) -> str:
 
 
 def _extract_string(inp: InputDecl) -> str:
+    key = inp.schema_name
     if inp.required:
         return (
             f"  // {inp.name}: required string\n"
-            f"  if (auto* v = args.FindString(\"{inp.name}\")) {{\n"
+            f"  if (auto* v = args.FindString(\"{key}\")) {{\n"
             f"    out.{inp.name} = *v;\n"
             f"  }} else {{\n"
-            f"    return std::string(\"missing required string '{inp.name}'\");\n"
+            f"    return std::string(\"missing required string '{key}'\");\n"
             f"  }}\n"
         )
     return (
         f"  // {inp.name}: optional string\n"
-        f"  if (auto* v = args.FindString(\"{inp.name}\")) {{\n"
+        f"  if (auto* v = args.FindString(\"{key}\")) {{\n"
         f"    out.{inp.name} = *v;\n"
         f"  }}\n"
     )
 
 
 def _extract_int(inp: InputDecl) -> str:
+    key = inp.schema_name
     if inp.required:
         return (
             f"  // {inp.name}: required integer\n"
-            f"  if (auto v = args.FindInt(\"{inp.name}\")) {{\n"
+            f"  if (auto v = args.FindInt(\"{key}\")) {{\n"
             f"    out.{inp.name} = *v;\n"
             f"  }} else {{\n"
-            f"    return std::string(\"missing required integer '{inp.name}'\");\n"
+            f"    return std::string(\"missing required integer '{key}'\");\n"
             f"  }}\n"
         )
     return (
         f"  // {inp.name}: optional integer\n"
-        f"  if (auto v = args.FindInt(\"{inp.name}\")) {{\n"
+        f"  if (auto v = args.FindInt(\"{key}\")) {{\n"
         f"    out.{inp.name} = *v;\n"
         f"  }}\n"
     )
 
 
 def _extract_double(inp: InputDecl) -> str:
+    key = inp.schema_name
     if inp.required:
         return (
             f"  // {inp.name}: required number\n"
-            f"  if (auto v = args.FindDouble(\"{inp.name}\")) {{\n"
+            f"  if (auto v = args.FindDouble(\"{key}\")) {{\n"
             f"    out.{inp.name} = *v;\n"
             f"  }} else {{\n"
-            f"    return std::string(\"missing required number '{inp.name}'\");\n"
+            f"    return std::string(\"missing required number '{key}'\");\n"
             f"  }}\n"
         )
     return (
         f"  // {inp.name}: optional number\n"
-        f"  if (auto v = args.FindDouble(\"{inp.name}\")) {{\n"
+        f"  if (auto v = args.FindDouble(\"{key}\")) {{\n"
         f"    out.{inp.name} = *v;\n"
         f"  }}\n"
     )
 
 
 def _extract_bool(inp: InputDecl) -> str:
+    key = inp.schema_name
     if inp.required:
         return (
             f"  // {inp.name}: required boolean\n"
-            f"  if (auto v = args.FindBool(\"{inp.name}\")) {{\n"
+            f"  if (auto v = args.FindBool(\"{key}\")) {{\n"
             f"    out.{inp.name} = *v;\n"
             f"  }} else {{\n"
-            f"    return std::string(\"missing required boolean '{inp.name}'\");\n"
+            f"    return std::string(\"missing required boolean '{key}'\");\n"
             f"  }}\n"
         )
     return (
         f"  // {inp.name}: optional boolean\n"
-        f"  if (auto v = args.FindBool(\"{inp.name}\")) {{\n"
+        f"  if (auto v = args.FindBool(\"{key}\")) {{\n"
         f"    out.{inp.name} = *v;\n"
         f"  }}\n"
     )
@@ -893,18 +988,19 @@ def _extract_bool(inp: InputDecl) -> str:
 def _extract_object(inp: InputDecl) -> str:
     """For raw object inputs we just clone the dict — runtime
     validation is the tool body's job."""
+    key = inp.schema_name
     if inp.required:
         return (
             f"  // {inp.name}: required object (raw dict)\n"
-            f"  if (auto* d = args.FindDict(\"{inp.name}\")) {{\n"
+            f"  if (auto* d = args.FindDict(\"{key}\")) {{\n"
             f"    out.{inp.name} = d->Clone();\n"
             f"  }} else {{\n"
-            f"    return std::string(\"missing required object '{inp.name}'\");\n"
+            f"    return std::string(\"missing required object '{key}'\");\n"
             f"  }}\n"
         )
     return (
         f"  // {inp.name}: optional object (raw dict)\n"
-        f"  if (auto* d = args.FindDict(\"{inp.name}\")) {{\n"
+        f"  if (auto* d = args.FindDict(\"{key}\")) {{\n"
         f"    out.{inp.name} = d->Clone();\n"
         f"  }}\n"
     )
@@ -918,27 +1014,28 @@ def _extract_array_object(inp: InputDecl) -> str:
     validation (which keys/types each dict carries) is the tool body's
     job — keeps the codegen simple for nested heterogeneous shapes
     like BrowserFillForm's `fields[]`."""
+    key = inp.schema_name
     if inp.required:
         return (
             f"  // {inp.name}: required array<object>\n"
-            f"  if (auto* lst = args.FindList(\"{inp.name}\")) {{\n"
+            f"  if (auto* lst = args.FindList(\"{key}\")) {{\n"
             f"    out.{inp.name}.reserve(lst->size());\n"
             f"    for (const base::Value& item : *lst) {{\n"
             f"      if (const base::DictValue* d = item.GetIfDict()) {{\n"
             f"        out.{inp.name}.push_back(d->Clone());\n"
             f"      }} else {{\n"
-            f"        return std::string(\"'{inp.name}' "
+            f"        return std::string(\"'{key}' "
             f"contains a non-object entry\");\n"
             f"      }}\n"
             f"    }}\n"
             f"  }} else {{\n"
             f"    return std::string(\"missing required "
-            f"array<object> '{inp.name}'\");\n"
+            f"array<object> '{key}'\");\n"
             f"  }}\n"
         )
     return (
         f"  // {inp.name}: optional array<object>\n"
-        f"  if (auto* lst = args.FindList(\"{inp.name}\")) {{\n"
+        f"  if (auto* lst = args.FindList(\"{key}\")) {{\n"
         f"    out.{inp.name}.reserve(lst->size());\n"
         f"    for (const base::Value& item : *lst) {{\n"
         f"      if (const base::DictValue* d = item.GetIfDict()) {{\n"
@@ -965,7 +1062,9 @@ def emit_header(decl: ToolDecl, source_path: Path, output_dir: Path) -> Path:
         description_literal=cpp_string_literal(decl.description),
         output_kind_enum=OUTPUT_KIND_BY_VALUE.get(
             decl.output_kind, "::nexus::JsonSchemaKind::kAny"),
+        skill_emit=render_skill_emit(decl),
         parameters_emit=render_parameters_emit(decl.inputs),
+        concurrency_safe_emit=render_concurrency_safe_emit(decl),
         input_examples_emit=render_input_examples_emit(decl),
         strict_input_schema_emit=render_strict_input_schema_emit(decl),
         schema_builder=decl.schema_builder_name,
@@ -1058,16 +1157,15 @@ def emit_category_header(
     )
 
     # One pure virtual per tool. Each takes the typed input struct from
-    # its own .gen.h plus the trailing ToolCallback. The method name
-    # carries the thread suffix derived from `runtime.thread` (see
-    # THREAD_METHOD_SUFFIX_BY_VALUE) so the virtual reads as e.g.
-    # `RunReadOnThreadPool` / `RunNavigateOnUI`.
+    # its own .gen.h plus the trailing ToolCallback. Tools always run on
+    # the UI sequence, so every method carries the fixed `OnUI` suffix and
+    # the virtual reads as e.g. `RunReadOnUI` / `RunNavigateOnUI`.
     virtual_lines: list[str] = []
     for d in sorted_decls:
         method = d.method_name
         virtual_lines.append(
             f"  // From declarations/{category_snake}/{d.name}.tool.json"
-            f"  (runtime.thread={d.runtime_thread})"
+            f" (runs on UI)"
         )
         virtual_lines.append(
             f"  virtual void {method}({d.input_struct_name} input,"
@@ -1149,9 +1247,6 @@ REGISTRY_SOURCE_TEMPLATE = """\
 
 #include "base/check_op.h"
 #include "base/functional/bind.h"
-#include "base/task/task_traits.h"
-#include "base/task/thread_pool.h"
-#include "content/public/browser/browser_thread.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 
@@ -1175,19 +1270,20 @@ std::vector<::nexus::ToolSchema> AllSchemas() {{
 //       `CategoryAccessor<Category>::Get`. nullptr means the session
 //       doesn't carry that category — reject cleanly with
 //       `no_category` rather than dereferencing.
-//   (3) Invoke the typed virtual `Run<Name>On<Thread>` on the thread
-//       declared by `runtime.thread`. For "ui"/"any" the call is
-//       synchronous (the dispatcher is already on UI). For "io" the
-//       trampoline PostTasks to `content::GetIOThreadTaskRunner`. For
-//       "thread_pool" it PostTasks to `base::ThreadPool` with
-//       `base::MayBlock()` + `base::TaskPriority::USER_VISIBLE` so
-//       blocking I/O is permitted.
+//   (3) Invoke the typed virtual (`Run<Name>OnUI` / `…OnAny`)
+//       SYNCHRONOUSLY on the dispatcher's own sequence — the bridge port
+//       service's UI sequence. Tool categories are restricted to
+//       "ui" / "any" (parse_declaration rejects off-UI threads), so the
+//       trampoline never PostTasks the category onto another sequence.
 //
-// Lifetime contract: the bound `category` pointer is captured raw
-// (`base::Unretained`) for the off-UI variants. ToolsAdapter does not
-// tear down a session while a tool call is in flight, so this is
-// safe; the `done` ToolCallback's internal WeakPtr<ToolsAdapter> is
-// what drops responses cleanly when the adapter goes away.
+// A tool that needs blocking work keeps "ui" and hops it inside its body
+// with base::ThreadPool::PostTaskAndReplyWithResult + a static helper +
+// a WeakPtr-bound reply (see tools/file_tool/file_tool.cc). The category
+// is therefore never dereferenced off its home sequence — avoiding the
+// use-after-free a `base::Unretained` worker-bind would cause if the
+// session were torn down mid-flight (see docs/agents/nexus-tools-api.md
+// §6). The `done` ToolCallback's internal WeakPtr<ToolsAdapter> still
+// drops responses cleanly when the adapter goes away.
 //
 // Per-action wall-clock budget (`PausableBudgetWrap`) is intentionally
 // NOT applied here — every category implementation already wraps its
@@ -1212,13 +1308,11 @@ void Dispatch{name_pascal}(::nexus::ToolSession* session,
                            base::DictValue args,
                            ::nexus::ToolCallback done) {{
   // (1) Thread context. The dispatcher is invoked on the bridge port
-  // service's sequence (UI today). The trampoline below either calls
-  // the typed virtual directly on the current thread (when
-  // runtime.thread is "ui" or "any") or PostTasks to the declared
-  // target thread first (when "io" or "thread_pool"). This keeps the
-  // routing concern out of every category implementation.
-  //
-  // `runtime.thread = "{thread}"` for this tool.
+  // service's sequence (UI today) and calls the typed virtual directly
+  // on that sequence — tools always run synchronously on UI (thread
+  // selection was removed from the tool protocol). A tool that needs
+  // off-UI work hops it inside its own body (see file_tool), so the
+  // dispatcher never posts a per-session category onto another sequence.
 
   // (2) Extract typed input.
   {input_struct} input;
@@ -1228,11 +1322,14 @@ void Dispatch{name_pascal}(::nexus::ToolSession* session,
   }}
 
   // (3) Find the per-session category instance. The lookup happens on
-  // the dispatcher's calling sequence — `ToolSession`'s category
-  // members live there. The pointer captured below is forwarded into
-  // the PostTask binding for off-UI variants; the lifetime contract
-  // is that ToolsAdapter doesn't tear down a session while a tool
-  // call is in flight, so `base::Unretained(category)` is safe.
+  // the dispatcher's calling sequence — `ToolSession`'s category members
+  // live there. Tool categories are invoked SYNCHRONOUSLY below (only
+  // "ui" / "any" are allowed; parse_declaration rejects off-UI threads),
+  // so the pointer is used inline and cannot dangle. A tool that needs
+  // blocking work keeps "ui" and hops it inside its body with a
+  // WeakPtr-bound reply — never via base::Unretained onto a worker, which
+  // would be a use-after-free if the session is torn down mid-flight.
+  // See file_tool/file_tool.h and docs/agents/nexus-tools-api.md §6.
   auto* category =
       ::nexus::detail::CategoryAccessor<{category_qualified}>::Get(session);
   if (!category) {{
@@ -1250,47 +1347,25 @@ void Dispatch{name_pascal}(::nexus::ToolSession* session,
 """
 
 
-# Per-thread "invoke" snippets that produce section (4) of the
-# dispatcher. Each value is a complete C++ statement (or block).
+# Invoke snippet for section (4) of the dispatcher. Tools always run
+# SYNCHRONOUSLY on the dispatcher's own sequence (the bridge port
+# service's UI sequence) — thread selection was removed from the tool
+# protocol (parse_declaration rejects a `runtime` block), so there is a
+# single snippet and it never binds the category onto another sequence.
 #
-# - "ui" / "any": call directly. The dispatcher is already on UI (the
-#   bridge port service's home thread) which matches "ui"; "any" has
-#   no thread preference, so calling synchronously is correct + cheap.
-#   Synchronous invocation also preserves the existing behavior of
-#   every browser_tool tool — they were synchronous before this
-#   refactor and continue to be.
-# - "io": PostTask to `content::GetIOThreadTaskRunner({{}})` so the
-#   virtual runs on the BrowserThread::IO. The bound BindOnce captures
-#   `category` raw — see the lifetime note in section (3).
-# - "thread_pool": PostTask to `base::ThreadPool` with `MayBlock()`
-#   so blocking I/O is permitted. `USER_VISIBLE` is the right priority
-#   — the user is waiting on the LLM's tool result, not background
-#   bookkeeping.
+# A tool that needs blocking work keeps its body on UI and hops the work
+# itself (base::ThreadPool::PostTaskAndReplyWithResult + a static helper +
+# a WeakPtr reply), so the category is never dereferenced off its home
+# sequence. See tools/file_tool/file_tool.cc.
 #
-# The two PostTask variants pass `base::Unretained(category)` rather
-# than a WeakPtr because the codegen has no typed handle on per-class
-# WeakPtrFactory members; the session-lifetime contract documented in
-# section (3) is what makes this safe.
+# The off-UI `base::Unretained(category)` routing that used to live here
+# (io / thread_pool / any) was removed: a per-session category can be torn
+# down mid-flight, so posting its member function to another sequence was
+# a use-after-free (see docs/agents/nexus-tools-api.md §6). The API
+# pipeline keeps an off-UI route in `_emit_api_invoke_block` for its
+# port-service-lifetime adapters.
 THREAD_INVOKE_TEMPLATE_BY_VALUE: dict[str, str] = {
-    "ui":  "  category->{method_name}(std::move(input), std::move(done));",
-    "any": "  category->{method_name}(std::move(input), std::move(done));",
-    "io": (
-        "  content::GetIOThreadTaskRunner({{}})->PostTask(\n"
-        "      FROM_HERE,\n"
-        "      base::BindOnce(&{category_qualified}::{method_name},\n"
-        "                     base::Unretained(category),\n"
-        "                     std::move(input),\n"
-        "                     std::move(done)));"
-    ),
-    "thread_pool": (
-        "  base::ThreadPool::PostTask(\n"
-        "      FROM_HERE,\n"
-        "      {{base::MayBlock(), base::TaskPriority::USER_VISIBLE}},\n"
-        "      base::BindOnce(&{category_qualified}::{method_name},\n"
-        "                     base::Unretained(category),\n"
-        "                     std::move(input),\n"
-        "                     std::move(done)));"
-    ),
+    "ui": "  category->{method_name}(std::move(input), std::move(done));",
 }
 
 
@@ -1384,14 +1459,43 @@ def emit_registry(
             f'    auto builder = registry.Tool("{d.schema_wire_name}",\n'
             f'                                  {cpp_string_literal(d.description)});\n'
         )
+        # Skill bucket — drives skill-gating (deferred-skill tools are
+        # omitted from tools[] until activated). Empty/unset → always
+        # loaded. The schema-builder path (BuildXxxSchema) sets this too,
+        # but PopulateRegistry's builder is what feeds ToolCatalog, so it
+        # MUST set skill here or the wire never carries it.
+        if d.skill:
+            registry_pushes += f'    builder.Skill("{d.skill}");\n'
+        if d.concurrency_safe:
+            registry_pushes += "    builder.ConcurrencySafe();\n"
         for inp in d.inputs:
+            if inp.internal:
+                # Host-set transport field — omit from the model-facing tool
+                # catalog (same rationale as render_parameters_emit). Still
+                # carried in the typed struct + parsed by Extract().
+                continue
             method = "Required" if inp.required else "Optional"
             kind = JSON_KIND_BY_TYPE[inp.type_kind]
             registry_pushes += (
-                f'    builder.{method}("{inp.name}",\n'
+                f'    builder.{method}({cpp_string_literal(inp.schema_name)},\n'
                 f'                    {cpp_string_literal(inp.description)},\n'
                 f'                    {kind});\n'
             )
+        if d.parameters_strict is not None:
+            counter = [0]
+
+            def fresh(prefix: str) -> str:
+                counter[0] += 1
+                return f"strict_{prefix}{counter[0]}"
+
+            pre, expr = render_value_statements(d.parameters_strict, fresh, "    ")
+            registry_pushes += "    // Live hosted-tool strict schema variant.\n"
+            for line in pre:
+                registry_pushes += f"{line}\n"
+            registry_pushes += f"    base::Value strict_schema_v({expr});\n"
+            registry_pushes += "    if (auto* strict_schema = strict_schema_v.GetIfDict()) {\n"
+            registry_pushes += "      builder.StrictInputSchema(std::move(*strict_schema));\n"
+            registry_pushes += "    }\n"
         if d.output_kind != "object":
             registry_pushes += (
                 f"    builder.Returns({OUTPUT_KIND_BY_VALUE.get(d.output_kind, '::nexus::JsonSchemaKind::kAny')});\n"
@@ -1626,7 +1730,8 @@ def emit_system_prompt_tools(
 # verbatim. Per-tool bullets used to be aggregated from each
 # browser_tool/*.tool.json's `prompt` block; those blocks were removed
 # and the same prose now lives directly in
-# `browser_tool/browser-tools.md`. The renderer detects "is any
+# `browser_tool/browser-tools-catalog.md` (referenced by
+# tool-catalog-frame.json `browser_tools`). The renderer detects "is any
 # browser tool enabled" by checking the session's enabled-tool set
 # against `kBrowserToolWireNames` (emitted from the parsed decls).
 # =============================================================================
@@ -1882,11 +1987,22 @@ def parse_api_declaration(decl_path: Path) -> ApiActionDecl:
     if not isinstance(runtime, dict):
         raise ValueError(f"{decl_path}: 'runtime' must be an object")
     thread = runtime.get("thread", "ui")
-    if thread not in THREAD_METHOD_SUFFIX_BY_VALUE:
+    # API actions dispatch SYNCHRONOUSLY on UI. Off-UI routing ("io" /
+    # "thread_pool") used to bind the capability adapter onto a worker via
+    # base::Unretained, which is a use-after-free when the port service
+    # tears down mid-op (panel close / webview reload) — the same class of
+    # bug as the Tools pipeline. An adapter that needs blocking work hops it
+    # inside its own body with PostTaskAndReplyWithResult, binding the work
+    # to refcounted/owned state (NOT the adapter) and replying weak-guarded;
+    # see api/fs/nexus_fs_bridge_adapter.cc. So only "ui" / "any" are valid.
+    if thread not in ("ui", "any"):
         raise ValueError(
-            f"{decl_path}: runtime.thread '{thread}' must be one of "
-            f"{sorted(THREAD_METHOD_SUFFIX_BY_VALUE.keys())}"
-        )
+            f"{decl_path}: runtime.thread '{thread}' is not allowed for an "
+            f"API action — only 'ui' or 'any' (synchronous) are. Off-UI work "
+            f"must be hopped inside the handler body via "
+            f"PostTaskAndReplyWithResult bound to refcounted/owned state (not "
+            f"the adapter); see api/fs/nexus_fs_bridge_adapter.cc and "
+            f"docs/agents/nexus-tools-api.md §6.")
 
     return ApiActionDecl(
         name=raw["name"],
@@ -2180,37 +2296,23 @@ def _emit_api_virtual(decl: ApiActionDecl) -> str:
 def _emit_api_invoke_block(
     decl: ApiActionDecl, base_class_name: str, indent: str
 ) -> str:
-    """Emit the C++ that invokes the implementation virtual on the right
-    thread. The given `indent` is the leading whitespace for each line
-    (the wrapping context can be the dispatcher's lambda body or the
-    bytes-await continuation, with different indentation)."""
-    thread = decl.runtime_thread
-    if thread in ("ui", "any"):
-        return (
-            f"{indent}self_raw->{decl.virtual_name}(\n"
-            f"{indent}    std::move(input),\n"
-            f"{indent}    std::move(ports),\n"
-            f"{indent}    std::move(done));\n"
-        )
-    if thread == "io":
-        runner = "content::GetIOThreadTaskRunner({})->PostTask"
-        traits = ""
-    else:  # thread_pool
-        runner = "base::ThreadPool::PostTask"
-        traits = (
-            f"{indent}    {{base::MayBlock(), "
-            f"base::TaskPriority::USER_VISIBLE}},\n"
-        )
+    """Emit the C++ that invokes the implementation virtual. The given
+    `indent` is the leading whitespace for each line (the wrapping context
+    can be the dispatcher's lambda body or the bytes-await continuation,
+    with different indentation).
+
+    API actions always dispatch SYNCHRONOUSLY on the dispatcher's own
+    sequence (UI) — parse_api_declaration rejects io / thread_pool, because
+    posting a port-service adapter off-UI via base::Unretained is a
+    use-after-free on teardown. An adapter that needs blocking work hops it
+    inside its body (see api/fs/nexus_fs_bridge_adapter.cc), so this emitter
+    never PostTasks the adapter onto another sequence."""
+    del base_class_name  # only needed by the removed off-UI branches
     return (
-        f"{indent}{runner}(\n"
-        f"{indent}    FROM_HERE,\n"
-        f"{traits}"
-        f"{indent}    base::BindOnce(\n"
-        f"{indent}        &{base_class_name}::{decl.virtual_name},\n"
-        f"{indent}        base::Unretained(self_raw),\n"
-        f"{indent}        std::move(input),\n"
-        f"{indent}        std::move(ports),\n"
-        f"{indent}        std::move(done)));\n"
+        f"{indent}self_raw->{decl.virtual_name}(\n"
+        f"{indent}    std::move(input),\n"
+        f"{indent}    std::move(ports),\n"
+        f"{indent}    std::move(done));\n"
     )
 
 
@@ -2616,6 +2718,126 @@ def validate_skill(skill_path: Path, schema_path: Path) -> None:
     jsonschema.validate(instance=instance, schema=schema)
 
 
+# =============================================================================
+# Skill registry emission — `nexus_skills_registry.gen.{h,cc}`.
+#
+# Reads every *.skill.json into a SkillDecl and emits an `AllSkills()`
+# accessor returning a vector<::nexus::SkillSchema>. The catalog adapter
+# (`catalog.listSkills`) consumes this and derives each skill's toolNames
+# from the tool schemas (whose `skill` field links membership). See
+# giggly-watching-pie.md Phase 4.
+# =============================================================================
+
+@dataclass
+class SkillDecl:
+    name: str
+    description: str
+    instructions: str = ""
+    # No deferral marker — whether a skill defers is decided SOLELY by the
+    # nexus_web session template's `deferredTools` (resolveDeferrableSkills).
+
+
+def parse_skill_declaration(path: Path) -> SkillDecl:
+    with path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+    # `description` and `instructions` accept the `@file:<path>` reference
+    # form (resolved relative to this skill.json's directory) so long prose
+    # can live in clean .md files instead of inlined JSON string literals —
+    # the same mechanism the tool-catalog frame uses. Inline strings are
+    # returned unchanged, so skills that don't use a reference are unaffected.
+    return SkillDecl(
+        name=raw["name"],
+        description=_resolve_prose_field(
+            raw["description"], path.parent, f"{path.name}:description"),
+        instructions=_resolve_prose_field(
+            raw.get("instructions", ""), path.parent,
+            f"{path.name}:instructions"),
+    )
+
+
+SKILL_REGISTRY_HEADER_TEMPLATE = """\
+// AUTO-GENERATED. Combined registry of all *.skill.json declarations.
+// DO NOT EDIT THIS FILE. Edit individual *.skill.json sources instead.
+
+#ifndef GEN_NEXUS_SKILLS_REGISTRY_H_
+#define GEN_NEXUS_SKILLS_REGISTRY_H_
+
+#include <vector>
+
+#include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
+
+namespace nexus::generated {
+
+// Returns one `SkillSchema` per registered *.skill.json declaration.
+// Order is deterministic (sorted by skill name).
+std::vector<::nexus::SkillSchema> AllSkills();
+
+}  // namespace nexus::generated
+
+#endif  // GEN_NEXUS_SKILLS_REGISTRY_H_
+"""
+
+
+SKILL_REGISTRY_SOURCE_TEMPLATE = """\
+// AUTO-GENERATED. Combined registry of all *.skill.json declarations.
+// DO NOT EDIT THIS FILE. Edit individual *.skill.json sources instead.
+
+#include "{registry_header_relpath}"
+
+#include <utility>
+
+namespace nexus::generated {{
+
+std::vector<::nexus::SkillSchema> AllSkills() {{
+  std::vector<::nexus::SkillSchema> skills;
+  skills.reserve({skill_count});
+{skill_pushes}  return skills;
+}}
+
+}}  // namespace nexus::generated
+"""
+
+
+def render_skill_push(decl: SkillDecl) -> str:
+    """Emit one braced block that populates + pushes a SkillSchema."""
+    lines: list[str] = []
+    lines.append("  {")
+    lines.append("    ::nexus::SkillSchema s;")
+    lines.append(f'    s.name = "{decl.name}";')
+    lines.append("    s.description =")
+    lines.append(f"        {cpp_string_literal(decl.description)};")
+    if decl.instructions:
+        lines.append("    s.instructions =")
+        lines.append(f"{_emit_raw_string_literal(decl.instructions)};")
+    lines.append("    skills.push_back(std::move(s));")
+    lines.append("  }")
+    return "\n".join(lines) + "\n"
+
+
+def emit_skill_registry(
+    skill_decls: list[SkillDecl],
+    output_dir: Path,
+    registry_header_relpath: str,
+) -> tuple[Path, Path]:
+    """Write nexus_skills_registry.gen.{h,cc}. Returns (h, cc)."""
+    ordered = sorted(skill_decls, key=lambda d: d.name)
+    skill_pushes = "".join(render_skill_push(d) for d in ordered)
+
+    h_path = output_dir / "nexus_skills_registry.gen.h"
+    cc_path = output_dir / "nexus_skills_registry.gen.cc"
+    h_path.parent.mkdir(parents=True, exist_ok=True)
+    h_path.write_text(SKILL_REGISTRY_HEADER_TEMPLATE, encoding="utf-8")
+    cc_path.write_text(
+        SKILL_REGISTRY_SOURCE_TEMPLATE.format(
+            registry_header_relpath=registry_header_relpath,
+            skill_count=len(ordered),
+            skill_pushes=skill_pushes,
+        ),
+        encoding="utf-8",
+    )
+    return h_path, cc_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Codegen Nexus tool headers from *.tool.json declarations.")
@@ -2691,10 +2913,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    skill_decls: list[SkillDecl] = []
     if skill_paths:
         print(f"[generate.py] Validating {len(skill_paths)} skill(s)...")
         for skill_path in skill_paths:
             validate_skill(skill_path, skill_schema_path)
+            skill_decls.append(parse_skill_declaration(skill_path))
             print(f"  skill: {skill_path.name}")
 
     print(f"[generate.py] Processing {len(decl_paths)} declaration(s)...")
@@ -2739,6 +2963,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"  registry -> {h_out}")
         print(f"  registry -> {cc_out}")
+
+        # Skill registry: one .gen.h + one .gen.cc exposing AllSkills()
+        # across every *.skill.json. Emitted even when there are no
+        # skills (empty AllSkills()) so the catalog adapter can link
+        # against it unconditionally.
+        skh_out, skcc_out = emit_skill_registry(
+            skill_decls,
+            args.output_dir,
+            registry_header_relpath=(
+                "custom_browser/browser/nexus/tools/"
+                "nexus_skills_registry.gen.h"
+            ),
+        )
+        print(f"  skills   -> {skh_out}")
+        print(f"  skills   -> {skcc_out}")
 
         # Phase 13.4 / 13.8 / 13.9: tool-catalog-frame —
         # `tool_catalog_frame.gen.h`. Emits one constexpr string per

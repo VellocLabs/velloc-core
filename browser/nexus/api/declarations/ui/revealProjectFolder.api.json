@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "revealProjectFolder",
+  "description": "Reveal a project folder in the native OS file manager (Explorer / Finder) via platform_util::ShowItemInFolder, for the composer folder chip's 'Show in Explorer' action. Test seam: when the NEXUS_E2E_REVEAL_SINK environment variable is set, the handler writes the path to that file instead of opening the file manager (Playwright cannot observe a native OS window).",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Absolute path of the folder to reveal."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

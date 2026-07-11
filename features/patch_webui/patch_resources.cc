@@ -62,16 +62,17 @@ void AddPatchResourcesForHost(std::string_view host,
       continue;
     }
 
-    std::string_view relative_path = path.substr(host_pos + host.size());
-    if (!relative_path.empty() && relative_path.front() == '/') {
-      relative_path.remove_prefix(1);
-    }
-
-    if (relative_path.empty()) {
+    // Register by file name (not the host-relative subdirectory path) so that
+    // the settings loader's flat imports -- e.g. custom_main.ts does
+    // `import('./about_patch.js')` for a module generated from
+    // `settings/about/about_patch.js` -- resolve against
+    // `chrome://settings/about_patch.js`. See PatchResourceRegistrationName.
+    const std::string_view file_name = PatchResourceRegistrationName(path);
+    if (file_name.empty()) {
       continue;
     }
 
-    data_source->AddResourcePath(relative_path, item.id);
+    data_source->AddResourcePath(file_name, item.id);
   }
 }
 

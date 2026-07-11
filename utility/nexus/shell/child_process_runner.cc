@@ -261,9 +261,18 @@ base::ScopedFD OpenPosixFileForChildRead(const base::FilePath& path) {
 
 #endif  // BUILDFLAG(IS_WIN)
 
-// Reads `path` into `out`, capping at `max_bytes`. Sets `*truncated`
-// when the file is bigger than the cap. Returns false only on I/O error
-// — an empty file is success with `out->empty()`.
+// Reads the TAIL of `path` into `out`, capping at `max_bytes`. Sets
+// `*truncated` when the file is bigger than the cap. Returns false only on
+// I/O error — an empty file is success with `out->empty()`.
+//
+// Tail, not prefix (claude_code `tailFile` parity): for shell output the
+// verdict lives at the END — a build/test log's result line follows megabytes
+// of progress spam. The prefix-keeping read this replaces returned the first
+// `max_bytes` and silently dropped the rest, so a capped background build
+// looked like it "stopped" right after its first pages of output and its
+// actual result was unreadable through shell.status / the final result.
+// A tail read can start mid-UTF-8 sequence; the browser-side decode
+// (`EnsureUtf8`) normalizes any leading partial code point to U+FFFD.
 bool ReadCapped(const base::FilePath& path,
                 uint32_t max_bytes,
                 std::vector<uint8_t>* out,
@@ -279,25 +288,47 @@ bool ReadCapped(const base::FilePath& path,
     return true;
   }
 
-  const uint32_t to_read = static_cast<uint32_t>(
-      std::min<int64_t>(*file_size, static_cast<int64_t>(max_bytes)));
+  const int64_t offset =
+      std::max<int64_t>(0, *file_size - static_cast<int64_t>(max_bytes));
+  const uint32_t to_read = static_cast<uint32_t>(*file_size - offset);
   out->resize(to_read);
   base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
   if (!file.IsValid()) {
     out->clear();
     return false;
   }
-  // Read the prefix; any tail beyond `max_bytes` is silently dropped.
-  std::optional<size_t> read = file.Read(0, *out);
+  // Read the last `to_read` bytes; anything before `offset` is dropped and
+  // reported via `*truncated` so callers can surface the elision.
+  std::optional<size_t> read = file.Read(offset, *out);
   if (!read.has_value()) {
     out->clear();
     return false;
   }
   out->resize(*read);
-  if (static_cast<int64_t>(*read) < *file_size) {
+  if (offset > 0 || static_cast<int64_t>(*read) < to_read) {
     *truncated = true;
   }
   return true;
+}
+
+constexpr int kOutputSnapshotIntervalMs = 250;
+
+void EmitOutputSnapshot(const base::FilePath& stdout_path,
+                        const base::FilePath& stderr_path,
+                        uint32_t max_output_bytes,
+                        const ChildProcessOutputCallback& on_output) {
+  if (on_output.is_null()) {
+    return;
+  }
+
+  std::vector<uint8_t> bytes;
+  bool truncated = false;
+  if (ReadCapped(stdout_path, max_output_bytes, &bytes, &truncated)) {
+    on_output.Run(/*is_stdout=*/true, std::move(bytes), truncated);
+  }
+  if (ReadCapped(stderr_path, max_output_bytes, &bytes, &truncated)) {
+    on_output.Run(/*is_stdout=*/false, std::move(bytes), truncated);
+  }
 }
 
 }  // namespace
@@ -316,6 +347,24 @@ ChildProcessRequest::ChildProcessRequest(ChildProcessRequest&&) = default;
 ChildProcessRequest& ChildProcessRequest::operator=(ChildProcessRequest&&) =
     default;
 
+ChildProcessKillHandle::ChildProcessKillHandle() = default;
+
+ChildProcessKillHandle::~ChildProcessKillHandle() = default;
+
+ChildProcessKillHandle::ChildProcessKillHandle(ChildProcessKillHandle&&) =
+    default;
+
+ChildProcessKillHandle& ChildProcessKillHandle::operator=(
+    ChildProcessKillHandle&&) = default;
+
+bool ChildProcessKillHandle::IsValid() const {
+#if BUILDFLAG(IS_WIN)
+  return job.is_valid() || process.IsValid();
+#else
+  return process_group_id != base::kNullProcessId;
+#endif
+}
+
 ChildProcessOutcome::ChildProcessOutcome() = default;
 
 ChildProcessOutcome::~ChildProcessOutcome() = default;
@@ -330,7 +379,17 @@ ChildProcessOutcome::ChildProcessOutcome(ChildProcessOutcome&&) = default;
 ChildProcessOutcome& ChildProcessOutcome::operator=(ChildProcessOutcome&&) =
     default;
 
-ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
+ChildProcessOutcome RunChildProcess(
+    const ChildProcessRequest& request,
+    base::OnceCallback<void(ChildProcessKillHandle)> on_launched) {
+  return RunChildProcessWithOutput(request, std::move(on_launched),
+                                   ChildProcessOutputCallback());
+}
+
+ChildProcessOutcome RunChildProcessWithOutput(
+    const ChildProcessRequest& request,
+    base::OnceCallback<void(ChildProcessKillHandle)> on_launched,
+    ChildProcessOutputCallback on_output) {
   ChildProcessOutcome outcome;
 
   // Set up two temp files for stdout/stderr capture. We delete them at
@@ -495,9 +554,58 @@ ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request) {
 
   outcome.launched = true;
 
+  // Hand a tree-kill handle to the caller before we block on the wait, so a
+  // background `Spawn` can publish it to its sequence and terminate this child
+  // tree later (the `Kill` path). This mirrors the timeout path's tree-kill
+  // semantics: Job Object on Windows, process group on POSIX.
+  if (on_launched) {
+    ChildProcessKillHandle kill_handle;
+#if BUILDFLAG(IS_WIN)
+    if (job_assigned && job.is_valid()) {
+      HANDLE duplicated_job = nullptr;
+      if (::DuplicateHandle(::GetCurrentProcess(), job.get(),
+                            ::GetCurrentProcess(), &duplicated_job,
+                            /*dwDesiredAccess=*/0, /*bInheritHandle=*/FALSE,
+                            DUPLICATE_SAME_ACCESS)) {
+        kill_handle.job.Set(duplicated_job);
+      } else {
+        PLOG(WARNING) << "[NexusShellService] DuplicateHandle(job) failed; "
+                         "explicit background Kill will fall back to child-only "
+                         "termination";
+      }
+    }
+    kill_handle.process = process.Duplicate();
+#else
+    kill_handle.process_group_id = process.Pid();
+#endif
+    std::move(on_launched).Run(std::move(kill_handle));
+  }
+
   int exit_code = -1;
-  const bool exited_normally =
-      process.WaitForExitWithTimeout(request.timeout, &exit_code);
+  bool exited_normally = false;
+  if (on_output.is_null()) {
+    exited_normally = process.WaitForExitWithTimeout(request.timeout, &exit_code);
+  } else {
+    while (true) {
+      const base::TimeDelta elapsed = base::TimeTicks::Now() - spawn_start;
+      if (elapsed >= request.timeout) {
+        exited_normally = process.WaitForExitWithTimeout(base::Milliseconds(0),
+                                                         &exit_code);
+        EmitOutputSnapshot(stdout_path, stderr_path, request.max_output_bytes,
+                           on_output);
+        break;
+      }
+      const base::TimeDelta remaining = request.timeout - elapsed;
+      const base::TimeDelta wait =
+          std::min(remaining, base::Milliseconds(kOutputSnapshotIntervalMs));
+      exited_normally = process.WaitForExitWithTimeout(wait, &exit_code);
+      EmitOutputSnapshot(stdout_path, stderr_path, request.max_output_bytes,
+                         on_output);
+      if (exited_normally) {
+        break;
+      }
+    }
+  }
 
   if (!exited_normally) {
     // Process did not exit within the timeout. Take down the entire

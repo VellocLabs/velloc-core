@@ -1,13 +1,14 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_PROCESS_TOOL_PROCESS_TOOL_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_PROCESS_TOOL_PROCESS_TOOL_H_
 
-#include <memory>
 #include <optional>
 #include <string>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
+#include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_registry.h"
@@ -39,18 +40,9 @@ class ToolSession;  // for CategoryAccessor specialization below
 // `Exec(options, callback)` on the UI thread and resolves `done` from
 // the mojo callback (also UI). No worker-thread hopping required.
 //
-// The mojo `Remote<NexusShellService>` is owned by a per-session
-// `NexusShellServiceLauncher`. The launcher lazily binds the utility
-// process on first `GetService()`; the utility process exits after
-// 30s of inactivity and is re-launched on demand. Per-session
-// launchers are wasteful compared to per-port-service launchers (one
-// utility process per session vs. one shared) but the idle-recycle
-// makes the difference small in practice and avoids plumbing the
-// shared launcher through `ToolsAdapter` -> `ToolSession`.
-//
-// `OnStop` tears down the launcher (releases any in-flight Remote)
-// and invalidates the WeakPtrFactory so any pending mojo callbacks
-// drop cleanly.
+// `OnStop` invalidates the WeakPtrFactory so any pending mojo callbacks
+// drop cleanly. The per-profile shared launcher is not shut down here;
+// it self-recycles when idle.
 class ProcessTool : public ToolBase,
                     public ::nexus::generated::ProcessToolBase {
  public:
@@ -65,8 +57,7 @@ class ProcessTool : public ToolBase,
   // flows through the codegen-emitted generated::PopulateRegistry.
   static void DefineTools(ToolRegistry& registry);
 
-  // Tears down the per-session launcher (releases the utility
-  // process) and invalidates WeakPtrs. Idempotent.
+  // Invalidates WeakPtrs and releases per-tool helpers. Idempotent.
   void OnStop(OnStopReason reason) override;
 
   // generated::ProcessToolBase overrides. Public because the codegen
@@ -74,6 +65,11 @@ class ProcessTool : public ToolBase,
   // `ProcessTool*` it gets from `CategoryAccessor::Get(session)`.
   void RunBashOnUI(::nexus::generated::BashInput input,
                    ToolCallback done) override;
+  // Reads the buffered output + exit status of a background command
+  // started by `Bash(run_in_background=true)` via `Spawn`. Maps onto
+  // `NexusShellService::ReadBackgroundOutput`.
+  void RunBashOutputOnUI(::nexus::generated::BashOutputInput input,
+                         ToolCallback done) override;
   void RunGrepOnUI(::nexus::generated::GrepInput input,
                    ToolCallback done) override;
   // Windows-only model-facing PowerShell tool (gated into the catalog by
@@ -88,21 +84,77 @@ class ProcessTool : public ToolBase,
   // Resolves `done` with the shaped Bash output dict, including the
   // command-semantic interpretation for commands like `grep` / `diff`
   // / `test` whose exit-1 means "no match" rather than "error".
+  //
+  // `tool_label` names the calling tool ("bash", "powershell", …) and is
+  // used to build the rejection error code ("<label>_failed" /
+  // "<label>_timeout"). It exists because `OnPowerShellExecDone` reuses
+  // this prose shaper: without it a PowerShell failure would surface the
+  // misleading `bash_failed` code.
   void OnBashExecDone(ToolCallback done,
                       std::string original_command,
                       base::TimeTicks start_time,
+                      std::string tool_label,
                       bool ok,
                       ::nexus::mojom::ShellExecResultPtr result,
                       const std::optional<std::string>& error_code,
                       const std::optional<std::string>& error_message,
                       const std::optional<std::string>& install_hint);
 
+  void OnForegroundSpawnDone(ToolCallback done,
+                             std::string original_command,
+                             base::TimeTicks start_time,
+                             std::string tool_label,
+                             int foreground_timeout_ms,
+                             bool auto_background_on_timeout,
+                             bool ok,
+                             const std::optional<std::string>& shell_id,
+                             const std::optional<std::string>& error_code,
+                             const std::optional<std::string>& error_message,
+                             const std::optional<std::string>& install_hint);
+  void PollForegroundShell(ToolCallback done,
+                           std::string shell_id,
+                           std::string original_command,
+                           base::TimeTicks start_time,
+                           std::string tool_label,
+                           int foreground_timeout_ms,
+                           bool auto_background_on_timeout);
+  void OnForegroundShellStatus(ToolCallback done,
+                               std::string shell_id,
+                               std::string original_command,
+                               base::TimeTicks start_time,
+                               std::string tool_label,
+                               int foreground_timeout_ms,
+                               bool auto_background_on_timeout,
+                               ::nexus::mojom::ShellBackgroundOutputPtr output);
+
+  // Mojo callback for `NexusShellService::Spawn` from the background
+  // branch of `RunBashOnUI`. On success resolves `done` with a dict
+  // carrying the `shell_id`; Nexus delivers a completion notification later.
+  // Rejects on pre-launch failure exactly like the foreground path.
+  void OnBashSpawnDone(ToolCallback done,
+                       bool ok,
+                       const std::optional<std::string>& shell_id,
+                       const std::optional<std::string>& error_code,
+                       const std::optional<std::string>& error_message,
+                       const std::optional<std::string>& install_hint);
+
+  // Mojo callback for `NexusShellService::ReadBackgroundOutput` from
+  // `RunBashOutputOnUI`. Resolves `done` with a dict describing whether
+  // the command is still running and, once finished, its output + exit
+  // code.
+  void OnBashOutputDone(ToolCallback done,
+                        std::string shell_id,
+                        ::nexus::mojom::ShellBackgroundOutputPtr output);
+
   // Launch one PowerShell attempt with `shell_id` ("pwsh" or "powershell").
   // Shared by RunPowerShellOnUI and its pwsh→powershell fallback retry.
+  // `run_in_background` selects the explicit Spawn path (fire-and-return a
+  // shell_id) over the foreground Exec path, mirroring the Bash tool.
   void LaunchPowerShellAttempt(std::string command,
                                base::FilePath cwd,
                                int timeout_ms,
                                std::string shell_id,
+                               bool run_in_background,
                                ToolCallback done);
 
   // Mojo callback for a PowerShell attempt. If `pwsh` wasn't found, retries
@@ -120,6 +172,33 @@ class ProcessTool : public ToolBase,
                             const std::optional<std::string>& error_message,
                             const std::optional<std::string>& install_hint);
 
+  // Mojo callback for a background (`run_in_background=true`) PowerShell
+  // attempt via `NexusShellService::Spawn`. If `pwsh` wasn't found, retries
+  // once with `powershell`; otherwise delegates to OnBashSpawnDone (resolve
+  // with the shell_id for notification-driven completion, or reject the
+  // pre-launch failure).
+  void OnPowerShellForegroundSpawnDone(ToolCallback done,
+                                       std::string command,
+                                       base::FilePath cwd,
+                                       int timeout_ms,
+                                       std::string attempted_shell,
+                                       bool auto_background_on_timeout,
+                                       bool ok,
+                                       const std::optional<std::string>& shell_id,
+                                       const std::optional<std::string>& error_code,
+                                       const std::optional<std::string>& error_message,
+                                       const std::optional<std::string>& install_hint);
+  void OnPowerShellSpawnDone(ToolCallback done,
+                             std::string command,
+                             base::FilePath cwd,
+                             int timeout_ms,
+                             std::string attempted_shell,
+                             bool ok,
+                             const std::optional<std::string>& shell_id,
+                             const std::optional<std::string>& error_code,
+                             const std::optional<std::string>& error_message,
+                             const std::optional<std::string>& install_hint);
+
   // Mojo callback for `NexusShellService::Exec` from the hook-exec branch
   // of `RunBashOnUI` (the internal `hook_shell` path). Resolves `done` with
   // a raw `{output, exit_code}` dict — no prose shaping, no reject on
@@ -132,24 +211,29 @@ class ProcessTool : public ToolBase,
                       const std::optional<std::string>& error_message,
                       const std::optional<std::string>& install_hint);
 
-  // Mojo callback for `NexusShellService::Exec` from `RunGrepOnUI`.
-  // Parses ripgrep's stdout per `output_mode`, applies head_limit /
-  // offset, and resolves `done` with the shaped Grep output dict
-  // (mirrors the TS `GrepTool` result shape).
-  void OnGrepExecDone(ToolCallback done,
-                      std::string output_mode,
-                      int head_limit,
-                      int offset,
-                      bool ok,
-                      ::nexus::mojom::ShellExecResultPtr result,
-                      const std::optional<std::string>& error_code,
-                      const std::optional<std::string>& error_message,
-                      const std::optional<std::string>& install_hint);
+  // Continuation for `NexusRipgrepRunner::Run` from `RunGrepOnUI`. Shapes
+  // the runner's parsed `lines` per `output_mode` (mirrors the TS `GrepTool`
+  // result shape) and resolves `done`; on a pre-launch failure (rg
+  // unavailable after the runner's auto-install attempt) rejects with the
+  // runner-provided code + message.
+  void OnGrepRgDone(ToolCallback done,
+                    std::string output_mode,
+                    int head_limit,
+                    int offset,
+                    RipgrepRunResult result);
 
-  // Per-session lazily-bound launcher. Created in the ctor so the
-  // session owns its own utility process. `OnStop` resets it to drop
-  // any in-flight remote.
-  std::unique_ptr<NexusShellServiceLauncher> launcher_;
+  // Per-PROFILE shared launcher (Profile user-data via
+  // `GetSharedShellLauncher`), NOT owned — so background shells this tool
+  // spawns live in the SAME utility process the guest `shell.*` capability
+  // observes/kills. `OnStop` does NOT shut it down (other sessions of the
+  // profile share it; it idle-recycles itself). Shared by Bash / PowerShell /
+  // Grep.
+  raw_ptr<NexusShellServiceLauncher> launcher_;
+
+  // Shared rg orchestrator backing the Grep tool (exec + auto-install +
+  // line parsing). Borrows `launcher_`; `OnStop` resets it so in-flight
+  // mojo / installer callbacks drop cleanly on teardown.
+  NexusRipgrepRunner ripgrep_runner_;
 
   base::WeakPtrFactory<ProcessTool> weak_ptr_factory_{this};
 };

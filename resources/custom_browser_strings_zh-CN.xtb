@@ -81,4 +81,164 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">正在保存提供方设置...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">更新提供方设置失败。</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">默认行为</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">在专属工作区中将 <ph name="PRODUCT_NAME"/> 保持在当前页面旁边。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">显示搜索提供方标志</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">开始使用 Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">一分钟完成 Chromium 设置：导入数据、选择布局并调整新标签页。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">第 1 步：带上你的内容</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">从其他浏览器导入书签、密码和设置——无需账号。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">导入</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">暂时跳过</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">导入在你的设备本地进行。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">第 2 步：选择你的布局</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">选择适合你工作方式的标签页样式。你可以随时切换。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">侧边栏标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">在一个垂直侧边栏中集中显示标签页、地址栏和工具。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">紧凑侧边栏</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">以图标为主的侧边栏，悬停时展开——非常适合较小的屏幕。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">顶部标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">经典的顶部横向标签页，与 Chrome 风格的熟悉布局一致。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">紧凑顶部标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">更纤薄的顶部布局，为真正重要的内容——页面，留出更多空间。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">布局更改会立即生效。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">应用布局</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">第 3 步：自定义你的新标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">保持简洁，或让搜索始终可见。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">在新标签页上显示搜索框</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">搜索框可见</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">新标签页保持无干扰</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">你的搜索，你的外观</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">如果你选择非 Google 的默认搜索，Chromium 会自动更新新标签页的品牌标识。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">第 4 步：内置强力工具</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium 包含可选的内置扩展程序。控制权始终在你手中。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">默认已启用</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">高效的内容拦截，带来更快、更清爽的网络体验。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey（旧版）</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">默认关闭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">高级用户脚本管理器，可深度自定义网站。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">管理扩展程序</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">部分内置工具可能与 Chrome 应用商店提供的版本有所不同。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">第 5 步：一切就绪</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">做得好。想更进一步？接下来探索更多功能。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">打开新标签页</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">前往设置</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">扩展程序 →</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">推荐</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">极简</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">即将推出</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">自动</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">高级</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">可选</translation>
+  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">打开 <ph name="PRODUCT_LONG_NAME"/> 面板</translation>
+  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_CONSENT_BODY">启用 <ph name="PRODUCT_LONG_NAME"/>，即可使用你偏好的 AI 提供方自动执行浏览器任务、生成内容并与网页交互。</translation>
+  <translation id="IDS_NEXUS_CONSENT_ACCEPT">启用 <ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_CONSENT_DECLINE">暂不</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">模型提供方</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">自定义 <ph name="PRODUCT_NAME"/> Web 应用 URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
+  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">文件系统访问</translation>
+  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">此代理希望读取和写入你计算机上的文件。</translation>
+  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">剪贴板访问</translation>
+  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">此代理希望访问你的剪贴板。</translation>
+  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">浏览器数据访问</translation>
+  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">此代理希望访问你的书签、历史记录和下载内容。</translation>
+  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">通知</translation>
+  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">此代理希望向你发送通知。</translation>
+  <translation id="IDS_NEXUS_PERMISSION_ALLOW">允许</translation>
+  <translation id="IDS_NEXUS_PERMISSION_DENY">拒绝</translation>
+  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">设置你的 AI 提供方</translation>
+  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">选择一个 AI 提供方并输入你的凭据即可开始。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">此功能直接在浏览器中运行 <ph name="PRODUCT_NAME"/>，将 WhatsApp、Telegram、Discord 和 iMessage 等应用连接到 AI 编程助手。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> 可使用多种 LLM 提供方。选择一个提供方，完成身份验证，然后设置默认模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> 可使用多种 LLM 提供方。选择一个提供方，完成身份验证，然后设置默认模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION">选择 <ph name="PRODUCT_NAME"/> 应连接的服务并验证连接。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL">配置 <ph name="PRODUCT_LONG_NAME"/> 使用的 Web 应用 URL。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">设置自定义的 <ph name="PRODUCT_NAME"/> Web 应用 URL。留空以使用默认体验。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">无需 API 密钥。<ph name="PRODUCT_LONG_NAME"/> 会从已配置的 Ollama 服务器加载模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">此配置文件没有可用的 <ph name="PRODUCT_LONG_NAME"/> 提供方信息。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">选择一个提供方</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">提供方</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">选择一个提供方，输入连接详情，然后验证以加载模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">验证并加载模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">重置提供方</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">已安全存储</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">留空以保留已存储的密钥。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">输入此提供方的 API 密钥。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">未配置任何提供方</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">选择一个提供方以开始。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">正在验证已保存的配置…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">正在获取可用模型…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">需要验证</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">配置已更改。请验证以加载模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">正在连接…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">连接成功</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">连接失败</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">未配置</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">验证中</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">更改待处理</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">连接中</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">已连接</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">失败</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR">找到 <ph name="COUNT"/> 个模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL">找到 <ph name="COUNT"/> 个模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">未授权——请检查你的 API 密钥</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">已禁止——此密钥无法访问该端点</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">基础 URL 无效——请输入有效的 API 端点</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">无法访问端点——请检查 URL 或你的网络</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">连接超时——请重试</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">已连接，但未返回任何模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">服务器响应异常</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS"><ph name="COUNT"/>k 上下文</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT"><ph name="COUNT"/> 上下文</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">工具</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">视觉</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">请至少启用一个模型以继续。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">请从已启用的模型中选择一个默认模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">请选择一个默认模型以继续。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">默认模型必须是已启用的模型之一。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">所选的默认模型已不再可用。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">选择哪些模型可用，以及哪一个作为默认模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">选择此提供方使用的默认模型。打开列表并输入即可筛选可用模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">默认模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">选择一个模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">浏览</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">打开列表，然后输入即可筛选可用模型。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">关闭模型选择器</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">筛选模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">输入以筛选模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">没有模型符合此筛选条件。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">已启用的模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA">启用 <ph name="MODEL_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA">将 <ph name="MODEL_NAME"/> 设为默认模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">已选择</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">摘要</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">提供方</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">已发现的模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">已启用的模型</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">默认</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">无</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">未选择</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE">保存</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">必须填写基础 URL。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">必须填写 API 密钥。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">切换提供方并放弃当前未保存的连接和模型更改吗？</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">保存提供方设置失败。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">提供方设置已保存。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">重置连接</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE">重置 <ph name="PROVIDER_NAME"/> 连接？</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">这将清除为 <ph name="PROVIDER_NAME"/> 保存的连接详情，移除已验证状态，并恢复此提供方的默认值。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED"><ph name="PROVIDER_NAME"/> 连接已重置。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM">重置 <ph name="PROVIDER_NAME"/>？这将移除已存储的提供方、已保存的端点以及已保存的模型选择。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">重置提供方设置失败。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">清除自定义 URL，使用内置的 <ph name="PRODUCT_NAME"/> Web 应用。</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">打开浏览器窗口</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">任务管理器</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">关闭窗口</translation>
+  <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">新建浏览器窗口</translation>
 </translationbundle>

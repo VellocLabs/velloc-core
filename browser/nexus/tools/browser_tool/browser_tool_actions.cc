@@ -4,12 +4,15 @@
 #include <utility>
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
 #include "chrome/browser/actor/actor_proto_conversion.h"
@@ -25,6 +28,7 @@
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/browser_evaluate.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/download_capture.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
@@ -598,10 +602,11 @@ void BrowserTool::RunScreenshotOnUI(::nexus::generated::ScreenshotInput input,
   if (!resolved_tab_id.has_value()) {
     return;
   }
-  // The standard `OnActionsResultBuilt` already produces a SimpleObservation
-  // that includes `has_screenshot: true` whenever the framework attached
-  // a non-empty screenshot blob to the TabObservation, so reusing it is
-  // exactly what we want here.
+  // Reuse the standard `OnActionsResultBuilt`: it routes the `"screenshot"`
+  // action name to `BuildObservationDict(include_screenshot_image=true)`, so
+  // the working tab's dict carries the actual `screenshot: {mime,data_base64}`
+  // image (every other action omits it). The `action_name == "screenshot"`
+  // gate downstream is what distinguishes this path.
   RunTabObservation(
       *resolved_tab_id, "screenshot", std::move(done),
       base::BindOnce(&BrowserTool::OnActionsResultBuilt,
@@ -760,33 +765,26 @@ void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
                              base::StrCat({"not a valid URL: ", *input.url}));
       return;
     }
-    // Force the target into the workspace so it streams straight there (no
-    // post-completion move, no "Save As" prompt). Derive a name from the
-    // URL when the caller didn't supply one.
+    // Derive a name from the URL when the caller didn't supply one.
     std::string name = filename.value_or(url.ExtractFileName());
     if (name.empty()) {
       name = "download";
     }
-    filename = name;
-    const base::FilePath dest =
-        dest_dir.Append(base::FilePath::FromUTF8Unsafe(name));
-
-    std::unique_ptr<download::DownloadUrlParameters> params =
-        rfh->CreateDownloadUrlParameters(url, kDownloadTrafficAnnotation);
-    params->set_file_path(dest);
-    params->set_prompt(false);
-
-    scoped_refptr<DownloadCapture> capture = DownloadCapture::Create(
-        manager, dest_dir, std::move(filename), budget, std::move(done));
-    params->set_callback(base::BindOnce(
-        [](scoped_refptr<DownloadCapture> cap, download::DownloadItem* item,
-           download::DownloadInterruptReason reason) {
-          cap->BindStartedItem(
-              item, reason == download::DOWNLOAD_INTERRUPT_REASON_NONE);
-        },
-        capture));
-    manager->DownloadUrl(std::move(params),
-                         /*blob_url_loader_factory=*/nullptr);
+    // We force the download straight into <cwd>/downloads/ (so it streams
+    // there with no post-completion move and no "Save As" prompt), but the
+    // download writer won't create that directory and a freshly-created
+    // session workspace doesn't have it yet — without this the transfer
+    // interrupts with FILE_FAILED. Create the dir on a blocking pool, then
+    // resume on the UI thread to start the download. Match nexus_fs_host's
+    // ctor pattern (hop to thread_pool for the blocking CreateDirectory).
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(
+            [](base::FilePath dir) { return base::CreateDirectory(dir); },
+            dest_dir),
+        base::BindOnce(&BrowserTool::StartUrlDownloadAfterDirReady,
+                       weak_ptr_factory_.GetWeakPtr(), *tab_id, *input.url,
+                       dest_dir, std::move(name), budget, std::move(done)));
     return;
   }
 
@@ -818,6 +816,59 @@ void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
   click->set_click_count(apc::ClickAction::SINGLE);
   RunActorAction(std::move(actions), "download", ToolCallback(),
                  entry->tab_id);
+}
+
+void BrowserTool::StartUrlDownloadAfterDirReady(int32_t tab_id,
+                                                std::string url,
+                                                base::FilePath dest_dir,
+                                                std::string name,
+                                                base::TimeDelta budget,
+                                                ToolCallback done,
+                                                bool dir_ok) {
+  if (!dir_ok) {
+    std::move(done).Reject(
+        "download_failed",
+        "could not create the workspace downloads directory.");
+    return;
+  }
+  // Re-resolve everything on the UI thread — pointers can't safely cross the
+  // mkdir thread hop, and the tab/manager may have changed while we waited.
+  content::DownloadManager* manager =
+      GetProfile() ? GetProfile()->GetDownloadManager() : nullptr;
+  if (!manager) {
+    std::move(done).Reject("download_failed",
+                           "the browser download manager is unavailable.");
+    return;
+  }
+  tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+  content::RenderFrameHost* rfh =
+      contents ? contents->GetPrimaryMainFrame() : nullptr;
+  if (!rfh) {
+    std::move(done).Reject(
+        "no_active_tab",
+        "the page to download from is no longer available.");
+    return;
+  }
+  const base::FilePath dest =
+      dest_dir.Append(base::FilePath::FromUTF8Unsafe(name));
+
+  std::unique_ptr<download::DownloadUrlParameters> params =
+      rfh->CreateDownloadUrlParameters(GURL(url), kDownloadTrafficAnnotation);
+  params->set_file_path(dest);
+  params->set_prompt(false);
+
+  scoped_refptr<DownloadCapture> capture = DownloadCapture::Create(
+      manager, dest_dir, std::move(name), budget, std::move(done));
+  params->set_callback(base::BindOnce(
+      [](scoped_refptr<DownloadCapture> cap, download::DownloadItem* item,
+         download::DownloadInterruptReason reason) {
+        cap->BindStartedItem(item,
+                             reason == download::DOWNLOAD_INTERRUPT_REASON_NONE);
+      },
+      capture));
+  manager->DownloadUrl(std::move(params),
+                       /*blob_url_loader_factory=*/nullptr);
 }
 
 void BrowserTool::RunUploadOnUI(::nexus::generated::UploadInput input,
@@ -871,6 +922,148 @@ void BrowserTool::RunUploadOnUI(::nexus::generated::UploadInput input,
   click->set_click_type(apc::ClickAction::LEFT);
   click->set_click_count(apc::ClickAction::SINGLE);
   RunActorAction(std::move(actions), "upload", std::move(done), entry->tab_id);
+}
+
+namespace {
+
+// Soft cap on the JSON-stringified value returned to the model. Mirrors
+// browser-use's 20k cap (they truncate after serialization too). Anything
+// past this is replaced with a "[truncated]" sentinel rather than silently
+// cut mid-token so the model can detect when it lost data.
+constexpr size_t kEvaluateResultMaxBytes = 20 * 1024;
+
+// Stringifies a base::Value into JSON, then truncates to the soft cap.
+// Returns `truncated` so the caller can flag it on the observation.
+std::string SerializeAndTruncateForEvaluate(const base::Value& value,
+                                            bool* truncated_out) {
+  std::string serialized;
+  if (!base::JSONWriter::Write(value, &serialized)) {
+    *truncated_out = false;
+    return std::string("\"[unserializable]\"");
+  }
+  if (serialized.size() <= kEvaluateResultMaxBytes) {
+    *truncated_out = false;
+    return serialized;
+  }
+  // Keep the head; the model can re-run a narrower query if it lost data.
+  serialized.resize(kEvaluateResultMaxBytes);
+  serialized.append("…[truncated]");
+  *truncated_out = true;
+  return serialized;
+}
+
+// Builds the tool's success observation from the CDP Runtime.evaluate result
+// envelope (the contents of the JSON-RPC `result` field). Three branches:
+//   1) `exceptionDetails` present  → JS threw; surface as `{ ok:true,
+//      action:"evaluate", error:"...", exception: {...} }` so the model can
+//      see the failure mode without the tool failing.
+//   2) `result.value` present       → primitive / JSON-serializable value;
+//      JSON-stringify and cap.
+//   3) Neither (e.g. function, DOM node) → fall back to `result.description`
+//      (the human-readable preview CDP emits for non-serializable values).
+base::DictValue BuildEvaluateObservation(base::DictValue cdp_result) {
+  base::DictValue out;
+  out.Set("ok", true);
+  out.Set("action", "evaluate");
+
+  if (base::DictValue* exc = cdp_result.FindDict("exceptionDetails")) {
+    // The JS threw. We pass `ok:true` (the tool *call* succeeded — only the
+    // user-supplied JS failed) but surface the exception verbatim so the model
+    // can read the stack and adapt.
+    const std::string* text = exc->FindString("text");
+    out.Set("error", text ? *text : std::string("uncaught exception"));
+    out.Set("exception", base::Value(std::move(*exc)));
+    return out;
+  }
+
+  base::DictValue* obj = cdp_result.FindDict("result");
+  if (!obj) {
+    out.Set("result", std::string());
+    out.Set("type", "undefined");
+    return out;
+  }
+  const std::string* type = obj->FindString("type");
+  if (type) {
+    out.Set("type", *type);
+  }
+  if (const std::string* subtype = obj->FindString("subtype")) {
+    out.Set("subtype", *subtype);
+  }
+
+  if (base::Value* value = obj->Find("value")) {
+    bool truncated = false;
+    std::string serialized =
+        SerializeAndTruncateForEvaluate(*value, &truncated);
+    out.Set("result", std::move(serialized));
+    if (truncated) {
+      out.Set("truncated", true);
+    }
+  } else if (const std::string* description = obj->FindString("description")) {
+    // Non-serializable (function, DOM node, etc.). The description is CDP's
+    // preview string ("function foo() { ... }", "HTMLDivElement", etc.) —
+    // useful to the model as a "this was here but I can't see it" signal.
+    out.Set("result", *description);
+  } else {
+    out.Set("result", std::string());
+  }
+  return out;
+}
+
+}  // namespace
+
+void BrowserTool::RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
+                                  ToolCallback done) {
+  // BrowserEvaluate is a first-class browser tool, always available like
+  // the rest of the Browser* surface — no opt-in gate. (The former
+  // `nexus.browser_tools_allow_evaluate` pref + Settings · Tools toggle +
+  // `ShouldAllowAgentEvaluate` gate were removed.)
+  if (input.code.empty()) {
+    std::move(done).Reject(
+        "invalid_args",
+        "evaluate: `code` is required and must be a non-empty JavaScript "
+        "expression or statement.");
+    return;
+  }
+
+  // Resolve target tab. evaluate, like read_page/screenshot, always runs on
+  // the active session-scoped tab — there's no per-call tab override.
+  std::optional<int32_t> resolved_tab_id =
+      ResolveTabIdOrReject(std::nullopt, GetProfile(), "evaluate", done, this);
+  if (!resolved_tab_id.has_value()) {
+    return;
+  }
+  tabs::TabInterface* tab = tabs::TabHandle(*resolved_tab_id).Get();
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+  if (!contents) {
+    std::move(done).Reject(
+        "tab_not_found",
+        base::StrCat({"evaluate: tab_id ",
+                      base::NumberToString(*resolved_tab_id),
+                      " is no longer alive"}));
+    return;
+  }
+
+  // Hand off to the one-shot CDP session. The session attaches the
+  // DevToolsAgentHost, sends Runtime.evaluate (awaitPromise=true,
+  // returnByValue=true), and self-destructs on completion. Captured
+  // `tab_id` and `done` are moved through to the reply closure.
+  const int32_t tab_id = *resolved_tab_id;
+  BrowserEvaluateSession::Start(
+      contents, input.code,
+      base::BindOnce(
+          [](int32_t tab_id, ToolCallback inner_done, EvaluateOutcome outcome) {
+            if (!outcome.error_code.empty()) {
+              std::move(inner_done)
+                  .Reject(std::move(outcome.error_code),
+                          std::move(outcome.error_message));
+              return;
+            }
+            base::DictValue observation =
+                BuildEvaluateObservation(std::move(outcome.result));
+            observation.Set("tab_id", tab_id);
+            std::move(inner_done).Resolve(std::move(observation));
+          },
+          tab_id, std::move(done)));
 }
 
 void BrowserTool::RunBackOnUI(::nexus::generated::BackInput input,
@@ -1127,7 +1320,16 @@ void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
 
   int32_t resolved_tab_id = 0;
   const NodeRegistry::Entry* entry = nullptr;
-  if (input.index.has_value()) {
+  // Treat `index: 0` as "no element target" (viewport scroll). APC content-
+  // node ids start above zero, so 0 is never a real element. Some LLMs
+  // emit `0` instead of omitting the field for optional integers
+  // (it's a JSON-encoder/sentinel default they fall back to), which used
+  // to trap them in a retry loop: `LookupNode(0)` rejected with
+  // `index_not_found`, the model re-sent the same shape, and the
+  // conversation wedged because nothing else changed. Coerce here.
+  const bool has_target_index =
+      input.index.has_value() && *input.index != 0;
+  if (has_target_index) {
     entry = LookupNode(*input.index, std::nullopt, done, "scroll");
     if (!entry) {
       return;

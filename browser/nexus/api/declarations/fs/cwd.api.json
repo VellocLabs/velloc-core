@@ -4,6 +4,6 @@
   "description": "Returns the host process current working directory.",
   "inputs": [],
   "runtime": {
-    "thread": "thread_pool"
+    "thread": "ui"
   }
 }

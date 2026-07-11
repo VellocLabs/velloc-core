@@ -13,9 +13,11 @@
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "custom_browser/common/nexus_runtime_paths.h"
 #include "custom_browser/utility/nexus/shell/install_hints.h"
 
 namespace nexus {
@@ -74,6 +76,51 @@ base::EnvironmentMap::mapped_type ToNativeEnvValue(const std::string& value) {
   return value;
 }
 #endif
+
+#if BUILDFLAG(IS_WIN)
+std::optional<std::string> GetNativeEnvString(
+    const base::EnvironmentMap& env,
+    const std::string& name) {
+  auto it = env.find(base::UTF8ToWide(name));
+  if (it == env.end()) {
+    return std::nullopt;
+  }
+  return base::WideToUTF8(it->second);
+}
+
+void SetNativeEnvString(base::EnvironmentMap* env,
+                        const std::string& name,
+                        const std::string& value) {
+  (*env)[base::UTF8ToWide(name)] = base::UTF8ToWide(value);
+}
+
+bool ContainsPathEntry(const std::vector<std::string>& entries,
+                       const std::string& candidate) {
+  return std::ranges::any_of(entries, [&](const std::string& existing) {
+    return base::EqualsCaseInsensitiveASCII(existing, candidate);
+  });
+}
+
+std::optional<base::FilePath> GitRootFromBashPath(const base::FilePath& bash) {
+  // <Git>\bin\bash.exe or <Git>\usr\bin\bash.exe
+  const base::FilePath base = bash.BaseName();
+  if (!base::EqualsCaseInsensitiveASCII(base.AsUTF8Unsafe(), "bash.exe")) {
+    return std::nullopt;
+  }
+  const base::FilePath parent = bash.DirName();
+  const std::string parent_name = parent.BaseName().AsUTF8Unsafe();
+  if (base::EqualsCaseInsensitiveASCII(parent_name, "bin")) {
+    const base::FilePath maybe_git = parent.DirName();
+    if (base::EqualsCaseInsensitiveASCII(maybe_git.BaseName().AsUTF8Unsafe(), "Git")) {
+      return maybe_git;
+    }
+    if (base::EqualsCaseInsensitiveASCII(maybe_git.BaseName().AsUTF8Unsafe(), "usr")) {
+      return maybe_git.DirName();
+    }
+  }
+  return std::nullopt;
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace
 
@@ -137,6 +184,18 @@ PolicyDecision SafeCommandPolicy::ResolveCommand(
         decision.resolved_path = tool->path;
         return decision;
       }
+    }
+    // A binary the Nexus installer downloaded into ~/.velloc/bin is
+    // trusted by construction: the absolute path is set by C++ (not the
+    // model), and the bytes were SHA-256-verified against a pinned hash
+    // before being written. Allow execing it even though it isn't in the
+    // cached PATH-resolved capability set — this is how a freshly
+    // downloaded `rg` runs on the FIRST Grep call without waiting for the
+    // service's capability cache (which is never invalidated) to refresh.
+    if (custom_browser::IsUnderManagedBinDir(candidate) &&
+        base::PathExists(candidate)) {
+      decision.resolved_path = candidate;
+      return decision;
     }
     decision.error_code = "COMMAND_NOT_ALLOWED";
     decision.error_message =
@@ -239,6 +298,50 @@ base::EnvironmentMap SafeCommandPolicy::BuildSafeEnvironment(
 }
 
 // static
+void SafeCommandPolicy::AugmentEnvironmentForResolvedCommand(
+    const std::string& command_id,
+    const base::FilePath& resolved_path,
+    base::EnvironmentMap* env) {
+#if BUILDFLAG(IS_WIN)
+  if (!env || command_id != "bash") {
+    return;
+  }
+  std::optional<base::FilePath> git_root = GitRootFromBashPath(resolved_path);
+  if (!git_root.has_value()) {
+    return;
+  }
+
+  std::vector<std::string> prepend = {
+      git_root->AppendASCII("usr").AppendASCII("bin").AsUTF8Unsafe(),
+      git_root->AppendASCII("mingw64").AppendASCII("bin").AsUTF8Unsafe(),
+      git_root->AppendASCII("bin").AsUTF8Unsafe(),
+      git_root->AppendASCII("cmd").AsUTF8Unsafe(),
+  };
+
+  std::vector<std::string> path_entries;
+  std::optional<std::string> existing_path = GetNativeEnvString(*env, "PATH");
+  if (existing_path.has_value() && !existing_path->empty()) {
+    for (std::string_view part : base::SplitStringPiece(
+             *existing_path, ";", base::TRIM_WHITESPACE,
+             base::SPLIT_WANT_NONEMPTY)) {
+      path_entries.emplace_back(part);
+    }
+  }
+
+  std::vector<std::string> merged;
+  for (const std::string& entry : prepend) {
+    if (!entry.empty() && !ContainsPathEntry(merged, entry) &&
+        !ContainsPathEntry(path_entries, entry)) {
+      merged.push_back(entry);
+    }
+  }
+  merged.insert(merged.end(), path_entries.begin(), path_entries.end());
+  SetNativeEnvString(env, "PATH", base::JoinString(merged, ";"));
+  SetNativeEnvString(env, "SHELL", resolved_path.AsUTF8Unsafe());
+#endif
+}
+
+// static
 const std::vector<std::string>& SafeCommandPolicy::ForbiddenEnvNames() {
   // Variables that change the dynamic linker / interpreter behaviour
   // and could be used to coerce the child into running attacker code,
@@ -283,6 +386,14 @@ const std::vector<std::string>& SafeCommandPolicy::InheritedEnvNames() {
       "SystemRoot",
       "SystemDrive",
       "COMSPEC",
+      // PATHEXT is required for bare-name executable resolution on Windows:
+      // without it cmd/PowerShell cannot map `git` → `git.exe`, so EVERY
+      // bare PATH command ("git", "node", "npm", "python") fails with "not
+      // recognized" even though the binary is on PATH. git-bash resolves
+      // names differently and so masked this; PowerShell (the shell offered on
+      // a no-git-bash host) cannot. Safe to inherit — it only lists executable
+      // extensions, it is not a code-injection vector like LD_PRELOAD.
+      "PATHEXT",
       "windir",
       "TEMP",
       "TMP",

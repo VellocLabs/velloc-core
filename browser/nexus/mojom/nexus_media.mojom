@@ -1,0 +1,50 @@
+module nexus.mojom;
+
+import "mojo/public/mojom/base/big_buffer.mojom";
+import "mojo/public/mojom/base/file_path.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+struct MediaReadOptions {
+  mojo_base.mojom.FilePath path;
+  string? pages;
+  string? mime_type;
+  uint32 max_bytes;
+};
+
+struct MediaPart {
+  string type;  // text | image | document
+  string? text;
+  string? mime_type;
+  mojo_base.mojom.BigBuffer? data;
+  uint32? page_number;
+};
+
+struct MediaReadResult {
+  uint32? page_count;
+  array<MediaPart> parts;
+  string? full_text_for_cache;
+};
+
+// CPU-heavy Read media processing. Browser-side FileTool dispatches here for
+// images, notebooks, and PDFs so decode/resize/JPEG/PDFium/JSON work does not
+// run in the browser UI process.
+[ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
+interface NexusMediaService {
+  ReadImage(MediaReadOptions options)
+      => (bool ok,
+          MediaReadResult? result,
+          string? error_code,
+          string? error_message);
+
+  ReadNotebook(MediaReadOptions options)
+      => (bool ok,
+          MediaReadResult? result,
+          string? error_code,
+          string? error_message);
+
+  ReadPdf(MediaReadOptions options)
+      => (bool ok,
+          MediaReadResult? result,
+          string? error_code,
+          string? error_message);
+};

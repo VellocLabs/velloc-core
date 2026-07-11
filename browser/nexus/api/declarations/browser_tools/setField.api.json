@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setField",
+  "description": "Persist a partial patch of browser-tools settings. Only fields present in patch are written. Returns the post-write snapshot. Replaces the chrome.send setBrowserToolsSeparateWindow route. Exposed on the panel WebUI bridge port only.",
+  "inputs": [
+    {
+      "name": "patch",
+      "type": "object",
+      "required": true,
+      "description": "Sparse dict of fields to write. Each key is independently optional. A field set to null resets to runtime default."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

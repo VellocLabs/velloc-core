@@ -16,6 +16,7 @@ grit("custom_browser_strings") {
     "grit/custom_browser_strings.h",
     "custom_browser_strings_en-US.pak",
     "custom_browser_strings_bn.pak",
+    "custom_browser_strings_de.pak",
     "custom_browser_strings_es.pak",
     "custom_browser_strings_fr.pak",
     "custom_browser_strings_hi.pak",
@@ -30,6 +31,7 @@ copy("custom_browser_strings_pak") {
   sources = [
     "$root_gen_dir/custom_browser/resources/custom_browser_strings_en-US.pak",
     "$root_gen_dir/custom_browser/resources/custom_browser_strings_bn.pak",
+    "$root_gen_dir/custom_browser/resources/custom_browser_strings_de.pak",
     "$root_gen_dir/custom_browser/resources/custom_browser_strings_es.pak",
     "$root_gen_dir/custom_browser/resources/custom_browser_strings_fr.pak",
     "$root_gen_dir/custom_browser/resources/custom_browser_strings_hi.pak",

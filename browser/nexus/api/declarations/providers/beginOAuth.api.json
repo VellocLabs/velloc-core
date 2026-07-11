@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "beginOAuth",
+  "description": "Start the OAuth flow for an OAuth-backed provider. Two flow variants — distinguished by the returned `flow` field: `device-code` returns `{userCode, verificationUri, expiresIn}` for the WebUI to display while a background poll runs (used by GitHub Copilot, Qwen Code); `pkce` returns `{started: true}` and the C++ side opens the authorization URL in a normal browser window so the loopback redirect is captured by the OAuthRedirectThrottle. Replaces the chrome.send 'beginProviderOAuth' route.",
+  "inputs": [
+    {
+      "name": "providerId",
+      "type": "string",
+      "required": true,
+      "description": "OAuth provider id (chatgpt-pro, claude-pro, github-copilot, qwen-code, etc.)"
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

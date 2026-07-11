@@ -44,17 +44,11 @@ function buildGuestUrl(): URL {
               loadTimeData.getString('customBrowserNexusWebappDefaultUrl');
   const url = new URL(raw);
   url.searchParams.set('nexus', '1');
-  // Forward the centralized product name (custom_browser/common/
-  // branding_constants.h -> kCustomBrowserProductName, surfaced via
-  // loadTimeData in ui/web_ui/custom_browser_webui.cc) to the nexus_web
-  // guest. The guest reads it in src/glic/main.tsx to brand the React
-  // shell, so a single rebrand in branding_constants.h flows end-to-end.
-  const productName = loadTimeData.valueExists('customBrowserProductName') ?
-      loadTimeData.getString('customBrowserProductName') :
-      '';
-  if (productName) {
-    url.searchParams.set('product', productName);
-  }
+  // The visible product name is no longer forwarded as a `?product=` query
+  // param. The guest reads it from its own build-time `VITE_PRODUCT_NAME`
+  // (nexus_web/src/branding/productName.ts), unifying all branding on the
+  // build-time path. (The boot welcome overlay still uses the loadTimeData
+  // `customBrowserProductName` directly — see nexus_welcome.ts.)
   return url;
 }
 

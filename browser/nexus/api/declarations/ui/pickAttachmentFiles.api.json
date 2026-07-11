@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "pickAttachmentFiles",
+  "description": "Open the native OS file-open dialog (multi-select, modal to the Nexus browser window) so the user can attach files to the composer. The guest <webview> cannot raise its own <input type=file> chooser, so the composer's paperclip button routes here instead (mirrors pickProjectFolder). Resolves with { paths, canceled }: `paths` is the array of chosen absolute file paths (empty when canceled), `canceled` is true iff the dialog was dismissed without a selection. Test seam: when the NEXUS_E2E_ATTACHMENT_FILES environment variable is set and non-empty, the handler resolves with those paths (newline-separated) WITHOUT showing a dialog (Playwright cannot drive a native OS dialog).",
+  "inputs": [
+    {
+      "name": "extensions",
+      "type": "array<string>",
+      "required": false,
+      "description": "Optional allowed file extensions (without the leading dot, e.g. \"png\", \"ts\"). When non-empty the dialog offers a matching filter group alongside an always-present \"All files\" option; when omitted or empty the dialog allows any file. The composer adapter re-validates each picked file against its accept list, so this is a UX hint, not an enforced gate."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": false,
+      "description": "Optional dialog title. Falls back to the platform default when omitted or empty."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

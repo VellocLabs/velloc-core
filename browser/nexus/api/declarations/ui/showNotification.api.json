@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "showNotification",
+  "description": "Show a native OS notification (e.g. a turn-end '<product> is waiting for your input' nudge) via the host's NotificationDisplayService. The host suppresses the notification whenever the Nexus browser window is currently active, so it only surfaces while the window is unfocused / backgrounded.",
+  "inputs": [
+    {
+      "name": "message",
+      "type": "string",
+      "required": true,
+      "description": "Notification body text."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": false,
+      "description": "Notification title — the toast's bold line. Nexus sets this to the active session's title. Defaults to the product name (\"Nexus\") when omitted or empty."
+    },
+    {
+      "name": "notificationType",
+      "type": "string",
+      "required": false,
+      "description": "Stable category key (e.g. \"turn_complete\"). Used to build the notification id so repeated notifications of the same kind replace each other instead of stacking."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

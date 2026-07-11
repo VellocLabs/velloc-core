@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setLauncher",
+  "description": "Set the browser-global launcherEnabled local_state pref (show the Nexus launcher in the OS system tray). The NexusBackgroundModeManager's PrefChangeRegistrar reacts (acquires/releases the keep-alive + tray icon). Returns {ok:true}. Replaces the chrome.send setNexusLauncherEnabled route.",
+  "inputs": [
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "required": true,
+      "description": "New value for launcherEnabled."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

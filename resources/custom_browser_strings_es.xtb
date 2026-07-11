@@ -79,4 +79,166 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">Guardando la configuración del proveedor...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">No se pudo actualizar la configuración del proveedor.</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">Comportamiento predeterminado</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">Mantén <ph name="PRODUCT_NAME"/> junto a la página activa en un espacio de trabajo dedicado.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">Mostrar el logotipo del proveedor de búsqueda</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Empezar con Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">Configura Chromium en un minuto: importa tus datos, elige un diseño y ajusta tu Nueva pestaña.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">Paso 1. Trae tus cosas</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">Importa marcadores, contraseñas y ajustes de otro navegador, sin necesidad de cuenta.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">Importar</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">Omitir por ahora</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">La importación se realiza localmente en tu dispositivo.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">Paso 2. Elige tu diseño</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">Elige el estilo de pestañas que se adapte a tu forma de trabajar. Puedes cambiarlo en cualquier momento.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">Pestañas laterales</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">Tus pestañas, la barra de direcciones y las herramientas en una sola barra lateral vertical.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">Barra lateral compacta</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">Barra lateral con iconos primero que se expande al pasar el cursor, ideal para pantallas más pequeñas.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">Pestañas superiores</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">Pestañas clásicas en la parte superior para un diseño familiar al estilo de Chrome.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">Pestañas superiores compactas</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">Un diseño superior más fino que deja más espacio para lo que importa: la página.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">Los cambios de diseño se aplican al instante.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">Aplicar diseño</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">Paso 3. Personaliza tu Nueva pestaña</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">Mantenla despejada o deja la búsqueda en primer plano.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">Mostrar el cuadro de búsqueda en la Nueva pestaña</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">El cuadro de búsqueda está visible</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">La Nueva pestaña se mantiene sin distracciones</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">Tu búsqueda, tu estilo</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Si eliges un buscador predeterminado que no sea Google, Chromium actualiza automáticamente la imagen de marca de la Nueva pestaña.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Paso 4. Herramientas integradas potentes</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium incluye extensiones integradas opcionales. Tú tienes el control.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Habilitado de forma predeterminada</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Bloqueo de contenido eficiente para una web más rápida y limpia.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Heredado)</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Desactivado de forma predeterminada</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">Gestor avanzado de userscripts para una personalización profunda de los sitios.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">Gestionar extensiones</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">Algunas herramientas integradas pueden diferir de la disponibilidad en Chrome Web Store.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Paso 5. Ya está todo listo</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">Bien hecho. ¿Quieres ir más allá? Explora más funciones a continuación.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">Abrir Nueva pestaña</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">Ir a Ajustes</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">Extensiones →</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">Recomendado</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">Mínimo</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Próximamente</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automático</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Avanzado</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">Opcional</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">Versión <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Basado en Chromium <ph name="CHROMIUM_VERSION"/></translation>
+  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME">Abrir el panel de <ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_CONSENT_BODY">Habilita <ph name="PRODUCT_LONG_NAME"/> para automatizar tareas del navegador, generar contenido e interactuar con páginas web usando tu proveedor de IA preferido.</translation>
+  <translation id="IDS_NEXUS_CONSENT_ACCEPT">Habilitar <ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_CONSENT_DECLINE">Ahora no</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">Proveedores de modelos</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">URL personalizada de la aplicación web de <ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
+  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">Acceso al sistema de archivos</translation>
+  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">Este agente quiere leer y escribir archivos en tu equipo.</translation>
+  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">Acceso al portapapeles</translation>
+  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">Este agente quiere acceder a tu portapapeles.</translation>
+  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">Acceso a los datos del navegador</translation>
+  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">Este agente quiere acceder a tus marcadores, historial y descargas.</translation>
+  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">Notificaciones</translation>
+  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">Este agente quiere enviarte notificaciones.</translation>
+  <translation id="IDS_NEXUS_PERMISSION_ALLOW">Permitir</translation>
+  <translation id="IDS_NEXUS_PERMISSION_DENY">Denegar</translation>
+  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">Configura tu proveedor de IA</translation>
+  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">Elige un proveedor de IA e introduce tus credenciales para empezar.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">Esta función ejecuta <ph name="PRODUCT_NAME"/> directamente en el navegador, conectando aplicaciones como WhatsApp, Telegram, Discord e iMessage con asistentes de programación con IA.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> puede usar muchos proveedores de LLM. Elige un proveedor, autentícate y luego establece el modelo predeterminado.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> puede usar muchos proveedores de LLM. Elige un proveedor, autentícate y luego establece el modelo predeterminado.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION">Elige el servicio al que <ph name="PRODUCT_NAME"/> debe conectarse y verifica la conexión.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL">Configura la URL de la aplicación web que usa <ph name="PRODUCT_LONG_NAME"/>.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">Establece una URL personalizada de la aplicación web de <ph name="PRODUCT_NAME"/>. Déjala vacía para usar la experiencia predeterminada.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">No se requiere clave de API. <ph name="PRODUCT_LONG_NAME"/> carga los modelos desde el servidor de Ollama configurado.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">La información del proveedor de <ph name="PRODUCT_LONG_NAME"/> no está disponible para este perfil.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">Selecciona un proveedor</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">Proveedor</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">Elige un proveedor, introduce los datos de conexión y luego verifica para cargar los modelos.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">Verificar y cargar modelos</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">Restablecer proveedor</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">Almacenada de forma segura</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">Déjalo en blanco para conservar la clave almacenada.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">Introduce la clave de API de este proveedor.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">Ningún proveedor configurado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">Selecciona un proveedor para empezar.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">Verificando la configuración guardada...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">Obteniendo los modelos disponibles...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">Verificación requerida</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">La configuración ha cambiado. Verifica para cargar los modelos.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">Conectando...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">Conexión establecida correctamente</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">Error de conexión</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">Sin configurar</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">Verificando</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">Cambios pendientes</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">Conectando</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">Conectado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">Error</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR"><ph name="COUNT"/> modelo encontrado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL"><ph name="COUNT"/> modelos encontrados</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">No autorizado: comprueba tu clave de API</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">Prohibido: esta clave no puede acceder al endpoint</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">URL base no válida: introduce un endpoint de API válido</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">No se puede acceder al endpoint: comprueba la URL o tu red</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">Se agotó el tiempo de conexión: inténtalo de nuevo</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">Conectado, pero no se devolvió ningún modelo</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">Respuesta inesperada del servidor</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS"><ph name="COUNT"/> k de contexto</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT"><ph name="COUNT"/> de contexto</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">Herramientas</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">Visión</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">Habilita al menos un modelo para continuar.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">Selecciona un modelo predeterminado entre los modelos habilitados.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">Selecciona un modelo predeterminado para continuar.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">El modelo predeterminado debe ser uno de los modelos habilitados.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">El modelo predeterminado seleccionado ya no está disponible.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">Modelos</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">Elige qué modelos están disponibles y cuál es el predeterminado.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">Elige el modelo predeterminado que se usará para este proveedor. Abre la lista y escribe para filtrar los modelos disponibles.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">Modelo predeterminado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">Selecciona un modelo</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">Examinar</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">Abre la lista y luego escribe para filtrar los modelos disponibles.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">Cerrar el selector de modelos</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">Filtrar modelos</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">Escribe para filtrar los modelos</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">Ningún modelo coincide con este filtro.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">Modelos habilitados</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA">Habilitar <ph name="MODEL_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA">Establecer <ph name="MODEL_NAME"/> como modelo predeterminado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">Seleccionado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">Resumen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">Proveedor</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">Modelos detectados</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">Modelos habilitados</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">Predeterminado</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">Ninguno</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">Sin seleccionar</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE">Guardar</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">La URL base es obligatoria.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">La clave de API es obligatoria.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">¿Cambiar de proveedor y descartar los cambios de conexión y de modelo sin guardar?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">No se pudieron guardar los ajustes del proveedor.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">Ajustes del proveedor guardados.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">Restablecer conexión</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE">¿Restablecer la conexión de <ph name="PROVIDER_NAME"/>?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">Esto borra los datos de conexión guardados de <ph name="PROVIDER_NAME"/>, elimina el estado verificado y restaura los valores predeterminados de este proveedor.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED">Conexión de <ph name="PROVIDER_NAME"/> restablecida.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM">¿Restablecer <ph name="PROVIDER_NAME"/>? Esto elimina el proveedor almacenado, el endpoint guardado y las selecciones de modelo guardadas.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">No se pudieron restablecer los ajustes del proveedor.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">Borra la URL personalizada y usa la aplicación web integrada de <ph name="PRODUCT_NAME"/>.</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">Abrir ventana del navegador</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Administrador de tareas</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Cerrar ventana</translation>
+  <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Nueva ventana del navegador</translation>
 </translationbundle>

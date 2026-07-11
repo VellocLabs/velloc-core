@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "listSkills",
+  "description": "Return the skill catalog (HostedSkillDefinition[]) sourced from the C++ skill registry (*.skill.json). Each entry carries name/description/instructions/default plus the derived toolNames. The JS guest uses `default: deferred` + per-tool `skill` to gate deferred skills' tools out of tools[] until Skill('<name>') activates them.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

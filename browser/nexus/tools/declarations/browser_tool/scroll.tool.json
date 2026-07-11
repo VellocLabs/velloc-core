@@ -21,13 +21,10 @@
       "name": "index",
       "type": "integer",
       "required": false,
-      "description": "Optional element index to scroll INSIDE (instead of scrolling the viewport). The element must be a scrollable container."
+      "description": "Optional element index to scroll INSIDE (instead of scrolling the viewport). The element must be a scrollable container from the latest observation's elements[]. OMIT THIS FIELD ENTIRELY to scroll the page viewport — do NOT pass 0 or any placeholder, since 0 isn't a valid element index and will be rejected. Only set this when you specifically need to scroll inside a nested scrollable region (e.g. a modal's overflow list)."
     }
   ],
   "output_kind": "object",
-  "runtime": {
-    "thread": "ui"
-  },
   "providers": {
     "anthropic": {
       "input_examples": [

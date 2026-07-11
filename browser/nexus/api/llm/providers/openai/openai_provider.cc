@@ -1,5 +1,7 @@
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_provider.h"
 
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -313,7 +315,7 @@ bool OpenAiProvider::Configure(const base::DictValue& config) {
     DLOG(ERROR) << display_name_ << " provider requires a non-empty api_key";
     return false;
   }
-  api_key_ = *api_key;
+  api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*api_key);
 
   if (const std::string* base_url = config.FindString("base_url");
       base_url && !base_url->empty()) {
@@ -522,6 +524,11 @@ base::ListValue OpenAiProvider::TranslateMessages(
                     content += '\n';
                   content += *text;
                 }
+              } else if (rp_type && *rp_type == "document") {
+                const std::string* mime = rp->FindString("mimeType");
+                if (!content.empty())
+                  content += '\n';
+                content += "[document: " + (mime ? *mime : std::string("application/pdf")) + "]";
               } else if (rp_type && *rp_type == "image") {
                 const std::string* img = rp->FindString("image");
                 if (img && !img->empty()) {
@@ -888,6 +895,13 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
           item.Set("call_id", *tc_id);
 
         std::string output;
+        // A `function_call_output` is text-only. When a multimodal tool
+        // result carries an image (BrowserScreenshot), put the text here and
+        // deliver the image as a SEPARATE follow-up `user` message item with
+        // an `input_image` part (the Responses API's image shape) — exactly
+        // the chat-completions path's strategy. Collect image data-URIs while
+        // flattening text.
+        std::vector<std::string> image_data_uris;
         if (const base::ListValue* result_parts =
                 part->FindList("result")) {
           for (const auto& rp_val : *result_parts) {
@@ -898,6 +912,25 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
                   if (!output.empty())
                     output += '\n';
                   output += *text;
+                }
+              } else if (rp_type && *rp_type == "document") {
+                const std::string* mime = rp->FindString("mimeType");
+                if (!output.empty())
+                  output += '\n';
+                output += "[document: " + (mime ? *mime : std::string("application/pdf")) + "]";
+              } else if (rp_type && *rp_type == "image") {
+                const std::string* img = rp->FindString("image");
+                if (img && !img->empty()) {
+                  if (img->starts_with("http://") ||
+                      img->starts_with("https://") ||
+                      img->starts_with("data:")) {
+                    image_data_uris.push_back(*img);
+                  } else {
+                    const std::string* mime = rp->FindString("mimeType");
+                    image_data_uris.push_back(
+                        "data:" + (mime ? *mime : std::string("image/jpeg")) +
+                        ";base64," + *img);
+                  }
                 }
               }
             }
@@ -910,6 +943,28 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
         }
         item.Set("output", std::move(output));
         input.Append(std::move(item));
+
+        // Follow-up user message carrying the image(s), since
+        // function_call_output can't. Placed right after the tool result so
+        // the model associates it with that call.
+        if (!image_data_uris.empty()) {
+          base::ListValue parts;
+          base::DictValue note;
+          note.Set("type", "input_text");
+          note.Set("text", "(Screenshot returned by the previous tool call.)");
+          parts.Append(std::move(note));
+          for (const std::string& uri : image_data_uris) {
+            base::DictValue img_part;
+            img_part.Set("type", "input_image");
+            img_part.Set("image_url", uri);
+            parts.Append(std::move(img_part));
+          }
+          base::DictValue user_item;
+          user_item.Set("type", "message");
+          user_item.Set("role", "user");
+          user_item.Set("content", std::move(parts));
+          input.Append(std::move(user_item));
+        }
       }
       continue;
     }
@@ -1325,13 +1380,20 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
 
     if (const base::DictValue* usage = response_obj->FindDict("usage")) {
       base::DictValue u;
-      u.Set("promptTokens", usage->FindInt("input_tokens").value_or(0));
+      const int input = usage->FindInt("input_tokens").value_or(0);
       u.Set("completionTokens", usage->FindInt("output_tokens").value_or(0));
+      // Responses-API `input_tokens` is INCLUSIVE of cached tokens, with
+      // `input_tokens_details.cached_tokens` a subset. Emit input EXCLUSIVE
+      // of cache to match the bridge's Anthropic convention (the JS token
+      // counter sums input + cache_read + cache_creation + output).
+      int cached = 0;
       if (const base::DictValue* details =
               usage->FindDict("input_tokens_details")) {
-        if (auto cached = details->FindInt("cached_tokens"))
-          u.Set("cacheReadInputTokens", *cached);
+        cached = details->FindInt("cached_tokens").value_or(0);
       }
+      if (cached > 0)
+        u.Set("cacheReadInputTokens", cached);
+      u.Set("promptTokens", input > cached ? input - cached : 0);
       chunk.Set("usage", std::move(u));
     }
 

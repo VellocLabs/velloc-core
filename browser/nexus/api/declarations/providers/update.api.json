@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "update",
+  "description": "Update a provider config (api_key, base_url, default_model, enabled_models, last_verification). Merges into the existing Profile pref; encrypts api_key at rest via NexusSecretCrypt. Auto-promotes the first configured provider to active if none was set. Replaces the chrome.send 'updateProviderConfig' route used by the Models settings page Save button. Exposed on the panel WebUI bridge port only.",
+  "inputs": [
+    {
+      "name": "providerId",
+      "type": "string",
+      "required": true,
+      "description": "Provider id (anthropic / openai / google / ollama / chatgpt-pro / etc.)"
+    },
+    {
+      "name": "updates",
+      "type": "object",
+      "required": true,
+      "description": "Partial dict of fields to merge: api_key, base_url, default_model, model, enabled_models, last_verification. All fields optional. Snake_case keys match the legacy pref shape so the C++ MergeProviderConfigUpdates helper accepts the dict unchanged."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

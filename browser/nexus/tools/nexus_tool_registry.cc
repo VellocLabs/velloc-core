@@ -69,6 +69,16 @@ ToolBuilder& ToolBuilder::Returns(JsonSchemaKind kind) {
   return *this;
 }
 
+ToolBuilder& ToolBuilder::Skill(std::string skill) {
+  schema_.skill = std::move(skill);
+  return *this;
+}
+
+ToolBuilder& ToolBuilder::ConcurrencySafe(bool concurrency_safe) {
+  schema_.concurrency_safe = concurrency_safe;
+  return *this;
+}
+
 ToolBuilder& ToolBuilder::StrictInputSchema(base::DictValue schema) {
   schema_.strict_input_schema = std::move(schema);
   return *this;

@@ -2,6 +2,7 @@
   "$schema": "../../codegen/tool_schema.json",
   "name": "grep",
   "wire_name": "Grep",
+  "concurrencySafe": true,
   "description": "A powerful search tool built on ripgrep\n\n  Usage:\n  - ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\")\n  - Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\")\n  - Output modes: \"content\" shows matching lines, \"files_with_matches\" shows only file paths (default), \"count\" shows match counts\n  - Use Agent tool for open-ended searches requiring multiple rounds\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`",
   "inputs": [
     {
@@ -23,46 +24,57 @@
       "description": "Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\") - maps to rg --glob"
     },
     {
-      "name": "type",
-      "type": "string",
-      "required": false,
-      "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types."
-    },
-    {
       "name": "output_mode",
       "type": "string",
       "required": false,
       "description": "Output mode: \"content\" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), \"files_with_matches\" shows file paths (supports head_limit), \"count\" shows match counts (supports head_limit). Defaults to \"files_with_matches\"."
     },
     {
-      "name": "context",
-      "type": "integer",
-      "required": false,
-      "description": "Number of lines to show before and after each match (rg -C). Requires output_mode: \"content\", ignored otherwise. Overrides before_context/after_context if set."
-    },
-    {
-      "name": "before_context",
+      "name": "context_before",
+      "wire_name": "-B",
       "type": "integer",
       "required": false,
       "description": "Number of lines to show before each match (rg -B). Requires output_mode: \"content\", ignored otherwise."
     },
     {
-      "name": "after_context",
+      "name": "context_after",
+      "wire_name": "-A",
       "type": "integer",
       "required": false,
       "description": "Number of lines to show after each match (rg -A). Requires output_mode: \"content\", ignored otherwise."
     },
     {
+      "name": "context_c",
+      "wire_name": "-C",
+      "type": "integer",
+      "required": false,
+      "description": "Alias for context."
+    },
+    {
+      "name": "context",
+      "type": "integer",
+      "required": false,
+      "description": "Number of lines to show before and after each match (rg -C). Requires output_mode: \"content\", ignored otherwise."
+    },
+    {
+      "name": "show_line_numbers",
+      "wire_name": "-n",
+      "type": "boolean",
+      "required": false,
+      "description": "Show line numbers in output (rg -n). Requires output_mode: \"content\", ignored otherwise. Defaults to true."
+    },
+    {
       "name": "case_insensitive",
+      "wire_name": "-i",
       "type": "boolean",
       "required": false,
       "description": "Case insensitive search (rg -i)"
     },
     {
-      "name": "show_line_numbers",
-      "type": "boolean",
+      "name": "type",
+      "type": "string",
       "required": false,
-      "description": "Show line numbers in output (rg -n). Requires output_mode: \"content\", ignored otherwise. Defaults to true."
+      "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types."
     },
     {
       "name": "head_limit",
@@ -92,78 +104,35 @@
       },
       "path": {
         "type": ["string", "null"],
-        "description": "File or directory to search in (rg PATH). Defaults to current working directory."
+        "description": "File or directory to search in (rg PATH). Defaults to current working directory. Use null to select the default."
       },
       "glob": {
         "type": ["string", "null"],
-        "description": "Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\") - maps to rg --glob"
+        "description": "Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\") - maps to rg --glob. Use null when no glob filter is needed."
+      },
+      "output_mode": {
+        "type": "string",
+        "enum": ["files_with_matches", "content", "count"],
+        "description": "Output mode: \"content\" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), \"files_with_matches\" shows file paths (supports head_limit), \"count\" shows match counts (supports head_limit). Use \"files_with_matches\" to select the default."
       },
       "type": {
         "type": ["string", "null"],
-        "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc."
-      },
-      "output_mode": {
-        "type": ["string", "null"],
-        "description": "Output mode: \"content\", \"files_with_matches\" (default), or \"count\"."
-      },
-      "context": {
-        "type": ["integer", "null"],
-        "description": "Number of lines to show before and after each match (rg -C)."
-      },
-      "before_context": {
-        "type": ["integer", "null"],
-        "description": "Number of lines to show before each match (rg -B)."
-      },
-      "after_context": {
-        "type": ["integer", "null"],
-        "description": "Number of lines to show after each match (rg -A)."
-      },
-      "case_insensitive": {
-        "type": ["boolean", "null"],
-        "description": "Case insensitive search (rg -i)"
-      },
-      "show_line_numbers": {
-        "type": ["boolean", "null"],
-        "description": "Show line numbers in output (rg -n)."
+        "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types. Use null when no type filter is needed."
       },
       "head_limit": {
         "type": ["integer", "null"],
-        "description": "Limit output to first N lines/entries."
-      },
-      "offset": {
-        "type": ["integer", "null"],
-        "description": "Skip first N lines/entries before applying head_limit."
-      },
-      "multiline": {
-        "type": ["boolean", "null"],
-        "description": "Enable multiline mode."
+        "description": "Limit output to first N lines/entries, equivalent to \"| head -N\". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited (use sparingly — large result sets waste context). Use null to select the default."
       }
     },
-    "required": ["pattern", "path", "glob", "type", "output_mode", "context", "before_context", "after_context", "case_insensitive", "show_line_numbers", "head_limit", "offset", "multiline"],
+    "required": [
+      "pattern",
+      "path",
+      "glob",
+      "output_mode",
+      "type",
+      "head_limit"
+    ],
     "additionalProperties": false
   },
-  "output_kind": "object",
-  "runtime": {
-    "thread": "ui"
-  },
-  "providers": {
-    "anthropic": {
-      "input_examples": [
-        {
-          "pattern": "TODO|FIXME",
-          "type": "ts"
-        },
-        {
-          "pattern": "function\\s+\\w+",
-          "output_mode": "content",
-          "context": 1
-        },
-        {
-          "pattern": "kRetryCount",
-          "glob": "*.cc",
-          "head_limit": 50
-        }
-      ]
-    }
-  }
+  "output_kind": "object"
 }

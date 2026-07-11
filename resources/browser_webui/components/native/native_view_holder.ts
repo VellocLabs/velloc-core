@@ -82,6 +82,18 @@ export class NativeViewHolder extends CrLitElement {
       cancelAnimationFrame(this.initialSendRaf_);
       this.initialSendRaf_ = null;
     }
+    // If this view was ever pushed to the browser, hide it on detach. The
+    // native side has no per-view removal (layouts are only cleared on a mode
+    // switch), and ViewNativeUI keeps the reparented Chromium view visible
+    // based on the last layout it received. So a view declared by a page that
+    // only briefly mounted — e.g. the kSidebar page flashing in a kNexus
+    // window before the mode resolves, which pushes the address bar / toolbar
+    // — would otherwise linger forever after the page unmounts. buildParams()
+    // reports visible:false once we're disconnected, which makes
+    // ViewNativeUI::OnLayout() call SetVisible(false) on the native view.
+    if (this.lastJson !== undefined) {
+      BATCH.enqueue(this.buildParams());
+    }
     this.ro?.disconnect();
     this.mo?.disconnect();
     this.detachRootObserver();

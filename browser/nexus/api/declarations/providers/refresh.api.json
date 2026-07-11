@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "refresh",
+  "description": "Refresh the model list for a provider by hitting its /v1/models (or provider-equivalent) endpoint with the stored credentials. For OAuth-backed providers, ensures a fresh access token first via the OAuth manager's EnsureFreshToken path (handles GitHub Copilot token exchange + ChatGPT Pro near-expiry refresh). Returns the updated model list on success. Replaces the chrome.send 'refreshProviderModels' route.",
+  "inputs": [
+    {
+      "name": "providerId",
+      "type": "string",
+      "required": true,
+      "description": "Provider id (anthropic / openai / google / ollama / chatgpt-pro / github-copilot / etc.)"
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

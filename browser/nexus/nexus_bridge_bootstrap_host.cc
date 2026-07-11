@@ -4,7 +4,9 @@
 #include <utility>
 #include <vector>
 
+#include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/message_port_provider.h"
 #include "content/public/browser/render_frame_host.h"
@@ -15,6 +17,26 @@
 #include "url/origin.h"
 
 namespace nexus {
+
+namespace {
+
+// A5: the JSON envelope returned to the WebUI panel when it calls
+// `AttachPanelBridge()`. Mirrors the bootstrap envelope shape used by
+// `BuildNexusBridgeBootstrapMessage` so the panel-side listener uses the
+// same parse-then-dispatch-on-type pattern. `type` is the only thing the
+// panel needs to read; it identifies which message it's seeing
+// (`nexus-bridge-bootstrap` is forwarded to the webview;
+// `nexus-panel-bridge-attach` is consumed by the panel itself).
+std::string BuildPanelBridgeAttachMessage() {
+  base::DictValue payload;
+  payload.Set("type", "nexus-panel-bridge-attach");
+  payload.Set("nexus", true);
+  std::string serialized;
+  base::JSONWriter::Write(payload, &serialized);
+  return serialized;
+}
+
+}  // namespace
 
 NexusBridgeBootstrapHost::NexusBridgeBootstrapHost(
     content::RenderFrameHost* render_frame_host,
@@ -61,6 +83,46 @@ void NexusBridgeBootstrapHost::GuestReady() {
       std::move(ports));
   LOG(INFO) << "[NexusTrace][BootstrapHost] Posted bootstrap message + 2 "
             << "ports to host page (hostedTools fetched via catalog API)";
+}
+
+void NexusBridgeBootstrapHost::AttachPanelBridge() {
+  if (!render_frame_host_ || !profile_) {
+    LOG(WARNING) << "[NexusTrace][BootstrapHost] AttachPanelBridge skipped: "
+                 << "missing render frame host or profile";
+    return;
+  }
+
+  LOG(INFO) << "[NexusTrace][BootstrapHost] AttachPanelBridge from frame "
+            << render_frame_host_->GetLastCommittedURL();
+
+  // Idempotent: lazily create the panel port service; CreatePortPair()
+  // already resets any previously-allocated port. This is what makes the
+  // attach handshake replayable — a panel reload (Ctrl+R) can call this
+  // again and the C++ side drops the dead port cleanly before handing back
+  // a fresh one.
+  if (!panel_bridge_) {
+    panel_bridge_ = std::make_unique<NexusBridgePortService>(
+        profile_, PortServiceMode::kPanel);
+  }
+
+  blink::MessagePortDescriptor panel_port = panel_bridge_->CreatePortPair();
+
+  std::vector<blink::MessagePortDescriptor> ports;
+  ports.push_back(std::move(panel_port));
+
+  const url::Origin host_origin =
+      url::Origin::Create(render_frame_host_->GetLastCommittedURL());
+
+  // Single envelope, single port. Same `PostMessageToFrame` mechanism the
+  // guest bootstrap uses — keeps the WebUI's message-handling shape
+  // uniform (parse + dispatch on `type`, transferred ports in
+  // `event.ports`).
+  content::MessagePortProvider::PostMessageToFrame(
+      render_frame_host_->GetPage(), &host_origin, &host_origin,
+      bridge_support::Utf8Payload(BuildPanelBridgeAttachMessage()),
+      std::move(ports));
+  LOG(INFO) << "[NexusTrace][BootstrapHost] Posted nexus-panel-bridge-attach "
+            << "+ 1 port to host page";
 }
 
 }  // namespace nexus

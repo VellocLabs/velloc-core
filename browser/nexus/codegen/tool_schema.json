@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nexus.local/schemas/tool.schema.json",
   "title": "Nexus tool declaration",
-  "description": "Schema for *.tool.json files consumed by codegen/generate.py. Each file declares one LLM-facing tool: identity, inputs, runtime properties, and per-provider variance. The C++ category class and method are inferred from the file path (parent folder = class in PascalCase, filename = method as Run<Name>) — no implementation block in the JSON.",
+  "description": "Schema for *.tool.json files consumed by codegen/generate.py. Each file declares one LLM-facing tool: identity, inputs, and per-provider variance. The C++ category class and method are inferred from the file path (parent folder = class in PascalCase, filename = method as Run<Name>OnUI). Tools always run synchronously on the UI sequence — there is no thread-selection field; a tool that needs blocking work hops it to base::ThreadPool inside its body (see tools/file_tool/file_tool.cc).",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "description", "inputs"],
@@ -16,7 +16,7 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$",
-      "description": "On-disk tool identifier. snake_case. Drives the filename (without .tool.json), the C++ method name (Run<PascalCase(name)>On<Thread>), and the generated header (<name>.gen.h). By default it is also the LLM-facing tool name on the wire — set `wire_name` to override that one axis without renaming the file or the C++ method."
+      "description": "On-disk tool identifier. snake_case. Drives the filename (without .tool.json), the C++ method name (Run<PascalCase(name)>OnUI), and the generated header (<name>.gen.h). By default it is also the LLM-facing tool name on the wire — set `wire_name` to override that one axis without renaming the file or the C++ method."
     },
 
     "wire_name": {
@@ -37,6 +37,12 @@
       "description": "Skill scope. Tools share the same `skill` value belong to the same skill bucket and activate together when Skill('<name>') fires. Omit (or set to 'always_on') for tools that should be available without skill activation."
     },
 
+    "concurrencySafe": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the JS runtime may execute this tool concurrently with adjacent tool_use blocks from the same assistant response. Set only for tools that are explicitly safe to overlap. Do not infer this from read-only status: browser observation tools are read-like but must remain one-per-turn."
+    },
+
     "inputs": {
       "type": "array",
       "description": "Ordered list of tool inputs. Order drives the C++ struct field order and the JSON-Schema 'required' list.",
@@ -48,7 +54,12 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "description": "Field name. snake_case. Becomes both the JSON-Schema property key and the C++ struct field name."
+            "description": "C++ field name. snake_case. Becomes the generated struct field name. By default it is also the JSON-Schema property key — set `wire_name` to expose a different model-facing key (for example Grep's CC-compatible '-A')."
+          },
+          "wire_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "Optional model-facing JSON property key. When omitted, the wire name equals `name`. Use only when CC parity requires a non-C++ identifier such as '-A', '-B', '-C', '-n', or '-i'. Runtime extraction reads this key; generated C++ continues to use `name`."
           },
           "type": {
             "type": "string",
@@ -63,6 +74,11 @@
             "type": "boolean",
             "default": false,
             "description": "When true, the field is added to the JSON-Schema `required` list AND the C++ struct uses the bare type. When false (default), the C++ struct wraps the field in std::optional<T>."
+          },
+          "internal": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, the field stays in the C++ input struct AND the Extract() parser (so the host / runtime / hook-runner can populate it across the bridge) but is OMITTED from the model-facing schema — both `schema.parameters` and the PopulateRegistry tool-catalog builder. Use for host-set transport fields the model must never fill, e.g. the hook-runner's hook_shell/hook_stdin/hook_env or a runtime-injected per-call cwd. Mutually exclusive with `required`. Mirrors Claude Code's BashTool, which keeps `_simulatedSedEdit` in the input type but omits it from the schema sent to the model. NOTE: a hand-crafted `parametersStrict` block is emitted verbatim, so also remove any internal field from its `properties` and `required`."
           },
           "description": {
             "type": "string",
@@ -101,23 +117,9 @@
       "description": "Informational. Hints at the shape of the tool's result. Currently not emitted on the wire (the LLM doesn't need it), but reserved for future structured-output support."
     },
 
-    "runtime": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Cross-cutting runtime concerns. Codegen wraps the dispatcher according to these. Timeout is intentionally NOT here — it lives in nexus_web's session-level config (agentLoopConfig.actionTimeoutMs) and is threaded through per-call.",
-      "properties": {
-        "thread": {
-          "type": "string",
-          "enum": ["ui", "io", "any", "thread_pool"],
-          "default": "ui",
-          "description": "Which Chromium thread the implementation runs on. For 'ui'/'io'/'any' the generated trampoline DCHECKs this invariant on entry; the upstream dispatcher (ToolsAdapter) is responsible for posting to the correct thread before invoking. 'ui' is the default — required for browser/tabs/WebContents APIs. 'io' for network/disk-bound work on the IO thread. 'any' for pure-CPU tools. 'thread_pool' is for blocking I/O (filesystem, etc.); no thread DCHECK is emitted — the implementation is expected to post to base::ThreadPool itself (typically via base::ThreadPool::PostTaskAndReplyWithResult with base::MayBlock())."
-        }
-      }
-    },
-
     "parametersStrict": {
       "type": "object",
-      "description": "Optional hand-crafted strict-mode JSON Schema variant. When present, codegen emits it into `schema.strict_input_schema`; the host manifest surfaces it as `parametersStrict` on the hosted-tool entry; the JS guest (`deps.ts::serializeToolsForModel`) selects this variant over the regular `parameters` block when the active model has `supportsStrictTools: true` in NEXUS_MODEL_CONFIG, AND sets the outbound `strict: true` flag on the tool definition. Authors must keep this strict-compliant: `additionalProperties: false` on every nested object, no `pattern`/`format`/`maxItems`/`minItems`/`maxLength`/`minLength`. Anthropic returns 400 on strict-subset violations. CC parity: the 7 tools CC declares `strict: true` on (Bash, PowerShell, Read, Write, Edit, Grep, TodoWrite) should also ship a strict variant here.",
+      "description": "Optional hand-crafted strict-mode JSON Schema variant. When present, codegen emits it into `schema.strict_input_schema`; the host manifest surfaces it as `parametersStrict` on the hosted-tool entry; the JS guest (`deps.ts::serializeToolsForModel`) selects this variant over the regular `parameters` block when the active model has `supportsStrictTools: true` in NEXUS_MODEL_CONFIG, AND sets the outbound `strict: true` flag on the tool definition. Authors must keep this strict-compliant: `additionalProperties: false` on every nested object, no `pattern`/`format`/`maxItems`/`minItems`/`maxLength`/`minLength`. Strict schemas must list every property key in `required`; model-optional fields are represented as nullable-required, e.g. `\"type\": [\"string\", \"null\"]`, while Extract() treats null as unset.",
       "properties": {
         "type": { "type": "string", "enum": ["object"] }
       },

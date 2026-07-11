@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_support.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
 
 #include <string>
 
@@ -11,6 +12,50 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
+
+TEST(NexusLlmHostTest, StreamErrorChunkAcceptsStringErrorPayload) {
+  NexusLlmHost host(nullptr);
+  NexusLlmHost::StreamState state;
+  state.stream_id = "stream-1";
+  host.streams_.emplace("stream-1", std::move(state));
+
+  base::DictValue chunk;
+  chunk.Set("type", "error");
+  chunk.Set("error", "upstream overloaded");
+
+  host.OnStreamChunk("stream-1", std::move(chunk));
+
+  bool callback_called = false;
+  bool success = false;
+  mojom::NexusLlmStreamReadResultPtr result;
+  std::optional<std::string> error_message;
+  host.StreamRead(
+      "stream-1",
+      base::BindOnce(
+          [](bool* callback_called, bool* success,
+             mojom::NexusLlmStreamReadResultPtr* result,
+             std::optional<std::string>* error_message, bool callback_success,
+             mojom::NexusLlmStreamReadResultPtr callback_result,
+             std::optional<std::string> callback_error_message) {
+            *callback_called = true;
+            *success = callback_success;
+            *result = std::move(callback_result);
+            *error_message = std::move(callback_error_message);
+          },
+          &callback_called, &success, &result, &error_message));
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_TRUE(success);
+  EXPECT_FALSE(error_message.has_value());
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(result->done);
+  ASSERT_EQ(result->events.size(), 1u);
+  ASSERT_TRUE(result->events[0]);
+  EXPECT_EQ(result->events[0]->type, mojom::NexusLlmStreamEventType::kError);
+  EXPECT_EQ(result->events[0]->error_message,
+            std::optional<std::string>("upstream overloaded"));
+}
+
 namespace {
 
 TEST(NexusLlmBridgeSupportTest,
@@ -87,9 +132,9 @@ TEST(NexusLlmBridgeSupportTest,
       request->messages[0]->content[0]->input->GetIfDict();
   ASSERT_TRUE(parsed_args);
   EXPECT_EQ(parsed_args->FindInt("node_id"), 1011);
-  EXPECT_EQ(parsed_args->FindString("text"),
-            std::optional<std::string>(
-                "Peking University official website"));
+  ASSERT_NE(parsed_args->FindString("text"), nullptr);
+  EXPECT_EQ(*parsed_args->FindString("text"),
+            "Peking University official website");
 
   ASSERT_EQ(request->messages[1]->role, mojom::NexusLlmRole::kTool);
   ASSERT_EQ(request->messages[1]->content.size(), 1u);
@@ -109,15 +154,78 @@ TEST(NexusLlmBridgeSupportTest,
   EXPECT_EQ(request->tools[0]->name, "browser_type");
   EXPECT_EQ(request->tools[0]->description,
             std::optional<std::string>("Type into a browser element."));
-  EXPECT_EQ(request->tools[0]->input_schema.FindString("type"),
-            std::optional<std::string>("object"));
+  ASSERT_NE(request->tools[0]->input_schema.FindString("type"), nullptr);
+  EXPECT_EQ(*request->tools[0]->input_schema.FindString("type"), "object");
   const base::DictValue* schema_properties =
       request->tools[0]->input_schema.FindDict("properties");
   ASSERT_TRUE(schema_properties);
   const base::DictValue* text_schema = schema_properties->FindDict("text");
   ASSERT_TRUE(text_schema);
-  EXPECT_EQ(text_schema->FindString("type"),
-            std::optional<std::string>("string"));
+  ASSERT_NE(text_schema->FindString("type"), nullptr);
+  EXPECT_EQ(*text_schema->FindString("type"), "string");
+}
+
+TEST(NexusLlmBridgeSupportTest,
+     BuildMojoLlmRequestPreservesMultimodalToolResultParts) {
+  base::DictValue payload;
+  base::ListValue messages;
+
+  base::DictValue tool_message;
+  tool_message.Set("role", "tool");
+  base::ListValue tool_content;
+  base::DictValue tool_result;
+  tool_result.Set("type", "tool-result");
+  tool_result.Set("toolCallId", "read-1");
+  tool_result.Set("toolName", "Read");
+
+  base::ListValue result_parts;
+  base::DictValue text_part;
+  text_part.Set("type", "text");
+  text_part.Set("text", "Image file read: /tmp/pixel.png");
+  result_parts.Append(std::move(text_part));
+  base::DictValue image_part;
+  image_part.Set("type", "image");
+  image_part.Set("image", "aGVsbG8=");
+  image_part.Set("mimeType", "image/png");
+  result_parts.Append(std::move(image_part));
+  base::DictValue doc_part;
+  doc_part.Set("type", "document");
+  doc_part.Set("data", "JVBERi0=");
+  doc_part.Set("mimeType", "application/pdf");
+  result_parts.Append(std::move(doc_part));
+  tool_result.Set("result", std::move(result_parts));
+  tool_content.Append(std::move(tool_result));
+  tool_message.Set("content", std::move(tool_content));
+  messages.Append(std::move(tool_message));
+  payload.Set("messages", std::move(messages));
+
+  std::string error_message;
+  mojom::NexusLlmRequestParamsPtr request =
+      BuildMojoLlmRequest(payload, &error_message);
+
+  ASSERT_TRUE(request) << error_message;
+  ASSERT_EQ(request->messages.size(), 1u);
+  ASSERT_EQ(request->messages[0]->role, mojom::NexusLlmRole::kTool);
+  ASSERT_EQ(request->messages[0]->content.size(), 1u);
+  const auto& part = request->messages[0]->content[0];
+  EXPECT_EQ(part->type, mojom::NexusLlmContentPartType::kToolResult);
+  EXPECT_EQ(part->tool_use_id, std::optional<std::string>("read-1"));
+  ASSERT_TRUE(part->result.has_value());
+  const base::ListValue* parsed_parts = part->result->GetIfList();
+  ASSERT_TRUE(parsed_parts);
+  ASSERT_EQ(parsed_parts->size(), 3u);
+  const base::DictValue* parsed_image = (*parsed_parts)[1].GetIfDict();
+  ASSERT_TRUE(parsed_image);
+  ASSERT_NE(parsed_image->FindString("type"), nullptr);
+  EXPECT_EQ(*parsed_image->FindString("type"), "image");
+  ASSERT_NE(parsed_image->FindString("mimeType"), nullptr);
+  EXPECT_EQ(*parsed_image->FindString("mimeType"), "image/png");
+  const base::DictValue* parsed_doc = (*parsed_parts)[2].GetIfDict();
+  ASSERT_TRUE(parsed_doc);
+  ASSERT_NE(parsed_doc->FindString("type"), nullptr);
+  EXPECT_EQ(*parsed_doc->FindString("type"), "document");
+  ASSERT_NE(parsed_doc->FindString("mimeType"), nullptr);
+  EXPECT_EQ(*parsed_doc->FindString("mimeType"), "application/pdf");
 }
 
 // Helper: construct an NexusLlmUsagePtr with the four canonical token fields.
@@ -157,13 +265,13 @@ TEST(NexusLlmBridgeSupportTest,
 
   const base::DictValue* start = (*chunks)[0].GetIfDict();
   ASSERT_TRUE(start);
-  EXPECT_EQ(start->FindString("type"),
-            std::optional<std::string>("message_start"));
+  ASSERT_NE(start->FindString("type"), nullptr);
+  EXPECT_EQ(*start->FindString("type"), "message_start");
 
   const base::DictValue* message = start->FindDict("message");
   ASSERT_TRUE(message);
-  EXPECT_EQ(message->FindString("model"),
-            std::optional<std::string>("claude-opus-4"));
+  ASSERT_NE(message->FindString("model"), nullptr);
+  EXPECT_EQ(*message->FindString("model"), "claude-opus-4");
 
   const base::DictValue* usage = message->FindDict("usage");
   ASSERT_TRUE(usage);
@@ -228,8 +336,8 @@ TEST(NexusLlmBridgeSupportTest,
 
   const base::DictValue* delta_inner = delta->FindDict("delta");
   ASSERT_TRUE(delta_inner);
-  EXPECT_EQ(delta_inner->FindString("stop_reason"),
-            std::optional<std::string>("end_turn"));
+  ASSERT_NE(delta_inner->FindString("stop_reason"), nullptr);
+  EXPECT_EQ(*delta_inner->FindString("stop_reason"), "end_turn");
 
   EXPECT_TRUE(done_out);
   EXPECT_FALSE(cancel_out);
@@ -259,8 +367,8 @@ TEST(NexusLlmBridgeSupportTest,
   const base::DictValue* delta = nullptr;
   for (const auto& chunk_val : *chunks) {
     const base::DictValue* chunk = chunk_val.GetIfDict();
-    if (chunk &&
-        chunk->FindString("type") == std::optional<std::string>("message_delta")) {
+    const std::string* type = chunk ? chunk->FindString("type") : nullptr;
+    if (type && *type == "message_delta") {
       delta = chunk;
       break;
     }
@@ -291,10 +399,10 @@ TEST(NexusLlmBridgeSupportTest, CallResultToBridgeEmitsSnakeCaseUsage) {
   EXPECT_EQ(usage->FindInt("cache_creation_input_tokens"),
             std::optional<int>(2));
 
-  EXPECT_EQ(message->FindString("model"),
-            std::optional<std::string>("gpt-4o-mini"));
-  EXPECT_EQ(message->FindString("stop_reason"),
-            std::optional<std::string>("end_turn"));
+  ASSERT_NE(message->FindString("model"), nullptr);
+  EXPECT_EQ(*message->FindString("model"), "gpt-4o-mini");
+  ASSERT_NE(message->FindString("stop_reason"), nullptr);
+  EXPECT_EQ(*message->FindString("stop_reason"), "end_turn");
 }
 
 TEST(NexusLlmBridgeSupportTest, BuildMojoLlmRequestRejectsLegacyToolFormats) {

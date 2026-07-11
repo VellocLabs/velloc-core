@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {addWebUiListener, removeWebUiListener} from 'chrome://resources/js/cr.js';
-import type {WebUiListener} from 'chrome://resources/js/cr.js';
+import {onSessionsSummaryChanged} from './nexus_session_state_client.js';
 import {
   CrLitElement,
   css,
@@ -29,7 +28,10 @@ export interface NexusSessionsSummaryPayload {
   sessions: NexusSessionsSummaryRow[];
 }
 
-const SUMMARY_EVENT = 'nexusSessionsSummary';
+// `SUMMARY_EVENT` was the addWebUiListener name for the legacy
+// C++-relayed channel. Removed — `onSessionsSummaryChanged` from
+// `nexus_session_state_client.ts` subscribes via the WebUI bridge
+// directly.
 
 export class NexusSessionList extends CrLitElement {
   static get is() {
@@ -85,21 +87,30 @@ export class NexusSessionList extends CrLitElement {
   }
 
   private rows_: NexusSessionsSummaryRow[] = [];
-  private listener_: WebUiListener|null = null;
+  // `unsubscribe_` replaces the legacy
+  // `addWebUiListener('nexusSessionsSummary', …)` that C++ relayed as
+  // a pure pass-through. The SharedWorker now fans the same payload
+  // directly through the WebUI bridge — see
+  // `nexus_session_state_client.ts` for the subscriber.
+  private unsubscribe_: (() => void)|null = null;
 
   constructor() {
     super();
-    // Mirrors `nexus_topbar.ts`: register early so we don't lose the
-    // first broadcast that the SharedWorker manager fires on connect.
-    this.listener_ = addWebUiListener(
-        SUMMARY_EVENT,
-        (payload: NexusSessionsSummaryPayload) => this.onSummary_(payload));
+    // Register early so we don't lose the first broadcast the
+    // SharedWorker manager fires on connect. The bridge transport is
+    // lazily attached on first subscribe; the worker queues no events
+    // pre-attach, so any miss before this line is a no-op (matches
+    // the legacy behaviour — `addWebUiListener` also missed pre-attach
+    // events).
+    this.unsubscribe_ = onSessionsSummaryChanged(
+        (payload: unknown) =>
+            this.onSummary_(payload as NexusSessionsSummaryPayload));
   }
 
   override disconnectedCallback(): void {
-    if (this.listener_) {
-      removeWebUiListener(this.listener_);
-      this.listener_ = null;
+    if (this.unsubscribe_) {
+      this.unsubscribe_();
+      this.unsubscribe_ = null;
     }
     super.disconnectedCallback();
   }

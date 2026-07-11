@@ -171,6 +171,30 @@ actor::mojom::ActionResultCode OverallActorResultCode(
 // forces an explicit decision here.
 actor::ActorTask::StoppedReason ToActorStoppedReason(OnStopReason reason);
 
+// Single source of truth for the APC AXRole → ARIA role-string mapping.
+// Returns a stable role string for a recognized interactive ARIA widget
+// role, or nullptr for any AXRole not in the allowlist.
+//
+// Used by BOTH `IsActionable` (treats non-null as "this widget is
+// actionable, emit it in elements[]") and `ExtractRole` (uses the
+// returned string as the entry's `role` field). Adding a new role here
+// automatically extends both sites in lockstep. This consolidation
+// closes the drift class of bugs whose mirror on the FORM_CONTROL side
+// surfaced `<input type="button">` as `role:"textbox"` with no
+// `input_type` (the IsActionable AXRole allowlist used to be a
+// hand-duplicated switch alongside ExtractRole's identical-by-shape
+// switch — same family of risk).
+//
+// Allowlist policy: ARIA widget roles that imply a clear "click /
+// activate / select" interaction with no required value-entry,
+// arrow-key, or popup semantics that the model would also need to
+// drive. Roles needing richer interaction (slider, spinbutton,
+// combobox*, searchbox, disclosure-triangle expanded-state,
+// menubutton popup management) are intentionally NOT included — they
+// require richer metadata than just `role` exposure, deferred to a
+// follow-up patch with proper signals.
+const char* RoleStringFromAXRole(apc::AXRole role);
+
 // Most-recently-active Browser whose Profile matches `profile`, or
 // nullptr.
 Browser* GetActiveBrowserForProfile(Profile* profile);

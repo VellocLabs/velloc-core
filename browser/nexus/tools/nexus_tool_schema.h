@@ -88,6 +88,19 @@ struct ToolSchema {
 
   std::string name;
   std::string description;
+  // Skill bucket this tool belongs to (snake_case skill name from the
+  // *.tool.json `skill` field), or empty for an always-loaded tool.
+  // BuildHostedToolDefinitionDict surfaces this as `skill` on the
+  // hosted-tool wire entry; the JS guest gates deferred-skill tools out
+  // of tools[] until Skill('<skill>') activates them. Empty == always
+  // loaded. See giggly-watching-pie.md Phase 4.
+  std::string skill;
+  // Whether the runtime may execute this tool concurrently with adjacent
+  // tool_use blocks from the same assistant response. Only set for tools whose
+  // implementation is side-effect-free or otherwise safe to overlap.
+  // BuildHostedToolDefinitionDict surfaces this as `concurrencySafe` on the
+  // hosted-tool wire entry; the JS orchestrator reads it via HostedToolDefinition.
+  bool concurrency_safe = false;
   std::vector<ToolParameter> parameters;
   // Output kind is informational; current `HostedToolDefinition` wire
   // format does not encode the response schema explicitly. Kept here so
@@ -133,6 +146,26 @@ struct ToolSchema {
   std::optional<base::ListValue> input_examples;
 };
 
+// Skill-level metadata, mirroring a *.skill.json declaration. A skill is
+// a named bucket of tools (membership derived from each tool's `skill`
+// field) that activate together via the JS-side Skill tool. The
+// instructions are injected as the Skill tool's result on activation.
+// See giggly-watching-pie.md Phase 4 and skill_schema.json.
+struct SkillSchema {
+  SkillSchema();
+  SkillSchema(const SkillSchema&);
+  SkillSchema(SkillSchema&&) noexcept;
+  SkillSchema& operator=(const SkillSchema&);
+  SkillSchema& operator=(SkillSchema&&) noexcept;
+  ~SkillSchema();
+
+  std::string name;
+  std::string description;
+  std::string instructions;
+  // No deferral marker — whether this skill's tools defer is decided SOLELY by
+  // the nexus_web session template's `deferredTools` (resolveDeferrableSkills).
+};
+
 // Returns the JSON-Schema string used in the wire format for a kind.
 // E.g. kString -> "string", kArrayOfInteger -> "array".
 const char* JsonSchemaTypeString(JsonSchemaKind kind);
@@ -146,6 +179,24 @@ base::DictValue BuildHostedToolDefinitionDict(const ToolSchema& schema);
 // Builds the `hostedTools` array from a span of schemas. Convenience
 // wrapper used by `nexus_host_manifest.cc`.
 base::ListValue BuildHostedToolsList(base::span<const ToolSchema> schemas);
+
+// Builds the per-skill dict served via `catalog.listSkills`. Layout
+// matches HostedSkillDefinition on the JS side:
+//   { name, description, instructions, toolNames: [...] }
+// (No `default` deferral field — deferral is decided SOLELY by the nexus_web
+// session template's `deferredTools`.)
+// `toolNames` is derived here by intersecting `all_schemas` with the
+// skill (each schema whose `skill` == the skill's name), so there's no
+// second source-of-truth membership list to drift.
+base::DictValue BuildHostedSkillDefinitionDict(
+    const SkillSchema& skill,
+    base::span<const ToolSchema> all_schemas);
+
+// Builds the `hostedSkills` array from a span of skills, deriving each
+// skill's `toolNames` from `all_schemas`.
+base::ListValue BuildHostedSkillsList(
+    base::span<const SkillSchema> skills,
+    base::span<const ToolSchema> all_schemas);
 
 }  // namespace nexus
 

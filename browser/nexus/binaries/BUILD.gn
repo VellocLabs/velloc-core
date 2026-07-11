@@ -1,0 +1,75 @@
+# Copyright 2026 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//testing/test.gni")
+
+# Pure logic: the pinned registry + archive extraction/verification. No
+# network, no //chrome, no UI — so its unit tests link into a tiny,
+# fast-to-build test binary.
+source_set("binaries") {
+  sources = [
+    "nexus_binary_archive.cc",
+    "nexus_binary_archive.h",
+    "nexus_binary_config_registry.cc",
+    "nexus_binary_config_registry.h",
+    "nexus_binary_registry.cc",
+    "nexus_binary_registry.h",
+  ]
+
+  deps = [
+    "//base",
+    "//crypto",
+    "//third_party/zlib/google:compression_utils",
+    "//third_party/zlib/google:zip",
+    "//url",
+  ]
+}
+
+# Browser-process orchestration: downloads a pinned binary (async,
+# SimpleURLLoader) and runs verify/extract/write off the UI thread. Pulls
+# in the network stack, so it links into the browser (not the tiny pure-
+# logic test binary).
+source_set("installer") {
+  sources = [
+    "nexus_binary_installer.cc",
+    "nexus_binary_installer.h",
+  ]
+
+  deps = [
+    ":binaries",
+    "//base",
+    "//custom_browser/common",
+    "//net/traffic_annotation",
+    "//services/network/public/cpp",
+    "//url",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [
+    "nexus_binary_archive_unittest.cc",
+    "nexus_binary_config_registry_unittest.cc",
+    "nexus_binary_registry_unittest.cc",
+  ]
+
+  deps = [
+    ":binaries",
+    "//base",
+    "//base/test:test_support",
+    "//crypto",
+    "//testing/gtest",
+    "//third_party/zlib/google:compression_utils",
+    "//third_party/zlib/google:zip",
+  ]
+}
+
+test("custom_browser_nexus_binaries_unittests") {
+  deps = [
+    ":unit_tests",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}

@@ -11,6 +11,6 @@
     }
   ],
   "runtime": {
-    "thread": "thread_pool"
+    "thread": "ui"
   }
 }

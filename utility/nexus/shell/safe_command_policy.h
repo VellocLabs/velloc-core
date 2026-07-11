@@ -21,7 +21,15 @@ namespace nexus {
 // production path uses.
 struct SafeCommandLimits {
   static constexpr uint32_t kDefaultTimeoutMs = 30u * 1000u;
-  static constexpr uint32_t kMaxTimeoutMs = 5u * 60u * 1000u;
+  // Hard server-side ceiling on a single command's wall-clock. Kept in
+  // sync with the browser-side `kMaxBashTimeoutMs` (process_tool.cc =
+  // 600000) so the utility never silently kills a command earlier than
+  // the Bash tool advertises to the model — previously this was 5 min
+  // while the tool accepted `timeout` up to 10 min, so a command set to
+  // the advertised max was killed at the half-way point. Matches Claude
+  // Code's `getMaxBashTimeoutMs()` default of 10 minutes
+  // (claude_code/src/utils/timeouts.ts: MAX_TIMEOUT_MS = 600_000).
+  static constexpr uint32_t kMaxTimeoutMs = 10u * 60u * 1000u;
 
   static constexpr uint32_t kDefaultMaxOutputBytes = 1u * 1024u * 1024u;
   static constexpr uint32_t kMaxMaxOutputBytes = 16u * 1024u * 1024u;
@@ -91,6 +99,16 @@ class SafeCommandPolicy {
   // when paired with `clear_environment = true`.
   static base::EnvironmentMap BuildSafeEnvironment(
       const std::vector<EnvOverride>& extras);
+
+  // Mutates `env` for a resolved command after policy resolution. Currently
+  // Windows-only: when `command_id == "bash"` resolves to Git for Windows,
+  // prepends the adjacent Git dirs (usr/bin, mingw64/bin, bin, cmd) so commands
+  // launched inside Git Bash can find the MSYS/Git toolchain even if the
+  // browser's global PATH did not include it. No-op for all other commands.
+  static void AugmentEnvironmentForResolvedCommand(
+      const std::string& command_id,
+      const base::FilePath& resolved_path,
+      base::EnvironmentMap* env);
 
   // Names that are *always* dropped, whether they came from the
   // process baseline or from the guest `extras`. Exposed for tests.

@@ -10,16 +10,24 @@
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "custom_browser/browser/nexus/api/catalog/nexus_catalog_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/app_info/nexus_app_info_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/browser_tools/nexus_browser_tools_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/mcp/nexus_mcp_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/system_prefs/nexus_system_prefs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/shell/nexus_shell_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
 #include "custom_browser/browser/nexus/tools/tools_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/nexus_message_port_endpoint.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "custom_browser/browser/nexus/api/ui/nexus_ui_bridge_adapter.h"
 
 namespace nexus {
@@ -65,7 +73,18 @@ Dict BuildSuccessResponse(const std::string& id,
 
 }  // namespace
 
-NexusBridgePortService::NexusBridgePortService(Profile* profile) {
+NexusBridgePortService::NexusBridgePortService(Profile* profile)
+    : NexusBridgePortService(profile, PortServiceMode::kGuest) {}
+
+NexusBridgePortService::NexusBridgePortService(Profile* profile,
+                                               PortServiceMode mode) {
+  // Prime the at-rest secret encryptor as early as possible (this is a
+  // high-level entry point that can reach g_browser_process without a
+  // dependency cycle). The LLM broker + MCP adapter rely on it being
+  // acquired so their `WhenReady` re-reads + lazy decrypts resolve.
+  NexusSecretCrypt::GetInstance()->EnsureAcquired(
+      g_browser_process ? g_browser_process->os_crypt_async() : nullptr);
+
   base::FilePath cwd;
   if (profile && profile->GetPath().IsAbsolute()) {
     // Anchor the runtime cwd at the product root (the parent of the
@@ -79,6 +98,47 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
     cwd = profile->GetPath().DirName().DirName();
   }
 
+  // A5: the panel port carries a strictly smaller capability surface than
+  // the guest port. kPanel mode skips constructing the guest-only adapters
+  // (fs/llm/network/mcp/session/catalog/browser/ui) so the panel port
+  // service stays light — no NexusLlmBroker observer, no NexusMcpHost
+  // map, etc. — and only registers the settings-page adapters that the
+  // WebUI panel actually needs.
+  if (mode == PortServiceMode::kPanel) {
+    // P2: providers capability (replaces `getAgentProviders` chrome.send +
+    // the rest of the provider RPCs as P3-P5 land). All actions run on UI
+    // because they touch LlmBroker / PrefService which are UI-bound. See
+    // api/providers/nexus_providers_bridge_adapter.h.
+    providers_adapter_ =
+        std::make_unique<NexusProvidersBridgeAdapter>(this, profile);
+    RegisterCapability("providers", providers_adapter_.get());
+
+    // Tier 2: browserTools capability (replaces the
+    // `get/setBrowserToolsSeparateWindow` chrome.send routes used by
+    // the Settings · Tools toggle + the topbar's one-shot read). Single
+    // boolean field today; snapshot/setField shape mirrors the existing
+    // `agent` and `features` capabilities. See
+    // api/browserTools/nexus_browser_tools_bridge_adapter.h.
+    browser_tools_adapter_ =
+        std::make_unique<NexusBrowserToolsBridgeAdapter>(this, profile);
+    RegisterCapability("browserTools", browser_tools_adapter_.get());
+
+    // Tier 3a: mcp capability — primarily for `mcp.testConnect`, the
+    // settings-page connection probe (replaces `testMcpServer`
+    // chrome.send). The full mcp capability surface (listServers /
+    // connect / disconnect / callTool) is reachable on this port too
+    // because the existing adapter implements one base class; per-
+    // action permission policy is a future enhancement. The panel
+    // WebUI never CALLS the other actions, and the chrome:// scheme
+    // boundary means there's no untrusted-content surface. The instance
+    // here is separate from the worker port's mcp_adapter_, so it has
+    // its own host map — appropriate for the transient testConnect
+    // pattern.
+    mcp_adapter_ = std::make_unique<NexusMcpBridgeAdapter>(this, profile, cwd);
+    RegisterCapability("mcp", mcp_adapter_.get());
+    return;
+  }
+
   fs_adapter_ = std::make_unique<NexusFsBridgeAdapter>(this, cwd);
   llm_adapter_ = std::make_unique<NexusLlmBridgeAdapter>(this, profile);
   ui_adapter_ = std::make_unique<NexusUiBridgeAdapter>(this, profile);
@@ -88,6 +148,12 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
   // api/network/nexus_network_bridge_adapter.cc for details.
   network_adapter_ =
       std::make_unique<NexusNetworkBridgeAdapter>(this, profile);
+  // Native-backed MCP (stdio). Reads server configs (command/env/secrets)
+  // from prefs and launches them natively via its own streaming-capable
+  // NexusShellServiceLauncher; only ids / tool schemas / results reach the
+  // guest. `cwd` is the install root (same default the fs adapter anchors
+  // at) — used when a server config omits an explicit working directory.
+  mcp_adapter_ = std::make_unique<NexusMcpBridgeAdapter>(this, profile, cwd);
   catalog_adapter_ = std::make_unique<NexusCatalogBridgeAdapter>(this);
   // The `browser` capability is the single dispatch surface for the
   // macro-DSL-declared tool catalog (see `ToolCatalog::Get()`).
@@ -103,10 +169,16 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
   // `tools_adapter_` for the lifecycle handlers.
   session_adapter_ = std::make_unique<NexusSessionBridgeAdapter>(
       this, profile, tools_adapter_.get());
+  // Guest `shell` capability — status/kill for background shells the model
+  // spawned via Bash run_in_background. Uses the per-Profile shared launcher
+  // (so it reads the same registry ProcessTool spawns into).
+  shell_adapter_ = std::make_unique<NexusShellBridgeAdapter>(this, profile);
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
   RegisterCapability("network", network_adapter_.get());
+  RegisterCapability("mcp", mcp_adapter_.get());
   RegisterCapability("session", session_adapter_.get());
+  RegisterCapability("shell", shell_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());
   // Phase 12: `catalog` capability — listHostedTools, renderPromptSection,
@@ -114,6 +186,37 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile) {
   // manifest used to push (hostedTools) and what the TS prompt-loader
   // used to render in-process.
   RegisterCapability("catalog", catalog_adapter_.get());
+
+  // Settings · Tools "Open agent tabs in a separate window" toggle. The same
+  // adapter the panel registers above, now also reachable on the guest direct
+  // bridge so the React Tools section can persist `separateWindow` (panel +
+  // guest paths are mutually exclusive, so reusing the member is safe).
+  browser_tools_adapter_ =
+      std::make_unique<NexusBrowserToolsBridgeAdapter>(this, profile);
+  RegisterCapability("browserTools", browser_tools_adapter_.get());
+
+  // Models page live verify + OAuth (read-only network/keychain probes). The
+  // SAME provider adapter the panel registers, exposed on the guest direct
+  // bridge under the non-colliding wire name "providerAuth" — the SharedWorker
+  // keeps the "providers" capability (settings.json persistence), so there is
+  // no routing collision. React calls
+  // providerAuth.{verify,beginOAuth,oauthStatus,refresh,reset}; list/update/
+  // setActive remain reachable but unused (the worker owns persistence).
+  providers_adapter_ =
+      std::make_unique<NexusProvidersBridgeAdapter>(this, profile);
+  RegisterCapability("providerAuth", providers_adapter_.get());
+
+  // Settings · System (browser-global local_state prefs: background-mode +
+  // tray launcher) + Settings · About (version strings + the webapp-URL
+  // editor). C++-served on the guest direct bridge — these are outside the
+  // SharedWorker's settings.json domain. The React capability sets already
+  // list `systemPrefs` + `appInfo`; this lights them up.
+  system_prefs_adapter_ =
+      std::make_unique<NexusSystemPrefsBridgeAdapter>(this, profile);
+  RegisterCapability("systemPrefs", system_prefs_adapter_.get());
+  app_info_adapter_ =
+      std::make_unique<NexusAppInfoBridgeAdapter>(this, profile);
+  RegisterCapability("appInfo", app_info_adapter_.get());
 
   // Phase 12g: the `process` bridge capability has been retired.
   // History: `NexusProcessBridgeAdapter` + a separate

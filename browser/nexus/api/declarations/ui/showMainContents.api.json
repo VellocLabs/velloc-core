@@ -1,9 +1,0 @@
-{
-  "$schema": "../../../codegen/api_schema.json",
-  "name": "showMainContents",
-  "description": "Reveal <main-contents-view> + <cr-splitter> in the parent WebUI. Idempotent.",
-  "inputs": [],
-  "runtime": {
-    "thread": "ui"
-  }
-}

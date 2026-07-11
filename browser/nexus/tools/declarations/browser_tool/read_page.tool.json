@@ -6,9 +6,6 @@
   "skill": "browser",
   "inputs": [],
   "output_kind": "object",
-  "runtime": {
-    "thread": "ui"
-  },
   "providers": {
     "anthropic": {
       "input_examples": [

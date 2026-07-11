@@ -14,6 +14,10 @@ namespace nexus {
 // its PrefService is unavailable.
 bool ShouldHostAgentTabsInSeparateWindow(Profile* profile);
 
+// (BrowserEvaluate is now always available — no gate. The former
+// `ShouldAllowAgentEvaluate` opt-in was removed; the tool is first-class
+// like the rest of the Browser* surface.)
+
 // Returns the effective agent runtime config dict: built-in defaults overlaid
 // with the user's stored `nexus.agent_config` overrides. This is the single
 // source of truth for agent-config defaults, and the value the browser pushes

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
@@ -12,8 +13,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/profiles/profile.h"
+#include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
 #include "custom_browser/browser/nexus/tools/process_tool/nexus_shell_service_launcher.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -29,6 +34,9 @@ namespace {
 constexpr int kDefaultBashTimeoutMs = 120000;
 constexpr int kMaxBashTimeoutMs = 600000;
 constexpr int kMaxOutputBytes = 30000;
+constexpr char kProcessUnavailableCode[] = "process_unavailable";
+constexpr char kProcessUnavailableMessage[] =
+    "process tools require an attached browser profile";
 
 // Per-platform shell invocation. Mirrors `buildShellInvocation` in the
 // retired BashTool.ts but trimmed to one shell per platform — the
@@ -78,6 +86,22 @@ ShellInvocation BuildHookShellInvocation(const std::string& shell_id,
   return inv;
 }
 
+// The hook-exec path honors `hook_shell` ONLY for these known shell ids.
+// The JS hook runner (hookCommandRunner.ts `resolveShellPreference`) only ever
+// sends one of these; the value is also hidden from the model-facing schema
+// (`"internal": true` in bash.tool.json). This predicate is defense in depth:
+// if a stray/garbage value still reaches `hook_shell` (e.g. a model that
+// filled the host-internal field with "/bin/bash"), we IGNORE it and run the
+// command via the normal Bash path instead of launching the value as a
+// command — which the utility-process SafeCommandPolicy allowlist would reject
+// (`COMMAND_NOT_ALLOWED: tool id '/bin/bash' is not in the host capability
+// allowlist for the nexus shell service`). Keep in sync with
+// `resolveShellPreference` (POSIX_SHELLS + PWSH_SHELLS).
+bool IsKnownHookShellId(const std::string& shell_id) {
+  return shell_id == "bash" || shell_id == "sh" || shell_id == "zsh" ||
+         shell_id == "pwsh" || shell_id == "powershell";
+}
+
 // Parse the hook_env JSON object string into mojo ShellEnvEntry pairs.
 // Invalid / non-object JSON yields an empty list (the hook still runs,
 // just without the extra env). Non-string values are skipped.
@@ -102,14 +126,75 @@ std::vector<mojom::ShellEnvEntryPtr> ParseHookEnv(const std::string& json) {
   return out;
 }
 
+// Ensures `text` is valid UTF-8. Returns `text` unchanged on the fast
+// path (already valid); otherwise round-trips through UTF-16 to substitute
+// invalid sequences with U+FFFD. base::Value's std::string constructor
+// DCHECKs UTF-8 (so does base::DictValue::Set), so every captured shell
+// stream must pass through here before reaching Resolve / Set — otherwise
+// the browser fatals on any tool whose stdout/stderr is in the host's
+// console code page (Windows PowerShell 5.1 on en-US emits cp1252, on
+// zh-CN cp936, …; cmd.exe behaves the same). pwsh / POSIX shells emit
+// UTF-8 by default and hit only the fast path.
+std::string EnsureUtf8(std::string text) {
+  if (base::IsStringUTF8AllowingNoncharacters(text)) {
+    return text;
+  }
+  return base::UTF16ToUTF8(base::UTF8ToUTF16(text));
+}
+
 // Decode a base::BigBuffer into a UTF-8 std::string capped at
-// `kMaxOutputBytes`. Invalid UTF-8 is preserved byte-for-byte (a tool
-// returning binary on stdout shouldn't crash the bridge).
-std::string BigBufferToString(const mojo_base::BigBuffer& buffer,
-                              size_t cap) {
-  base::span<const uint8_t> bytes = buffer.byte_span();
+// `kMaxOutputBytes`. Invalid UTF-8 in the captured bytes is normalised
+// to U+FFFD via `EnsureUtf8` — see that helper for why.
+std::string BigBufferToString(const mojo_base::BigBuffer& buffer, size_t cap) {
+  base::span<const uint8_t> bytes(buffer);
   size_t n = std::min(bytes.size(), cap);
-  return std::string(reinterpret_cast<const char*>(bytes.data()), n);
+  if (n == 0) {
+    return std::string();
+  }
+  return EnsureUtf8(
+      std::string(reinterpret_cast<const char*>(bytes.data()), n));
+}
+
+base::DictValue BuildBackgroundOutputDict(const std::string& shell_id,
+                                          int exit_code,
+                                          bool timed_out,
+                                          const std::string& stdout_text,
+                                          const std::string& stderr_text,
+                                          bool stdout_truncated,
+                                          bool stderr_truncated) {
+  std::string body;
+  if (timed_out) {
+    body.append("Command timed out.\n");
+  } else if (exit_code != 0) {
+    body.append(base::StrCat(
+        {"Command exited with code ", base::NumberToString(exit_code), ".\n"}));
+  }
+  if (!stdout_text.empty()) {
+    body.append(stdout_text);
+  }
+  if (!stderr_text.empty()) {
+    if (!stdout_text.empty()) {
+      body.push_back('\n');
+    }
+    body.append(stderr_text);
+  }
+  if (stdout_truncated || stderr_truncated) {
+    if (!body.empty() && body.back() != '\n') {
+      body.push_back('\n');
+    }
+    body.append(
+        "[output truncated — re-run with a narrower scope to capture more]");
+  }
+  if (body.empty()) {
+    body = "(no output)";
+  }
+
+  base::DictValue dict;
+  dict.Set("shell_id", shell_id);
+  dict.Set("status", "completed");
+  dict.Set("exit_code", exit_code);
+  dict.Set("output", std::move(body));
+  return dict;
 }
 
 // Extract the leading "base command" from a command line for the
@@ -119,6 +204,25 @@ std::string BigBufferToString(const mojo_base::BigBuffer& buffer,
 //   2. Strip leading env-var assignments (FOO=bar BAR=baz cmd).
 //   3. Take the first whitespace-separated token.
 //   4. Strip surrounding quotes.
+// Mirrors Claude Code's `isAutobackgroundingAllowed`: a foreground command
+// may be auto-backgrounded when it crosses its timeout UNLESS its leading
+// token is on the small disallow-list — a pure sleep, which should use the
+// Sleep tool, not a held-open shell. Shared by the Bash and PowerShell
+// paths, so the list covers bash `sleep` AND PowerShell `Start-Sleep` (plus
+// its `sleep` alias); PowerShell is case-insensitive, so compare that way.
+// Checks the first whitespace-delimited token, matching CC's `parts[0]`.
+bool IsAutoBackgroundAllowed(const std::string& command) {
+  size_t start = command.find_first_not_of(" \t");
+  if (start == std::string::npos) {
+    return true;
+  }
+  size_t end = command.find_first_of(" \t", start);
+  std::string token = command.substr(
+      start, end == std::string::npos ? std::string::npos : end - start);
+  return !base::EqualsCaseInsensitiveASCII(token, "sleep") &&
+         !base::EqualsCaseInsensitiveASCII(token, "start-sleep");
+}
+
 std::string ExtractBaseCommand(const std::string& command) {
   // Crude split: find the last index of any of the boundary chars and
   // take the substring after it. We don't care about correctness for
@@ -132,9 +236,8 @@ std::string ExtractBaseCommand(const std::string& command) {
       boundary = p + std::string(sep).size();
     }
   }
-  std::string segment = (boundary == std::string::npos)
-                            ? command
-                            : command.substr(boundary);
+  std::string segment =
+      (boundary == std::string::npos) ? command : command.substr(boundary);
   // Trim leading whitespace.
   size_t start = segment.find_first_not_of(" \t");
   if (start == std::string::npos) {
@@ -178,8 +281,7 @@ std::string ExtractBaseCommand(const std::string& command) {
   std::string first =
       (end == std::string::npos) ? segment : segment.substr(0, end);
   // Strip surrounding quotes.
-  if (first.size() >= 2 &&
-      (first.front() == '\'' || first.front() == '"') &&
+  if (first.size() >= 2 && (first.front() == '\'' || first.front() == '"') &&
       first.front() == first.back()) {
     first = first.substr(1, first.size() - 2);
   }
@@ -196,27 +298,21 @@ struct CommandInterpretation {
 // gets the default "exit code N" interpretation.
 CommandInterpretation InterpretExit(const std::string& base, int exit) {
   if (base == "grep" || base == "rg") {
-    return {exit >= 2,
-            exit == 1 ? "No matches found" : ""};
+    return {exit >= 2, exit == 1 ? "No matches found" : ""};
   }
   if (base == "find") {
-    return {exit >= 2,
-            exit == 1 ? "Some directories were inaccessible" : ""};
+    return {exit >= 2, exit == 1 ? "Some directories were inaccessible" : ""};
   }
   if (base == "diff") {
-    return {exit >= 2,
-            exit == 1 ? "Files differ" : ""};
+    return {exit >= 2, exit == 1 ? "Files differ" : ""};
   }
   if (base == "test" || base == "[") {
-    return {exit >= 2,
-            exit == 1 ? "Condition is false" : ""};
+    return {exit >= 2, exit == 1 ? "Condition is false" : ""};
   }
   // Default semantic.
-  return {exit != 0,
-          exit != 0
-              ? base::StrCat({"Command failed with exit code ",
-                              base::NumberToString(exit)})
-              : ""};
+  return {exit != 0, exit != 0 ? base::StrCat({"Command failed with exit code ",
+                                               base::NumberToString(exit)})
+                               : ""};
 }
 
 // =============================================================================
@@ -229,7 +325,7 @@ constexpr int kGrepMaxColumns = 500;
 // VCS dirs ripgrep should never recurse into. ripgrep already
 // gitignore-respects but we belt-and-suspender against `.git` etc.
 const char* const kGrepExcludedDirs[] = {".git", ".svn", ".hg",
-                                          ".bzr", ".jj",  ".sl"};
+                                         ".bzr", ".jj",  ".sl"};
 
 // Resolve `path` against `cwd_or_default`: absolute paths used as-is,
 // relative paths joined onto the default. Empty `path` returns the
@@ -256,17 +352,15 @@ base::FilePath ResolveAgainstCwd(const std::string& path,
 // `splitGlobPatterns`.
 std::vector<std::string> SplitGlobPatterns(const std::string& glob) {
   std::vector<std::string> out;
-  for (const std::string& part :
-       base::SplitString(glob, " \t", base::TRIM_WHITESPACE,
-                          base::SPLIT_WANT_NONEMPTY)) {
+  for (const std::string& part : base::SplitString(
+           glob, " \t", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
     if (part.find('{') != std::string::npos &&
         part.find('}') != std::string::npos) {
       out.push_back(part);
       continue;
     }
-    for (const std::string& inner :
-         base::SplitString(part, ",", base::TRIM_WHITESPACE,
-                            base::SPLIT_WANT_NONEMPTY)) {
+    for (const std::string& inner : base::SplitString(
+             part, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
       out.push_back(inner);
     }
   }
@@ -311,13 +405,18 @@ std::vector<std::string> BuildRipgrepArgs(
       args.push_back("-C");
       args.push_back(base::NumberToString(*input.context));
     } else {
-      if (input.before_context.has_value()) {
-        args.push_back("-B");
-        args.push_back(base::NumberToString(*input.before_context));
-      }
-      if (input.after_context.has_value()) {
-        args.push_back("-A");
-        args.push_back(base::NumberToString(*input.after_context));
+      if (input.context_c.has_value()) {
+        args.push_back("-C");
+        args.push_back(base::NumberToString(*input.context_c));
+      } else {
+        if (input.context_before.has_value()) {
+          args.push_back("-B");
+          args.push_back(base::NumberToString(*input.context_before));
+        }
+        if (input.context_after.has_value()) {
+          args.push_back("-A");
+          args.push_back(base::NumberToString(*input.context_after));
+        }
       }
     }
   }
@@ -350,12 +449,13 @@ std::vector<std::string> BuildRipgrepArgs(
 // Returns (sliced, applied_limit_when_truncated, true_if_truncated).
 struct SliceResult {
   std::vector<std::string> items;
-  int applied_limit = 0;     // 0 means "not truncated / no limit reported"
+  int applied_limit = 0;  // 0 means "not truncated / no limit reported"
   bool truncated = false;
 };
 
 SliceResult ApplyHeadLimit(std::vector<std::string>&& items,
-                           int head_limit, int offset) {
+                           int head_limit,
+                           int offset) {
   SliceResult out;
   size_t off = (offset > 0) ? static_cast<size_t>(offset) : 0;
   if (off >= items.size()) {
@@ -377,38 +477,9 @@ SliceResult ApplyHeadLimit(std::vector<std::string>&& items,
   return out;
 }
 
-// Parse rg's stdout into a vector of trimmed, CRLF-stripped lines.
-// rg exits with 1 when there are no matches — that's success from the
-// caller's POV (we return an empty vector). Any other non-zero exit
-// is a real error; we still return whatever rg printed (best-effort).
-std::vector<std::string> ParseRipgrepLines(
-    const mojo_base::BigBuffer& stdout_buffer,
-    int exit_code,
-    size_t cap) {
-  if (exit_code == 1) {
-    return {};
-  }
-  base::span<const uint8_t> bytes = stdout_buffer.byte_span();
-  size_t n = std::min(bytes.size(), cap);
-  std::string text(reinterpret_cast<const char*>(bytes.data()), n);
-  std::string trimmed;
-  base::TrimString(text, "\r\n \t", &trimmed);
-  if (trimmed.empty()) {
-    return {};
-  }
-  std::vector<std::string> lines;
-  for (const std::string& line :
-       base::SplitString(trimmed, "\n", base::TRIM_WHITESPACE,
-                          base::SPLIT_WANT_NONEMPTY)) {
-    // Strip lone trailing \r (in case rg printed CRLF on Windows).
-    if (!line.empty() && line.back() == '\r') {
-      lines.push_back(line.substr(0, line.size() - 1));
-    } else {
-      lines.push_back(line);
-    }
-  }
-  return lines;
-}
+// NOTE: ripgrep stdout → lines parsing now lives in NexusRipgrepRunner
+// (tools/nexus_ripgrep_runner.cc), shared by Grep and Glob. The runner hands
+// back already-parsed `lines`, so the Grep path below only shapes them.
 
 }  // namespace
 
@@ -422,15 +493,18 @@ void ProcessTool::DefineTools(ToolRegistry& /*registry*/) {
   // through `generated::PopulateRegistry()`.
 }
 
-ProcessTool::ProcessTool(ToolSession* session, Profile* profile,
+ProcessTool::ProcessTool(ToolSession* session,
+                         Profile* profile,
                          const std::string& session_key)
     : ToolBase(session, profile, session_key),
-      launcher_(std::make_unique<NexusShellServiceLauncher>()) {}
+      // Shared per-Profile launcher (NOT owned) so the background shells this
+      // tool spawns live in the same utility process + registry the guest
+      // `shell.*` capability observes/kills. See GetSharedShellLauncher.
+      launcher_(profile ? &GetSharedShellLauncher(profile) : nullptr) {}
 
 ProcessTool::~ProcessTool() {
-  // Defensive — invalidate WeakPtrs so any pending mojo callback drops
-  // cleanly, then drop the launcher (which releases the Remote and
-  // disconnects the utility process).
+  // Defensive — invalidate WeakPtrs so any pending mojo callback to THIS tool
+  // drops cleanly. The launcher is shared (Profile-owned) — NOT shut down here.
   OnStop(OnStopReason::kDestructor);
 }
 
@@ -452,9 +526,11 @@ void ProcessTool::OnStop(OnStopReason reason) {
                         reason == OnStopReason::kDestructor;
   if (teardown) {
     weak_ptr_factory_.InvalidateWeakPtrs();
-    if (launcher_) {
-      launcher_->Shutdown();
-    }
+    // Drop any in-flight rg exec / auto-install callback.
+    ripgrep_runner_.Reset();
+    // NOTE: do NOT shut down `launcher_` — it is the per-Profile SHARED
+    // launcher (other sessions of this profile + the guest `shell.*`
+    // capability use the same utility process). It self-recycles on idle.
   }
 }
 
@@ -472,12 +548,31 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   }
 
   ToolSession* session = GetSession();
-  base::FilePath cwd = session ? session->cwd() : base::FilePath();
+  // Per-call cwd override: a worktree-isolated subagent sets `cwd` so its
+  // commands run in its own checkout instead of the one shared session cwd
+  // (parallel-safe — no race on a single session value). Absolute only,
+  // mirroring ToolSession::set_cwd. Absent → fall back to the session cwd
+  // (the default path for the main agent).
+  base::FilePath cwd;
+  if (input.cwd.has_value() && !input.cwd->empty()) {
+    cwd = base::FilePath::FromUTF8Unsafe(*input.cwd);
+    if (!cwd.IsAbsolute()) {
+      std::move(done).Reject("invalid_args",
+                             "cwd override must be an absolute path");
+      return;
+    }
+  } else {
+    cwd = session ? session->cwd() : base::FilePath();
+  }
   if (cwd.empty()) {
     std::move(done).Reject(
         "invalid_args",
         "session cwd is not set. Push a cwd via setAgentLoopSettings "
         "before running shell commands.");
+    return;
+  }
+  if (!launcher_) {
+    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
     return;
   }
 
@@ -488,15 +583,22 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
     timeout_ms = kMaxBashTimeoutMs;
   }
 
-  // Hook-exec path: the internal `hook_shell` field (set only by the JS
-  // hook runner, never the model) requests an explicit shell with hook
-  // input on stdin and env exported natively — the CC-faithful command-hook
-  // contract. Run the requested shell directly (use_shell = false) and
-  // return the RAW exit code + combined output so the JS executor can apply
-  // its own protocol (exit 2 = block, 0 = pass, other = non-blocking
+  // Hook-exec path: the host-internal `hook_shell` field (set by the JS hook
+  // runner, never the model — it's `"internal": true` in bash.tool.json so it
+  // never reaches the model-facing schema) requests an explicit shell with
+  // hook input on stdin and env exported natively — the CC-faithful
+  // command-hook contract. Run the requested shell directly (use_shell =
+  // false) and return the RAW exit code + combined output so the JS executor
+  // can apply its own protocol (exit 2 = block, 0 = pass, other = non-blocking
   // warning). This bypasses the prose/non-zero-reject shaping of the normal
   // Bash path.
-  if (input.hook_shell.has_value() && !input.hook_shell->empty()) {
+  //
+  // Defense in depth: only take this path when `hook_shell` is a KNOWN shell
+  // id. A stray/garbage value (e.g. a model-fabricated "/bin/bash" that
+  // predates the schema hiding) is ignored and falls through to the normal
+  // Bash path, so the command still runs instead of being launched as an
+  // arbitrary command the SafeCommandPolicy allowlist would reject.
+  if (input.hook_shell.has_value() && IsKnownHookShellId(*input.hook_shell)) {
     ShellInvocation inv =
         BuildHookShellInvocation(*input.hook_shell, input.command);
 
@@ -532,31 +634,343 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   // POSIX: run through the resolved default shell (unchanged behaviour).
   options->use_shell = true;
 #endif
-  options->timeout_ms = static_cast<uint32_t>(timeout_ms);
+  const bool auto_background_on_timeout =
+      !input.run_in_background.value_or(false) &&
+      IsAutoBackgroundAllowed(input.command);
+  options->timeout_ms = static_cast<uint32_t>(
+      auto_background_on_timeout ? kMaxBashTimeoutMs : timeout_ms);
   options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
+  // Auto-background-on-timeout (CC parity): foreground Bash uses Spawn so it can
+  // emit live progress; the utility-process hard timeout is extended to the
+  // maximum and the browser-side poller returns a background handoff at the
+  // requested foreground budget.
+  options->background_on_timeout = auto_background_on_timeout;
 
   mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
-  remote->Exec(
-      std::move(options),
-      base::BindOnce(&ProcessTool::OnBashExecDone,
-                     weak_ptr_factory_.GetWeakPtr(),
-                     std::move(done), input.command,
-                     base::TimeTicks::Now()));
+
+  // Background path: fire-and-return. The service launches the command,
+  // runs it to completion (or timeout) on a worker, and buffers the
+  // output for the completion notification and manual BashOutput recovery.
+  // We resolve `done` immediately with the shell_id.
+  if (input.run_in_background.value_or(false)) {
+    remote->Spawn(
+        std::move(options),
+        base::BindOnce(&ProcessTool::OnBashSpawnDone,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(done)));
+    return;
+  }
+
+  remote->Spawn(std::move(options),
+                base::BindOnce(&ProcessTool::OnForegroundSpawnDone,
+                               weak_ptr_factory_.GetWeakPtr(), std::move(done),
+                               input.command, base::TimeTicks::Now(),
+                               std::string("bash"), timeout_ms,
+                               auto_background_on_timeout));
+}
+
+
+void ProcessTool::OnForegroundSpawnDone(
+    ToolCallback done,
+    std::string original_command,
+    base::TimeTicks start_time,
+    std::string tool_label,
+    int foreground_timeout_ms,
+    bool auto_background_on_timeout,
+    bool ok,
+    const std::optional<std::string>& shell_id,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  if (!ok || !shell_id.has_value() || shell_id->empty()) {
+    std::string msg = error_message.value_or(std::string());
+    if (install_hint.has_value() && !install_hint->empty()) {
+      if (!msg.empty()) {
+        msg.append("\n\n");
+      }
+      msg.append(*install_hint);
+    }
+    std::move(done).Reject(error_code.value_or(base::StrCat({tool_label, "_failed"})),
+                           std::move(msg));
+    return;
+  }
+  PollForegroundShell(std::move(done), *shell_id, std::move(original_command),
+                      start_time, std::move(tool_label), foreground_timeout_ms,
+                      auto_background_on_timeout);
+}
+
+void ProcessTool::PollForegroundShell(ToolCallback done,
+                                      std::string shell_id,
+                                      std::string original_command,
+                                      base::TimeTicks start_time,
+                                      std::string tool_label,
+                                      int foreground_timeout_ms,
+                                      bool auto_background_on_timeout) {
+  if (!launcher_) {
+    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    return;
+  }
+  launcher_->GetService()->ReadBackgroundOutput(
+      shell_id,
+      base::BindOnce(&ProcessTool::OnForegroundShellStatus,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(done), shell_id,
+                     std::move(original_command), start_time,
+                     std::move(tool_label), foreground_timeout_ms,
+                     auto_background_on_timeout));
+}
+
+void ProcessTool::OnForegroundShellStatus(
+    ToolCallback done,
+    std::string shell_id,
+    std::string original_command,
+    base::TimeTicks start_time,
+    std::string tool_label,
+    int foreground_timeout_ms,
+    bool auto_background_on_timeout,
+    mojom::ShellBackgroundOutputPtr output) {
+  if (!output || !output->found) {
+    std::move(done).Reject(base::StrCat({tool_label, "_failed"}),
+                           "Foreground shell disappeared before completion");
+    return;
+  }
+
+  std::string stdout_text =
+      BigBufferToString(output->stdout_buffer, kMaxOutputBytes);
+  std::string stderr_text =
+      BigBufferToString(output->stderr_buffer, kMaxOutputBytes);
+  if (output->running) {
+    std::string combined = stdout_text;
+    if (!stderr_text.empty()) {
+      if (!combined.empty()) {
+        combined.push_back('\n');
+      }
+      combined.append(stderr_text);
+    }
+    if (ToolSession* session = GetSession()) {
+      base::DictValue progress;
+      progress.Set("kind", "shell_output");
+      progress.Set("tool", tool_label);
+      progress.Set("shell_id", shell_id);
+      progress.Set("output", combined);
+      progress.Set("stdout", stdout_text);
+      progress.Set("stderr", stderr_text);
+      progress.Set("stdout_truncated", output->stdout_truncated);
+      progress.Set("stderr_truncated", output->stderr_truncated);
+      progress.Set("elapsed_time_seconds",
+                   (base::TimeTicks::Now() - start_time).InSecondsF());
+      session->EmitToolProgress(base::Value(std::move(progress)));
+    }
+    const base::TimeDelta elapsed = base::TimeTicks::Now() - start_time;
+    if (auto_background_on_timeout &&
+        elapsed >= base::Milliseconds(foreground_timeout_ms)) {
+      if (launcher_) {
+        launcher_->RetainBackgroundShell(shell_id);
+      }
+      base::DictValue dict;
+      dict.Set("shell_id", shell_id);
+      dict.Set("status", "running");
+      dict.Set("message",
+               base::StrCat(
+                   {"Command exceeded its foreground timeout and was moved "
+                    "to the background (shell_id=",
+                    shell_id,
+                    "). It is still running — Nexus will notify you when it "
+                    "completes; do not poll for output while it is running."}));
+      std::move(done).Resolve(std::move(dict));
+      return;
+    }
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&ProcessTool::PollForegroundShell,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(done), shell_id,
+                       std::move(original_command), start_time,
+                       std::move(tool_label), foreground_timeout_ms,
+                       auto_background_on_timeout),
+        base::Milliseconds(500));
+    return;
+  }
+
+  auto result = mojom::ShellExecResult::New();
+  result->exit = std::move(output->exit);
+  result->stdout_buffer = std::move(output->stdout_buffer);
+  result->stderr_buffer = std::move(output->stderr_buffer);
+  result->stdout_truncated = output->stdout_truncated;
+  result->stderr_truncated = output->stderr_truncated;
+  OnBashExecDone(std::move(done), std::move(original_command), start_time,
+                 std::move(tool_label), /*ok=*/true, std::move(result),
+                 /*error_code=*/std::nullopt, /*error_message=*/std::nullopt,
+                 /*install_hint=*/std::nullopt);
+}
+
+// =============================================================================
+// Background Bash: Spawn + BashOutput
+// =============================================================================
+
+void ProcessTool::OnBashSpawnDone(
+    ToolCallback done,
+    bool ok,
+    const std::optional<std::string>& shell_id,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  // Pre-launch failure (COMMAND_NOT_ALLOWED, INVALID_CWD, BINARY_NOT_FOUND,
+  // …) — same shape as the foreground Bash reject, install_hint appended.
+  if (!ok || !shell_id.has_value()) {
+    std::string msg = error_message.value_or(std::string());
+    if (install_hint.has_value() && !install_hint->empty()) {
+      if (!msg.empty()) {
+        msg.append("\n\n");
+      }
+      msg.append(*install_hint);
+    }
+    std::move(done).Reject(error_code.value_or("bash_spawn_failed"),
+                           std::move(msg));
+    return;
+  }
+
+  if (launcher_) {
+    launcher_->RetainBackgroundShell(*shell_id);
+  }
+
+  base::DictValue dict;
+  dict.Set("shell_id", *shell_id);
+  dict.Set("status", "running");
+  dict.Set(
+      "message",
+      base::StrCat({"Command started in the background (shell_id=", *shell_id,
+                    "). Nexus will notify you when it completes; do not poll "
+                    "for output while it is running."}));
+  std::move(done).Resolve(std::move(dict));
+}
+
+void ProcessTool::RunBashOutputOnUI(::nexus::generated::BashOutputInput input,
+                                    ToolCallback done) {
+  if (input.shell_id.empty()) {
+    std::move(done).Reject("invalid_args", "shell_id must not be empty");
+    return;
+  }
+  if (!launcher_) {
+    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    return;
+  }
+  mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
+  remote->ReadBackgroundOutput(input.shell_id,
+                               base::BindOnce(&ProcessTool::OnBashOutputDone,
+                                              weak_ptr_factory_.GetWeakPtr(),
+                                              std::move(done), input.shell_id));
+}
+
+void ProcessTool::OnBashOutputDone(ToolCallback done,
+                                   std::string shell_id,
+                                   mojom::ShellBackgroundOutputPtr output) {
+  if (!output || !output->found) {
+    if (launcher_) {
+      std::optional<NexusShellServiceLauncher::CachedBackgroundOutput> cached =
+          launcher_->GetCachedBackgroundOutput(shell_id);
+      launcher_->ReleaseBackgroundShell(shell_id);
+      if (cached.has_value()) {
+        std::move(done).Resolve(BuildBackgroundOutputDict(
+            shell_id, cached->exit_code, cached->timed_out, cached->stdout_text,
+            cached->stderr_text, cached->stdout_truncated,
+            cached->stderr_truncated));
+        return;
+      }
+    }
+    std::move(done).Reject(
+        "unknown_shell",
+        base::StrCat({"No background command found for shell_id=", shell_id,
+                      ". It may have never existed or been evicted."}));
+    return;
+  }
+
+  if (!output->running && launcher_) {
+    NexusShellServiceLauncher::CachedBackgroundOutput cached;
+    cached.exit_code = (output->exit && output->exit->code.has_value())
+                           ? *output->exit->code
+                           : -1;
+    if (output->exit && output->exit->signal.has_value()) {
+      cached.signal = *output->exit->signal;
+    }
+    cached.timed_out = output->exit && output->exit->timed_out;
+    cached.killed = output->exit && output->exit->killed;
+    cached.duration_ms = output->exit ? output->exit->duration_ms : 0;
+    cached.stdout_text = BigBufferToString(output->stdout_buffer, kMaxOutputBytes);
+    cached.stderr_text = BigBufferToString(output->stderr_buffer, kMaxOutputBytes);
+    cached.stdout_truncated = output->stdout_truncated;
+    cached.stderr_truncated = output->stderr_truncated;
+    launcher_->CacheBackgroundOutput(shell_id, cached);
+    launcher_->ReleaseBackgroundShell(shell_id);
+  }
+
+  const std::string stdout_text =
+      BigBufferToString(output->stdout_buffer, kMaxOutputBytes);
+  const std::string stderr_text =
+      BigBufferToString(output->stderr_buffer, kMaxOutputBytes);
+
+  if (output->running) {
+    std::string body;
+    if (!stdout_text.empty()) {
+      body.append(stdout_text);
+    }
+    if (!stderr_text.empty()) {
+      if (!body.empty()) {
+        body.push_back('\n');
+      }
+      body.append(stderr_text);
+    }
+
+    base::DictValue dict;
+    dict.Set("shell_id", shell_id);
+    dict.Set("status", "running");
+    dict.Set("output", body.empty() ? "(no output yet)" : std::move(body));
+    dict.Set("stdout_truncated", output->stdout_truncated);
+    dict.Set("stderr_truncated", output->stderr_truncated);
+    dict.Set("message",
+             "Command is still running in the background. Output shown is "
+             "captured so far; prefer waiting for the background completion "
+             "notification instead of polling repeatedly.");
+    std::move(done).Resolve(std::move(dict));
+    return;
+  }
+
+  // Finished — shape like the foreground Bash prose result.
+  const int exit_code = (output->exit && output->exit->code.has_value())
+                            ? *output->exit->code
+                            : -1;
+  const bool timed_out = output->exit && output->exit->timed_out;
+
+  std::move(done).Resolve(BuildBackgroundOutputDict(
+      shell_id, exit_code, timed_out, stdout_text, stderr_text,
+      output->stdout_truncated, output->stderr_truncated));
 }
 
 // =============================================================================
 // RunPowerShellOnUI override (Windows model-facing PowerShell tool)
 // =============================================================================
 
-void ProcessTool::RunPowerShellOnUI(
-    ::nexus::generated::PowerShellInput input, ToolCallback done) {
+void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
+                                    ToolCallback done) {
   if (input.command.empty()) {
     std::move(done).Reject("invalid_args", "command must not be empty");
     return;
   }
 
   ToolSession* session = GetSession();
-  base::FilePath cwd = session ? session->cwd() : base::FilePath();
+  // Per-call cwd override: a worktree-isolated subagent sets `cwd` so its
+  // commands run in its own checkout instead of the one shared session cwd
+  // (parallel-safe — no race on a single session value). Absolute only,
+  // mirroring ToolSession::set_cwd. Absent → fall back to the session cwd
+  // (the default path for the main agent).
+  base::FilePath cwd;
+  if (input.cwd.has_value() && !input.cwd->empty()) {
+    cwd = base::FilePath::FromUTF8Unsafe(*input.cwd);
+    if (!cwd.IsAbsolute()) {
+      std::move(done).Reject("invalid_args",
+                             "cwd override must be an absolute path");
+      return;
+    }
+  } else {
+    cwd = session ? session->cwd() : base::FilePath();
+  }
   if (cwd.empty()) {
     std::move(done).Reject(
         "invalid_args",
@@ -575,6 +989,7 @@ void ProcessTool::RunPowerShellOnUI(
   // Prefer PowerShell 7 (pwsh); OnPowerShellExecDone falls back to Windows
   // PowerShell (powershell) if pwsh isn't installed.
   LaunchPowerShellAttempt(input.command, std::move(cwd), timeout_ms, "pwsh",
+                          input.run_in_background.value_or(false),
                           std::move(done));
 }
 
@@ -582,7 +997,13 @@ void ProcessTool::LaunchPowerShellAttempt(std::string command,
                                           base::FilePath cwd,
                                           int timeout_ms,
                                           std::string shell_id,
+                                          bool run_in_background,
                                           ToolCallback done) {
+  if (!launcher_) {
+    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    return;
+  }
+
   // <shell_id> -NoProfile -NonInteractive -Command <command>, invoked
   // directly (use_shell=false) — same builder as the command-hook path.
   ShellInvocation inv = BuildHookShellInvocation(shell_id, command);
@@ -592,16 +1013,33 @@ void ProcessTool::LaunchPowerShellAttempt(std::string command,
   options->args = std::move(inv.args);
   options->cwd = cwd;
   options->use_shell = false;
-  options->timeout_ms = static_cast<uint32_t>(timeout_ms);
+  const bool auto_background_on_timeout =
+      !run_in_background && IsAutoBackgroundAllowed(command);
+  options->timeout_ms = static_cast<uint32_t>(
+      auto_background_on_timeout ? kMaxBashTimeoutMs : timeout_ms);
   options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
+  options->background_on_timeout = auto_background_on_timeout;
 
   mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
-  remote->Exec(
+
+  // Explicit background path (run_in_background=true): fire-and-return with a
+  // shell_id, mirroring the Bash Spawn path. OnPowerShellSpawnDone keeps the
+  // pwsh→powershell pre-launch fallback before handing off to OnBashSpawnDone.
+  if (run_in_background) {
+    remote->Spawn(
+        std::move(options),
+        base::BindOnce(&ProcessTool::OnPowerShellSpawnDone,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(done), command,
+                       cwd, timeout_ms, shell_id));
+    return;
+  }
+
+  remote->Spawn(
       std::move(options),
-      base::BindOnce(&ProcessTool::OnPowerShellExecDone,
+      base::BindOnce(&ProcessTool::OnPowerShellForegroundSpawnDone,
                      weak_ptr_factory_.GetWeakPtr(), std::move(done), command,
                      std::move(cwd), timeout_ms, shell_id,
-                     base::TimeTicks::Now()));
+                     auto_background_on_timeout));
 }
 
 void ProcessTool::OnPowerShellExecDone(
@@ -623,19 +1061,78 @@ void ProcessTool::OnPowerShellExecDone(
       (*error_code == "BINARY_NOT_FOUND" ||
        *error_code == "COMMAND_NOT_ALLOWED")) {
     LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
-                            "powershell", std::move(done));
+                            "powershell", /*run_in_background=*/false,
+                            std::move(done));
     return;
   }
 
-  // Otherwise shape exactly like the Bash tool's prose path.
-  OnBashExecDone(std::move(done), std::move(command), start_time, ok,
-                 std::move(result), error_code, error_message, install_hint);
+  // Otherwise shape exactly like the Bash tool's prose path, but label
+  // rejections "powershell_failed" / "powershell_timeout" so a failure
+  // from this tool isn't misreported as a Bash failure.
+  OnBashExecDone(std::move(done), std::move(command), start_time, "powershell",
+                 ok, std::move(result), error_code, error_message,
+                 install_hint);
+}
+
+
+void ProcessTool::OnPowerShellForegroundSpawnDone(
+    ToolCallback done,
+    std::string command,
+    base::FilePath cwd,
+    int timeout_ms,
+    std::string attempted_shell,
+    bool auto_background_on_timeout,
+    bool ok,
+    const std::optional<std::string>& shell_id,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  if (!ok && attempted_shell == "pwsh" && error_code.has_value() &&
+      (*error_code == "BINARY_NOT_FOUND" ||
+       *error_code == "COMMAND_NOT_ALLOWED")) {
+    LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
+                            "powershell", /*run_in_background=*/false,
+                            std::move(done));
+    return;
+  }
+  OnForegroundSpawnDone(std::move(done), std::move(command), base::TimeTicks::Now(),
+                        "powershell", timeout_ms, auto_background_on_timeout,
+                        ok, shell_id, error_code, error_message, install_hint);
+}
+
+void ProcessTool::OnPowerShellSpawnDone(
+    ToolCallback done,
+    std::string command,
+    base::FilePath cwd,
+    int timeout_ms,
+    std::string attempted_shell,
+    bool ok,
+    const std::optional<std::string>& shell_id,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  // pwsh not installed → fall back to Windows PowerShell, mirroring the
+  // foreground OnPowerShellExecDone retry. Only pre-launch resolution
+  // failures are retried; once the command spawns, the result is final.
+  if (!ok && attempted_shell == "pwsh" && error_code.has_value() &&
+      (*error_code == "BINARY_NOT_FOUND" ||
+       *error_code == "COMMAND_NOT_ALLOWED")) {
+    LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
+                            "powershell", /*run_in_background=*/true,
+                            std::move(done));
+    return;
+  }
+  // Otherwise identical to the Bash background spawn: resolve with the
+  // shell_id (notification-driven completion) or reject the pre-launch failure.
+  OnBashSpawnDone(std::move(done), ok, shell_id, error_code, error_message,
+                  install_hint);
 }
 
 void ProcessTool::OnBashExecDone(
     ToolCallback done,
     std::string original_command,
     base::TimeTicks start_time,
+    std::string tool_label,
     bool ok,
     mojom::ShellExecResultPtr result,
     const std::optional<std::string>& error_code,
@@ -660,8 +1157,36 @@ void ProcessTool::OnBashExecDone(
       }
       msg.append(*install_hint);
     }
-    std::string code = error_code.value_or("bash_failed");
+    std::string code =
+        error_code.value_or(base::StrCat({tool_label, "_failed"}));
     std::move(done).Reject(std::move(code), std::move(msg));
+    return;
+  }
+
+  // Auto-background-on-timeout handoff: the command crossed its foreground
+  // budget and was DETACHED (not killed) into the background registry.
+  // Surface it exactly like a `run_in_background` spawn (see OnBashSpawnDone)
+  // so Nexus can notify on completion, instead of showing a timeout failure.
+  // Mirrors Claude Code moving a timed-out foreground command to the
+  // background.
+  if (result->background_shell_id.has_value() &&
+      !result->background_shell_id->empty()) {
+    const std::string& bg_id = *result->background_shell_id;
+    if (launcher_) {
+      launcher_->RetainBackgroundShell(bg_id);
+    }
+
+    base::DictValue dict;
+    dict.Set("shell_id", bg_id);
+    dict.Set("status", "running");
+    dict.Set("message",
+             base::StrCat(
+                 {"Command exceeded its foreground timeout and was moved "
+                  "to the background (shell_id=",
+                  bg_id,
+                  "). It is still running — Nexus will notify you when it "
+                  "completes; do not poll for output while it is running."}));
+    std::move(done).Resolve(std::move(dict));
     return;
   }
 
@@ -675,9 +1200,7 @@ void ProcessTool::OnBashExecDone(
       BigBufferToString(result->stdout_buffer, kMaxOutputBytes);
   std::string stderr_text =
       BigBufferToString(result->stderr_buffer, kMaxOutputBytes);
-  int exit_code = result->exit->code.has_value()
-                      ? *result->exit->code
-                      : -1;
+  int exit_code = result->exit->code.has_value() ? *result->exit->code : -1;
 
   std::string base = ExtractBaseCommand(original_command);
   CommandInterpretation interp = InterpretExit(base, exit_code);
@@ -688,8 +1211,8 @@ void ProcessTool::OnBashExecDone(
   if (result->exit->timed_out) {
     body.append("Command timed out.\n");
   } else if (exit_code != 0) {
-    body.append(base::StrCat({"Command exited with code ",
-                              base::NumberToString(exit_code), ".\n"}));
+    body.append(base::StrCat(
+        {"Command exited with code ", base::NumberToString(exit_code), ".\n"}));
   }
   if (!stdout_text.empty()) {
     body.append(stdout_text);
@@ -701,23 +1224,50 @@ void ProcessTool::OnBashExecDone(
     body.append(stderr_text);
   }
   if (result->stdout_truncated || result->stderr_truncated) {
-    if (!body.empty() && body.back() != '\n') body.push_back('\n');
+    if (!body.empty() && body.back() != '\n') {
+      body.push_back('\n');
+    }
     body.append(
         "[output truncated — re-run with a narrower scope to capture more]");
   }
   if (!interp.message.empty() && is_error) {
-    if (!body.empty() && body.back() != '\n') body.push_back('\n');
+    if (!body.empty() && body.back() != '\n') {
+      body.push_back('\n');
+    }
     body.append(interp.message);
   }
   if (body.empty()) {
     body = "(no output)";
   }
 
+  // Defensive UTF-8 guard. `body` should already be valid UTF-8 by the
+  // time we get here (`BigBufferToString` sanitises every shell stream
+  // via `EnsureUtf8`). If anything ever slips a non-UTF-8 byte past
+  // that path, `base::Value`'s std::string ctor DCHECKs and the
+  // browser fatals at base/values.cc:191 — and from that crash site
+  // we cannot tell *which* command produced the bad bytes. Log first,
+  // sanitise second, so we keep both the diagnostic and the no-crash
+  // property. ERROR (not DCHECK / LOG(FATAL)) so this surfaces in
+  // release builds too — the whole point is to catch a hit in the
+  // wild without taking down the browser.
+  if (!base::IsStringUTF8AllowingNoncharacters(body)) {
+    LOG(ERROR) << "[ProcessTool] non-UTF-8 body before reply"
+               << "; tool_label=" << tool_label << " original_command='"
+               << original_command << "'"
+               << " is_error=" << is_error << " body_size=" << body.size()
+               << " first_128_bytes_hex="
+               << base::HexEncode(std::string_view(
+                      body.data(),
+                      std::min(body.size(), static_cast<size_t>(128))));
+    body = base::UTF16ToUTF8(base::UTF8ToUTF16(body));
+  }
+
   // Failures Reject so the framework marks the tool_result as
   // isError, matching CC's BashTool which sets is_error: true when
   // exit_code != 0 / timed_out.
   if (is_error) {
-    std::string code = result->exit->timed_out ? "bash_timeout" : "bash_failed";
+    std::string code = base::StrCat(
+        {tool_label, result->exit->timed_out ? "_timeout" : "_failed"});
     std::move(done).Reject(std::move(code), std::move(body));
     return;
   }
@@ -809,8 +1359,7 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
 
   // Normalize output_mode; reject unknown values rather than silently
   // falling back, since the model just hallucinated otherwise.
-  std::string output_mode =
-      input.output_mode.value_or("files_with_matches");
+  std::string output_mode = input.output_mode.value_or("files_with_matches");
   if (output_mode != "content" && output_mode != "files_with_matches" &&
       output_mode != "count") {
     std::move(done).Reject(
@@ -822,8 +1371,8 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   }
 
   bool show_line_numbers = input.show_line_numbers.value_or(true);
-  int head_limit = input.head_limit.has_value() ? *input.head_limit
-                                                : kDefaultGrepHeadLimit;
+  int head_limit =
+      input.head_limit.has_value() ? *input.head_limit : kDefaultGrepHeadLimit;
   if (head_limit < 0) {
     head_limit = kDefaultGrepHeadLimit;
   }
@@ -833,62 +1382,48 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
       BuildRipgrepArgs(input, output_mode, show_line_numbers);
   rg_args.push_back(target.AsUTF8Unsafe());
 
-  auto options = mojom::ShellSpawnOptions::New();
-  options->command = "rg";
-  options->args = std::move(rg_args);
-  // For rg: cwd doesn't drive matching (we passed the target as the
-  // last argv) but the service requires an absolute, existing dir.
-  options->cwd = default_root.empty() ? target : default_root;
-  options->use_shell = false;
-  options->timeout_ms = kDefaultBashTimeoutMs;
-  options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
+  RipgrepRunOptions options;
+  // rg: cwd doesn't drive matching (the target is the trailing argv) but the
+  // shell service requires an absolute, existing dir.
+  options.cwd = default_root.empty() ? target : default_root;
+  options.timeout_ms = static_cast<uint32_t>(kDefaultBashTimeoutMs);
+  options.max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
 
-  mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
-  remote->Exec(
-      std::move(options),
-      base::BindOnce(&ProcessTool::OnGrepExecDone,
-                     weak_ptr_factory_.GetWeakPtr(),
-                     std::move(done), output_mode, head_limit, offset));
+  // The runner owns the exec + BINARY_NOT_FOUND → auto-install rg → retry
+  // flow (shared with FileTool::Glob); we only shape its parsed lines.
+  if (!launcher_) {
+    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    return;
+  }
+  ripgrep_runner_.Run(
+      launcher_.get(), GetProfile(), std::move(rg_args), std::move(options),
+      base::BindOnce(&ProcessTool::OnGrepRgDone, weak_ptr_factory_.GetWeakPtr(),
+                     std::move(done), std::move(output_mode), head_limit,
+                     offset));
 }
 
-void ProcessTool::OnGrepExecDone(
-    ToolCallback done,
-    std::string output_mode,
-    int head_limit,
-    int offset,
-    bool ok,
-    mojom::ShellExecResultPtr result,
-    const std::optional<std::string>& error_code,
-    const std::optional<std::string>& error_message,
-    const std::optional<std::string>& install_hint) {
-  // Pre-launch failure path. ripgrep missing from the host shows up
-  // here as BINARY_NOT_FOUND with an `install_hint` the model can use
-  // to install rg via Bash and retry. CC parity: emit as a tool
-  // error so the framework marks the tool_result.is_error.
-  if (!ok || !result) {
-    std::string msg =
-        error_message.has_value()
-            ? base::StrCat({"ripgrep unavailable: ", *error_message})
-            : std::string("ripgrep unavailable");
-    if (install_hint.has_value() && !install_hint->empty()) {
-      msg = base::StrCat({msg, "\n\n", *install_hint});
-    }
-    std::string code = error_code.value_or("grep_failed");
-    std::move(done).Reject(std::move(code), std::move(msg));
+void ProcessTool::OnGrepRgDone(ToolCallback done,
+                               std::string output_mode,
+                               int head_limit,
+                               int offset,
+                               RipgrepRunResult result) {
+  // Pre-launch failure: rg was unavailable and the runner's one-shot
+  // auto-install didn't recover it. The runner already shaped a diagnostic
+  // message (+ manual-install hint); surface it under a Grep-labeled code.
+  if (!result.launched) {
+    std::string code = result.error_code.empty() ? std::string("grep_failed")
+                                                 : std::move(result.error_code);
+    std::move(done).Reject(std::move(code), std::move(result.error_message));
     return;
   }
 
-  int exit_code =
-      result->exit->code.has_value() ? *result->exit->code : 0;
-  std::vector<std::string> lines = ParseRipgrepLines(
-      result->stdout_buffer, exit_code, kMaxOutputBytes);
+  std::vector<std::string> lines = std::move(result.lines);
 
   // CC parity: GrepTool.ts emits per-mode prose strings. Mirror those
   // exactly so the model's recognition pattern is shared with CC.
 
   if (output_mode == "content") {
-    SliceResult sliced =
-        ApplyHeadLimit(std::move(lines), head_limit, offset);
+    SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
     if (sliced.items.empty()) {
       std::move(done).Resolve(base::Value("No files found"));
       return;
@@ -898,9 +1433,9 @@ void ProcessTool::OnGrepExecDone(
       body.append(base::StrCat(
           {"\n\n[Showing results with pagination = limit ",
            base::NumberToString(sliced.applied_limit),
-           offset > 0 ? base::StrCat(
-                            {", offset ", base::NumberToString(offset)})
-                      : std::string(),
+           offset > 0
+               ? base::StrCat({", offset ", base::NumberToString(offset)})
+               : std::string(),
            "]"}));
     }
     std::move(done).Resolve(base::Value(std::move(body)));
@@ -908,8 +1443,7 @@ void ProcessTool::OnGrepExecDone(
   }
 
   if (output_mode == "count") {
-    SliceResult sliced =
-        ApplyHeadLimit(std::move(lines), head_limit, offset);
+    SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
     int total_matches = 0;
     int file_count = 0;
     for (const std::string& line : sliced.items) {
@@ -928,31 +1462,28 @@ void ProcessTool::OnGrepExecDone(
     std::string body = base::JoinString(sliced.items, "\n");
     body.append(base::StrCat({"\n\nFound ", base::NumberToString(total_matches),
                               " total occurrence(s) across ",
-                              base::NumberToString(file_count),
-                              " file(s)."}));
+                              base::NumberToString(file_count), " file(s)."}));
     if (sliced.truncated) {
-      body.append(base::StrCat(
-          {" [Showing results with pagination = limit ",
-           base::NumberToString(sliced.applied_limit), "]"}));
+      body.append(
+          base::StrCat({" [Showing results with pagination = limit ",
+                        base::NumberToString(sliced.applied_limit), "]"}));
     }
     std::move(done).Resolve(base::Value(std::move(body)));
     return;
   }
 
   // files_with_matches: rg already returns one path per line.
-  SliceResult sliced =
-      ApplyHeadLimit(std::move(lines), head_limit, offset);
+  SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
   if (sliced.items.empty()) {
     std::move(done).Resolve(base::Value("No files found"));
     return;
   }
-  std::string body = base::StrCat({"Found ",
-                                    base::NumberToString(sliced.items.size()),
-                                    " file(s)"});
+  std::string body = base::StrCat(
+      {"Found ", base::NumberToString(sliced.items.size()), " file(s)"});
   if (sliced.truncated) {
-    body.append(base::StrCat(
-        {" [Showing results with pagination = limit ",
-         base::NumberToString(sliced.applied_limit), "]"}));
+    body.append(
+        base::StrCat({" [Showing results with pagination = limit ",
+                      base::NumberToString(sliced.applied_limit), "]"}));
   }
   body.push_back('\n');
   body.append(base::JoinString(sliced.items, "\n"));

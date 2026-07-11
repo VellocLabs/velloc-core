@@ -1,3 +1,5 @@
+import("//testing/test.gni")
+
 source_set("patch_resources") {
   sources = [
     "patch_resources.cc",
@@ -54,5 +56,27 @@ source_set("feature") {
     "//custom_browser/common",
     "//custom_browser/resources:custom_browser_strings",
     "//custom_browser/resources/patch_webui:resources",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [ "patch_resources_unittest.cc" ]
+
+  deps = [
+    ":patch_resources",
+    "//testing/gtest",
+  ]
+}
+
+# Standalone test binary for the patch_webui unit tests. Run with:
+#   autoninja -C out/Debug custom_browser_patch_webui_unittests
+#   out/Debug/custom_browser_patch_webui_unittests
+test("custom_browser_patch_webui_unittests") {
+  deps = [
+    ":unit_tests",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
   ]
 }

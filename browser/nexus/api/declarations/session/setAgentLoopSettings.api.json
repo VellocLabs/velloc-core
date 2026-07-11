@@ -22,6 +22,12 @@
       "description": "Optional default working directory for shell-style tools (Bash / Glob / Grep / Read / Write / Edit). Must be absolute; relative paths are silently ignored so a partial settings push doesn't clobber a previously-set cwd."
     },
     {
+      "name": "clearReadState",
+      "type": "boolean",
+      "required": false,
+      "description": "If true, clear the session's native Read/Edit/Write read-state cache. Used after /compact or /clear because earlier Read content may no longer be visible in model context."
+    },
+    {
       "name": "executionContext",
       "type": "object",
       "required": false,

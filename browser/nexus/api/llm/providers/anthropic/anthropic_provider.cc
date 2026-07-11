@@ -1,5 +1,7 @@
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_provider.h"
 
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
+
 #include <array>
 #include <utility>
 
@@ -547,7 +549,7 @@ bool AnthropicProvider::Configure(const base::DictValue& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (const auto* key = config.FindString("api_key"))
-    api_key_ = *key;
+    api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*key);
 
   if (const auto* model = config.FindString("model");
       model && !model->empty()) {
@@ -968,6 +970,19 @@ base::ListValue AnthropicProvider::TranslateContentParts(
       d.Set("source", std::move(source));
       result.Append(std::move(d));
 
+    } else if (*type == "document") {
+      const auto* data = part->FindString("data");
+      const auto* mime_type = part->FindString("mimeType");
+      base::DictValue source;
+      source.Set("type", "base64");
+      source.Set("media_type",
+                 mime_type ? *mime_type : std::string("application/pdf"));
+      source.Set("data", data ? *data : std::string());
+      base::DictValue d;
+      d.Set("type", "document");
+      d.Set("source", std::move(source));
+      result.Append(std::move(d));
+
     } else if (*type == "tool-call") {
       const auto* id = part->FindString("toolCallId");
       const auto* name = part->FindString("toolName");
@@ -1067,23 +1082,54 @@ base::ListValue AnthropicProvider::TranslateContentParts(
               img_source.Set("url", *img);
             } else {
               img_source.Set("type", "base64");
+              // Default aligned with the top-level image content-part
+              // path (image/png) so the same missing-mime input yields the
+              // same media_type regardless of which branch builds it.
               img_source.Set("media_type",
-                             mime ? *mime : std::string("image/jpeg"));
+                             mime ? *mime : std::string("image/png"));
               img_source.Set("data", img ? *img : std::string());
             }
             base::DictValue ib;
             ib.Set("type", "image");
             ib.Set("source", std::move(img_source));
             blocks.Append(std::move(ib));
+          } else if (*btype == "document") {
+            const std::string* data = block->FindString("data");
+            const std::string* mime = block->FindString("mimeType");
+            base::DictValue doc_source;
+            doc_source.Set("type", "base64");
+            doc_source.Set("media_type",
+                           mime ? *mime : std::string("application/pdf"));
+            doc_source.Set("data", data ? *data : std::string());
+            base::DictValue db;
+            db.Set("type", "document");
+            db.Set("source", std::move(doc_source));
+            blocks.Append(std::move(db));
           }
         }
-        d.Set("content", std::move(blocks));
+        if (blocks.empty()) {
+          // No recognized blocks (empty list, or only block types we don't
+          // translate). Anthropic 400s on an empty `content` array, so fall
+          // back to the bare-string form carrying the serialized original —
+          // never emit `content: []`.
+          std::string fallback;
+          base::JSONWriter::Write(*result_list, &fallback);
+          d.Set("content",
+                fallback.empty() ? std::string("(no content)") : fallback);
+        } else {
+          d.Set("content", std::move(blocks));
+        }
       } else {
         std::string content_text;
         if (const auto* result_str = part->FindString("result")) {
           content_text = *result_str;
         } else if (const auto* result_val = part->Find("result")) {
           base::JSONWriter::Write(*result_val, &content_text);
+        }
+        // Keep tool_result content non-empty (absent/empty result) — an
+        // empty string is a dubious tool_result payload for Anthropic.
+        if (content_text.empty()) {
+          content_text = "(no content)";
         }
         d.Set("content", std::move(content_text));
       }

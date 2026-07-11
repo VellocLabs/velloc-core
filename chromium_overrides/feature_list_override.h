@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/actor/core/actor_features.h"
 
 namespace custom_browser {
 
@@ -68,6 +69,53 @@ inline void AppendFeatureListOverrides(
       std::cref(features::kGlicDevelopmentSyncGoogleCookies),
       base::FeatureList::OVERRIDE_ENABLE_FEATURE);
 
+  // Let the agent's tool-triggered navigations cross origins freely — e.g.
+  // clicking a Google/Bing search result that leads to another site. The
+  // actor's cross-origin navigation gate (`IsNavigationGatingEnabled()` →
+  // `kGlicCrossOriginNavigationGating`, see
+  // components/actor/core/actor_util.cc + chrome/browser/actor/
+  // execution_engine.cc) otherwise fails such a click with
+  // `kTriggeredNavigationBlocked` because a click's destination origin is
+  // never auto-granted (only an explicit Navigate grants its target origin).
+  //
+  // NOTE: the `confirm_navigation_to_new_origins` param is NOT the lever — it
+  // already defaults to false (= allow novel non-sensitive origins). The
+  // effective gate is the parent feature, so we disable it WHOLESALE here.
+  // Trade-off: this also drops the sensitive-URL confirmation step for actor
+  // navigations — accepted so clicked links can navigate anywhere without a
+  // prompt the agent can't answer.
+  overrides->emplace_back(std::cref(actor::kGlicCrossOriginNavigationGating),
+                          base::FeatureList::OVERRIDE_DISABLE_FEATURE);
+
+  // Pin the Chromium 149 "SearchSettingsUpdate" search-settings rework OFF.
+  // The custom browser's search-engine UI is built on the legacy model: the Get
+  // Started default-engine picker and the customize-chrome search chip rely on
+  // the getSearchEnginesList() WebUI message and the
+  // chrome://settings/searchEngines route. SearchSettingsUpdate is
+  // DISABLED_BY_DEFAULT upstream, but the field-trial testing config enables it
+  // in dev builds -- and when enabled, getSearchEnginesList() CHECK-crashes the
+  // browser process (search_engines_handler.cc) while route.ts drops the
+  // /searchEngines route, breaking both surfaces. Append to --disable-features
+  // (read by InitializeFromCommandLine before field trials, so it wins over the
+  // testing config) rather than emplace_back(), whose precedence vs. an already
+  // registered field-trial override is registration-order dependent.
+  {
+    constexpr char kSearchSettingsUpdateFeature[] = "SearchSettingsUpdate";
+    auto* command_line = base::CommandLine::ForCurrentProcess();
+    std::string disable_features =
+        command_line->GetSwitchValueASCII(::switches::kDisableFeatures);
+    if (disable_features.find(kSearchSettingsUpdateFeature) ==
+        std::string::npos) {
+      if (disable_features.empty()) {
+        disable_features = kSearchSettingsUpdateFeature;
+      } else {
+        disable_features = std::string(kSearchSettingsUpdateFeature) + "," +
+                           disable_features;
+      }
+      command_line->AppendSwitchASCII(::switches::kDisableFeatures,
+                                      disable_features);
+    }
+  }
 }
 // HasTabSearchToolbarButton
 }  // namespace custom_browser

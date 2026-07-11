@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setWindowDragRegions",
+  "description": "Report the nexus topbar's OS window-drag map. The React topbar lives in the guest <webview>, so its `-webkit-app-region` never reaches the host frame; it instead measures its draggable bar + no-drag control rects and sends them here. C++ ORs them into CustomBrowserWebUIView::IsInWebUIDragRegion so the frameless window drags from the bar. Payload: { regions: [{x,y,width,height,draggable}] } in guest-viewport CSS px (the topbar sits at the view origin).",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ regions: Array<{x:number,y:number,width:number,height:number,draggable:boolean}> }"
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

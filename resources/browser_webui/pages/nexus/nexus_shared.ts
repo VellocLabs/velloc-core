@@ -1,6 +1,5 @@
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {css, type CSSResultGroup} from 'chrome://resources/lit/v3_0/lit.rollup.js';
-import {BoolKey} from '../../browser_constants.mojom-webui.js';
 
 export interface ModelInfo {
   contextWindow?: number;
@@ -83,14 +82,14 @@ export interface VerifyProviderConfigResult {
   verifiedAtMs?: number;
 }
 
-export type NexusPaneState = 'warning'|'settings'|'nexus-view';
-export type NexusSettingsSection =
-    'models'|'mcp'|'permissions'|'tools'|'shortcuts'|'about';
+export type NexusSettingsSection = 'models'|'mcp'|'permissions'|'tools'|
+    'shortcuts'|'features'|'plugins'|'system'|'about';
 export type SettingsStatus = 'idle'|'draft'|'verifying'|'ready'|'error';
 export type StatusTone = 'error'|'info'|'success'|'warning';
 
 export const DEFAULT_BASE_URLS: Record<string, string> = {
   anthropic: 'https://api.anthropic.com',
+  deepseek: 'https://api.deepseek.com',
   glm: 'https://open.bigmodel.cn/api/paas/v4',
   google: 'https://generativelanguage.googleapis.com/v1beta',
   kimi: 'https://api.moonshot.cn/v1',
@@ -103,6 +102,7 @@ export const WEBAPP_URL_PREF = 'nexus.webapp_url';
 
 export const PROVIDER_NAME_KEYS: Record<string, string> = {
   anthropic: 'customBrowserNexusProviderAnthropic',
+  deepseek: 'customBrowserNexusProviderDeepseek',
   glm: 'customBrowserNexusProviderGlm',
   google: 'customBrowserNexusProviderGoogle',
   kimi: 'customBrowserNexusProviderKimi',
@@ -111,8 +111,6 @@ export const PROVIDER_NAME_KEYS: Record<string, string> = {
   openai: 'customBrowserNexusProviderOpenai',
   qwen: 'customBrowserNexusProviderQwen',
 };
-
-export const NEXUS_WARNING_KEY = BoolKey[BoolKey.kNexusWarningAcknowledged];
 
 export function getString(key: string, fallback = ''): string {
   try {
@@ -137,13 +135,6 @@ export function getStringF(
   } catch {
     return fallbackValue;
   }
-}
-
-export function getInitialWarningAcknowledged(): boolean {
-  if (!loadTimeData.valueExists(NEXUS_WARNING_KEY)) {
-    return false;
-  }
-  return loadTimeData.getBoolean(NEXUS_WARNING_KEY);
 }
 
 export function getProviderDisplayName(provider: ProviderInfo): string {
@@ -367,6 +358,24 @@ export const paneStyles: CSSResultGroup = css`
     margin: 4px 0 0;
   }
 
+  /* Variant for power-user / dangerous settings (e.g. "Allow agent
+     JavaScript"). Vertically stacks like .block so the multi-paragraph
+     warning copy renders cleanly with newlines preserved, and tints the
+     description text with the system warning color so users notice. */
+  .card-row.card-row--danger {
+    align-items: flex-start;
+    padding-block: var(--cr-section-vertical-padding, 18px);
+  }
+
+  .card-row.card-row--danger .card-row-title {
+    color: var(--cr-warning-color, #b25a00);
+  }
+
+  .card-row.card-row--danger .card-row-description {
+    color: var(--cr-warning-color, #b25a00);
+    white-space: pre-line;
+  }
+
   .card-row-action {
     flex: none;
     margin-inline-start: 16px;
@@ -568,5 +577,95 @@ export const paneStyles: CSSResultGroup = css`
     .panel-card {
       padding: 20px;
     }
+  }
+`;
+
+// Custom-select dropdown styles shared by the Model-providers and MCP
+// settings pages. A button opens an absolutely-positioned listbox with a
+// full-viewport backdrop for outside-click close. Pairs with the
+// `.custom-select` / `.custom-select-button` / `.chevron` /
+// `.dropdown-backdrop` / `.custom-select-dropdown` / `.custom-option`
+// markup. A host that embeds this must let the containing `.section-card`
+// `overflow: visible` (the dropdown is absolutely positioned and would
+// otherwise be clipped).
+export const customSelectStyles: CSSResultGroup = css`
+  .custom-select {
+    position: relative;
+    user-select: none;
+  }
+
+  .custom-select-button {
+    background: var(
+        --md-background-color,
+        var(--cr-card-background-color, var(--app-surface)));
+    border: 1px solid var(--cr-separator-color);
+    border-radius: 12px;
+    box-sizing: border-box;
+    color: var(--cr-primary-text-color, var(--text-primary));
+    font: inherit;
+    min-height: 48px;
+    padding: 12px 14px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .custom-select-button:focus {
+    border-color: var(--cr-focus-outline-color);
+    box-shadow: 0 0 0 1px var(--cr-focus-outline-color);
+    outline: none;
+  }
+
+  .custom-select-button .chevron {
+    margin-left: auto;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid currentColor;
+  }
+
+  .dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+  }
+
+  .custom-select-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 100%;
+    background: var(--cr-card-background-color, var(--app-surface));
+    border: 1px solid var(--cr-separator-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    z-index: 100;
+    max-height: 390px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
+  }
+
+  .custom-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: background-color 0.12s;
+  }
+
+  .custom-option:hover {
+    background: var(--cr-hover-background-color, rgba(0, 0, 0, 0.06));
+  }
+
+  .custom-option.selected {
+    background: var(--cr-active-background-color, rgba(0, 0, 0, 0.08));
+    font-weight: 500;
   }
 `;

@@ -30,6 +30,7 @@ constexpr const char* kProviderIds[] = {
     "minimax",
     "qwen",
     "kimi",
+    "deepseek",
     "ollama",
 };
 
@@ -43,6 +44,7 @@ struct OpenAiCompatConfig {
 };
 
 constexpr OpenAiCompatConfig kOpenAiCompatConfigs[] = {
+    {"deepseek", "DeepSeek", "https://api.deepseek.com"},
     {"glm", "GLM", "https://open.bigmodel.cn/api/paas/v4"},
     {"kimi", "Kimi", "https://api.moonshot.cn/v1"},
     {"minimax", "MiniMax", "https://api.minimax.io/v1"},

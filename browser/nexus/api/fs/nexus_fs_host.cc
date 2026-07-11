@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/base_paths.h"
 #include "base/containers/span.h"
 #include "base/environment.h"
 #include "base/files/file.h"
@@ -15,6 +16,7 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/path_service.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
@@ -108,6 +110,46 @@ NexusFsHost::~NexusFsHost() = default;
 
 std::string NexusFsHost::Cwd() const {
   return cwd_.AsUTF8Unsafe();
+}
+
+std::string NexusFsHost::UserHome() const {
+  // Resolve via env vars first — matches the convention nexus_web uses
+  // (`runtimeConfig.getEnv('HOME') ?? runtimeConfig.getEnv('USERPROFILE')`)
+  // and, critically, respects overrides set by the e2e test harness
+  // (the test browser process is spawned with HOME/USERPROFILE
+  // pointing at the per-test isolation root so feature toggles don't
+  // pollute the developer's real home dir).
+  //
+  // On Windows, `base::PathService::Get(base::DIR_HOME)` resolves via
+  // `SHGetKnownFolderPath(FOLDERID_Profile)` which IGNORES env vars —
+  // so we couldn't use it for the test-isolation case. Reading env
+  // directly fixes that.
+  //
+  // PathService stays as the last-ditch fallback for the (rare)
+  // service-account configs where neither env var is set.
+  auto env = base::Environment::Create();
+#if BUILDFLAG(IS_WIN)
+  std::optional<std::string> profile = env->GetVar("USERPROFILE");
+  if (profile.has_value() && !profile->empty()) {
+    return *profile;
+  }
+  std::optional<std::string> home_env = env->GetVar("HOME");
+  if (home_env.has_value() && !home_env->empty()) {
+    return *home_env;
+  }
+#else
+  std::optional<std::string> home_env = env->GetVar("HOME");
+  if (home_env.has_value() && !home_env->empty()) {
+    return *home_env;
+  }
+#endif
+  base::FilePath home;
+  if (base::PathService::Get(base::DIR_HOME, &home)) {
+    return home.AsUTF8Unsafe();
+  }
+  // Empty signal — the bridge maps to its '.' fallback so the WebUI
+  // surface keeps working at degraded paths instead of breaking.
+  return std::string();
 }
 
 NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
@@ -248,7 +290,16 @@ NexusFsHost::ReadResult NexusFsHost::ReadFile(const std::string& path) const {
 
   std::optional<std::vector<uint8_t>> bytes = base::ReadFileToBytes(resolved);
   if (!bytes.has_value()) {
-    result.error = "Failed to read file";
+    // Distinguish "file absent" from "present but unreadable".
+    // base::ReadFileToBytes collapses both into nullopt, but JS callers
+    // (settings / plugins loaders) treat a missing file as the benign
+    // first-run case and only warn on real read errors. Emit ENOENT-style
+    // wording for the absent case so the guest's isMissingFileError()
+    // detector (regex on ENOENT / "no such file") recognizes it — Node
+    // parity, since CC relies on err.code === 'ENOENT'.
+    result.error = base::PathExists(resolved)
+                       ? "Failed to read file"
+                       : "ENOENT: no such file or directory";
     return result;
   }
 

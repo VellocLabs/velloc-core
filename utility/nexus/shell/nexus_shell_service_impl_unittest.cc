@@ -10,11 +10,13 @@
 #include <utility>
 #include <vector>
 
-#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/location.h"
 #include "base/run_loop.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -209,6 +211,272 @@ TEST(NexusShellServiceImplTest, ExecRunsAllowlistedShellAndReturnsStdout) {
   const std::string stdout_str(stdout_span.begin(), stdout_span.end());
   EXPECT_NE(stdout_str.find("nexus-exec-ok"), std::string::npos)
       << "Got stdout: " << stdout_str;
+}
+
+// CC parity (auto-background-on-timeout): a foreground command flagged
+// `background_on_timeout` that outlives its `timeout_ms` budget must NOT be
+// killed — the service detaches it into the background registry, replies
+// with a `background_shell_id`, and the child keeps running until it
+// finishes on its own (retrievable via ReadBackgroundOutput). This is the
+// process-lifetime guarantee the Bash tool relies on.
+TEST(NexusShellServiceImplTest, ExecAutoBackgroundsOnTimeoutInsteadOfKilling) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+
+  const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+  const std::string shell_id_tool = FindAllowlistedShellId(caps);
+  if (shell_id_tool.empty()) {
+    GTEST_SKIP() << "No allowlisted shell on host; cannot exercise Exec";
+  }
+
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+  // `ping -n 3` is the standard ~2s Windows wait — outlives the budget.
+  options->args = {"/C", "ping -n 3 127.0.0.1 >NUL & echo nexus-bg-done"};
+#else
+  options->args = {"-c", "sleep 1; echo nexus-bg-done"};
+#endif
+  options->cwd = tmp.GetPath();
+  options->use_shell = false;
+  options->timeout_ms = 200;  // block budget the command will exceed
+  options->max_output_bytes = 4096;
+  options->background_on_timeout = true;
+
+  // Crossing the 200ms budget must DETACH (not kill): ok=true, a
+  // background_shell_id, exit.timed_out=true, exit.killed=false.
+  const ExecResponse response = RunExec(remote, std::move(options));
+  ASSERT_TRUE(response.ok)
+      << "code=" << response.error_code.value_or("")
+      << " message=" << response.error_message.value_or("");
+  ASSERT_TRUE(response.result);
+  ASSERT_TRUE(response.result->background_shell_id.has_value());
+  EXPECT_FALSE(response.result->background_shell_id->empty());
+  ASSERT_TRUE(response.result->exit);
+  EXPECT_TRUE(response.result->exit->timed_out);
+  EXPECT_FALSE(response.result->exit->killed);
+
+  const std::string bg_id = *response.result->background_shell_id;
+
+  // The detached command keeps running and eventually completes on its
+  // own; polling ReadBackgroundOutput surfaces its real stdout and a
+  // non-killed exit — proving it was NOT terminated at the budget.
+  mojom::ShellBackgroundOutputPtr final_output;
+  for (int i = 0; i < 80 && !final_output; ++i) {
+    base::RunLoop poll;
+    mojom::ShellBackgroundOutputPtr snapshot;
+    remote->ReadBackgroundOutput(
+        bg_id,
+        base::BindLambdaForTesting([&](mojom::ShellBackgroundOutputPtr out) {
+          snapshot = std::move(out);
+          poll.Quit();
+        }));
+    poll.Run();
+    ASSERT_TRUE(snapshot);
+    ASSERT_TRUE(snapshot->found);
+    if (!snapshot->running) {
+      final_output = std::move(snapshot);
+      break;
+    }
+    // Advance real wall-clock so the worker child can finish, while still
+    // pumping the binding sequence (so OnExecBackgroundComplete runs).
+    base::RunLoop wait;
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, wait.QuitClosure(), base::Milliseconds(50));
+    wait.Run();
+  }
+
+  ASSERT_TRUE(final_output) << "background command never completed";
+  ASSERT_TRUE(final_output->exit);
+  EXPECT_FALSE(final_output->exit->killed);
+  const base::span<const uint8_t> out_span =
+      base::span<const uint8_t>(final_output->stdout_buffer);
+  const std::string out_str(out_span.begin(), out_span.end());
+  EXPECT_NE(out_str.find("nexus-bg-done"), std::string::npos)
+      << "Got stdout: " << out_str;
+}
+
+TEST(NexusShellServiceImplTest, SpawnReturnsPartialOutputWhileRunning) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+
+  const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+  const std::string shell_id_tool = FindAllowlistedShellId(caps);
+  if (shell_id_tool.empty()) {
+    GTEST_SKIP() << "No allowlisted shell on host; cannot exercise Spawn";
+  }
+
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+  options->args = {"/C", "echo nexus-bg-partial & ping -n 3 127.0.0.1 >NUL & echo nexus-bg-final"};
+#else
+  options->args = {"-c", "echo nexus-bg-partial; sleep 1; echo nexus-bg-final"};
+#endif
+  options->cwd = tmp.GetPath();
+  options->use_shell = false;
+  options->timeout_ms = 10000;
+  options->max_output_bytes = 4096;
+
+  std::string bg_id;
+  base::RunLoop spawn_loop;
+  remote->Spawn(
+      std::move(options),
+      base::BindLambdaForTesting(
+          [&](bool ok, const std::optional<std::string>& shell_id,
+              const std::optional<std::string>& error_code,
+              const std::optional<std::string>& error_message,
+              const std::optional<std::string>& install_hint) {
+            ASSERT_TRUE(ok) << error_code.value_or("") << ": "
+                            << error_message.value_or("") << " "
+                            << install_hint.value_or("");
+            ASSERT_TRUE(shell_id.has_value());
+            bg_id = *shell_id;
+            spawn_loop.Quit();
+          }));
+  spawn_loop.Run();
+  ASSERT_FALSE(bg_id.empty());
+
+  bool saw_partial_while_running = false;
+  mojom::ShellBackgroundOutputPtr final_output;
+  for (int i = 0; i < 80 && !final_output; ++i) {
+    base::RunLoop poll;
+    mojom::ShellBackgroundOutputPtr snapshot;
+    remote->ReadBackgroundOutput(
+        bg_id,
+        base::BindLambdaForTesting([&](mojom::ShellBackgroundOutputPtr out) {
+          snapshot = std::move(out);
+          poll.Quit();
+        }));
+    poll.Run();
+    ASSERT_TRUE(snapshot);
+    ASSERT_TRUE(snapshot->found);
+    const base::span<const uint8_t> out_span =
+        base::span<const uint8_t>(snapshot->stdout_buffer);
+    const std::string out_str(out_span.begin(), out_span.end());
+    if (snapshot->running &&
+        out_str.find("nexus-bg-partial") != std::string::npos) {
+      saw_partial_while_running = true;
+    }
+    if (!snapshot->running) {
+      final_output = std::move(snapshot);
+      break;
+    }
+    base::RunLoop wait;
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, wait.QuitClosure(), base::Milliseconds(50));
+    wait.Run();
+  }
+
+  EXPECT_TRUE(saw_partial_while_running)
+      << "ReadBackgroundOutput should surface stdout before process exit";
+  ASSERT_TRUE(final_output) << "background command never completed";
+  const base::span<const uint8_t> final_span =
+      base::span<const uint8_t>(final_output->stdout_buffer);
+  const std::string final_str(final_span.begin(), final_span.end());
+  EXPECT_NE(final_str.find("nexus-bg-final"), std::string::npos)
+      << "Got stdout: " << final_str;
+}
+
+TEST(NexusShellServiceImplTest, BackgroundShellIdsAreUniqueAcrossServiceRestarts) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+
+  std::string first_id;
+  {
+    mojo::Remote<mojom::NexusShellService> remote;
+    NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+    const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+    const std::string shell_id_tool = FindAllowlistedShellId(caps);
+    if (shell_id_tool.empty()) {
+      GTEST_SKIP() << "No allowlisted shell on host; cannot exercise Spawn";
+    }
+
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+    options->args = {"/C", "echo first-bg"};
+#else
+    options->args = {"-c", "echo first-bg"};
+#endif
+    options->cwd = tmp.GetPath();
+    options->use_shell = false;
+    options->timeout_ms = 10000;
+    options->max_output_bytes = 4096;
+
+    base::RunLoop loop;
+    remote->Spawn(
+        std::move(options),
+        base::BindLambdaForTesting(
+            [&](bool ok, const std::optional<std::string>& shell_id,
+                const std::optional<std::string>& error_code,
+                const std::optional<std::string>& error_message,
+                const std::optional<std::string>& install_hint) {
+              EXPECT_TRUE(ok) << error_code.value_or("") << ": "
+                              << error_message.value_or("") << " "
+                              << install_hint.value_or("");
+              ASSERT_TRUE(shell_id.has_value());
+              first_id = *shell_id;
+              loop.Quit();
+            }));
+    loop.Run();
+  }
+
+  std::string second_id;
+  {
+    mojo::Remote<mojom::NexusShellService> remote;
+    NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+    const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+    const std::string shell_id_tool = FindAllowlistedShellId(caps);
+    if (shell_id_tool.empty()) {
+      GTEST_SKIP() << "No allowlisted shell on host; cannot exercise Spawn";
+    }
+
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+    options->args = {"/C", "echo second-bg"};
+#else
+    options->args = {"-c", "echo second-bg"};
+#endif
+    options->cwd = tmp.GetPath();
+    options->use_shell = false;
+    options->timeout_ms = 10000;
+    options->max_output_bytes = 4096;
+
+    base::RunLoop loop;
+    remote->Spawn(
+        std::move(options),
+        base::BindLambdaForTesting(
+            [&](bool ok, const std::optional<std::string>& shell_id,
+                const std::optional<std::string>& error_code,
+                const std::optional<std::string>& error_message,
+                const std::optional<std::string>& install_hint) {
+              EXPECT_TRUE(ok) << error_code.value_or("") << ": "
+                              << error_message.value_or("") << " "
+                              << install_hint.value_or("");
+              ASSERT_TRUE(shell_id.has_value());
+              second_id = *shell_id;
+              loop.Quit();
+            }));
+    loop.Run();
+  }
+
+  EXPECT_FALSE(first_id.empty());
+  EXPECT_FALSE(second_id.empty());
+  EXPECT_NE(first_id, second_id)
+      << "Restarted NexusShellService instances must not reuse shell_id values; "
+         "otherwise the SharedWorker can mistake a fresh background shell for a "
+         "stale finished one and hide/drop its notification.";
 }
 
 TEST(NexusShellServiceImplTest, ExecRejectsNonAllowlistedCommand) {

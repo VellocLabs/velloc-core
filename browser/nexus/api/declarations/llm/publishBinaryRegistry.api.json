@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "publishBinaryRegistry",
+  "description": "Guest pushes the managed-binary download registry (pinned URLs + SHA-256 per platform/arch) so the pinned set can be updated online without rebuilding the host.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "Registry dict: { binaries: [ { id, label?, version?, assets: [ { platform, arch, url, sha256, format, member } ] } ] }."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

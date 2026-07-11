@@ -4,8 +4,10 @@
 #include <string>
 
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
 #include "custom_browser/browser/nexus/tools/file_tool/file_tool.h"
 #include "custom_browser/browser/nexus/tools/process_tool/process_tool.h"
@@ -14,9 +16,9 @@ class Profile;
 
 namespace nexus {
 
-// `ToolSession` â€” per-LLM-session container. Owns one instance of every
+// `ToolSession` — per-LLM-session container. Owns one instance of every
 // per-category tool class (currently just `BrowserTool`; future
-// categories â€” skill tools, etc. â€” add a member here).
+// categories — skill tools, etc. — add a member here).
 //
 // Created lazily by `ToolsAdapter::GetOrCreateSession(session_key)` on
 // the first tool call carrying a new sessionId. Destroyed when the
@@ -53,9 +55,14 @@ class ToolSession {
   // The dtor also runs `OnStop(OnStopReason::kDestructor)` as a
   // defensive fallback.
   //
-  // Idempotent â€” every category's `OnStop` override must tolerate
+  // Idempotent — every category's `OnStop` override must tolerate
   // being called more than once.
   void OnStop(OnStopReason reason);
+
+  using ProgressSink = base::RepeatingCallback<void(base::Value progress)>;
+  void set_progress_sink(ProgressSink sink);
+  void ClearProgressSink();
+  void EmitToolProgress(base::Value progress);
 
   // Per-action wall-clock budget. Used by individual tool methods that
   // wrap their actor work (PerformActions / observation builds) with a
@@ -64,7 +71,7 @@ class ToolSession {
   // construction; if no value has been pushed, the getter returns the
   // 180s default (mirrors the Browser-Use reference).
   //
-  // Mutating from any thread is unsafe â€” callers must set this on the
+  // Mutating from any thread is unsafe — callers must set this on the
   // bridge thread before any tool runs. Most production paths set
   // once at session start.
   base::TimeDelta action_timeout() const { return action_timeout_; }
@@ -78,7 +85,7 @@ class ToolSession {
   // path). Set via the existing `setAgentLoopSettings` bridge route
   // (parsed in `ToolsAdapter::HandleSetAgentLoopSettings`).
   //
-  // The setter only accepts absolute paths â€” relative paths are
+  // The setter only accepts absolute paths — relative paths are
   // dropped silently with a [ToolSession] log entry. An unset cwd
   // returns an empty `base::FilePath()`; tool bodies are expected to
   // surface a clean error rather than silently falling back to the
@@ -98,6 +105,7 @@ class ToolSession {
   // Default-empty so the unset state is observable by tool bodies.
   // Populated by `set_cwd(...)` from the bridge.
   base::FilePath cwd_;
+  ProgressSink progress_sink_;
 
   // Each per-category class is a member. Construction order is
   // declaration order; destruction reverses. ToolSession::OnStop

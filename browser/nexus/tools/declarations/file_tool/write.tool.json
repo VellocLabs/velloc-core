@@ -32,22 +32,5 @@
     "required": ["file_path", "content"],
     "additionalProperties": false
   },
-  "output_kind": "object",
-  "runtime": {
-    "thread": "thread_pool"
-  },
-  "providers": {
-    "anthropic": {
-      "input_examples": [
-        {
-          "file_path": "c:\\abc\\notes.txt",
-          "content": "hello world\n"
-        },
-        {
-          "file_path": "c:\\abc\\config.json",
-          "content": "{\n  \"debug\": true\n}\n"
-        }
-      ]
-    }
-  }
+  "output_kind": "object"
 }

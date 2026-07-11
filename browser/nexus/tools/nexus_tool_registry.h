@@ -90,6 +90,18 @@ class ToolBuilder {
   // `NEXUS_END_TOOL(<kind>)` macro.
   ToolBuilder& Returns(JsonSchemaKind kind);
 
+  // Skill bucket this tool belongs to (from the *.tool.json `skill`
+  // field). `BuildHostedToolDefinitionDict` surfaces it as `skill` on
+  // the hosted-tool wire entry; the JS guest gates deferred-skill tools
+  // out of tools[] until Skill('<skill>') activates them. Empty/unset
+  // → always loaded. See giggly-watching-pie.md Phase 4.
+  ToolBuilder& Skill(std::string skill);
+
+  // Mark this tool safe to execute concurrently with adjacent tool_use blocks
+  // from the same assistant response. Keep this explicit: read-only is not
+  // sufficient because browser observation tools are intentionally one-per-turn.
+  ToolBuilder& ConcurrencySafe(bool concurrency_safe = true);
+
   // Attach a hand-crafted strict-tool-use schema variant. Optional;
   // when set, `BuildHostedToolDefinitionDict` emits it as
   // `parametersStrict` on the hosted-tool entry alongside the

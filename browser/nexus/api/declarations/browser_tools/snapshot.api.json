@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "snapshot",
+  "description": "Read browser-tools settings. Returns separateWindow (bool) backing the agent-tab-hosting toggle on the Settings tab. Replaces the chrome.send getBrowserToolsSeparateWindow route. Exposed on the panel WebUI bridge port only.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

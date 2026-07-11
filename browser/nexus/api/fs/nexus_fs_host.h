@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/files/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
 namespace nexus {
@@ -15,19 +16,23 @@ namespace nexus {
 // method performs blocking I/O on the calling thread and returns a
 // typed result struct — there are no callbacks and no internal
 // PostTasks. The caller is responsible for being on a thread that
-// allows blocking; the bridge adapter satisfies that contract by
-// declaring `runtime.thread = "thread_pool"` on every fs *.api.json,
-// which makes the codegen-emitted dispatcher PostTask the Handle*()
-// virtuals onto base::ThreadPool with MayBlock() before invoking them.
+// allows blocking; NexusFsBridgeAdapter satisfies that by hopping each
+// call to base::ThreadPool (MayBlock) via PostTaskAndReplyWithResult.
 //
-// The one exception is the constructor: it posts a single
-// `CreateDirectory(cwd)` task to thread_pool so the working directory
-// exists before any per-call work runs. Doing it synchronously in the
-// ctor would block the UI thread (where NexusFsHost is typically
-// constructed); leaving the cwd un-created until first use would race
-// with concurrent calls. The startup hop is the only PostTask in this
-// class.
-class NexusFsHost {
+// RefCountedThreadSafe because that worker task holds a scoped_refptr to
+// the host: a torn-down adapter (port-service teardown racing an
+// in-flight fs op) must not free the host out from under the worker.
+// The host is immutable after construction (just `cwd_`), so sharing it
+// across threads read-only is safe; the last ref may be dropped on any
+// thread, which the trivial destructor allows.
+//
+// The one exception to "no internal PostTasks" is the constructor: it
+// posts a single `CreateDirectory(cwd)` task to thread_pool so the
+// working directory exists before any per-call work runs. Doing it
+// synchronously in the ctor would block the UI thread (where NexusFsHost
+// is constructed); leaving the cwd un-created until first use would race
+// with concurrent calls.
+class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
  public:
   // ---- Result structs ----------------------------------------------------
   // One per method. `success`/`error` are uniform; the per-method payload
@@ -115,7 +120,6 @@ class NexusFsHost {
   // ----------------------------------------------------------------------
 
   explicit NexusFsHost(const base::FilePath& cwd);
-  ~NexusFsHost();
 
   NexusFsHost(const NexusFsHost&) = delete;
   NexusFsHost& operator=(const NexusFsHost&) = delete;
@@ -123,6 +127,16 @@ class NexusFsHost {
   // The cwd is set once at construction; reading it is thread-safe and
   // non-blocking, so this is the only method callable from UI.
   std::string Cwd() const;
+
+  // Returns the OS user's home directory (HOME on POSIX / USERPROFILE on
+  // Windows), as resolved by base::PathService::Get(base::DIR_HOME).
+  // Used by the WebUI bridge so per-user settings (e.g. feature toggles)
+  // carry across browser profiles + projects — anchored to the OS user,
+  // not the chromium profile's user-data-dir. Empty string when no home
+  // dir is discoverable (very rare; some service-account setups).
+  // Resolved via PathService so the chromium test harness can override
+  // it through ScopedPathOverride for test isolation.
+  std::string UserHome() const;
 
   // The remaining methods are blocking. Caller MUST be on a thread that
   // allows base::MayBlock().
@@ -153,6 +167,9 @@ class NexusFsHost {
   SystemInfoResult SystemInfo() const;
 
  private:
+  friend class base::RefCountedThreadSafe<NexusFsHost>;
+  ~NexusFsHost();
+
   base::FilePath cwd_;
 };
 

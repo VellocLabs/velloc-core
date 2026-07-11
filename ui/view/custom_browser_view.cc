@@ -6,8 +6,13 @@
 
 #include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/strings/strcat.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/task/sequenced_task_runner.h"
+#include "custom_browser/common/branding_constants.h"
+#include "custom_browser/common/custom_browser_switches.h"
+#include "ui/views/accessibility/view_accessibility_utils.h"
 #include "ui/events/event.h"            // ui::MouseEvent
 #include "ui/events/types/event_type.h"            // ui::EventType
 #include "base/logging.h"
@@ -23,6 +28,7 @@
 #include "chrome/browser/ui/views/tab_search_bubble_host.h"
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
+#include "custom_browser/ui/startup/nexus_startup_prompts.h"
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
@@ -59,9 +65,6 @@
 
 namespace {
 
-// Command-line switch: when present, the first window of a profile opens in a
-// browser mode (pref_mode()) instead of the default kNexus startup window.
-constexpr char kBrowserModeSwitch[] = "browser-mode";
 constexpr char kStartupDefaultConsumedKey[] =
     "custom_browser_startup_default_consumed";
 
@@ -173,6 +176,13 @@ void CustomBrowserView::RemovedFromWidget() {
 
 void CustomBrowserView::OnUIModeChanged(custom_browser::mojom::UIMode ui_mode) {
   UpdateVisibilityAndOrder();
+  // The real mode is authoritative from here on — drop the Nexus-destined
+  // boot marker (see InitializeCustomBrowser).
+  nexus_mode_pending_ = false;
+  // The native title source flips with the mode (see GetWindowTitle): entering
+  // kNexus must replace the tab-derived title immediately, and leaving kNexus
+  // must restore default Chromium behavior.
+  UpdateTitleBar();
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
@@ -192,6 +202,55 @@ void CustomBrowserView::OnPrefUIModeChanged(custom_browser::mojom::UIMode ui_mod
   //  if (ui_mode != custom_browser::mojom::UIMode::kStandard) {
   //     custom_browser_webui_view_->SetVisible(true);
   //  }
+}
+
+bool CustomBrowserView::IsNexusUIMode() const {
+  // `nexus_mode_pending_` bridges the gap between the kNexus decision in
+  // InitializeCustomBrowser() and the mode actually landing via the WebUI's
+  // layout load, so the boot title never falls through to the tab-derived
+  // default ("about:blank - <app>").
+  return nexus_mode_pending_ ||
+         (ui_prefs_ && ui_prefs_->current_mode() == UIMode::kNexus);
+}
+
+void CustomBrowserView::SetNexusSessionTitle(const std::u16string& title) {
+  if (nexus_session_title_ == title) {
+    return;
+  }
+  nexus_session_title_ = title;
+  UpdateTitleBar();
+}
+
+std::u16string CustomBrowserView::GetWindowTitle() const {
+  if (!IsNexusUIMode()) {
+    return BrowserView::GetWindowTitle();
+  }
+  // The kNexus window's title is owned by the active Nexus session — tab
+  // titles, a "Name window…" user_title_, and the macOS audio decoration
+  // must never leak into it.
+  const std::u16string product =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
+  if (nexus_session_title_.empty()) {
+    return product;
+  }
+  // Keep this format in sync with formatWindowTitle() in
+  // nexus_web/src/browser/webview/windowTitle.ts (document.title mirror).
+  return base::StrCat({nexus_session_title_, u" - ", product});
+}
+
+std::u16string CustomBrowserView::GetAccessibleWindowTitle() const {
+  if (!IsNexusUIMode()) {
+    return BrowserView::GetAccessibleWindowTitle();
+  }
+  // Mirrors BrowserView::GetAccessibleWindowTitle: a focused tab-modal
+  // dialog's title wins over the window title.
+  views::Widget* tab_modal =
+      views::ViewAccessibilityUtils::GetFocusedChildWidgetForAccessibility(
+          this);
+  if (tab_modal) {
+    return tab_modal->widget_delegate()->GetAccessibleWindowTitle();
+  }
+  return GetWindowTitle();
 }
 
 void CustomBrowserView::SetActiveTabSearchButton(views::View* button) {
@@ -237,16 +296,51 @@ void CustomBrowserView::InitializeCustomBrowser() {
     // Decide whether this window should open directly in kNexus, before the
     // WebUI view triggers BuildInitUrl() below.
     Profile* profile = browser()->profile();
-    bool want_nexus =
-        custom_browser::window_util::ConsumePendingNexusWindow(profile);
-    if (!want_nexus && ConsumeStartupDefault(profile)) {
-      // Normal startup defaults the first window to kNexus unless launched with
-      // the browser-mode switch.
-      want_nexus = !base::CommandLine::ForCurrentProcess()->HasSwitch(
-          kBrowserModeSwitch);
+    // A window created to host externally-launched URLs (OS default-browser
+    // open routed by AdjustBrowserForExternalUrlOpen) is pinned to normal
+    // mode and takes precedence over everything else for THIS window. A
+    // concurrent pending-kNexus marker (tray click racing a link open) is
+    // deliberately left in place for the next window.
+    const bool force_normal =
+        custom_browser::window_util::ConsumePendingExternalUrlWindow(profile);
+    bool want_nexus = false;
+    if (!force_normal) {
+      want_nexus =
+          custom_browser::window_util::ConsumePendingNexusWindow(profile);
+      if (!want_nexus && ConsumeStartupDefault(profile)) {
+        // Normal startup defaults the first window to kNexus — unless launched
+        // with the browser-mode switch, or launched to open URLs (a cold-start
+        // default-browser link click): the link belongs in a normal window and
+        // Nexus stays reachable via the tray / global hotkey.
+        want_nexus = !base::CommandLine::ForCurrentProcess()->HasSwitch(
+                         custom_browser::switches::kBrowserMode) &&
+                     !custom_browser::window_util::HasExternalUrlStartupArgs();
+      }
+    } else {
+      // Burn the startup default so a later plain Ctrl+N window doesn't
+      // surprise-become kNexus.
+      ConsumeStartupDefault(profile);
     }
     if (want_nexus && !custom_browser::window_util::FindNexusWindow(profile)) {
       ui_prefs_->set_initial_mode_override(UIMode::kNexus);
+      // The override only takes effect when BuildInitUrl() loads the layout
+      // params (async, once the WebUI starts loading); until then
+      // current_mode() still reports the pre-init default. Mark the window
+      // as Nexus-destined and refresh the title bar NOW — we are inside
+      // Widget::Init (AddedToWidget), before the window is shown — so the
+      // native title reads "<product>" from the first frame instead of the
+      // default "about:blank - <app>" (see GetWindowTitle).
+      nexus_mode_pending_ = true;
+      UpdateTitleBar();
+    }
+
+    if (!nexus_mode_pending_) {
+      // This window comes up as a normal browser window: if the kNexus
+      // startup window suppressed the session-crashed bubble, surface the
+      // deferred restore offer here (any normal window qualifies — link
+      // open, Ctrl+N, tray "Show Browser").
+      custom_browser::nexus_startup_ui::MaybeShowDeferredCrashBubble(
+          browser());
     }
 
     native_ui_container_ = std::make_unique<NativeUIContainerView>(this);

@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setBackgroundMode",
+  "description": "Set the browser-global backgroundModeEnabled local_state pref (keep background apps running after the main window closes). The BackgroundModeManager's PrefChangeRegistrar reacts. Returns {ok:true}. Replaces the chrome.send setBackgroundModeEnabled route.",
+  "inputs": [
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "required": true,
+      "description": "New value for backgroundModeEnabled."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

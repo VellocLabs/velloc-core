@@ -4,10 +4,11 @@
 
 #include "base/functional/bind.h"
 #include "chrome/browser/profiles/profile.h"
+#include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
+#include "custom_browser/browser/nexus/binaries/nexus_binary_config_registry.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
-#include "custom_browser/browser/nexus/ui/nexus_ui_broadcast.h"
 
 namespace nexus {
 
@@ -196,6 +197,13 @@ void NexusLlmBridgeAdapter::HandleStreamCancelOnUI(
   // for details. Bridge-side per-stream state cached here also gets
   // dropped — keyed by stream_id and would otherwise leak.
   std::string stream_id = input.streamId;
+  // NOTE: do NOT `std::move(stream_id)` into the BindOnce below — `stream_id`
+  // is ALSO passed by const-ref as the first argument to `Cancel`, and C++
+  // leaves the evaluation order of call arguments unspecified. If the bind
+  // (with the move) is built first, the first argument binds to a moved-from
+  // (empty) string, so `Cancel` cancels stream id "" — the upstream loader is
+  // never torn down and a mid-stream cancel never closes the socket. Pass a
+  // copy to the bind so the by-ref argument is always the real id.
   llm_host_->Cancel(
       stream_id,
       base::BindOnce(
@@ -207,7 +215,7 @@ void NexusLlmBridgeAdapter::HandleStreamCancelOnUI(
             }
             std::move(done).SuccessVoid();
           },
-          weak_factory_.GetWeakPtr(), std::move(stream_id), std::move(done)));
+          weak_factory_.GetWeakPtr(), stream_id, std::move(done)));
 }
 
 void NexusLlmBridgeAdapter::HandleSetDefaultSelectionOnUI(
@@ -244,6 +252,61 @@ void NexusLlmBridgeAdapter::HandlePublishCatalogOnUI(
     return;
   }
   broker->SetTsModelCatalog(catalog->Clone());
+  std::move(done).SuccessVoid();
+}
+
+void NexusLlmBridgeAdapter::HandlePublishProviderConfigsOnUI(
+    ::nexus::generated::PublishProviderConfigsInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Payload shape: { configs: {<providerId>: {apiKey,baseUrl,...}},
+  // activeProviderId?: string } — the effective provider configs from
+  // settings.json the worker pushes at boot + on every providers write.
+  const Dict* configs = input.payload.FindDict("configs");
+  if (!configs) {
+    std::move(done).InvalidArgs("Missing 'configs' object in payload");
+    return;
+  }
+  const std::string* active = input.payload.FindString("activeProviderId");
+
+  LlmBroker* broker = LlmBrokerFactory::GetForProfile(profile_);
+  if (!broker) {
+    std::move(done).Error("LLM_ERROR", "LlmBroker unavailable");
+    return;
+  }
+  broker->SetProviderConfigs(configs->Clone(),
+                             active ? *active : std::string());
+  std::move(done).SuccessVoid();
+}
+
+void NexusLlmBridgeAdapter::HandleRegisterToolDefsOnUI(
+    ::nexus::generated::RegisterToolDefsInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Register/overwrite each full tool definition by name so its `{ ref }`
+  // resolves to the schema in ConvertBridgeTools (static-JS at session init,
+  // MCP on connect). Defs without a name are skipped.
+  PromptHolderRegistry& registry = PromptHolderRegistry::Get();
+  for (Dict& def : input.defs) {
+    const std::string* name = def.FindString("name");
+    if (!name || name->empty()) {
+      continue;
+    }
+    std::string name_copy = *name;
+    registry.RegisterToolDef(name_copy, std::move(def));
+  }
+  std::move(done).SuccessVoid();
+}
+
+void NexusLlmBridgeAdapter::HandlePublishBinaryRegistryOnUI(
+    ::nexus::generated::PublishBinaryRegistryInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Payload shape: { binaries: [ { id, label?, version?, assets: [...] } ] }
+  // — the managed-binaries.json the guest fetched same-origin. The store
+  // validates per-asset and keeps the previous good config on a bad
+  // publish, so we don't reject here.
+  NexusBinaryConfigRegistry::Get().SetFromDict(input.payload);
   std::move(done).SuccessVoid();
 }
 

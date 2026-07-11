@@ -147,6 +147,9 @@ void ToolsAdapter::ForwardSuccessWithAgentMeta(std::string id,
     }
   }
 
+  if (it != sessions_.end() && it->second) {
+    it->second->ClearProgressSink();
+  }
   base::Value wrapped = WrapResultWithAgentMeta(std::move(result), meta);
   ForwardSuccess(std::move(id), std::move(route), std::move(wrapped));
 }
@@ -182,6 +185,34 @@ void ToolsAdapter::RegisterCatalogDispatchers() {
           // `SharedWorkerSessionManager.markToolStart/End` and routed
           // through the `ui.broadcastCurrentSessionState` bridge action.
           // No native counter bookkeeping here.
+          const std::string route_namespace =
+              route.FindString("namespace") ? *route.FindString("namespace") : "nexus";
+          const std::string route_capability =
+              route.FindString("capability") ? *route.FindString("capability") : "browser";
+          const std::string route_action =
+              route.FindString("action") ? *route.FindString("action") : tool_name;
+          session.set_progress_sink(base::BindRepeating(
+              [](base::WeakPtr<ToolsAdapter> adapter, std::string request_id,
+                 std::string route_namespace, std::string route_capability,
+                 std::string route_action, base::Value progress) {
+                if (!adapter) {
+                  return;
+                }
+                if (progress.is_dict()) {
+                  progress.GetDict().Set("request_id", request_id);
+                } else {
+                  base::DictValue wrapped;
+                  wrapped.Set("request_id", request_id);
+                  wrapped.Set("value", std::move(progress));
+                  progress = base::Value(std::move(wrapped));
+                }
+                base::DictValue route;
+                route.Set("namespace", route_namespace);
+                route.Set("capability", route_capability);
+                route.Set("action", route_action);
+                adapter->SendEvent(route, std::move(progress));
+              },
+              weak_self, id, route_namespace, route_capability, route_action));
 
           // Per-request callback bound to (id, route, weak adapter).
           // Each invocation gets a fresh ToolCallback; the dispatcher's
@@ -200,9 +231,21 @@ void ToolsAdapter::RegisterCatalogDispatchers() {
               &ToolsAdapter::ForwardSuccessWithAgentMeta,
               weak_self, id, std::move(route_for_success),
               tool_name, payload.Clone(), session_key);
-          auto on_error = base::BindOnce(&ToolsAdapter::ForwardError,
-                                          weak_self, id,
-                                          std::move(route_for_error));
+          auto on_error = base::BindOnce(
+              [](base::WeakPtr<ToolsAdapter> self, std::string session_key,
+                 std::string id, base::DictValue route, std::string code,
+                 std::string message) {
+                if (!self) {
+                  return;
+                }
+                auto it = self->sessions_.find(session_key);
+                if (it != self->sessions_.end() && it->second) {
+                  it->second->ClearProgressSink();
+                }
+                self->ForwardError(std::move(id), std::move(route),
+                                   std::move(code), std::move(message));
+              },
+              weak_self, session_key, id, std::move(route_for_error));
           ToolCallback callback(std::move(on_success), std::move(on_error));
 
           dispatcher.Run(&session, payload.Clone(), std::move(callback));

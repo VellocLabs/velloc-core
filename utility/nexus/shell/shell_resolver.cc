@@ -18,6 +18,7 @@
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "custom_browser/common/nexus_runtime_paths.h"
 #include "custom_browser/utility/nexus/shell/child_process_runner.h"
 
 namespace nexus {
@@ -85,6 +86,68 @@ bool IsCandidateUsable(const base::FilePath& candidate) {
   return !base::DirectoryExists(candidate);
 }
 
+#if BUILDFLAG(IS_WIN)
+std::optional<base::FilePath> EnvPath(const char* name) {
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  std::optional<std::string> value = env->GetVar(std::string(name));
+  if (!value.has_value() || value->empty()) {
+    return std::nullopt;
+  }
+  return base::FilePath::FromUTF8Unsafe(*value);
+}
+
+void AppendGitBashCandidatesFromRoot(const base::FilePath& root,
+                                     std::vector<base::FilePath>* out) {
+  if (root.empty()) {
+    return;
+  }
+  out->push_back(root.AppendASCII("bin").AppendASCII("bash.exe"));
+  out->push_back(root.AppendASCII("usr").AppendASCII("bin").AppendASCII("bash.exe"));
+}
+
+std::vector<base::FilePath> GitBashCandidatePathsForWindows() {
+  std::vector<base::FilePath> candidates;
+
+  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "CLAUDE_CODE_SHELL", "SHELL"}) {
+    if (std::optional<base::FilePath> override_path = EnvPath(env_name);
+        override_path.has_value() && !override_path->empty()) {
+      candidates.push_back(*override_path);
+    }
+  }
+
+  if (std::optional<base::FilePath> program_files = EnvPath("ProgramFiles")) {
+    AppendGitBashCandidatesFromRoot(program_files->AppendASCII("Git"), &candidates);
+  }
+  if (std::optional<base::FilePath> program_files_x86 = EnvPath("ProgramFiles(x86)")) {
+    AppendGitBashCandidatesFromRoot(program_files_x86->AppendASCII("Git"), &candidates);
+  }
+  if (std::optional<base::FilePath> local_app_data = EnvPath("LOCALAPPDATA")) {
+    AppendGitBashCandidatesFromRoot(
+        local_app_data->AppendASCII("Programs").AppendASCII("Git"), &candidates);
+  }
+
+  // Literal fallbacks for stripped environments where ProgramFiles variables are
+  // missing but Git is installed in the default location.
+  AppendGitBashCandidatesFromRoot(
+      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files\\Git")), &candidates);
+  AppendGitBashCandidatesFromRoot(
+      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files (x86)\\Git")),
+      &candidates);
+
+  std::vector<base::FilePath> unique;
+  for (const base::FilePath& candidate : candidates) {
+    const std::string normalized = base::ToLowerASCII(candidate.AsUTF8Unsafe());
+    const bool seen = std::ranges::any_of(unique, [&](const base::FilePath& p) {
+      return base::ToLowerASCII(p.AsUTF8Unsafe()) == normalized;
+    });
+    if (!seen) {
+      unique.push_back(candidate);
+    }
+  }
+  return unique;
+}
+#endif  // BUILDFLAG(IS_WIN)
+
 // Returns the priority-ordered list of candidate ids for the host
 // platform's "default shell". Matches the design in
 // docs/agents/nexus-process.md: prefer the most modern shell that is
@@ -131,9 +194,36 @@ ResolvedCapabilities& ResolvedCapabilities::operator=(
 // static
 std::vector<std::string> ShellResolver::KnownToolIds() {
   // Order matters only for the resolver's diagnostic output. Keep this
-  // alphabetised so the list is easy to scan in tests / logs.
-  return {"bash",       "cmd", "git", "powershell", "pwsh",
-          "rg",         "sh",  "zsh"};
+  // alphabetised so the list is easy to scan in tests / logs (the
+  // KnownToolIdsIsAlphabetisedAndDeduped unit test enforces it).
+  //
+  // Two groups:
+  //   * Shells + dev tools the LLM-facing Bash/Grep tools dispatch to
+  //     (bash, cmd, git, powershell, pwsh, rg, sh, zsh).
+  //   * Script-runtime launchers for stdio MCP servers configured by the
+  //     user in settings (node/npm/npx, pnpm, bun/bunx, deno, uv/uvx,
+  //     python/python3, docker). stdio MCP servers are overwhelmingly
+  //     distributed as `npx <pkg>` / `uvx <pkg>` / `docker run …` commands;
+  //     without these the user's pasted config is rejected with
+  //     COMMAND_NOT_ALLOWED. This does not widen the LLM's reach — the Bash
+  //     tool already runs through an allowlisted shell that can invoke any
+  //     of these — it only unblocks the user-authored MCP launch path.
+  return {"bash",   "bun",  "bunx",       "cmd",  "deno",
+          "docker", "git",  "node",       "npm",  "npx",
+          "pnpm",   "powershell", "pwsh", "python", "python3",
+          "rg",     "sh",   "uv",         "uvx",  "zsh"};
+}
+
+// static
+std::optional<base::FilePath> ShellResolver::FindGitBashForWindows() {
+#if BUILDFLAG(IS_WIN)
+  for (const base::FilePath& candidate : GitBashCandidatePathsForWindows()) {
+    if (IsCandidateUsable(candidate)) {
+      return candidate;
+    }
+  }
+#endif
+  return std::nullopt;
 }
 
 // static
@@ -154,6 +244,13 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
   }
 
 #if BUILDFLAG(IS_WIN)
+  if (tool_id == "bash") {
+    std::optional<base::FilePath> git_bash = FindGitBashForWindows();
+    if (git_bash.has_value()) {
+      return git_bash;
+    }
+  }
+
   if (tool_id == "cmd") {
     std::unique_ptr<base::Environment> env = base::Environment::Create();
     std::optional<std::string> sysroot = env->GetVar("SystemRoot");
@@ -168,6 +265,18 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
     }
   }
 #endif
+
+  // Nexus managed binaries: a tool the installer downloaded into
+  // ~/.velloc/bin/<id>/<id>[.exe] resolves even when it isn't on the host
+  // PATH, so a bare `Bash: rg ...` finds it too. NOTE: the shell service
+  // caches capabilities for its lifetime, so a binary downloaded AFTER
+  // the first resolve is only seen here on a later resolve. The Grep path
+  // does not depend on this — it execs the absolute managed path, which
+  // SafeCommandPolicy allows directly (see its absolute-path branch).
+  base::FilePath managed = custom_browser::GetManagedBinaryPath(tool_id);
+  if (!managed.empty() && IsCandidateUsable(managed)) {
+    return managed;
+  }
 
   return std::nullopt;
 }

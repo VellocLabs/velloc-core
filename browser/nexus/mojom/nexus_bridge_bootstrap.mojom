@@ -1,5 +1,29 @@
 module nexus.mojom;
 
 interface NexusBridgeBootstrap {
+  // Called by the WebUI panel page once the guest <webview> is mounted and
+  // ready for the runtime bootstrap. Browser responds by posting a
+  // `nexus-bridge-bootstrap` message + 2 transferred MessagePorts back to
+  // the calling frame's window — one for the guest's page thread, one for
+  // its SharedWorker. The WebUI forwards both ports into the <webview>.
   GuestReady();
+
+  // Approach 5 (A5): direct WebUI panel ↔ C++ bridge port.
+  //
+  // Called by the WebUI panel page itself (chrome://custom.top-chrome) to
+  // obtain a MessagePort that goes straight to a per-panel
+  // NexusBridgePortService. The panel keeps this port (does NOT forward to
+  // the <webview>) and uses it for direct bridge calls — replacing the
+  // chrome.send pipe for settings-page RPCs.
+  //
+  // Independent of GuestReady: the panel can call this before the guest
+  // webview has booted. Idempotent — each call drops any previously
+  // returned panel port and creates a fresh one.
+  //
+  // Browser responds by posting a `nexus-panel-bridge-attach` message + 1
+  // transferred MessagePort back to the calling frame's window via
+  // `content::MessagePortProvider::PostMessageToFrame`. The same JSON
+  // envelope shape as the bootstrap reply, with a distinct `type` so the
+  // panel-side listener can disambiguate.
+  AttachPanelBridge();
 };

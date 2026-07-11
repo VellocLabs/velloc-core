@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getInspectMenuEnabled",
+  "description": "Read the nexus.inspect_menu_enabled profile pref: whether right-clicking the Nexus guest <webview> offers the 'Inspect' item (opens DevTools). Returns {enabled}.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

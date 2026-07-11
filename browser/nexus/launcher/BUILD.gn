@@ -1,0 +1,55 @@
+# Copyright 2026 The Custom Browser Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Nexus launcher: keeps the browser process alive and shows a system-tray icon
+# (Velloc's production logo) so the Nexus window stays reachable when the
+# browser is minimized/closed. See docs/agents/chromium-hooks.md.
+
+# Minimal local_state pref registration. Kept deliberately tiny (only
+# //components/prefs) so chrome/browser/prefs:impl can depend on it without
+# pulling //chrome/browser back into a cycle.
+source_set("prefs") {
+  sources = [
+    "nexus_launcher_prefs.cc",
+    "nexus_launcher_prefs.h",
+  ]
+
+  deps = [ "//components/prefs" ]
+}
+
+# Bridge interface to the UI layer's window-opening logic. Tiny and dependency-
+# free so the UI target (//chrome/browser/ui, which owns the implementation via
+# custom_browser_view.gni) can link it without a cycle.
+source_set("delegate") {
+  sources = [
+    "nexus_launcher_delegate.cc",
+    "nexus_launcher_delegate.h",
+  ]
+}
+
+source_set("launcher") {
+  sources = [
+    "nexus_background_mode_manager.cc",
+    "nexus_background_mode_manager.h",
+    "nexus_status_icon.cc",
+    "nexus_status_icon.h",
+  ]
+
+  deps = [
+    ":delegate",
+    ":prefs",
+    "//base",
+    # IDR_PRODUCT_LOGO_* (chrome/grit/theme_resources.h) — Velloc's production
+    # logo in a branded build.
+    "//chrome/app/theme:theme_resources",
+    "//chrome/browser:browser_process",
+    "//chrome/browser/status_icons",
+    "//components/keep_alive_registry",
+    "//components/prefs",
+    "//custom_browser/chromium_hooks:hook_api",
+    "//custom_browser/common:common",
+    "//ui/base",
+    "//ui/gfx",
+  ]
+}

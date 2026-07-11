@@ -101,6 +101,17 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   // Returns true if the point is in a draggable region.
   bool IsInWebUIDragRegion(const gfx::Point& web_view_point) const;
 
+  // Sets the window-drag map reported by the React topbar inside the nexus
+  // guest <webview>. `-webkit-app-region` in the guest never reaches this
+  // (host) frame's DraggableRegionsChanged, so the guest measures its bar +
+  // controls and sends them here via `ui.setWindowDragRegions`. `draggable`
+  // rects union into the region; `subtract` rects (interactive controls) are
+  // removed so clicks still reach them. Coords are in this view's space (the
+  // guest topbar sits at the view origin). ORed with `draggable_region_` in
+  // IsInWebUIDragRegion.
+  void SetGuestDragRegion(const std::vector<gfx::Rect>& draggable,
+                          const std::vector<gfx::Rect>& subtract);
+
   gfx::Point ConvertPointToWebUITarget(const View* source,
                                        const gfx::Point& point) const;
 
@@ -188,6 +199,13 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   // Used for window dragging support with web platform draggable regions
   // Optimized storage as gfx::Rect for faster hit testing
   SkRegion draggable_region_;
+
+  // Window-drag map reported by the nexus guest topbar (SetGuestDragRegion).
+  // Separate from `draggable_region_` (which only ever reflects this host
+  // frame's own `-webkit-app-region`); both are consulted by
+  // IsInWebUIDragRegion so the guest topbar can drag the frameless window.
+  SkRegion guest_drag_region_;
+  bool guest_drag_ready_ = false;
 };
 
 #endif  // CUSTOM_BROWSER_UI_WEB_UI_CUSTOM_BROWSER_WEBUI_VIEW_H_

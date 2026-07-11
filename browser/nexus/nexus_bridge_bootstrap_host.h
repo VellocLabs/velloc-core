@@ -26,12 +26,24 @@ class NexusBridgeBootstrapHost : public mojom::NexusBridgeBootstrap {
   NexusBridgeBootstrapHost& operator=(const NexusBridgeBootstrapHost&) = delete;
 
   void GuestReady() override;
+  // Approach 5 (A5): lazily creates `panel_bridge_` and posts a
+  // `nexus-panel-bridge-attach` message + 1 transferred port back to the
+  // calling frame's window. Idempotent — each call resets the existing port
+  // and creates a fresh one, so a panel reload or a worker-side reconnect
+  // can re-attach safely without leaving stale ports behind.
+  void AttachPanelBridge() override;
 
  private:
   raw_ptr<content::RenderFrameHost> render_frame_host_;
   raw_ptr<Profile> profile_;
   std::unique_ptr<NexusBridgePortService> page_bridge_;
   std::unique_ptr<NexusBridgePortService> worker_bridge_;
+  // A5: separate port service for the WebUI panel itself
+  // (chrome://custom.top-chrome). Distinct lifetime + capability set from
+  // the guest-facing page/worker bridges — the panel only needs the
+  // settings-related capabilities (initially: `providers`), so its
+  // dispatcher is constructed with `kPanel` mode.
+  std::unique_ptr<NexusBridgePortService> panel_bridge_;
 };
 
 }  // namespace nexus

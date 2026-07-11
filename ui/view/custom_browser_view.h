@@ -217,6 +217,29 @@ class CustomBrowserView : public BrowserView,
   // FullscreenObserver:
   void OnFullscreenStateChanged() override;
 
+  // views::WidgetDelegate:
+  // In kNexus mode the native window title (taskbar / alt-tab / a11y) is
+  // "{session title} - {product name}", falling back to the bare product name
+  // until a session title is published. Fed by the guest's
+  // `ui.setActiveSessionTitle` bridge action. Deliberately not
+  // Browser::SetWindowUserTitle: user_title_ round-trips through
+  // SessionService (stale titles on restore) and collides with Chromium's
+  // "Name window…" feature.
+  std::u16string GetWindowTitle() const override;
+  std::u16string GetAccessibleWindowTitle() const override;
+
+  // Stores the active Nexus session's display title (already sanitized by
+  // NexusUiBridgeAdapter) and refreshes the title bar. Empty clears back to
+  // the bare product name. No-op when unchanged.
+  void SetNexusSessionTitle(const std::u16string& title);
+
+  // True when this window runs (or is booting into) the Nexus UI — includes
+  // the pending phase between the kNexus decision in
+  // InitializeCustomBrowser() and the mode landing via the WebUI layout
+  // load. The pending-aware form is what window routing and startup-prompt
+  // suppression must use (see window_util::IsNexusBrowser); decisions made
+  // during boot would otherwise misclassify this window as normal.
+  bool IsNexusUIMode() const;
 
   CustomBrowserUiPrefs* ui_prefs() const { return ui_prefs_.get(); }
   NativeUIContainerView* native_ui_container() { return native_ui_container_.get(); }
@@ -260,6 +283,18 @@ private:
   std::unique_ptr<CustomBrowserWebUIView> custom_browser_webui_view_;
   std::unique_ptr<NativeUIContainerView> native_ui_container_;
   std::unique_ptr<CustomBrowserUiPrefs> ui_prefs_;
+
+  // Active session title published by the guest via
+  // `ui.setActiveSessionTitle`; composed into GetWindowTitle() while in
+  // kNexus mode. Never persisted.
+  std::u16string nexus_session_title_;
+
+  // True from the moment InitializeCustomBrowser() decides this window opens
+  // in kNexus until the mode actually lands (OnUIModeChanged). current_mode()
+  // stays at its pre-init default until the WebUI's BuildInitUrl() loads the
+  // layout params — without this flag the window's first frames would title
+  // as a normal browser ("about:blank - <app>") instead of the product name.
+  bool nexus_mode_pending_ = false;
 
   bool custom_layout_allowed_ = false;
   bool is_custom_initialized_ = false;

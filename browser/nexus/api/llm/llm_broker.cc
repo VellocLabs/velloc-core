@@ -15,6 +15,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace nexus {
@@ -41,6 +42,19 @@ LlmBroker::LlmBroker(
                           base::Unretained(this)));
   InitializeProviders();
   LoadProviderConfigs();
+  // At-rest secret encryption: api_key + OAuth tokens are stored encrypted
+  // and decrypted in LlmProvider::Configure() / OAuthTokenStore. The OS
+  // encryptor is primed by higher-level code (NexusBridgePortService /
+  // settings handler — they can reach g_browser_process without a
+  // dependency cycle). If it isn't ready yet at this cold-start read,
+  // re-apply configs once it arrives so a decrypt-to-empty doesn't leave
+  // providers unconfigured. (Writes + later reconfigures happen long after
+  // startup, when it's already cached.)
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
+  if (!crypt->ready()) {
+    crypt->WhenReady(base::BindOnce(&LlmBroker::LoadProviderConfigs,
+                                    weak_factory_.GetWeakPtr()));
+  }
   // Warm-load the TS-pushed caches from prefs so the WebUI quick-settings
   // popup can render *something* on cold boot before nexus_web has had a
   // chance to push fresh data via `model.publishCatalog` /
@@ -94,6 +108,82 @@ void LlmBroker::SetTsModelCatalog(base::DictValue catalog) {
 
   for (auto& observer : observers_) {
     observer.OnTsModelCatalogChanged(ts_model_catalog_);
+  }
+}
+
+namespace {
+// Translate the settings.json camelCase provider-config keys to the legacy
+// snake_case shape `LlmProvider::Configure` + the `nexus.provider_configs`
+// pref expect, overlaying onto `out` (so existing pref-only fields — e.g.
+// OAuth tokens — survive when the settings.json config doesn't carry them).
+// Only the user-editable fields that affect Configure are translated;
+// transient OAuth scratch + verification stamps stay settings-side.
+void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
+                                   base::DictValue& out) {
+  auto copy_string = [&](const char* from, const char* to) {
+    if (const std::string* v = settings.FindString(from)) {
+      out.Set(to, *v);
+    }
+  };
+  copy_string("apiKey", "api_key");
+  copy_string("baseUrl", "base_url");
+  copy_string("defaultModel", "default_model");
+  copy_string("model", "model");
+  if (const base::ListValue* models = settings.FindList("enabledModels")) {
+    out.Set("enabled_models", models->Clone());
+  }
+  // Carry the verification stamp through to the pref so BuildCatalog's
+  // `provider_verified` gate (IsProviderVerified → last_verification.
+  // verifiedAtMs) flips the provider's catalog entry enabled after a
+  // settings-side (React `providers.upsert` → `publishProviderConfigs`) save —
+  // the path that replaced the legacy `updateProviderConfig` →
+  // RefreshCatalogForProvider flow. Without this the quick model picker stays
+  // empty after configuring a provider even though the key is saved and works
+  // for LLM calls. The inner keys stay camelCase (providerId / verifiedAtMs):
+  // IsProviderVerified reads them as-is; only the outer key is snake_case to
+  // match the legacy pref shape. settings.json is the source of truth for this
+  // user-editable field, so mirror its presence — drop a stale stamp when the
+  // incoming config has none (e.g. the key changed but couldn't be verified,
+  // where mergeProviderConfigForSave clears it JS-side).
+  if (const base::DictValue* last_verification =
+          settings.FindDict("lastVerification")) {
+    out.Set("last_verification", last_verification->Clone());
+  } else {
+    out.Remove("last_verification");
+  }
+}
+}  // namespace
+
+void LlmBroker::SetProviderConfigs(base::DictValue configs,
+                                   const std::string& active_provider_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // settings.json is the source of truth for the user-editable fields; merge
+  // them onto the existing pref per provider so C++-owned secrets (OAuth
+  // tokens) survive, configure the live provider, then write the pref back as
+  // the cold-boot cache `LoadProviderConfigs` reads.
+  base::DictValue all = prefs_->GetDict(prefs::kNexusProviderConfigs).Clone();
+  for (const auto [provider_id, config_val] : configs) {
+    if (!config_val.is_dict()) {
+      continue;
+    }
+    base::DictValue merged;
+    if (const base::DictValue* existing = all.FindDict(provider_id)) {
+      merged = existing->Clone();
+    }
+    ApplySettingsConfigToPrefDict(config_val.GetDict(), merged);
+    if (LlmProvider* provider = GetProvider(provider_id)) {
+      provider->Configure(merged);
+    }
+    all.Set(provider_id, std::move(merged));
+  }
+  prefs_->SetDict(prefs::kNexusProviderConfigs, std::move(all));
+
+  // Active provider — only adopt a known one (mirrors LoadProviderConfigs's
+  // guard); empty means "leave the current active selection unchanged".
+  if (!active_provider_id.empty() &&
+      providers_.find(active_provider_id) != providers_.end()) {
+    active_provider_id_ = active_provider_id;
+    prefs_->SetString(prefs::kNexusActiveProviderId, active_provider_id);
   }
 }
 

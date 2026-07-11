@@ -38,6 +38,19 @@ GURL GetDefaultGuestUrl() {
   return GURL(kDefaultNexusGuestURL);
 }
 
+// The `log` / `trace` URL-param mapping off the `nexus.agent_config`
+// pref used to live here — layering `?log=1` / `?trace=1` onto the
+// guest URL at panel load time. It's been removed: the nexus_web
+// page-thread now reads those flags directly from
+// `~/.nexus/settings.json` (under `agent.log` / `agent.trace`) via
+// `loadAgentTracerFlags()` and merges them with any URL-param
+// override via `combineTracerSignals()`. The URL params still work
+// when explicitly set (dev / e2e), so the chrome harness's
+// `?log=1` injection is unchanged — but the prod path is now
+// "About toggle writes settings.json → next session boot's tracer
+// install reads it" rather than "About toggle writes the C++ pref
+// → C++ writes the URL → JS parses the URL."
+
 }  // namespace
 
 GURL GetResolvedNexusGuestURL(Profile* profile) {
@@ -58,18 +71,19 @@ GURL GetResolvedNexusGuestURL(Profile* profile) {
     return default_url;
   }
 
+  // Resolve the base URL: the user's custom Agent URL override, else default.
+  GURL base = default_url;
   const std::string custom_url_spec = prefs->GetString(prefs::kNexusWebappUrl);
-  if (custom_url_spec.empty()) {
-    return default_url;
+  if (!custom_url_spec.empty()) {
+    const GURL custom_url(custom_url_spec);
+    if (IsAllowedCustomGuestUrl(custom_url)) {
+      base = custom_url;
+    } else {
+      LOG(WARNING) << "Ignoring invalid Nexus guest URL: " << custom_url_spec;
+    }
   }
 
-  const GURL custom_url(custom_url_spec);
-  if (IsAllowedCustomGuestUrl(custom_url)) {
-    return custom_url;
-  }
-
-  LOG(WARNING) << "Ignoring invalid Nexus guest URL: " << custom_url_spec;
-  return default_url;
+  return base;
 }
 
 }  // namespace nexus

@@ -5,7 +5,7 @@
   "description": "Schema for *.skill.json files consumed by codegen/generate.py. Each file declares one skill — a named bucket of tools that activate together via the Skill tool. Tools self-link to a skill via the per-tool *.tool.json `skill` field (see tool_schema.json); this file only carries skill-level metadata + activation behavior + the long-form instructions the model sees on activation. Skill membership is therefore derived (no second source-of-truth list to drift).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "description", "default"],
+  "required": ["name", "description"],
 
   "properties": {
     "$schema": {
@@ -28,12 +28,6 @@
     "instructions": {
       "type": "string",
       "description": "Long-form, markdown-friendly instructions injected as the Skill tool's tool_result when the model invokes Skill('<name>'). This is where 'how to use these tools well' guidance lives — workflow patterns, recommended sequences, common pitfalls. The system prompt's per-tool blurbs handle the catalog-level descriptions; instructions[] handles the playbook-level guidance. Optional: omit (or set to empty string) for skills that are just a bucket of tools with no extra workflow notes."
-    },
-
-    "default": {
-      "type": "string",
-      "enum": ["always_on", "deferred"],
-      "description": "Initial activation state on session start. 'always_on' skills are unconditionally active — their tools appear in tools[] from turn 1. 'deferred' skills require an explicit Skill('<name>') call to activate; until then their tools are omitted from tools[] entirely (uniform across all providers — see plan giggly-watching-pie.md for why we don't use Anthropic's defer_loading beta flag). Most product-specific skills should be 'deferred' so the cold-start tool list stays small; 'always_on' is reserved for the always-relevant skill (typically there's only one)."
     }
   }
 }

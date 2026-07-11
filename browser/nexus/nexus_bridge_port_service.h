@@ -19,22 +19,51 @@ class Profile;
 namespace nexus {
 
 class NexusBridgeCapabilityHandler;
+class NexusAppInfoBridgeAdapter;
+class NexusBrowserToolsBridgeAdapter;
 class NexusCatalogBridgeAdapter;
 class NexusFsBridgeAdapter;
 class NexusLlmBridgeAdapter;
+class NexusMcpBridgeAdapter;
 class NexusMessagePortEndpoint;
 class NexusNetworkBridgeAdapter;
+class NexusProvidersBridgeAdapter;
 class NexusSessionBridgeAdapter;
+class NexusShellBridgeAdapter;
+class NexusSystemPrefsBridgeAdapter;
 class NexusUiBridgeAdapter;
 class ToolsAdapter;
+
+// Approach 5 (A5): which "audience" this port service exposes capabilities
+// to. Determines the capability registration set.
+//
+//   kGuest — full set (fs, model, network, mcp, session, ui, browser,
+//            catalog). For the nexus_web webview's page thread and
+//            SharedWorker. Same registration list as before A5.
+//
+//   kPanel — minimal set scoped to settings UI calls (initially: providers
+//            only; will grow as more settings pages migrate off chrome.send).
+//            For the WebUI panel (chrome://custom.top-chrome) itself, which
+//            should NOT have access to filesystem, LLM streaming, browser
+//            tools, etc. The settings panel is privileged but its threat
+//            model is different — keep its capability surface tight.
+//
+// The dispatcher is otherwise identical. A request for an unregistered
+// capability on a port returns NOT_IMPLEMENTED — same error envelope as a
+// genuinely-missing capability — so a misrouted call surfaces a clear
+// error instead of silently misbehaving.
+enum class PortServiceMode {
+  kGuest,
+  kPanel,
+};
 
 // A browser-side service that creates a MessagePort pair, keeps one end for
 // handling BrowserBridgeRequest/BrowserBridgeResponse JSON directly from the
 // guest SharedWorker, and dispatches to capability handlers (fs, model, etc.).
 //
 // Lifetime: Owned by the `NexusBridgeBootstrapHost` bound to the active
-// `chrome://glic` render frame. Each `GuestReady()` bootstrap creates fresh
-// page/worker bridge services and fresh entangled port pairs.
+// `chrome://custom.top-chrome` render frame. Each bootstrap creates fresh
+// page/worker/panel bridge services and fresh entangled port pairs.
 //
 // The browser end receives JSON messages of the form:
 //   { claudeBridge: true, direction: "request",
@@ -44,7 +73,11 @@ class ToolsAdapter;
 //     id, route, ok, result/error }
 class NexusBridgePortService : public NexusBridgeResponseDelegate {
  public:
+  // Default constructor — `kGuest` mode (full capability set). Existing
+  // callers (page + worker bridges) keep working without source changes.
   explicit NexusBridgePortService(Profile* profile);
+  // A5: explicit-mode constructor. Use `kPanel` for the WebUI panel's port.
+  NexusBridgePortService(Profile* profile, PortServiceMode mode);
   ~NexusBridgePortService() override;
 
   NexusBridgePortService(const NexusBridgePortService&) = delete;
@@ -91,12 +124,30 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   std::unique_ptr<NexusFsBridgeAdapter> fs_adapter_;
   std::unique_ptr<NexusLlmBridgeAdapter> llm_adapter_;
   std::unique_ptr<NexusUiBridgeAdapter> ui_adapter_;
+  // A5: providers capability adapter. Constructed (and the capability
+  // registered) only on `PortServiceMode::kPanel` — exposed to the WebUI
+  // panel's direct port, not to the guest-facing page/worker ports.
+  std::unique_ptr<NexusProvidersBridgeAdapter> providers_adapter_;
+  // A5 / Tier 2: browserTools capability adapter (snapshot + setField,
+  // single `separateWindow` field today). Registered on the panel port
+  // ("browserTools") AND the guest direct bridge ("browserTools").
+  std::unique_ptr<NexusBrowserToolsBridgeAdapter> browser_tools_adapter_;
+  // Guest-only: Settings · System (browser-global local_state prefs) +
+  // Settings · About (version + webapp-URL editor).
+  std::unique_ptr<NexusSystemPrefsBridgeAdapter> system_prefs_adapter_;
+  std::unique_ptr<NexusAppInfoBridgeAdapter> app_info_adapter_;
   // V1 of WebFetch: general-purpose HTTP-GET bridge surface used by
   // TS-side tools that need to fetch a URL through the Chromium net
   // stack (not subject to renderer CORS). See
   // api/network/nexus_network_bridge_adapter.h for the contract and
   // api/declarations/network/httpGet.api.json for the wire schema.
   std::unique_ptr<NexusNetworkBridgeAdapter> network_adapter_;
+  // Native-backed MCP (stdio) capability. Owns per-server `NexusMcpHost`
+  // instances + a shared streaming-capable `NexusShellServiceLauncher`.
+  // Server command / env (incl. secrets) are read from prefs browser-side
+  // and never cross to the guest. See api/mcp/nexus_mcp_bridge_adapter.h
+  // and api/declarations/mcp/*.api.json.
+  std::unique_ptr<NexusMcpBridgeAdapter> mcp_adapter_;
   // Phase 12: serves the `catalog` capability — listHostedTools (lazy-
   // pull replacement for the bootstrap manifest's hostedTools field)
   // and renderPromptSection / listPromptSections (C++ side now owns
@@ -119,6 +170,14 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // raw back-pointer to `tools_adapter_`; the two adapters share a
   // lifetime under this port service so the back-ref is safe.
   std::unique_ptr<NexusSessionBridgeAdapter> session_adapter_;
+  // Guest-only: the `shell` capability — `status` (→ ReadBackgroundOutput) and
+  // `kill` (→ Mojo Kill) for BACKGROUND shells the model spawned via the Bash
+  // tool's run_in_background mode. Lets the TS layer poll/stop a backgrounded
+  // Bash for the Background Tasks drawer WITHOUT the model tool loop. Reaches
+  // the same utility-process registry as ProcessTool via the per-Profile shared
+  // NexusShellServiceLauncher. NOT a revival of the Phase-12g `process`
+  // capability (which was redundant tool-dispatch); this is narrow observe/kill.
+  std::unique_ptr<NexusShellBridgeAdapter> shell_adapter_;
   // Phase 12g: dropped `process_adapter_` + `shell_service_launcher_`.
   // The bridge `process` capability had no JS-side callers (Phase 11b
   // deleted the only consumers — TS BashTool / GrepTool / GlobTool).

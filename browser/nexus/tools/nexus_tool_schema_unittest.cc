@@ -55,9 +55,7 @@ TEST(BuildHostedToolDefinitionDictTest, BasicShapeMatchesWireFormat) {
                 /*required=*/true));
 
   base::DictValue dict = BuildHostedToolDefinitionDict(schema);
-  ASSERT_EQ(dict.FindString("type"), nullptr
-                ? nullptr
-                : dict.FindString("type"));
+  ASSERT_NE(dict.FindString("type"), nullptr);
   EXPECT_EQ(*dict.FindString("type"), "function");
   EXPECT_EQ(*dict.FindString("name"), "example_navigate");
   EXPECT_EQ(*dict.FindString("description"), "Navigate the tab to a URL.");
@@ -85,6 +83,31 @@ TEST(BuildHostedToolDefinitionDictTest, BasicShapeMatchesWireFormat) {
   ASSERT_NE(required, nullptr);
   ASSERT_EQ(required->size(), 1u);
   EXPECT_EQ(required->front().GetString(), "url");
+}
+
+TEST(BuildHostedToolDefinitionDictTest, EmitsConcurrencySafeWhenMarked) {
+  ToolSchema schema;
+  schema.name = "Read";
+  schema.description = "Read a file.";
+  schema.concurrency_safe = true;
+
+  base::DictValue dict = BuildHostedToolDefinitionDict(schema);
+
+  std::optional<bool> concurrency_safe = dict.FindBool("concurrencySafe");
+  ASSERT_TRUE(concurrency_safe.has_value());
+  EXPECT_TRUE(*concurrency_safe);
+}
+
+TEST(BuildHostedToolDefinitionDictTest, EmitsConcurrencySafeFalseByDefault) {
+  ToolSchema schema;
+  schema.name = "BrowserReadPage";
+  schema.description = "Read the current page.";
+
+  base::DictValue dict = BuildHostedToolDefinitionDict(schema);
+
+  std::optional<bool> concurrency_safe = dict.FindBool("concurrencySafe");
+  ASSERT_TRUE(concurrency_safe.has_value());
+  EXPECT_FALSE(*concurrency_safe);
 }
 
 TEST(BuildHostedToolDefinitionDictTest, OmitsRequiredArrayWhenEmpty) {

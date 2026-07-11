@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "verify",
+  "description": "Test a provider's connection by creating a TRANSIENT LlmProvider with the supplied (unsaved) config and probing its /v1/models (or provider-equivalent) endpoint. Returns the model list + verification metadata on success, or `{success:false, errorCode, error}` on failure. The persisted provider state is never touched — this is a save-button preflight, not a write. Replaces the chrome.send 'verifyProviderConfig' route.",
+  "inputs": [
+    {
+      "name": "providerId",
+      "type": "string",
+      "required": true,
+      "description": "Provider id."
+    },
+    {
+      "name": "updates",
+      "type": "object",
+      "required": true,
+      "description": "Partial dict of fields to combine over the stored config for this verification only (api_key, base_url, etc.). Snake_case keys."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -11,8 +11,17 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/process/launch.h"
+#include "base/process/process.h"
+#include "base/process/process_handle.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/win/scoped_handle.h"
+#endif
 
 namespace nexus {
 
@@ -102,6 +111,37 @@ struct ChildProcessOutcome {
   base::TimeDelta duration;
 };
 
+// Handle needed for out-of-band tree termination of a background child.
+// Windows stores the Job Object so explicit Kill can terminate every descendant;
+// POSIX stores the process-group id created by `new_process_group`.
+struct ChildProcessKillHandle {
+  ChildProcessKillHandle();
+  ~ChildProcessKillHandle();
+  ChildProcessKillHandle(ChildProcessKillHandle&&);
+  ChildProcessKillHandle& operator=(ChildProcessKillHandle&&);
+
+  ChildProcessKillHandle(const ChildProcessKillHandle&) = delete;
+  ChildProcessKillHandle& operator=(const ChildProcessKillHandle&) = delete;
+
+  bool IsValid() const;
+
+#if BUILDFLAG(IS_WIN)
+  base::win::ScopedHandle job;
+  base::Process process;
+#else
+  base::ProcessId process_group_id = base::kNullProcessId;
+#endif
+};
+
+// Live output snapshot callback for background callers. The runner invokes it
+// on the worker thread while the child is still running, carrying the capped
+// stdout/stderr bytes captured so far (not a delta). Callers that need a
+// sequence-affine sink should wrap it with base::BindPostTask.
+using ChildProcessOutputCallback = base::RepeatingCallback<void(
+    bool is_stdout,
+    std::vector<uint8_t> bytes,
+    bool truncated)>;
+
 // Synchronous, blocking child-process invocation. Must run on a
 // `base::MayBlock()` thread; never call from the Mojo binding sequence.
 //
@@ -115,7 +155,21 @@ struct ChildProcessOutcome {
 //     all the result fields (exit, output, duration), OR
 //   * Sets `launched = false` with `launch_error_code` /
 //     `launch_error_message` describing why no child ever ran.
-ChildProcessOutcome RunChildProcess(const ChildProcessRequest& request);
+//
+// `on_launched`, when non-null, is invoked ON THIS WORKER THREAD the instant
+// the child launches (before the blocking wait) with a kill handle for the
+// child tree. A background caller (`Spawn`) bounces that handle to its own
+// sequence so it can later terminate the still-running tree via `Kill`. Null
+// (the default) for foreground / probe callers that never kill out-of-band.
+ChildProcessOutcome RunChildProcess(
+    const ChildProcessRequest& request,
+    base::OnceCallback<void(ChildProcessKillHandle)> on_launched =
+        base::NullCallback());
+
+ChildProcessOutcome RunChildProcessWithOutput(
+    const ChildProcessRequest& request,
+    base::OnceCallback<void(ChildProcessKillHandle)> on_launched,
+    ChildProcessOutputCallback on_output);
 
 }  // namespace nexus
 

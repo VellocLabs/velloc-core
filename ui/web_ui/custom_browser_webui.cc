@@ -71,16 +71,6 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
       "customBrowserNexusOllamaNote",
       l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_OLLAMA_NOTE,
                                  product_long_name));
-  html_source->AddString(
-      "customBrowserNexusWarningIntro",
-      l10n_util::GetStringFUTF16(IDS_NEXUS_WARNING_INTRO, product_name));
-  html_source->AddString(
-      "customBrowserNexusWarningBody1",
-      l10n_util::GetStringFUTF16(IDS_NEXUS_WARNING_BODY_1, product_name));
-  html_source->AddString(
-      "customBrowserNexusWarningAcknowledgment",
-      l10n_util::GetStringFUTF16(IDS_NEXUS_WARNING_ACKNOWLEDGMENT,
-                                 product_name));
 
   static constexpr webui::LocalizedString kNexusStrings[] = {
       {"customBrowserLoadingLabel", IDS_CUSTOM_BROWSER_LOADING},
@@ -171,24 +161,6 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
       {"customBrowserNexusErrorNoModels", IDS_NEXUS_SETTINGS_ERROR_NO_MODELS},
       {"customBrowserNexusErrorUnexpectedResponse",
        IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE},
-      {"customBrowserNexusWarningTitle", IDS_NEXUS_WARNING_TITLE},
-      {"customBrowserNexusWarningBody2", IDS_NEXUS_WARNING_BODY_2},
-      {"customBrowserNexusWarningBody3", IDS_NEXUS_WARNING_BODY_3},
-      {"customBrowserNexusWarningRecommendationsTitle",
-       IDS_NEXUS_WARNING_RECOMMENDATIONS_TITLE},
-      {"customBrowserNexusWarningRecommendation1",
-       IDS_NEXUS_WARNING_RECOMMENDATION_ENABLE_TRUSTED},
-      {"customBrowserNexusWarningRecommendation2",
-       IDS_NEXUS_WARNING_RECOMMENDATION_MINIMUM_PERMISSIONS},
-      {"customBrowserNexusWarningRecommendation3",
-       IDS_NEXUS_WARNING_RECOMMENDATION_AVOID_SENSITIVE_DATA},
-      {"customBrowserNexusWarningRecommendation4",
-       IDS_NEXUS_WARNING_RECOMMENDATION_REVIEW_PROVIDERS},
-      {"customBrowserNexusWarningRecommendation5",
-       IDS_NEXUS_WARNING_RECOMMENDATION_USE_SAFEGUARDS},
-      {"customBrowserNexusWarningSharedDevice",
-       IDS_NEXUS_WARNING_SHARED_DEVICE},
-      {"customBrowserNexusWarningContinue", IDS_NEXUS_WARNING_CONTINUE},
       {"customBrowserCancel", IDS_CANCEL},
   };
   html_source->AddLocalizedStrings(kNexusStrings);

@@ -5,11 +5,13 @@
 
 namespace nexus {
 
+// Base guest URL only — diagnostic/feature query params (log, trace,
+// toolDeferral) are layered on at resolve time by GetResolvedNexusGuestURL()
+// based on the user's About-page toggles, rather than baked into the URL here.
 #if defined(NDEBUG)
 const char kDefaultNexusGuestURL[] = "https://nexus.velloc.app/";
 #else
-const char kDefaultNexusGuestURL[] =
-    "http://localhost:5173/index.html?log=1&trace=1";
+const char kDefaultNexusGuestURL[] = "http://localhost:5173/index.html";
 #endif
 const char kNexusHost[] = "nexus";
 

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "publishProviderConfigs",
+  "description": "Guest pushes effective provider configs (from settings.json providers.configs) to the C++ LLM broker so it configures providers from settings.json and refreshes the pref cold-boot cache.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ configs: {<providerId>: {apiKey,baseUrl,defaultModel,model,enabledModels,...}}, activeProviderId?: string } dict."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

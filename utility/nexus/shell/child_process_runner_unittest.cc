@@ -93,6 +93,13 @@ TEST_F(ChildProcessRunnerTest, KillsChildOnTimeout) {
   // racing the spawn itself on slow CI.
   req.timeout = base::Milliseconds(500);
   req.max_output_bytes = 1024;
+  // The long-running command below is an EXTERNAL binary (ping / sleep), not a
+  // shell builtin, so it must be resolvable via PATH. The Exec path clears the
+  // child environment by default (`clear_environment = !inherit_environment`),
+  // which strips PATH — the child would then fail to find ping/sleep and exit
+  // immediately, never reaching the timeout. Inherit the parent environment so
+  // the command actually runs long enough to be timeout-killed.
+  req.inherit_environment = true;
 
 #if BUILDFLAG(IS_WIN)
   // ping with -n 30 sleeps about 29 seconds — far past our 500ms cap.
@@ -132,6 +139,38 @@ TEST_F(ChildProcessRunnerTest, TruncatesOutputAtCap) {
   EXPECT_TRUE(outcome.stdout_truncated)
       << "Cap was 32 bytes; got " << outcome.stdout_bytes.size() << " bytes";
   EXPECT_LE(outcome.stdout_bytes.size(), req.max_output_bytes);
+}
+
+TEST_F(ChildProcessRunnerTest, TruncatedOutputKeepsTail) {
+  // Regression (claude_code `tailFile` parity): a capped read must keep the
+  // END of the output — the verdict of a long build/test log — not the first
+  // `max_output_bytes`. The prefix-keeping read this guards against made a
+  // capped background build's shell.status view end right after its first
+  // pages of output, hiding the actual result.
+  ChildProcessRequest req;
+  req.exe = FindTestShell();
+  req.cwd = tmp_.GetPath();
+  req.timeout = base::Seconds(15);
+  req.max_output_bytes = 64;  // small enough that early lines cannot survive
+
+#if BUILDFLAG(IS_WIN)
+  req.args = {"/C", "for /L %i in (1,1,200) do @echo line%i"};
+#else
+  req.args = {"-c", "for i in $(seq 1 200); do echo line$i; done"};
+#endif
+
+  const ChildProcessOutcome outcome = RunChildProcess(req);
+  ASSERT_TRUE(outcome.launched);
+  EXPECT_TRUE(outcome.stdout_truncated);
+  ASSERT_LE(outcome.stdout_bytes.size(), req.max_output_bytes);
+  const std::string text(outcome.stdout_bytes.begin(),
+                         outcome.stdout_bytes.end());
+  // The final line survives the cap; the first line does not.
+  EXPECT_NE(text.find("line200"), std::string::npos) << "tail lost: " << text;
+  EXPECT_EQ(text.find("line1\n"), std::string::npos)
+      << "prefix should have been dropped: " << text;
+  EXPECT_EQ(text.find("line1\r"), std::string::npos)
+      << "prefix should have been dropped: " << text;
 }
 
 }  // namespace

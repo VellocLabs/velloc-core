@@ -17,6 +17,16 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // shared-window behavior.
   registry->RegisterBooleanPref(prefs::kNexusBrowserToolsSeparateWindow, false);
 
+  // `kNexusBrowserToolsAllowEvaluate` (the BrowserEvaluate opt-in) was
+  // removed — BrowserEvaluate is now always available, no pref backs it.
+  // Existing Profile prefs files keep the stale key as orphan data;
+  // chrome's pref store tolerates unknown keys.
+
+  // "Inspect" context-menu item inside the Nexus guest <webview>. Default
+  // OFF — the guest shows no context menu at all. Flipped via the hidden
+  // `/debug inspect on|off` slash subcommand (ui.setInspectMenuEnabled).
+  registry->RegisterBooleanPref(prefs::kNexusInspectMenuEnabled, false);
+
   // Unified agent runtime config dict, pushed to the nexus_web SharedWorker.
   // Starts empty; keys (maxTurns, stepTimeoutSec, model) are layered on top of
   // GetAgentConfig() defaults as the user changes settings.
@@ -40,6 +50,11 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // Most-recent SessionStatus published by nexus_web. Lets the WebUI quick-
   // settings popup render the active selection on cold boot.
   registry->RegisterDictionaryPref(prefs::kNexusLastSessionStatus);
+
+  // Natively-configured MCP servers (id -> {transport, command, args, env,
+  // cwd}). Holds secrets in `env`; read browser-side by NexusMcpServerStore,
+  // never exposed to the JS guest. See mcp_pref_names.h.
+  registry->RegisterDictionaryPref(prefs::kNexusMcpServerConfigs);
 }
 
 }  // namespace nexus

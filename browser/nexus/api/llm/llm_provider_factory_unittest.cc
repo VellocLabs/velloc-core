@@ -61,6 +61,7 @@ TEST(LlmProviderFactoryTest, RegisteredIdsIncludeAllExpectedProviders) {
   EXPECT_TRUE(contains("kimi"));
   EXPECT_TRUE(contains("minimax"));
   EXPECT_TRUE(contains("qwen"));
+  EXPECT_TRUE(contains("deepseek"));
 }
 
 TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveDistinctBaseUrls) {
@@ -71,17 +72,21 @@ TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveDistinctBaseUrls) {
   auto minimax =
       LlmProviderFactory::CreateProvider("minimax", NullLoaderFactory());
   auto qwen = LlmProviderFactory::CreateProvider("qwen", NullLoaderFactory());
+  auto deepseek =
+      LlmProviderFactory::CreateProvider("deepseek", NullLoaderFactory());
 
-  ASSERT_TRUE(openai && glm && kimi && minimax && qwen);
+  ASSERT_TRUE(openai && glm && kimi && minimax && qwen && deepseek);
 
   EXPECT_NE(glm->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
   EXPECT_NE(kimi->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
   EXPECT_NE(minimax->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
   EXPECT_NE(qwen->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
+  EXPECT_NE(deepseek->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
 
   // And each compat provider's display name is its own, not "OpenAI".
   EXPECT_NE(glm->GetDisplayName(), openai->GetDisplayName());
   EXPECT_NE(kimi->GetDisplayName(), openai->GetDisplayName());
+  EXPECT_EQ(deepseek->GetDisplayName(), "DeepSeek");
 }
 
 }  // namespace

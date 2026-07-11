@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "openLanguageSettings",
+  "description": "Open Chrome's native languages settings page (chrome://settings/languages) in a normal (non-kNexus) browser window. Trusted, fixed internal URL opened via window_util::OpenUrlInNormalWindow — does NOT go through openUrl (which rejects chrome:// for untrusted conversation links). Backs the React Settings - General 'Open language settings' button; Chrome owns the language list + restart-to-apply flow.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

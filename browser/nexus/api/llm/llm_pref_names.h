@@ -25,6 +25,20 @@ inline constexpr char kNexusWebappUrl[] = "nexus.webapp_url";
 inline constexpr char kNexusBrowserToolsSeparateWindow[] =
     "nexus.browser_tools_separate_window";
 
+// `kNexusBrowserToolsAllowEvaluate` was removed alongside the Settings ·
+// Tools opt-in toggle. BrowserEvaluate is now always available — no gate,
+// no pref backing it. No pref name is registered anymore.
+
+// Whether right-clicking inside the Nexus guest <webview> offers the
+// "Inspect" context-menu item (opens DevTools on the guest). Default
+// false: the guest shows NO context menu at all — the panel is a product
+// surface, not a page. Toggled by the guest's hidden `/debug inspect
+// on|off` slash subcommand via the `ui.setInspectMenuEnabled` bridge
+// action; read at right-click time by MaybeHandleNexusGuestContextMenu,
+// so flips apply immediately (no reload).
+inline constexpr char kNexusInspectMenuEnabled[] =
+    "nexus.inspect_menu_enabled";
+
 // Unified agent runtime configuration dictionary. A single dict pref that the
 // browser pushes to the nexus_web SharedWorker (boot + live) so the agent
 // runtime applies the keys it knows. Keys (added incrementally):
@@ -78,6 +92,17 @@ inline constexpr char kNexusTsModelCatalogCache[] =
 // today; agentRunning/threadTitle/etc. tomorrow) — both sides ignore
 // unknown keys.
 inline constexpr char kNexusLastSessionStatus[] = "nexus.last_session_status";
+
+// Single authoritative store of natively-configured MCP servers. Each key
+// is an opaque server id; each value is a dict:
+//   { "transport": "stdio", "command": "node", "args": [...],
+//     "env": { "API_TOKEN": "…" }, "cwd": "/optional" }
+// SECURITY: the MCP analogue of kNexusProviderConfigs — `env` may hold
+// secrets (tokens). Read browser-side by NexusMcpServerStore and launched
+// natively; the `mcp` bridge capability exposes only each server's id +
+// transport to the JS guest, NEVER the command / args / env. The native
+// Settings UI (Plan A) is the only writer.
+inline constexpr char kNexusMcpServerConfigs[] = "nexus.mcp_server_configs";
 
 }  // namespace nexus::prefs
 

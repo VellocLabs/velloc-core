@@ -59,14 +59,22 @@ std::string ResolveRequestId(const base::DictValue& call_options) {
 
 base::DictValue BuildUsageDict(const base::DictValue& usage) {
   base::DictValue out;
-  out.Set("promptTokens", usage.FindInt("prompt_tokens").value_or(0));
+  const int prompt_tokens = usage.FindInt("prompt_tokens").value_or(0);
   out.Set("completionTokens", usage.FindInt("completion_tokens").value_or(0));
+  // OpenAI-compatible `prompt_tokens` is INCLUSIVE of cached tokens, with
+  // `prompt_tokens_details.cached_tokens` a subset. The bridge follows the
+  // Anthropic convention where `input_tokens` EXCLUDES cache (the JS token
+  // counter sums input + cache_read + cache_creation + output), so subtract
+  // the cached portion here to avoid double-counting.
+  int cached = 0;
   if (const base::DictValue* details =
           usage.FindDict("prompt_tokens_details")) {
-    if (auto cached = details->FindInt("cached_tokens")) {
-      out.Set("cacheReadInputTokens", *cached);
-    }
+    cached = details->FindInt("cached_tokens").value_or(0);
   }
+  if (cached > 0) {
+    out.Set("cacheReadInputTokens", cached);
+  }
+  out.Set("promptTokens", prompt_tokens > cached ? prompt_tokens - cached : 0);
   return out;
 }
 
@@ -541,6 +549,11 @@ base::ListValue OllamaProvider::TranslateMessages(
                 }
                 content += *t;
               }
+            } else if (rt && *rt == "document") {
+              const auto* mime = rp->FindString("mimeType");
+              if (!content.empty())
+                content += '\n';
+              content += "[document: " + (mime ? *mime : std::string("application/pdf")) + "]";
             } else if (rt && *rt == "image") {
               const auto* img = rp->FindString("image");
               if (img && !img->empty()) {

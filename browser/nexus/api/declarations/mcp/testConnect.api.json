@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "testConnect",
+  "description": "One-shot probe: spawn a TRANSIENT NexusMcpHost from the given config, run the MCP initialize + tools/list handshake, return {success, tools, toolCount, serverName?, serverVersion?, error?}, and tear down. Mirrors the legacy chrome.send 'testMcpServer' route. Exposed on the panel WebUI bridge port too (alongside the worker port) so the Settings · MCP form can probe without going through chrome.send. The transient host is never registered with the bridge or persisted to prefs.",
+  "inputs": [
+    {
+      "name": "id",
+      "type": "string",
+      "required": false,
+      "description": "Server id. May be empty: the test only needs transport + url/command + secrets. The UI tests an unnamed server, reads `serverName` from the result, and names it before save."
+    },
+    {
+      "name": "config",
+      "type": "object",
+      "required": true,
+      "description": "Server launch config dict — transport, url/command/args/env, optional headers. PLAINTEXT secrets at this point (the test runs before encryption-on-save)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

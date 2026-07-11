@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chrome_build.gni")
+import("//testing/test.gni")
 
 assert(enable_custom_browser)
 
@@ -18,7 +19,13 @@ source_set("shell_resolver") {
 
   public_deps = [ "//base" ]
 
-  deps = [ ":child_process_runner" ]
+  deps = [
+    ":child_process_runner",
+
+    # GetManagedBinaryPath() — lets FindOnPath resolve a downloaded
+    # binary under ~/.velloc/bin.
+    "//custom_browser/common",
+  ]
 }
 
 # Platform-specific install hints used when a known tool is missing from
@@ -46,6 +53,10 @@ source_set("safe_command_policy") {
     ":shell_resolver",
     "//base",
   ]
+
+  # IsUnderManagedBinDir() — allow execing an absolute path under
+  # ~/.velloc/bin (the trusted installer output dir).
+  deps = [ "//custom_browser/common" ]
 }
 
 # Cross-platform child-process runner (LaunchProcess + temp-file
@@ -60,8 +71,57 @@ source_set("child_process_runner") {
   public_deps = [ "//base" ]
 }
 
+# Media Read processors (images, notebooks, PDFs). CPU-heavy media work lives in
+# the utility process, outside the browser UI process.
+source_set("media_service") {
+  sources = [
+    "../media/image_processor.cc",
+    "../media/image_processor.h",
+    "../media/media_limits.h",
+    "../media/media_read_result.cc",
+    "../media/media_read_result.h",
+    "../media/nexus_media_service_impl.cc",
+    "../media/nexus_media_service_impl.h",
+    "../media/notebook_processor.cc",
+    "../media/notebook_processor.h",
+    "../media/pdf_processor.cc",
+    "../media/pdf_processor.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//custom_browser/browser/nexus/mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  deps = [
+    "//pdf",
+    "//ui/gfx/codec",
+    "//ui/gfx/geometry",
+  ]
+}
+
+# Slice-4 long-lived streaming child process: live stdio pipes + an
+# implementation of `mojom::NexusStreamingProcess`. Used by the native MCP
+# host transport. Blocking pump/wait loops run on dedicated thread-pool
+# sequences.
+source_set("streaming_child_process") {
+  sources = [
+    "streaming_child_process.cc",
+    "streaming_child_process.h",
+  ]
+
+  public_deps = [
+    ":child_process_runner",
+    "//base",
+    "//custom_browser/browser/nexus/mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
 # `nexus.mojom.NexusShellService` implementation. Slice 2: GetCapabilities
-# + Exec; streaming Spawn arrives in slice 4.
+# + Exec; slice 4: streaming StreamSpawn.
 source_set("nexus_shell_service") {
   sources = [
     "nexus_shell_service_impl.cc",
@@ -72,10 +132,14 @@ source_set("nexus_shell_service") {
     ":child_process_runner",
     ":safe_command_policy",
     ":shell_resolver",
+    ":streaming_child_process",
     "//base",
-    "//custom_browser/browser/nexus/mojom:mojom",
+    "//custom_browser/browser/nexus/mojom",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
+    "//pdf",
+    "//ui/gfx/codec",
+    "//ui/gfx/geometry",
   ]
 }
 
@@ -89,13 +153,12 @@ source_set("services") {
     "services.h",
   ]
 
-  public_deps = [
-    "//mojo/public/cpp/bindings",
-  ]
+  public_deps = [ "//mojo/public/cpp/bindings" ]
 
   deps = [
+    ":media_service",
     ":nexus_shell_service",
-    "//custom_browser/browser/nexus/mojom:mojom",
+    "//custom_browser/browser/nexus/mojom",
   ]
 }
 
@@ -103,6 +166,7 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
+    "../media/media_processor_unittest.cc",
     "child_process_runner_unittest.cc",
     "install_hints_unittest.cc",
     "nexus_shell_service_impl_unittest.cc",
@@ -113,14 +177,32 @@ source_set("unit_tests") {
   deps = [
     ":child_process_runner",
     ":install_hints",
+    ":media_service",
     ":nexus_shell_service",
     ":safe_command_policy",
     ":shell_resolver",
     "//base",
     "//base/test:test_support",
-    "//custom_browser/browser/nexus/mojom:mojom",
+    "//custom_browser/browser/nexus/mojom",
+
+    # GetManagedBinaryPath() for the managed-binary resolver/policy tests.
+    "//custom_browser/common",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
+    "//testing/gtest",
+  ]
+}
+
+# Standalone test binary for the nexus shell unit tests. A Nexus-owned binary,
+# deliberately separate from Chromium's //chrome/test:unit_tests. The tests bind
+# a mojo::Remote to the service impl, so the main must initialize mojo core —
+# //mojo/core/test:run_all_unittests supplies a mojo-aware TestSuite main. Run:
+#   autoninja -C out/Debug custom_browser_nexus_shell_unittests
+#   out/Debug/custom_browser_nexus_shell_unittests
+test("custom_browser_nexus_shell_unittests") {
+  deps = [
+    ":unit_tests",
+    "//mojo/core/test:run_all_unittests",
     "//testing/gtest",
   ]
 }

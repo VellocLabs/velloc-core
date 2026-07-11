@@ -488,6 +488,17 @@ bool CustomBrowserWebUIView::IsInWebUIDragRegion(
     return false;
   }
 
+  // Guest topbar drag map (React topbar inside the nexus <webview>). Its
+  // `-webkit-app-region` never reaches this host frame, so it is reported via
+  // SetGuestDragRegion instead. Checked first: a point on the bar drags even
+  // though this frame's own `draggable_region_` is empty; a point on an
+  // interactive control was subtracted out, so it falls through to a client
+  // hit and the click reaches the control.
+  if (guest_drag_ready_ &&
+      guest_drag_region_.contains(web_view_point.x(), web_view_point.y())) {
+    return true;
+  }
+
   if (!is_draggable_ready_) {
     // If draggable regions are not ready, we cannot determine if the point is
     // in a draggable region.
@@ -495,6 +506,24 @@ bool CustomBrowserWebUIView::IsInWebUIDragRegion(
   }
 
   return draggable_region_.contains(web_view_point.x(), web_view_point.y());
+}
+
+void CustomBrowserWebUIView::SetGuestDragRegion(
+    const std::vector<gfx::Rect>& draggable,
+    const std::vector<gfx::Rect>& subtract) {
+  // Build the region exactly like DraggableRegionsChanged: union the draggable
+  // bar rects, then difference out the interactive-control rects.
+  SkRegion sk_region;
+  for (const gfx::Rect& r : draggable) {
+    sk_region.op(SkIRect::MakeLTRB(r.x(), r.y(), r.right(), r.bottom()),
+                 SkRegion::kUnion_Op);
+  }
+  for (const gfx::Rect& r : subtract) {
+    sk_region.op(SkIRect::MakeLTRB(r.x(), r.y(), r.right(), r.bottom()),
+                 SkRegion::kDifference_Op);
+  }
+  guest_drag_region_ = sk_region;
+  guest_drag_ready_ = true;
 }
 
 BEGIN_METADATA(CustomBrowserWebUIView)

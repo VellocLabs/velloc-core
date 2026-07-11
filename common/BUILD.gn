@@ -29,6 +29,9 @@ action("generate_product_version") {
 source_set("common") {
   sources = [
     "branding_constants.h",
+    "custom_browser_switches.h",
+    "nexus_runtime_paths.cc",
+    "nexus_runtime_paths.h",
     "pref_names.cc",
     "pref_names.h",
     "product_version.h",

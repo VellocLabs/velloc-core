@@ -38,6 +38,12 @@ std::string RenderPromptSection(std::string_view name,
 // `listPromptSections` API action.
 std::vector<std::string> ListPromptSectionNames();
 
+// True iff `name` is a section the renderer recognizes (even if it would
+// render empty for the current tool set, e.g. "using-your-tools" with no
+// enabled tools). Lets the holder resolver's DCHECK tell an unknown/misnamed
+// holder apart from a known-but-gated-empty one.
+bool IsKnownPromptSection(std::string_view name);
+
 }  // namespace nexus
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_API_CATALOG_PROMPT_SECTION_RENDERER_H_

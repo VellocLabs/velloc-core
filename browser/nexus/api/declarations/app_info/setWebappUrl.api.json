@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setWebappUrl",
+  "description": "Write the optional custom webapp URL (nexus.webapp_url profile pref) from the Settings · About agent-URL editor. Applies after the next restart. Returns {ok:true}. Replaces the chrome.send setWebappUrl route.",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "New webapp URL. Empty string clears the override (use the built-in agent)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

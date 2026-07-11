@@ -125,6 +125,7 @@ source_set("oauth") {
     ":pref_names",
     "//components/prefs",
     "//crypto",
+    "//custom_browser/browser/nexus:secret_crypt",
     "//services/network/public/cpp",
     "//url",
   ]
@@ -154,6 +155,7 @@ source_set("broker") {
   deps = [
     ":pref_registration",
     "//components/pref_registry",
+    "//custom_browser/browser/nexus:secret_crypt",
   ]
 }
 
@@ -187,6 +189,7 @@ source_set("openai_provider") {
     ":provider",
     ":types",
     "//base",
+    "//custom_browser/browser/nexus:secret_crypt",
     "//services/network/public/cpp",
   ]
 }
@@ -201,6 +204,7 @@ source_set("anthropic_provider") {
     ":provider",
     ":types",
     "//base",
+    "//custom_browser/browser/nexus:secret_crypt",
     "//services/network/public/cpp",
   ]
 }
@@ -215,6 +219,7 @@ source_set("google_provider") {
     ":provider",
     ":types",
     "//base",
+    "//custom_browser/browser/nexus:secret_crypt",
     "//services/network/public/cpp",
   ]
 }
@@ -235,8 +240,8 @@ source_set("ollama_provider") {
 }
 
 # Group target for all provider implementations. OpenAI-compatible providers
-# (Kimi, MiniMax, Qwen, GLM) are created by `LlmProviderFactory` directly
-# from a config table using `OpenAiProvider`'s compat constructor.
+# (Kimi, MiniMax, Qwen, GLM, DeepSeek) are created by `LlmProviderFactory`
+# directly from a config table using `OpenAiProvider`'s compat constructor.
 group("providers") {
   public_deps = [
     ":anthropic_provider",

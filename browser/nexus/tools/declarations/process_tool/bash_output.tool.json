@@ -1,0 +1,15 @@
+{
+  "$schema": "../../codegen/tool_schema.json",
+  "name": "bash_output",
+  "wire_name": "BashOutput",
+  "description": "Retrieves the output and exit status of a background command previously started by the Bash or PowerShell tool with run_in_background=true.\n\nDeprecated escape hatch: prefer waiting for the automatic background-shell completion notification. Pass the `shell_id` returned by the background tool call only when you explicitly need a manual recovery read. While the command is still running, the result reports that it is in progress and includes output captured so far; do not repeatedly call this tool while status is running. Once it has exited, the result carries the full captured stdout/stderr plus the exit code.",
+  "inputs": [
+    {
+      "name": "shell_id",
+      "type": "string",
+      "required": true,
+      "description": "The shell_id returned by a Bash call made with run_in_background=true."
+    }
+  ],
+  "output_kind": "object"
+}

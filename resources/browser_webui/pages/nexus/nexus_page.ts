@@ -2,31 +2,27 @@ import {
   CrLitElement,
   css,
   html,
-  nothing,
   type CSSResultGroup,
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
-import {BrowserApiProxyImpl} from '../../browser_api_proxy.js';
-import {BoolKey} from '../../browser_constants.mojom-webui.js';
 import '../../components/native/native_view_aliases.js';
 
-import './nexus_settings.js';
-import {
-  getInitialWarningAcknowledged,
-  type NexusPaneState,
-  type NexusSettingsSection,
-} from './nexus_shared.js';
 import './nexus_view.js';
 import type {NexusViewElement} from './nexus_view.js';
-import './nexus_warning.js';
-import './nexus_topbar.js';
-import type {NexusTopbarSurfaceMode} from './nexus_topbar.js';
 // Session-list custom element. Registered for global use so any surface
-// inside this page (today: nothing renders it by default; the user can
-// place `<nexus-session-list>` wherever the multi-session sidebar lives)
-// receives `nexusSessionsSummary` updates from the SharedWorker.
+// inside this page (today: nothing renders it by default) receives
+// `nexusSessionsSummary` updates from the SharedWorker.
 import './nexus_session_list.js';
 
+/**
+ * Thin panel host (Phase 4). The topbar + settings UI moved into the React
+ * guest (`nexus_web/`), so this page is now just the webview host
+ * (`<nexus-view>`). It keeps two host-facing responsibilities:
+ *   - the `window.customBrowserOpenNexusSettings` / `?settings=` deep-link,
+ *     forwarded to the guest (which renders the React settings); and
+ *   - the OS caption controls + webapp-URL bootstrap, which live in
+ *     `<nexus-view>` and the surrounding native shell.
+ */
 export class NexusPage extends CrLitElement {
   static override styles: CSSResultGroup = css`
     :host {
@@ -43,10 +39,6 @@ export class NexusPage extends CrLitElement {
       color: var(--text-primary);
     }
 
-    nexus-topbar {
-      flex: 0 0 auto;
-    }
-
     #pane {
       display: flex;
       flex-direction: column;
@@ -54,11 +46,6 @@ export class NexusPage extends CrLitElement {
       margin: 0;
       min-height: 0;
       overflow: hidden;
-    }
-
-    #pane.settings-surface {
-      background: var(--md-background-color);
-      margin: 0;
     }
 
     #pane > * {
@@ -70,22 +57,45 @@ export class NexusPage extends CrLitElement {
     #pane > [hidden] {
       display: none !important;
     }
+
+    /* OS caption controls (min/max/close). A native Views widget
+     * (BrowserCaptionButtonContainer) that cannot live inside the guest
+     * <webview>, so the panel host paints it over the window's top-right —
+     * overlaying the webview's top-right corner. The React topbar
+     * (nexus_web) reserves a matching --nexus-caption-inset gap so its "Open
+     * browser window" button aligns just left of these. Was previously
+     * declared inside the (now-deleted) Lit <nexus-topbar>; relocated here so
+     * it is present for the webview host.
+     * align-x=right makes the native batcher anchor it to the window's right
+     * edge; fixed positioning pins the holder's measured box there. */
+    caption-button-container {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 144px;
+      height: 37px;
+      z-index: 30;
+      -webkit-app-region: no-drag;
+    }
   `;
 
-  private paneState_: NexusPaneState =
-      getInitialWarningAcknowledged() ? 'nexus-view' : 'warning';
-  private selectedSettingsSection_: NexusSettingsSection = 'models';
-  // Mirror of <nexus-view>'s agentZoneVisible_, kept in sync via the
-  // 'nexus-agent-zone-changed' event so we can push the value to the
-  // topbar's `agentZoneVisible` reactive prop.
-  private agentZoneVisible_ = false;
   private readonly openSettingsFromHost_ = (section?: string) => {
-    this.openSettings_(this.normalizeSection_(section));
+    this.forwardSettingsDeepLink_(this.normalizeSection_(section));
   };
 
   override connectedCallback(): void {
     super.connectedCallback();
     window.customBrowserOpenNexusSettings = this.openSettingsFromHost_;
+    // Deep-link: rejection messages from native tools include a chrome://nexus
+    // URL with `?settings=<section>`. Forward it to the guest's React settings.
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get('settings');
+    if (requested) {
+      this.forwardSettingsDeepLink_(this.normalizeSection_(requested));
+      // Strip the param so a reload doesn't keep re-opening settings.
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+    }
   }
 
   override disconnectedCallback(): void {
@@ -95,133 +105,44 @@ export class NexusPage extends CrLitElement {
     super.disconnectedCallback();
   }
 
-  private normalizeSection_(section?: string): NexusSettingsSection {
-    // Legacy alias from C++ host: 'webapp' now lives under About.
+  private normalizeSection_(section?: string): string {
+    // Legacy alias from the C++ host: 'webapp' now lives under About.
     if (section === 'webapp') {
       return 'about';
     }
     if (section === 'mcp' || section === 'permissions' ||
         section === 'tools' || section === 'shortcuts' ||
-        section === 'about') {
+        section === 'features' || section === 'plugins' ||
+        section === 'system' || section === 'about') {
       return section;
     }
     return 'models';
   }
 
-  private onWarningAccepted_() {
-    BrowserApiProxyImpl.getInstance().saveBoolPref(
-        BoolKey.kNexusWarningAcknowledged, true);
-    this.paneState_ = 'nexus-view';
-    this.requestUpdate();
-  }
-
-  private onSettingsClose_() {
-    this.paneState_ = 'nexus-view';
-    this.requestUpdate();
-  }
-
-  private onOpenSettings_(event: Event) {
-    const detail = (event as CustomEvent<unknown>).detail as
-        {section?: string} | undefined;
-    this.openSettings_(this.normalizeSection_(detail?.section));
-  }
-
-  private openSettings_(section: NexusSettingsSection = 'models') {
-    this.selectedSettingsSection_ = section;
-    this.paneState_ = 'settings';
-    this.requestUpdate();
-  }
-
-  private onSettingsSectionChange_(
-      event: CustomEvent<{section: NexusSettingsSection}>) {
-    if (!event.detail?.section ||
-        event.detail.section === this.selectedSettingsSection_) {
-      return;
-    }
-
-    this.selectedSettingsSection_ = event.detail.section;
-    this.requestUpdate();
-  }
-
-  // Forward the topbar's "+" button click to anything that wants to listen.
-  // The React guest inside <nexus-view-container> is the intended consumer
-  // (a future pass will route this through the bridge port). For now we
-  // just log so the wiring is observable in DevTools.
-  // TODO(nexus-new-thread): forward to React guest via bridge port.
-  private onNewThread_() {
-    console.debug('[nexus] new thread requested');
-  }
-
-  // Topbar's agent-zone toggle (globe button) → forward to <nexus-view>.
-  // <nexus-view> mutates its flag and fires 'nexus-agent-zone-changed'
-  // which we receive in onAgentZoneChanged_ to mirror into the topbar's
-  // `agentZoneVisible` reactive prop.
-  private onToggleAgentZone_() {
-    const view =
-        this.shadowRoot?.querySelector<NexusViewElement>('nexus-view');
-    view?.toggleAgentZone();
-  }
-
-  // Topbar fires this on the leading edge of every browser-category
-  // tool dispatch (see `ToolsAdapter` → `nexusAgentStateChanged` ->
-  // `isBrowserTool`). One-direction: reveals the zone without writing
-  // through to the saved preference. There is no paired hide — the
-  // zone stays open until the user manually clicks the globe.
-  private onShowAgentZoneTransient_() {
-    const view =
-        this.shadowRoot?.querySelector<NexusViewElement>('nexus-view');
-    view?.showAgentZoneTransient();
-  }
-
-  private onAgentZoneChanged_(event: Event) {
-    const detail = (event as CustomEvent<unknown>).detail as
-        {visible?: boolean} | undefined;
-    this.agentZoneVisible_ = !!detail?.visible;
-    this.requestUpdate();
-  }
-
-  private getSurfaceMode_(): NexusTopbarSurfaceMode {
-    switch (this.paneState_) {
-      case 'warning':
-        return 'warning';
-      case 'settings':
-        return 'settings';
-      case 'nexus-view':
-      default:
-        return 'nexus-view';
-    }
+  // Forward the deep-link to the React guest (settings live there now). Posts
+  // immediately AND once after a delay: a `?settings=` link on a fresh tab
+  // races the guest boot, so the delayed retry catches the case where the
+  // webview's contentWindow wasn't ready yet. The React receiver is
+  // idempotent (same section), so the double-post is harmless.
+  private forwardSettingsDeepLink_(section: string) {
+    const post = () => {
+      const view =
+          this.shadowRoot?.querySelector<NexusViewElement>('nexus-view');
+      view?.forwardSettingsDeepLink(section);
+    };
+    post();
+    setTimeout(post, 2000);
   }
 
   protected override render() {
-    const showSettingsSurface = this.paneState_ === 'settings';
     return html`
-      <nexus-topbar
-          .surfaceMode=${this.getSurfaceMode_()}
-          .agentZoneVisible=${this.agentZoneVisible_}
-          @nexus-open-settings=${this.onOpenSettings_}
-          @nexus-settings-close=${this.onSettingsClose_}
-          @nexus-new-thread=${this.onNewThread_}
-          @nexus-toggle-agent-zone=${this.onToggleAgentZone_}
-          @nexus-show-agent-zone-transient=${this.onShowAgentZoneTransient_}>
-      </nexus-topbar>
-      <div id="pane" class=${showSettingsSurface ? 'settings-surface' : ''}>
-        <nexus-view
-            ?hidden=${this.paneState_ !== 'nexus-view'}
-            @nexus-agent-zone-changed=${this.onAgentZoneChanged_}>
-        </nexus-view>
-        ${this.paneState_ === 'warning' ? html`
-          <nexus-warning
-              @nexus-warning-accepted=${this.onWarningAccepted_}>
-          </nexus-warning>
-        ` : this.paneState_ === 'settings' ? html`
-          <nexus-settings
-              .selectedSection=${this.selectedSettingsSection_}
-              @nexus-settings-close=${this.onSettingsClose_}
-              @nexus-settings-models-complete=${this.onSettingsClose_}
-              @nexus-settings-section-change=${this.onSettingsSectionChange_}>
-          </nexus-settings>
-        ` : nothing}
+      <div id="pane">
+        <nexus-view></nexus-view>
       </div>
+      <!-- Native OS caption controls, painted over the window's top-right
+           (see :host styles). Sibling of #pane (not a child) so the
+           #pane flex layout doesn't stretch it. -->
+      <caption-button-container align-x="right"></caption-button-container>
     `;
   }
 }

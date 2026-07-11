@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "pickProjectFolder",
+  "description": "Open the native OS folder-picker dialog (modal to the Nexus browser window) so the user can choose a project folder for a code session. Resolves with { path, canceled }: `path` is the chosen absolute folder path, or null when the user cancels; `canceled` is true iff the dialog was dismissed without a selection. Test seam: when the NEXUS_E2E_PROJECT_FOLDER environment variable is set and non-empty, the handler resolves with that path WITHOUT showing a dialog (Playwright cannot drive a native OS dialog).",
+  "inputs": [
+    {
+      "name": "title",
+      "type": "string",
+      "required": false,
+      "description": "Optional dialog title. Falls back to the platform default when omitted or empty."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

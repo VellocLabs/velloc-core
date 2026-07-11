@@ -79,4 +79,166 @@
   <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">প্রদানকারী সেটিংস সংরক্ষণ করা হচ্ছে...</translation>
   <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">প্রদানকারী সেটিংস আপডেট করা যায়নি।</translation>
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">ডিফল্ট আচরণ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_NEXUS_DESCRIPTION">একটি ডেডিকেটেড ওয়ার্কস্পেসে সক্রিয় পৃষ্ঠার পাশে <ph name="PRODUCT_NAME"/> রাখুন।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">সার্চ প্রদানকারীর লোগো দেখান</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Chromium দিয়ে শুরু করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">এক মিনিটে Chromium সেট আপ করুন: আপনার ডেটা ইম্পোর্ট করুন, একটি লেআউট বেছে নিন, এবং আপনার নতুন ট্যাব টিউন করুন।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">ধাপ ১. আপনার জিনিসপত্র নিয়ে আসুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">অন্য ব্রাউজার থেকে বুকমার্ক, পাসওয়ার্ড এবং সেটিংস ইম্পোর্ট করুন—কোনও অ্যাকাউন্টের প্রয়োজন নেই।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">ইম্পোর্ট করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_SKIP">আপাতত এড়িয়ে যান</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_MICROCOPY">ইম্পোর্ট আপনার ডিভাইসে স্থানীয়ভাবে ঘটে।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">ধাপ ২. আপনার লেআউট বেছে নিন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">আপনার কাজের ধরনের সাথে মানানসই ট্যাব স্টাইল বেছে নিন। আপনি যেকোনও সময় পরিবর্তন করতে পারেন।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">সাইডবার ট্যাব</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">আপনার ট্যাব, ঠিকানা বার এবং টুল একটি উল্লম্ব সাইডবারে।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">কম্প্যাক্ট সাইডবার</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">আইকন-প্রথম সাইডবার যা হোভার করলে প্রসারিত হয়—ছোট স্ক্রিনের জন্য দারুণ।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">উপরের ট্যাব</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">পরিচিত Chrome-স্টাইল লেআউটের জন্য উপরে ক্লাসিক ট্যাব।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">কম্প্যাক্ট উপরের ট্যাব</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">একটি সরু উপরের লেআউট যা সবচেয়ে গুরুত্বপূর্ণ জিনিসের জন্য বেশি জায়গা রাখে: পৃষ্ঠা।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">লেআউট পরিবর্তন সঙ্গে সঙ্গে প্রয়োগ হয়।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">লেআউট প্রয়োগ করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">ধাপ ৩. আপনার নতুন ট্যাব কাস্টমাইজ করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">এটি পরিচ্ছন্ন রাখুন, অথবা সার্চ সামনে রাখুন।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">নতুন ট্যাবে সার্চ বাক্স দেখান</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">সার্চ বাক্স দৃশ্যমান</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">নতুন ট্যাব মনোযোগবিঘ্নমুক্ত থাকে</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">আপনার সার্চ, আপনার চেহারা</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">আপনি যদি Google ছাড়া অন্য ডিফল্ট সার্চ বেছে নেন, তবে Chromium স্বয়ংক্রিয়ভাবে নতুন ট্যাবের ব্র্যান্ডিং আপডেট করে।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">ধাপ ৪. অন্তর্নির্মিত শক্তিশালী টুল</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium-এ ঐচ্ছিক অন্তর্নির্মিত এক্সটেনশন অন্তর্ভুক্ত রয়েছে। নিয়ন্ত্রণ আপনার হাতেই থাকে।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">ডিফল্টভাবে সক্রিয়</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">আরও দ্রুত, পরিচ্ছন্ন ওয়েবের জন্য দক্ষ কন্টেন্ট ব্লকিং।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (লিগ্যাসি)</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">ডিফল্টভাবে বন্ধ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">সাইটের গভীর কাস্টমাইজেশনের জন্য উন্নত ইউজারস্ক্রিপ্ট ম্যানেজার।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">এক্সটেনশন পরিচালনা করুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">কিছু অন্তর্নির্মিত টুল Chrome Web Store-এর প্রাপ্যতা থেকে ভিন্ন হতে পারে।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">ধাপ ৫. আপনি প্রস্তুত</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">চমৎকার। আরও এগিয়ে যেতে চান? পরবর্তীতে আরও ফিচার অন্বেষণ করুন।</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">নতুন ট্যাব খুলুন</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">সেটিংসে যান</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">এক্সটেনশন →</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">প্রস্তাবিত</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">ন্যূনতম</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">শীঘ্রই আসছে</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">স্বয়ংক্রিয়</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">উন্নত</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_OPTIONAL">ঐচ্ছিক</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">সংস্করণ <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Chromium <ph name="CHROMIUM_VERSION"/> এর উপর ভিত্তি করে</translation>
+  <translation id="IDS_NEXUS_PANEL_TOOLTIP"><ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_PANEL_ACCESSIBLE_NAME"><ph name="PRODUCT_LONG_NAME"/> প্যানেল খুলুন</translation>
+  <translation id="IDS_NEXUS_CONSENT_TITLE"><ph name="PRODUCT_LONG_NAME"/></translation>
+  <translation id="IDS_NEXUS_CONSENT_BODY">ব্রাউজারের কাজ স্বয়ংক্রিয় করতে, কন্টেন্ট তৈরি করতে এবং আপনার পছন্দের AI প্রদানকারী ব্যবহার করে ওয়েব পৃষ্ঠার সাথে ইন্টারঅ্যাক্ট করতে <ph name="PRODUCT_LONG_NAME"/> সক্রিয় করুন।</translation>
+  <translation id="IDS_NEXUS_CONSENT_ACCEPT"><ph name="PRODUCT_LONG_NAME"/> সক্রিয় করুন</translation>
+  <translation id="IDS_NEXUS_CONSENT_DECLINE">এখন নয়</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">মডেল প্রদানকারী</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">কাস্টম <ph name="PRODUCT_NAME"/> ওয়েব অ্যাপ URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-nexus-app.example.com</translation>
+  <translation id="IDS_NEXUS_PERMISSION_FILES_TITLE">ফাইল সিস্টেম অ্যাক্সেস</translation>
+  <translation id="IDS_NEXUS_PERMISSION_FILES_BODY">এই এজেন্ট আপনার কম্পিউটারে ফাইল পড়তে ও লিখতে চায়।</translation>
+  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_TITLE">ক্লিপবোর্ড অ্যাক্সেস</translation>
+  <translation id="IDS_NEXUS_PERMISSION_CLIPBOARD_BODY">এই এজেন্ট আপনার ক্লিপবোর্ড অ্যাক্সেস করতে চায়।</translation>
+  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_TITLE">ব্রাউজার ডেটা অ্যাক্সেস</translation>
+  <translation id="IDS_NEXUS_PERMISSION_BROWSER_DATA_BODY">এই এজেন্ট আপনার বুকমার্ক, ইতিহাস এবং ডাউনলোড অ্যাক্সেস করতে চায়।</translation>
+  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_TITLE">বিজ্ঞপ্তি</translation>
+  <translation id="IDS_NEXUS_PERMISSION_NOTIFICATIONS_BODY">এই এজেন্ট আপনাকে বিজ্ঞপ্তি পাঠাতে চায়।</translation>
+  <translation id="IDS_NEXUS_PERMISSION_ALLOW">অনুমতি দিন</translation>
+  <translation id="IDS_NEXUS_PERMISSION_DENY">অস্বীকার করুন</translation>
+  <translation id="IDS_NEXUS_SETUP_PROVIDER_TITLE">আপনার AI প্রদানকারী সেট আপ করুন</translation>
+  <translation id="IDS_NEXUS_SETUP_PROVIDER_BODY">শুরু করতে একটি AI প্রদানকারী বেছে নিন এবং আপনার পরিচয়পত্র লিখুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">এই ফিচারটি ব্রাউজারেই সরাসরি <ph name="PRODUCT_NAME"/> চালায়, WhatsApp, Telegram, Discord এবং iMessage-এর মতো অ্যাপগুলোকে AI কোডিং সহায়কের সাথে সংযুক্ত করে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> অনেক LLM প্রদানকারী ব্যবহার করতে পারে। একটি প্রদানকারী বেছে নিন, প্রমাণীকরণ করুন, তারপর ডিফল্ট মডেল সেট করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> অনেক LLM প্রদানকারী ব্যবহার করতে পারে। একটি প্রদানকারী বেছে নিন, প্রমাণীকরণ করুন, তারপর ডিফল্ট মডেল সেট করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION"><ph name="PRODUCT_NAME"/> যে পরিষেবার সাথে সংযুক্ত হবে তা বেছে নিন এবং সংযোগটি যাচাই করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL"><ph name="PRODUCT_LONG_NAME"/> যে ওয়েব অ্যাপ URL ব্যবহার করে তা কনফিগার করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">একটি কাস্টম <ph name="PRODUCT_NAME"/> ওয়েব অ্যাপ URL সেট করুন। ডিফল্ট অভিজ্ঞতা ব্যবহার করতে এটি খালি রাখুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">কোনও API কী প্রয়োজন নেই। <ph name="PRODUCT_LONG_NAME"/> কনফিগার করা Ollama সার্ভার থেকে মডেল লোড করে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">এই প্রোফাইলের জন্য <ph name="PRODUCT_LONG_NAME"/> প্রদানকারীর তথ্য উপলভ্য নয়।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">একটি প্রদানকারী নির্বাচন করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">প্রদানকারী</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">একটি প্রদানকারী বেছে নিন, সংযোগের বিবরণ লিখুন, এবং তারপর মডেল লোড করতে যাচাই করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">যাচাই ও মডেল লোড করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">প্রদানকারী রিসেট করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">নিরাপদে সংরক্ষিত</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">সংরক্ষিত কী বজায় রাখতে খালি রাখুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">এই প্রদানকারীর জন্য API কী লিখুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">কোনও প্রদানকারী কনফিগার করা হয়নি</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">শুরু করতে একটি প্রদানকারী নির্বাচন করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">সংরক্ষিত কনফিগারেশন যাচাই করা হচ্ছে...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">উপলভ্য মডেল আনা হচ্ছে...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">যাচাই প্রয়োজন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">কনফিগারেশন পরিবর্তিত হয়েছে। মডেল লোড করতে যাচাই করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">সংযোগ করা হচ্ছে...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">সফলভাবে সংযুক্ত হয়েছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">সংযোগ ব্যর্থ হয়েছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">কনফিগার করা হয়নি</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">যাচাই করা হচ্ছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">পরিবর্তন বাকি আছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">সংযোগ করা হচ্ছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">সংযুক্ত</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">ব্যর্থ</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR"><ph name="COUNT"/>টি মডেল পাওয়া গেছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL"><ph name="COUNT"/>টি মডেল পাওয়া গেছে</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">অননুমোদিত - আপনার API কী পরীক্ষা করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">নিষিদ্ধ - এই কী এন্ডপয়েন্ট অ্যাক্সেস করতে পারে না</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">অবৈধ বেস URL - একটি বৈধ API এন্ডপয়েন্ট লিখুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">এন্ডপয়েন্টে পৌঁছানো যাচ্ছে না - URL বা আপনার নেটওয়ার্ক পরীক্ষা করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">সংযোগের সময় শেষ হয়েছে - আবার চেষ্টা করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">সংযুক্ত হয়েছে, কিন্তু কোনও মডেল ফেরত আসেনি</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">অপ্রত্যাশিত সার্ভার প্রতিক্রিয়া</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS"><ph name="COUNT"/>k কনটেক্সট</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT"><ph name="COUNT"/> কনটেক্সট</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">টুল</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">ভিশন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">চালিয়ে যেতে অন্তত একটি মডেল সক্রিয় করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">সক্রিয় মডেলগুলো থেকে একটি ডিফল্ট মডেল নির্বাচন করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">চালিয়ে যেতে একটি ডিফল্ট মডেল নির্বাচন করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">ডিফল্ট মডেল অবশ্যই সক্রিয় মডেলগুলোর একটি হতে হবে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">নির্বাচিত ডিফল্ট মডেল আর উপলভ্য নয়।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">মডেল</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">কোন মডেলগুলো উপলভ্য থাকবে এবং কোনটি ডিফল্ট তা বেছে নিন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">এই প্রদানকারীর জন্য ব্যবহৃত ডিফল্ট মডেল বেছে নিন। তালিকাটি খুলুন এবং উপলভ্য মডেল ফিল্টার করতে টাইপ করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">ডিফল্ট মডেল</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">একটি মডেল নির্বাচন করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">ব্রাউজ করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">তালিকাটি খুলুন, তারপর উপলভ্য মডেল ফিল্টার করতে টাইপ করুন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">মডেল পিকার বন্ধ করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">মডেল ফিল্টার করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">মডেল ফিল্টার করতে টাইপ করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">এই ফিল্টারের সাথে কোনও মডেল মেলে না।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">সক্রিয় মডেল</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA"><ph name="MODEL_NAME"/> সক্রিয় করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA"><ph name="MODEL_NAME"/> কে ডিফল্ট মডেল হিসেবে সেট করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">নির্বাচিত</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">সারসংক্ষেপ</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">প্রদানকারী</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">আবিষ্কৃত মডেল</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">সক্রিয় মডেল</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">ডিফল্ট</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">কোনওটি নয়</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">নির্বাচিত নয়</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE">সংরক্ষণ করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">বেস URL প্রয়োজন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">API কী প্রয়োজন।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">প্রদানকারী পরিবর্তন করবেন এবং বর্তমান অসংরক্ষিত সংযোগ ও মডেল পরিবর্তন বাতিল করবেন?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">প্রদানকারীর সেটিংস সংরক্ষণ করতে ব্যর্থ হয়েছে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">প্রদানকারীর সেটিংস সংরক্ষিত হয়েছে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">সংযোগ রিসেট করুন</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE"><ph name="PROVIDER_NAME"/> সংযোগ রিসেট করবেন?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">এটি <ph name="PROVIDER_NAME"/> এর সংরক্ষিত সংযোগ বিবরণ মুছে ফেলে, যাচাইকৃত অবস্থা সরিয়ে দেয় এবং এই প্রদানকারীর জন্য ডিফল্ট মান পুনরুদ্ধার করে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED"><ph name="PROVIDER_NAME"/> সংযোগ রিসেট করা হয়েছে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM"><ph name="PROVIDER_NAME"/> রিসেট করবেন? এটি সংরক্ষিত প্রদানকারী, সংরক্ষিত এন্ডপয়েন্ট এবং সংরক্ষিত মডেল নির্বাচন সরিয়ে দেয়।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">প্রদানকারীর সেটিংস রিসেট করতে ব্যর্থ হয়েছে।</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">কাস্টম URL মুছে ফেলুন এবং অন্তর্নির্মিত <ph name="PRODUCT_NAME"/> ওয়েব অ্যাপ ব্যবহার করুন।</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">ব্রাউজার উইন্ডো খুলুন</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">টাস্ক ম্যানেজার</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">উইন্ডো বন্ধ করুন</translation>
+  <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">নতুন ব্রাউজার উইন্ডো</translation>
 </translationbundle>

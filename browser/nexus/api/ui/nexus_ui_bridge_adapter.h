@@ -4,8 +4,10 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "custom_browser/browser/nexus/api/ui/ui_api.gen.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 class Profile;
 
@@ -13,15 +15,28 @@ namespace blink {
 class MessagePortDescriptor;
 }
 
+namespace gfx {
+class Image;
+}
+
 namespace nexus {
 
 class NexusBridgeResponseDelegate;
+
+// The branded Nexus product logo (IDR_PRODUCT_LOGO_64, which the GRDs resolve to
+// chrome/app/theme/${branding_path_component}/product_logo_64.png — the Velloc
+// "V" supplied by the chromium_overrides symlink theme). Used as the toast
+// HEADER (small) icon for OS notifications surfaced via ui.showNotification,
+// replacing message_center's default kProductIcon (the Chromium spiral). Exposed
+// at namespace scope so the custom_browser_nexus_browser_unittests regression
+// test can assert it resolves to a non-empty image.
+gfx::Image GetNexusNotificationHeaderIcon();
 
 // Concrete adapter implementing the generated `UiApiBase` virtuals.
 //
 // Phase 11h architecture (mirrors api/llm — UI thread + typed inputs +
 // BridgeResponseCallback):
-//   - 8 actions declared under api/declarations/ui/*.api.json. All run
+//   - 11 actions declared under api/declarations/ui/*.api.json. All run
 //     on the bridge's home thread (UI) — they touch BrowserView / WebUI
 //     directly which is UI-bound.
 //   - The codegen-emitted dispatcher extracts a typed input struct
@@ -31,10 +46,16 @@ class NexusBridgeResponseDelegate;
 //     the payload shape is opaque — they re-broadcast it verbatim as
 //     a WebUI listener event.
 //
-// Helpers like `BroadcastWebUiListenerEventToProfile` live at
-// `nexus/ui/nexus_ui_broadcast.{h,cc}` (kept where they are; only the
-// adapter moved under api/).
-class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase {
+// The `nexus_ui_broadcast.{h,cc}` helper that lived under
+// `nexus/ui/` was deleted after the WebUI bridge migration retired
+// its sole callers (currentSessionState / summaryChanged /
+// dismissBootWelcome / showMainContents) — those events now ride
+// direct worker → port broadcasts instead of profile-wide C++
+// re-fanning. No remaining caller of
+// `BroadcastWebUiListenerEventToProfile` exists; see
+// `nexus-web-parity-audit.md` for the migration record.
+class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
+                             public ui::SelectFileDialog::Listener {
  public:
   NexusUiBridgeAdapter(NexusBridgeResponseDelegate* delegate, Profile* profile);
   ~NexusUiBridgeAdapter() override;
@@ -53,32 +74,101 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase {
       ::nexus::generated::GetProviderMissingPromptInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
-  void HandleDismissBootWelcomeOnUI(
-      ::nexus::generated::DismissBootWelcomeInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleShowMainContentsOnUI(
-      ::nexus::generated::ShowMainContentsInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
+  // HandleDismissBootWelcomeOnUI + HandleShowMainContentsOnUI were
+  // pure C++ pass-through relays — they received guest direct-bridge
+  // calls and re-fired `nexusDismissBootWelcome` /
+  // `nexusShowMainContents` via BroadcastWebUiListenerEventToProfile.
+  // Retired alongside the `nexusCurrentSessionState` /
+  // `nexusSessionsSummary` migration: the SharedWorker now fans the
+  // same events directly to attached WebUI bridge ports via
+  // `broadcastWebUiBridgeEvent`. Guest triggers via a new
+  // `ui.broadcastEvent` SharedWorker port message; panel pages
+  // subscribe via `nexus_ui_event_client.ts`. See
+  // nexus-web-parity-audit.md for the migration story.
   void HandleOpenUrlOnUI(
       ::nexus::generated::OpenUrlInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleOpenBrowserWindowOnUI(
+      ::nexus::generated::OpenBrowserWindowInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleOpenLanguageSettingsOnUI(
+      ::nexus::generated::OpenLanguageSettingsInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleSetActiveSessionTitleOnUI(
+      ::nexus::generated::SetActiveSessionTitleInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleSetWindowDragRegionsOnUI(
+      ::nexus::generated::SetWindowDragRegionsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void HandleGetBootTimingsOnUI(
       ::nexus::generated::GetBootTimingsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
-  void HandleBroadcastCurrentSessionStateOnUI(
-      ::nexus::generated::BroadcastCurrentSessionStateInput input,
+  // Read/write the `nexus.inspect_menu_enabled` profile pref — whether the
+  // Nexus guest <webview>'s right-click menu offers "Inspect" (DevTools).
+  // Backs the guest's hidden `/debug inspect [on|off]` slash subcommand.
+  void HandleGetInspectMenuEnabledOnUI(
+      ::nexus::generated::GetInspectMenuEnabledInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
-  void HandleBroadcastSessionsSummaryOnUI(
-      ::nexus::generated::BroadcastSessionsSummaryInput input,
+  void HandleSetInspectMenuEnabledOnUI(
+      ::nexus::generated::SetInspectMenuEnabledInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  // HandleBroadcastCurrentSessionStateOnUI +
+  // HandleBroadcastSessionsSummaryOnUI were pure pass-through relays:
+  // C++ received a direct-bridge call from the SharedWorker and re-
+  // fired it as `nexusCurrentSessionState` / `nexusSessionsSummary`
+  // via BroadcastWebUiListenerEventToProfile. Both retired — the
+  // worker now broadcasts the same payload directly to attached WebUI
+  // bridge ports (one hop instead of three). See
+  // `nexus_session_state_client.ts` for the panel-side subscriber.
+  void HandleShowNotificationOnUI(
+      ::nexus::generated::ShowNotificationInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandlePickProjectFolderOnUI(
+      ::nexus::generated::PickProjectFolderInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandlePickAttachmentFilesOnUI(
+      ::nexus::generated::PickAttachmentFilesInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleRevealProjectFolderOnUI(
+      ::nexus::generated::RevealProjectFolderInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 
+  // ui::SelectFileDialog::Listener — a native picker resolves asynchronously
+  // into exactly one of these per SelectFile() call. `FileSelected` completes a
+  // single-select (folder) pick; `MultiFilesSelected` completes a multi-select
+  // (attachment files) pick; `FileSelectionCanceled` is shared and routes to
+  // whichever request is in flight (only one dialog is ever open at a time).
+  void FileSelected(const ui::SelectedFileInfo& file, int index) override;
+  void MultiFilesSelected(
+      const std::vector<ui::SelectedFileInfo>& files) override;
+  void FileSelectionCanceled() override;
+
   raw_ptr<Profile> profile_;
+
+  // Native folder-picker state for `ui.pickProjectFolder`. Single-in-flight:
+  // a non-null `select_folder_dialog_` is the "a dialog is already open" guard;
+  // `pending_pick_done_` holds the bridge response until a listener callback
+  // above fires (or is dropped if we're destroyed first — see the dtor).
+  scoped_refptr<ui::SelectFileDialog> select_folder_dialog_;
+  ::nexus::BridgeResponseCallback pending_pick_done_;
+
+  // Native multi-file-picker state for `ui.pickAttachmentFiles` (the composer's
+  // paperclip button). Independent single-in-flight slot mirroring the folder
+  // picker above; resolves from `MultiFilesSelected` / `FileSelectionCanceled`.
+  scoped_refptr<ui::SelectFileDialog> select_files_dialog_;
+  ::nexus::BridgeResponseCallback pending_files_done_;
 };
 
 }  // namespace nexus

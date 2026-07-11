@@ -912,15 +912,34 @@ export class GetStartedPage extends CrLitElement {
       });
     });
     this.startPrefSync_();
-    // Fetch search engines list - same pattern as settings-search-page
-    this.browserProxy_.getSearchEnginesList().then(
-        this.handleSearchEnginesResponse_.bind(this));
-    // Listen for changes
-    if (!this.searchEnginesListener_) {
-      this.searchEnginesListener_ = addWebUiListener(
-          'search-engines-changed',
+    // Fetch search engines list - same pattern as settings-search-page.
+    // Guarded: getSearchEnginesList() crashes the browser when the
+    // SearchSettingsUpdate feature is enabled (see useLegacySearchEnginesList_).
+    if (this.useLegacySearchEnginesList_()) {
+      this.browserProxy_.getSearchEnginesList().then(
           this.handleSearchEnginesResponse_.bind(this));
+      // Listen for changes
+      if (!this.searchEnginesListener_) {
+        this.searchEnginesListener_ = addWebUiListener(
+            'search-engines-changed',
+            this.handleSearchEnginesResponse_.bind(this));
+      }
     }
+  }
+
+  // Whether the legacy getSearchEnginesList() WebUI message is safe to call.
+  // That handler is gated by `CHECK(!IsEnabled(kSearchSettingsUpdate))` in
+  // chrome/browser/ui/webui/settings/search_engines_handler.cc, so invoking it
+  // while the SearchSettingsUpdate feature is enabled (e.g. via the field-trial
+  // testing config in dev builds) crashes the browser process. The replacement
+  // getCategorizedTemplateUrls() API returns @-shortcuts rather than the default
+  // engine this page renders, so when the feature is on we skip the inline list;
+  // the engine picker falls back to chrome://settings/searchEngines.
+  // TODO(crbug.com/494551138): adopt the new API once SearchSettingsUpdate
+  // launches and the categorized data carries the default engine.
+  private useLegacySearchEnginesList_(): boolean {
+    return !(loadTimeData.valueExists('searchSettingsUpdate') &&
+             loadTimeData.getBoolean('searchSettingsUpdate'));
   }
 
   private handleSearchEnginesResponse_(info: SearchEnginesInfo) {
@@ -1242,15 +1261,18 @@ export class GetStartedPage extends CrLitElement {
     if (this.searchEngines_.length > 1) {
       return true;
     }
-    // Fetch fresh list from browser proxy
-    try {
-      const info = await this.browserProxy_.getSearchEnginesList();
-      if (info && (info.defaults?.length || info.actives?.length)) {
-        this.updateSearchEngines_(info);
-        return this.searchEngines_.length > 0;
+    // Fetch fresh list from browser proxy (skipped when the legacy API is
+    // unavailable; the caller then falls back to chrome://settings/searchEngines).
+    if (this.useLegacySearchEnginesList_()) {
+      try {
+        const info = await this.browserProxy_.getSearchEnginesList();
+        if (info && (info.defaults?.length || info.actives?.length)) {
+          this.updateSearchEngines_(info);
+          return this.searchEngines_.length > 0;
+        }
+      } catch {
+        // Fetch failed
       }
-    } catch {
-      // Fetch failed
     }
     // Return true if we have at least one engine (even from previous fetch)
     return this.searchEngines_.length > 0;
@@ -1467,11 +1489,13 @@ export class GetStartedPage extends CrLitElement {
       this.searchEngineDialogElement_.remove();
       this.searchEngineDialogElement_ = null;
     }
-    // Refresh the search engines list in case it changed
-    this.browserProxy_.getSearchEnginesList().then(
-        (info: SearchEnginesInfo) => {
-          this.updateSearchEngines_(info);
-        });
+    // Refresh the search engines list in case it changed (legacy API only).
+    if (this.useLegacySearchEnginesList_()) {
+      this.browserProxy_.getSearchEnginesList().then(
+          (info: SearchEnginesInfo) => {
+            this.updateSearchEngines_(info);
+          });
+    }
   }
 
   private onDefaultSearchEngineChangedInDialog_(

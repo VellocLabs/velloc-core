@@ -582,8 +582,19 @@ std::optional<int32_t> ResolveCreateTabWindowSessionId(Profile* profile) {
     return std::nullopt;
   }
 
-  // Default (pref off): keep agent tabs in the active Nexus window.
+  // Default (pref off): pin agent tabs to the kNexus window. "Active
+  // window" (the old behavior) leaks tabs into whatever normal window the
+  // user focused last — and the guest's per-session webview_area can only
+  // display tabs hosted in the Nexus window's own tab strip
+  // (main-contents-view shows that window's active tab). Fall back to the
+  // active window only when no Nexus window exists (teardown races; while
+  // a guest is alive the panel's window exists by construction).
   if (!::nexus::ShouldHostAgentTabsInSeparateWindow(profile)) {
+    Browser* nexus_window =
+        custom_browser::window_util::FindNexusWindow(profile);
+    if (nexus_window) {
+      return nexus_window->session_id().id();
+    }
     return GetActiveWindowSessionId(profile);
   }
 
@@ -776,6 +787,79 @@ std::string ExtractNodeText(const apc::ContentAttributes& attrs) {
   return std::string();
 }
 
+// Single source of truth for the APC AXRole → ARIA role-string mapping.
+// See the header comment in browser_tool_internal.h for the policy.
+//
+// Two batches:
+//   1. Pre-existing (option / menuitem / tab / treeitem family). The
+//      "list-style picker" widgets that surface as ARIA-only nodes —
+//      Healthgrades' insurance autocomplete and similar React widgets.
+//   2. Direct-control widget roles (button / link / checkbox / radio /
+//      switch). The W3C ARIA "widget roles" subset that imply a single
+//      click-to-activate interaction with no required value-entry /
+//      arrow-key / popup semantics. Catches modern React surfaces
+//      (Radix, Headless UI, Material) that render their primitives as
+//      `<div role="button">` etc. without native HTML interactivity.
+//      AX_ROLE_TOGGLEBUTTON returns "button" too — the model already
+//      knows how to click a button, and the toggle-state semantics
+//      (`aria-pressed`) are a separate exposure follow-up.
+//
+// Intentionally NOT included (would mislead the model — needs richer
+// metadata than just a role string): SLIDER, SPINBUTTON, COMBOBOX*,
+// SEARCHBOX, DISCLOSURETRIANGLE (expanded-state), MENUBUTTON / POPUPBUTTON
+// (popup management). Those are tracked as a separate follow-up.
+const char* RoleStringFromAXRole(apc::AXRole role) {
+  switch (role) {
+    // Batch 1 — list-style picker family (shipped earlier; see Healthgrades
+    // parity-audit entry).
+    case apc::AX_ROLE_LISTBOXOPTION:
+    case apc::AX_ROLE_MENULISTOPTION:
+      return "option";
+    case apc::AX_ROLE_MENUITEM:
+      return "menuitem";
+    // NOTE: `MENUITEMCHECKBOX` and `MENUITEMRADIO` are kept here as
+    // defensive forward-compat, but empirically Blink normalizes
+    // `<div role="menuitemcheckbox" aria-checked="…">` (and the radio
+    // variant) to a synthesized FORM_CONTROL with
+    // `input_type:"checkbox"` / `"radio"`, and APC's `aria_role` field
+    // collapses to `CHECKBOX` / `RADIOBUTTON` — same shape as
+    // `AX_ROLE_SWITCH` below. The model sees role:"checkbox" plus the
+    // visible label text, which is sufficient to actuate the control.
+    // These cases fire only if Blink ever preserves the distinguishing
+    // role (e.g. without `aria-checked`, though that's semantically
+    // invalid per W3C ARIA).
+    case apc::AX_ROLE_MENUITEMCHECKBOX:
+      return "menuitemcheckbox";
+    case apc::AX_ROLE_MENUITEMRADIO:
+      return "menuitemradio";
+    case apc::AX_ROLE_TAB:
+      return "tab";
+    case apc::AX_ROLE_TREEITEM:
+      return "treeitem";
+    // Batch 2 — direct-control widget roles (single click-to-activate).
+    case apc::AX_ROLE_BUTTON:
+    case apc::AX_ROLE_TOGGLEBUTTON:
+      return "button";
+    case apc::AX_ROLE_LINK:
+      return "link";
+    case apc::AX_ROLE_CHECKBOX:
+      return "checkbox";
+    case apc::AX_ROLE_RADIOBUTTON:
+      return "radio";
+    // NOTE: `AX_ROLE_SWITCH` is intentionally NOT mapped here. Blink
+    // normalizes `<div role="switch">` (and `<input type="checkbox"
+    // switch>`) to `AX_ROLE_CHECKBOX` in the proto's `aria_role`
+    // field — the SWITCH enum value never appears for switches we
+    // actually need to recognize. APC additionally synthesizes a
+    // FORM_CONTROL representation with `input_type:"checkbox"` for
+    // these elements, so the model already sees a usable signal
+    // (role:"checkbox" + text label). Adding a SWITCH case here
+    // would be dead code that misleads readers.
+    default:
+      return nullptr;
+  }
+}
+
 bool IsActionable(const apc::ContentAttributes& attrs) {
   if (attrs.attribute_type() == apc::CONTENT_ATTRIBUTE_ANCHOR ||
       attrs.attribute_type() == apc::CONTENT_ATTRIBUTE_FORM_CONTROL) {
@@ -786,6 +870,19 @@ bool IsActionable(const apc::ContentAttributes& attrs) {
     if (ii.is_clickable() || ii.is_focusable()) {
       return true;
     }
+  }
+  // ARIA-only interactive roles. React/Vue autocompletes routinely render
+  // suggestions as <li role="option"> (and menus as <li role="menuitem">,
+  // tab strips as <div role="tab">, etc.) with no native click handler and
+  // no FORM_CONTROL/ANCHOR attribute_type, so they fall through the two
+  // checks above and never reach elements[]. APC's `aria_role` (proto field
+  // 26 on ContentAttributes, populated in ACTIONABLE_ELEMENTS mode) carries
+  // the resolved AXRole — defer to the shared `RoleStringFromAXRole`
+  // allowlist so this gate and the role-string emission in ExtractRole
+  // can't drift apart.
+  if (attrs.has_aria_role() &&
+      RoleStringFromAXRole(attrs.aria_role()) != nullptr) {
+    return true;
   }
   return false;
 }

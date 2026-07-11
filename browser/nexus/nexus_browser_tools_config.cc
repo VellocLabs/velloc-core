@@ -3,6 +3,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+// `prefs::kNexusBrowserToolsAllowEvaluate` is gone — the include of
+// `llm_pref_names.h` is still needed by `ShouldHostAgentTabsInSeparateWindow`
+// + `GetAgentConfig` below.
 
 namespace nexus {
 

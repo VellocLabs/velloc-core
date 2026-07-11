@@ -5,13 +5,23 @@
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
 
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/nexus_test_support.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
 namespace {
 
-class NexusSessionTabTagTest : public ChromeRenderViewHostTestHarness {};
+class NexusSessionTabTagTest : public ChromeRenderViewHostTestHarness {
+ protected:
+  // The harness builds a regular TestingProfile, which would otherwise eagerly
+  // construct GlicKeyedService and crash without a real ProfileManager. See
+  // nexus_test_support.h.
+  TestingProfile::TestingFactories GetTestingFactories() const override {
+    return test::GlicDisablingTestingFactories();
+  }
+};
 
 TEST_F(NexusSessionTabTagTest, ReturnsNullWhenNotAttached) {
   EXPECT_EQ(NexusSessionTabTag::SessionKeyFor(web_contents()), nullptr);

@@ -101,6 +101,8 @@ ToolSchema::ToolSchema() = default;
 ToolSchema::ToolSchema(const ToolSchema& other)
     : name(other.name),
       description(other.description),
+      skill(other.skill),
+      concurrency_safe(other.concurrency_safe),
       parameters(other.parameters),
       output_kind(other.output_kind),
       strict_input_schema(
@@ -118,6 +120,8 @@ ToolSchema& ToolSchema::operator=(const ToolSchema& other) {
   if (this != &other) {
     name = other.name;
     description = other.description;
+    skill = other.skill;
+    concurrency_safe = other.concurrency_safe;
     parameters = other.parameters;
     output_kind = other.output_kind;
     strict_input_schema =
@@ -135,6 +139,16 @@ ToolSchema& ToolSchema::operator=(const ToolSchema& other) {
 }
 ToolSchema& ToolSchema::operator=(ToolSchema&&) noexcept = default;
 ToolSchema::~ToolSchema() = default;
+
+// SkillSchema holds only copyable members (std::string + bool), so the
+// special members can all be defaulted (unlike ToolSchema, which carries
+// non-copyable base::Value optionals).
+SkillSchema::SkillSchema() = default;
+SkillSchema::SkillSchema(const SkillSchema&) = default;
+SkillSchema::SkillSchema(SkillSchema&&) noexcept = default;
+SkillSchema& SkillSchema::operator=(const SkillSchema&) = default;
+SkillSchema& SkillSchema::operator=(SkillSchema&&) noexcept = default;
+SkillSchema::~SkillSchema() = default;
 
 // =============================================================================
 // JSON-Schema helpers
@@ -187,6 +201,14 @@ base::DictValue BuildHostedToolDefinitionDict(const ToolSchema& schema) {
   tool.Set("name", schema.name);
   tool.Set("description", schema.description);
   tool.Set("parameters", std::move(parameters));
+  // Forward the skill bucket so the JS guest can gate deferred-skill
+  // tools out of tools[] until Skill('<skill>') activates them. Omitted
+  // when empty (always-loaded tool) to keep the wire lean. See
+  // giggly-watching-pie.md Phase 4.
+  if (!schema.skill.empty()) {
+    tool.Set("skill", schema.skill);
+  }
+  tool.Set("concurrencySafe", schema.concurrency_safe);
   // Forward the optional strict-mode schema variant if the tool author
   // populated it. nexus_web gates strict use per-model and only sends
   // `strict: true` on the bridge when the active model's catalog
@@ -210,6 +232,38 @@ base::ListValue BuildHostedToolsList(base::span<const ToolSchema> schemas) {
   base::ListValue list;
   for (const ToolSchema& schema : schemas) {
     list.Append(BuildHostedToolDefinitionDict(schema));
+  }
+  return list;
+}
+
+base::DictValue BuildHostedSkillDefinitionDict(
+    const SkillSchema& skill,
+    base::span<const ToolSchema> all_schemas) {
+  // Derive membership from each tool's `skill` field — no second
+  // source-of-truth list to drift.
+  base::ListValue tool_names;
+  for (const ToolSchema& schema : all_schemas) {
+    if (schema.skill == skill.name) {
+      tool_names.Append(schema.name);
+    }
+  }
+
+  base::DictValue dict;
+  dict.Set("name", skill.name);
+  dict.Set("description", skill.description);
+  dict.Set("instructions", skill.instructions);
+  // No `default` deferral field — deferral is decided SOLELY by the nexus_web
+  // session template's `deferredTools` (resolveDeferrableSkills).
+  dict.Set("toolNames", std::move(tool_names));
+  return dict;
+}
+
+base::ListValue BuildHostedSkillsList(
+    base::span<const SkillSchema> skills,
+    base::span<const ToolSchema> all_schemas) {
+  base::ListValue list;
+  for (const SkillSchema& skill : skills) {
+    list.Append(BuildHostedSkillDefinitionDict(skill, all_schemas));
   }
   return list;
 }

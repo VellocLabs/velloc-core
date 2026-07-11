@@ -93,6 +93,18 @@ struct ShellSpawnOptions {
   // 0 means "use the service default" (currently 1 MiB per stream).
   // Capped at 16 MiB server-side.
   uint32 max_output_bytes;
+
+  // Foreground-only. When true and the command exceeds `timeout_ms`, the
+  // service does NOT kill it — instead it detaches the still-running
+  // process into the background registry (the same one `Spawn` uses) and
+  // the `Exec` reply carries `result.background_shell_id` so the caller can
+  // poll `ReadBackgroundOutput`. The detached child then runs under the
+  // hard server cap (kMaxTimeoutMs), not `timeout_ms`. Mirrors Claude
+  // Code's auto-background-on-timeout for non-`sleep` foreground commands
+  // (claude_code BashTool `onTimeout` → `startBackgrounding`). Default
+  // false: `timeout_ms` is a hard kill, as before. Ignored by `Spawn` /
+  // `StreamSpawn`.
+  bool background_on_timeout;
 };
 
 // Process-exit summary. Exactly one of `code` and `signal` is non-null
@@ -125,14 +137,99 @@ struct ShellExecResult {
 
   bool stdout_truncated;
   bool stderr_truncated;
+
+  // Set only when the request had `background_on_timeout = true` AND the
+  // command crossed `timeout_ms` before exiting: the command was NOT
+  // killed — it was detached to the background registry under this id and
+  // keeps running. The caller surfaces it like a `Spawn` result and polls
+  // `ReadBackgroundOutput(background_shell_id)`. Null on every normal
+  // (exited or killed) Exec. When set, `exit.timed_out` is true and
+  // `exit.killed` is false, and the output buffers are empty (output is
+  // captured at the eventual real exit, retrievable via
+  // ReadBackgroundOutput).
+  string? background_shell_id;
+};
+
+// Status + accumulated output of a background process started by
+// `Spawn`, returned by `ReadBackgroundOutput`. Shell ids are opaque and
+// process-unique (`bg_<uuid>`); callers must not parse or assume a counter.
+struct ShellBackgroundOutput {
+  // False when `shell_id` is unknown (never existed or was evicted).
+  // When false every other field is at its default.
+  bool found;
+
+  // True while the process is still executing. When false the process
+  // has exited (or was killed at timeout) and `exit` is populated.
+  bool running;
+
+  // Output captured so far. While `running` is true these buffers carry the
+  // latest accumulated stdout/stderr snapshots collected by the native runner;
+  // once the child exits they carry the final capped output.
+  mojo_base.mojom.BigBuffer stdout_buffer;
+  mojo_base.mojom.BigBuffer stderr_buffer;
+
+  bool stdout_truncated;
+  bool stderr_truncated;
+
+  // Null while `running`; populated once the process has exited.
+  ShellExitInfo? exit;
+};
+
+// Controller handle for a long-lived streaming child process started by
+// `StreamSpawn` (slice 4). Held by the BROWSER as a
+// `mojo::Remote<NexusStreamingProcess>`; each method routes to the
+// utility process, which owns the live child. Unlike `Exec` (one-shot)
+// and `Spawn` (batch output at exit), the child here stays running and
+// the caller streams data in/out over its whole lifetime.
+//
+// Primary consumer: the native MCP host (`NexusMcpHost`), which keeps a
+// stdio MCP server alive across a JSON-RPC `initialize` handshake plus
+// many `tools/call` requests on the SAME process.
+interface NexusStreamingProcess {
+  // Append bytes to the child's stdin. The stream stays OPEN (contrast
+  // with `Exec`'s one-shot `stdin_data`, which closes stdin after the
+  // single write) so the caller can write many frames over time.
+  // Successive calls preserve send order. Writes issued before the
+  // child has finished launching are queued and flushed in order once
+  // it is live.
+  WriteStdin(array<uint8> data);
+
+  // Close the child's stdin (deliver EOF). Optional — most MCP stdio
+  // servers run until killed. Idempotent.
+  CloseStdin();
+
+  // Terminate the child process tree (Job Object on Windows, killpg on
+  // POSIX) and tear down the pumps. Idempotent. The client's `OnExit`
+  // fires (with `killed = true`) once teardown completes.
+  Kill();
+};
+
+// Observer for a streaming child process (slice 4). Implemented by the
+// BROWSER (a `mojo::Receiver<NexusStreamingProcessClient>` passed into
+// `StreamSpawn`); the utility process pushes output + lifecycle here.
+// All callbacks arrive on the browser binding sequence, in order.
+interface NexusStreamingProcessClient {
+  // A chunk of stdout bytes as they arrive. Chunk boundaries are
+  // ARBITRARY — not line- or JSON-RPC-frame-aligned. The consumer
+  // (NexusMcpHost) reassembles into newline-delimited frames itself.
+  OnStdout(array<uint8> data);
+
+  // A chunk of stderr bytes. MCP stdio servers log diagnostics here;
+  // the host surfaces them on connect failure.
+  OnStderr(array<uint8> data);
+
+  // The child exited or was killed. TERMINAL: no further callbacks
+  // after this. `exit` carries code / signal / killed / duration —
+  // the same struct `Exec` returns.
+  OnExit(ShellExitInfo exit);
 };
 
 // Sandboxed-utility-process service exposing host-shell capabilities to
 // nexus_web. See `web-ui/test/docs/agents/nexus-process.md` for the full
 // design.
 //
-// Slice 1 added `GetCapabilities`; slice 2 (this revision) adds `Exec`.
-// Streaming `Spawn` arrives in slice 4.
+// Slice 1 added `GetCapabilities`; slice 2 added `Exec`; slice 4 (this
+// revision) adds the long-lived streaming `StreamSpawn` path.
 //
 // ServiceSandbox=kNoSandbox is required because this service intentionally
 // spawns *child* processes (the resolved host shell / utility binaries).
@@ -170,6 +267,70 @@ interface NexusShellService {
   Exec(ShellSpawnOptions options)
       => (bool ok,
           ShellExecResult? result,
+          string? error_code,
+          string? error_message,
+          string? install_hint);
+
+  // Launch a command in the BACKGROUND. Returns immediately with an
+  // opaque `shell_id` once the request passes the same validation /
+  // allowlist / cwd / sandbox checks as `Exec`; the process then runs
+  // to completion (or `timeout_ms` kill) on a worker thread while the
+  // caller's turn continues. The model retrieves the outcome later via
+  // `ReadBackgroundOutput(shell_id)`.
+  //
+  // `ok=false` with `error_code`/`error_message` (and `install_hint`
+  // for BINARY_NOT_FOUND) is returned for PRE-LAUNCH rejections only —
+  // exactly mirroring `Exec`. Once launched, the process outcome flows
+  // through `ReadBackgroundOutput`, never here.
+  Spawn(ShellSpawnOptions options)
+      => (bool ok,
+          string? shell_id,
+          string? error_code,
+          string? error_message,
+          string? install_hint);
+
+  // Poll a background process started by `Spawn`. See
+  // `ShellBackgroundOutput`. Idempotent and side-effect-free; the entry
+  // survives reads so the model can poll repeatedly.
+  ReadBackgroundOutput(string shell_id) => (ShellBackgroundOutput output);
+
+  // Kill a background process started by `Spawn` (or a foreground command
+  // detached via `background_on_timeout`). Terminates the process tree (Job
+  // Object on Windows, killpg on POSIX); the entry SURVIVES so the caller can
+  // still `ReadBackgroundOutput` it (it reports `running=false`,
+  // `exit.killed=true` once the runner observes the termination). Idempotent:
+  // killing an already-finished id is a no-op.
+  //
+  //   * `found`       — false iff `shell_id` was never registered or has been
+  //                     evicted; true otherwise.
+  //   * `was_running` — true iff the process was still executing at kill time
+  //                     (i.e. an actual termination was issued); false if it
+  //                     had already exited (no-op).
+  Kill(string shell_id) => (bool found, bool was_running);
+
+  // Launch a LONG-LIVED child with live, bidirectional stdio (slice 4).
+  // The caller supplies a `controller` receiver (it keeps the matching
+  // `Remote<NexusStreamingProcess>` to write stdin / kill) and a
+  // `client` remote (the utility pushes stdout/stderr/exit to it). The
+  // child runs until it exits on its own or the controller's `Kill` is
+  // called.
+  //
+  // Validation (allowlist / cwd / env / shell-rewrite) is IDENTICAL to
+  // `Exec` — same `PrepareExec` policy. Two field-semantics differences:
+  //   * `stdin_data` is IGNORED — use `NexusStreamingProcess.WriteStdin`.
+  //   * `timeout_ms` is IGNORED — streaming children have no wall-clock
+  //     cap (an MCP server is meant to outlive any single request);
+  //     lifetime is controller-driven via `Kill`.
+  //
+  // Reply: `ok = false` with `error_code` / `error_message` (+
+  // `install_hint` for BINARY_NOT_FOUND) for PRE-LAUNCH rejections —
+  // exactly mirroring `Exec` / `Spawn`. On `ok = true` the child was
+  // launched and the controller is bound; runtime failures thereafter
+  // flow through the client's `OnExit`.
+  StreamSpawn(ShellSpawnOptions options,
+              pending_receiver<NexusStreamingProcess> controller,
+              pending_remote<NexusStreamingProcessClient> client)
+      => (bool ok,
           string? error_code,
           string? error_message,
           string? install_hint);

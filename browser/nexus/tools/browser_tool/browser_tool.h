@@ -12,7 +12,9 @@
 #include "base/callback_list.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
+#include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -270,6 +272,17 @@ class BrowserTool : public ToolBase,
   void RunUploadOnUI(::nexus::generated::UploadInput input,
                    ToolCallback done) override;
 
+  // BrowserEvaluate. Runs arbitrary JavaScript in the active tab's MAIN world
+  // via a one-shot CDP `Runtime.evaluate` (BrowserEvaluateSession in
+  // browser_evaluate.{h,cc}; awaitPromise=true, returnByValue=true). Always
+  // available — a first-class browser tool like the rest of the Browser*
+  // surface (the former `nexus.browser_tools_allow_evaluate` opt-in gate was
+  // removed). Returns the JSON-stringified result (capped at 20k chars) or,
+  // when the JS threw, the CDP exceptionDetails surfaced as `{ error: …,
+  // exception: … }`.
+  void RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
+                       ToolCallback done) override;
+
  private:
   // ----------------------------------------------------------------
   // Internal helpers. Most tool bodies live inline in the public
@@ -343,10 +356,20 @@ class BrowserTool : public ToolBase,
   // post-action page observations (so the LLM can see what changed).
   // custom-browser: Chromium 149's PerformActionsCallback passes only
   // action_results (result_code/index are folded in and derived in the body).
+  //
+  // `actions_for_retry` carries a copy of the dispatched Actions proto and
+  // `retried` whether the one-shot offscreen retry has already run: a
+  // freshly-created same-window tab can be transiently 0-sized while the
+  // panel's agent zone lays out, making the actor's visibility hit-test
+  // report `kElementOffscreen` for an element that is about to become
+  // perfectly interactable. One delayed retry absorbs that race; a
+  // genuinely offscreen element still surfaces the error (after the retry).
   void OnActorPerformActionsDone(
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
+      optimization_guide::proto::Actions actions_for_retry,
+      bool retried,
       std::vector<actor::ActionResultWithLatencyInfo> action_results);
 
   // Two-stage `create_tab` flow.
@@ -367,6 +390,21 @@ class BrowserTool : public ToolBase,
       actor::ActorTask::TabHandleSet tabs_before,
       base::TimeTicks start_time,
       std::vector<actor::ActionResultWithLatencyInfo> action_results);
+
+  // Reply for RunDownloadOnUI's url-mode mkdir hop. The forced-path download
+  // writer won't create parent directories, and a freshly-created session
+  // workspace has no `downloads/` folder yet — so we create `dest_dir` on a
+  // blocking pool first, then resume here (back on the UI thread) to
+  // re-resolve the source tab + download manager and kick off the transfer.
+  // `dir_ok` is the CreateDirectory result. `url` is passed as a string so
+  // this header needn't depend on url/gurl.h.
+  void StartUrlDownloadAfterDirReady(int32_t tab_id,
+                                     std::string url,
+                                     base::FilePath dest_dir,
+                                     std::string name,
+                                     base::TimeDelta budget,
+                                     ToolCallback done,
+                                     bool dir_ok);
 
   // Observation-only path used by `screenshot` / `read_page` /
   // `find_text`.
@@ -495,9 +533,9 @@ class BrowserTool : public ToolBase,
   // builds the observation it points at the just-acted-upon tab.
   //
   // For the working tab in `result_proto.tabs()`: emits the full
-  // payload — `tab_id` / `url` / `title` / `elements[]` /
-  // `has_screenshot` — walks the APC tree via `WalkContentNode`,
-  // populates `node_registry_`, and updates the
+  // payload — `tab_id` / `url` / `title` / `elements[]` (and, on the
+  // BrowserScreenshot path, `screenshot`) — walks the APC tree via
+  // `WalkContentNode`, populates `node_registry_`, and updates the
   // `last_observation_*` snapshot used by `agent_meta`.
   //
   // For every other session-owned tab in the observation: emits
@@ -518,8 +556,9 @@ class BrowserTool : public ToolBase,
   // `screenshot: { mime, data_base64 }` field (base64 of the captured
   // bytes) so the JS side can turn it into an image content block for
   // the model. Only `BrowserScreenshot` sets this — every other tool
-  // would just bloat its result with an image the model didn't ask for,
-  // so they keep the lightweight `has_screenshot: true` flag instead.
+  // omits the image entirely (no flag) to avoid bloating its result with
+  // pixels the model didn't ask for. The `screenshot` key's presence is
+  // the sole, unambiguous "image included" signal.
   base::DictValue BuildObservationDict(
       const optimization_guide::proto::ActionsResult& result_proto,
       bool include_screenshot_image = false);
@@ -578,6 +617,20 @@ class BrowserTool : public ToolBase,
   base::flat_set<tabs::TabHandle> session_tabs_;
   tabs::TabHandle last_work_tab_;
 
+  // Per-session-tab capture hold. Agent tabs live in a separate browsing
+  // window that comes up behind the kNexus chat window; Chromium's
+  // occlusion/background throttling would otherwise freeze that window's
+  // renderer so its tabs never paint (empty observations, read_page /
+  // screenshot hang). A `WebContents::IncrementCapturerCount` hold keeps each
+  // session tab's renderer producing compositor frames "regardless of their
+  // backgrounded or on-screen occlusion state" (per web_contents.h). Scoped
+  // strictly to session-owned agent tabs — the user's own tabs are never
+  // held, so they keep default throttling. The release closure is weak-bound
+  // to the WebContents, so it's a safe no-op if the tab closed first; the map
+  // is destroyed with the BrowserTool, dropping every hold.
+  base::flat_map<tabs::TabHandle, base::ScopedClosureRunner>
+      session_tab_capture_holds_;
+
   // Per-action wall-clock budget. Default matches Browser-Use
   // (180s); JS can override via `browser.setAgentLoopSettings`,
   // which calls `ToolSession::set_action_timeout` → propagated here.
@@ -588,12 +641,17 @@ class BrowserTool : public ToolBase,
   std::vector<scoped_refptr<browser_tool_internal::PausableTimeout>>
       active_timeouts_;
 
-  // A visible <label> that drives a (typically CSS-hidden) form control,
-  // resolved from APC's `label_for_dom_node_id`. `node_id` is the label's
-  // own DOM content_node_id; `box` is its `[x, y, w, h]` viewport rect.
+  // A visible <label> that drives a form control, resolved from APC's
+  // `label_for_dom_node_id`. `node_id` is the label's own DOM
+  // content_node_id; `box` is its `[x, y, w, h]` viewport rect; `text` is the
+  // label's visible text (e.g. "Honda") — surfaced as the control's `text`
+  // when the control carries no accessible name of its own, so the model can
+  // target "the checkbox labeled Honda" instead of guessing its position in
+  // an unlabeled list.
   struct LabelTarget {
     int node_id = 0;
     std::array<int, 4> box{};
+    std::string text;
   };
   // Per-observation index: hidden form control's node_id → its visible
   // label. Built by a pre-pass over the APC tree in `BuildObservationDict`

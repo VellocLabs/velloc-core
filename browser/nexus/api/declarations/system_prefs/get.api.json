@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "get",
+  "description": "Read the browser-global system preferences for the Settings · System page: backgroundModeEnabled (keep background apps running when all windows close) and launcherEnabled (show the Nexus launcher in the OS tray). Both live in local_state. Replaces the chrome.send getBackgroundModeEnabled + getNexusLauncherEnabled reads.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

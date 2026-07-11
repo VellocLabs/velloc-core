@@ -11,6 +11,10 @@ browser_view_sources = [
   "//custom_browser/ui/view/nexus_mode_button.cc",
   "//custom_browser/ui/view/custom_browser_window_util.h",
   "//custom_browser/ui/view/custom_browser_window_util.cc",
+  "//custom_browser/ui/view/nexus_native_menus.h",
+  "//custom_browser/ui/view/nexus_native_menus.cc",
+  "//custom_browser/ui/view/nexus_launcher_delegate_impl.h",
+  "//custom_browser/ui/view/nexus_launcher_delegate_impl.cc",
   "//custom_browser/ui/view/native_ui/native_ui.h",
   "//custom_browser/ui/view/native_ui/native_ui.cc",
   "//custom_browser/ui/view/native_ui/native_ui_utils.h",
@@ -45,6 +49,8 @@ browser_view_sources = [
   "//custom_browser/ui/prefs/custom_browser_ui_prefs.cc",
   "//custom_browser/ui/prefs/custom_browser_ui_mode_pref_paths.h",
   "//custom_browser/ui/prefs/custom_browser_ui_mode_pref_paths.cc",
+  "//custom_browser/ui/startup/nexus_startup_prompts.h",
+  "//custom_browser/ui/startup/nexus_startup_prompts.cc",
 ]
 
 browser_view_webui_sources = [

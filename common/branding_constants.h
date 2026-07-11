@@ -22,9 +22,9 @@ namespace custom_browser {
 // Stored as std::string_view (not char[]) so call sites can pass the
 // constants directly to base::ASCIIToUTF16(), which has a static_assert
 // blocking the char[N] literal overload (it wants u"..." literals there).
-inline constexpr std::string_view kCustomBrowserProductName = "Nexus";
+inline constexpr std::string_view kCustomBrowserProductName = "Velloc";
 inline constexpr std::string_view kCustomBrowserProductLongName =
-    "Nexus in Chrome";
+    "Velloc in Chrome";
 
 }  // namespace custom_browser
 

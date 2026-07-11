@@ -36,7 +36,7 @@
     "renderer; codegen emits `tool_catalog_frame.gen.h` whose constexpr",
     "string_views are referenced by `prompt_section_renderer.cc`."
   ],
-  "browser_tools": "@file:tool-catalog-frame/browser-tools.md",
+  "browser_tools": "@file:browser_tool/browser-tools-catalog.md",
   "file_shell_tools": "@file:tool-catalog-frame/file-shell-tools.md",
   "task_tracking": "@file:tool-catalog-frame/task-tracking.md",
   "skills": "@file:tool-catalog-frame/skills.md",

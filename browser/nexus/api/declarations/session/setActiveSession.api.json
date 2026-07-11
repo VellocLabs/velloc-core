@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setActiveSession",
+  "description": "Guest reports which chat session is active (called once at boot and on every session switch). If the session owns tabs hosted in the kNexus window, the host foregrounds one in that window's tab strip — the session's last work tab when it lives there, else the first session tab — so the main-contents-view shows the right content. Never creates a ToolSession and never steals focus across windows: when the session's tabs live only in a normal window (separate-agent-window pref) nothing is activated. Resolves with the session's current tab counts so the guest can seed its per-session webview_area visibility map; live updates ride the `browser.sessionTabsChanged` event.",
+  "inputs": [
+    {
+      "name": "sessionId",
+      "type": "string",
+      "required": true,
+      "description": "The newly active session's id. Unknown ids are not an error — they resolve with zero counts (a fresh session that has never run a browser tool)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

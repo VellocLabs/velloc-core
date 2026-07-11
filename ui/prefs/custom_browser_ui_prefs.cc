@@ -284,11 +284,19 @@ void CustomBrowserUiPrefs::SaveCurrentUILayoutParams() {
     return;
   }
 
-  // filter ui_layout_params_ptr_ to only include touched layouts
+  // filter ui_layout_params_ptr_ to only include touched, visible layouts
   auto save_layouts = custom_browser::mojom::UILayoutParams::New();
   save_layouts->version = ui_layout_params_ptr_->version;
   for (auto& obs : ui_layout_params_ptr_->child_layouts) {
     if (touched_hash_ids_.find(obs.get()->hash_id) == touched_hash_ids_.end()) {
+      continue;
+    }
+    // Don't persist hidden views. A detaching holder hides its view (see
+    // NativeViewHolder::disconnectedCallback), so a native view pushed by a
+    // transiently-mounted page (e.g. the kSidebar page flashing in a kNexus
+    // window) is visible=false by save time and must not pollute this mode's
+    // saved layout.
+    if (!obs->visible) {
       continue;
     }
     save_layouts->child_layouts.push_back(obs.Clone());
@@ -427,6 +435,13 @@ void CustomBrowserUiPrefs::UpdateLayouts(
 
     NativeViewParamsPtr* existing = FindExistingLayout(batch[i]);
     if (!existing) {
+      // A visible=false update for a view we don't track must NOT create a new
+      // layout. This happens when a holder detaches (sends visible=false) after
+      // its mode's layouts were already cleared by a mode switch — adding it
+      // here would reparent and persist a hidden native view into the new mode.
+      if (!batch[i]->visible) {
+        continue;
+      }
       // New entry: clone and keep a pointer to the pointee we just added.
       AddLayout(batch[i]);
     } else if (!mojo::Equals(*existing, batch[i])) {

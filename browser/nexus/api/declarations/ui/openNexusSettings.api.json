@@ -7,7 +7,7 @@
       "name": "section",
       "type": "string",
       "required": false,
-      "description": "Settings tab to focus. One of 'models' / 'webapp'; invalid or missing values fall back to 'models'."
+      "description": "Settings tab to focus. One of 'models' / 'webapp' / 'mcp'; invalid or missing values fall back to 'models'."
     }
   ],
   "runtime": {

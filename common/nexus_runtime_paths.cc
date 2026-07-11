@@ -1,0 +1,101 @@
+// Copyright 2026 The Custom Browser Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "custom_browser/common/nexus_runtime_paths.h"
+
+#include <optional>
+#include <string>
+
+#include "base/base_paths.h"
+#include "base/environment.h"
+#include "base/files/file_path.h"
+#include "base/path_service.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
+#include "build/build_config.h"
+#include "custom_browser/common/branding_constants.h"
+
+namespace custom_browser {
+
+namespace {
+
+// "Velloc" -> ".velloc". Lowercased dotfile, matching the guest's
+// `RUNTIME_DIR_NAME` (branding/runtimeDir.ts).
+std::string RuntimeDirName() {
+  return base::StrCat(
+      {".", base::ToLowerASCII(std::string(kCustomBrowserProductName))});
+}
+
+}  // namespace
+
+base::FilePath GetNexusUserHomeDir() {
+  // Env-first so test isolation (which overrides HOME/USERPROFILE) and the
+  // real user home agree with NexusFsHost::UserHome. base::DIR_HOME on
+  // Windows consults SHGetKnownFolderPath, which ignores the env override,
+  // so we must check the env vars before falling back to PathService.
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+#if BUILDFLAG(IS_WIN)
+  std::optional<std::string> profile = env->GetVar("USERPROFILE");
+  if (profile.has_value() && !profile->empty()) {
+    return base::FilePath::FromUTF8Unsafe(*profile);
+  }
+#endif
+  std::optional<std::string> home_env = env->GetVar("HOME");
+  if (home_env.has_value() && !home_env->empty()) {
+    return base::FilePath::FromUTF8Unsafe(*home_env);
+  }
+
+  base::FilePath home;
+  if (base::PathService::Get(base::DIR_HOME, &home)) {
+    return home;
+  }
+  return base::FilePath();
+}
+
+base::FilePath GetNexusRuntimeDir() {
+  base::FilePath home = GetNexusUserHomeDir();
+  if (home.empty()) {
+    return base::FilePath();
+  }
+  return home.AppendASCII(RuntimeDirName());
+}
+
+base::FilePath GetNexusManagedBinDir() {
+  base::FilePath runtime = GetNexusRuntimeDir();
+  if (runtime.empty()) {
+    return base::FilePath();
+  }
+  return runtime.AppendASCII("bin");
+}
+
+base::FilePath GetManagedBinaryPath(std::string_view id) {
+  base::FilePath bin_dir = GetNexusManagedBinDir();
+  if (bin_dir.empty() || id.empty()) {
+    return base::FilePath();
+  }
+  std::string exe(id);
+#if BUILDFLAG(IS_WIN)
+  exe += ".exe";
+#endif
+  return bin_dir.AppendASCII(std::string(id)).AppendASCII(exe);
+}
+
+bool IsUnderManagedBinDir(const base::FilePath& path) {
+  base::FilePath bin_dir = GetNexusManagedBinDir();
+  if (bin_dir.empty() || path.empty()) {
+    return false;
+  }
+  // Compare on the absolute, `..`-free forms so a path like
+  // `~/.velloc/bin/../../evil` can't masquerade as managed. We don't
+  // touch the filesystem here (no realpath) — the policy caller pairs
+  // this with base::PathExists.
+  base::FilePath managed = bin_dir.StripTrailingSeparators();
+  base::FilePath candidate = path.StripTrailingSeparators();
+  if (candidate.ReferencesParent() || managed.ReferencesParent()) {
+    return false;
+  }
+  return managed == candidate || managed.IsParent(candidate);
+}
+
+}  // namespace custom_browser

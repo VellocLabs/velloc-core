@@ -177,4 +177,13 @@ std::vector<std::string> ListPromptSectionNames() {
   return {"using-your-tools", "system-prompt-tools"};
 }
 
+bool IsKnownPromptSection(std::string_view name) {
+  for (const std::string& known : ListPromptSectionNames()) {
+    if (known == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace nexus

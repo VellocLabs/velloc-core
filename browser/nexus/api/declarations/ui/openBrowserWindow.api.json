@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "openBrowserWindow",
+  "description": "Open (or focus an existing) regular browser window for the profile, without changing this pinned Nexus window's UI mode. Backs the React topbar's 'Open browser window' button (formerly the Lit topbar's sysbtn -> BrowserApiProxy.openBrowserWindow()).",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

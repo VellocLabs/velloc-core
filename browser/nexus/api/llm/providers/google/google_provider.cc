@@ -1,5 +1,7 @@
 #include "custom_browser/browser/nexus/api/llm/providers/google/google_provider.h"
 
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
+
 #include <optional>
 #include <utility>
 
@@ -175,6 +177,34 @@ base::ListValue TranslateToolResultParts(const base::ListValue& parts) {
     base::DictValue p;
     p.Set("functionResponse", std::move(func_response));
     google_parts.Append(std::move(p));
+
+    // A `functionResponse.response` is opaque JSON the model can't render as
+    // an image. When a multimodal tool result carries an image
+    // (BrowserScreenshot), also emit it as a real `inlineData` part in this
+    // same user turn so the model actually sees the pixels.
+    if (const base::ListValue* result_parts = part.FindList("result")) {
+      for (const auto& rp_val : *result_parts) {
+        const base::DictValue* rp = rp_val.GetIfDict();
+        if (!rp)
+          continue;
+        const std::string* rp_type = rp->FindString("type");
+        if (!rp_type || (*rp_type != "image" && *rp_type != "document"))
+          continue;
+        const std::string* data = *rp_type == "image" ? rp->FindString("image")
+                                                       : rp->FindString("data");
+        if (!data || data->empty())
+          continue;
+        const std::string* mime = rp->FindString("mimeType");
+        base::DictValue inline_data;
+        inline_data.Set("mimeType", mime ? *mime : (*rp_type == "image"
+                                                     ? std::string("image/jpeg")
+                                                     : std::string("application/pdf")));
+        inline_data.Set("data", *data);
+        base::DictValue data_part;
+        data_part.Set("inlineData", std::move(inline_data));
+        google_parts.Append(std::move(data_part));
+      }
+    }
   }
   return google_parts;
 }
@@ -443,7 +473,13 @@ class GoogleProvider::StreamHandler
     finish_chunk.Set("finishReason", last_finish_reason_);
 
     base::DictValue usage;
-    usage.Set("promptTokens", prompt_tokens_);
+    // Gemini's promptTokenCount is INCLUSIVE of cachedContentTokenCount; emit
+    // input EXCLUSIVE of cache to match the bridge's Anthropic convention
+    // (the JS token counter sums input + cache_read + cache_creation + output,
+    // so leaving cache in the prompt count would double-count).
+    usage.Set("promptTokens", prompt_tokens_ > cached_content_tokens_
+                                  ? prompt_tokens_ - cached_content_tokens_
+                                  : 0);
     usage.Set("completionTokens", completion_tokens_);
     usage.Set("cacheReadInputTokens", cached_content_tokens_);
     finish_chunk.Set("usage", std::move(usage));
@@ -651,7 +687,7 @@ bool GoogleProvider::Configure(const base::DictValue& config) {
     DLOG(ERROR) << "Google AI provider requires a non-empty api_key";
     return false;
   }
-  api_key_ = *api_key;
+  api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*api_key);
 
   const std::string* model = config.FindString("model");
   if (model && !model->empty()) {
@@ -817,12 +853,14 @@ GenerateResult GoogleProvider::ParseResponse(
 
   const auto* usage = response.FindDict("usageMetadata");
   if (usage) {
-    if (auto pt = usage->FindInt("promptTokenCount"))
-      result.prompt_tokens = *pt;
     if (auto ct = usage->FindInt("candidatesTokenCount"))
       result.completion_tokens = *ct;
-    if (auto cached = usage->FindInt("cachedContentTokenCount"))
-      result.cache_read_input_tokens = *cached;
+    const int cached = usage->FindInt("cachedContentTokenCount").value_or(0);
+    result.cache_read_input_tokens = cached;
+    // promptTokenCount is INCLUSIVE of cachedContentTokenCount; store input
+    // EXCLUSIVE of cache (Anthropic convention used by the bridge + JS sum).
+    const int prompt = usage->FindInt("promptTokenCount").value_or(0);
+    result.prompt_tokens = prompt > cached ? prompt - cached : 0;
   }
 
   return result;

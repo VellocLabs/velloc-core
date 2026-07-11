@@ -1,0 +1,70 @@
+#include "custom_browser/browser/nexus/api/app_info/nexus_app_info_bridge_adapter.h"
+
+#include <string>
+#include <utility>
+
+#include "base/values.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/prefs/pref_service.h"
+#include "components/version_info/version_info.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/nexus_webui_config.h"
+#include "custom_browser/common/product_version.h"
+
+namespace nexus {
+
+NexusAppInfoBridgeAdapter::NexusAppInfoBridgeAdapter(
+    NexusBridgeResponseDelegate* delegate,
+    Profile* profile)
+    : ::nexus::generated::AppInfoApiBase(delegate), profile_(profile) {}
+
+NexusAppInfoBridgeAdapter::~NexusAppInfoBridgeAdapter() = default;
+
+void NexusAppInfoBridgeAdapter::HandleGetVersionInfoOnUI(
+    ::nexus::generated::GetVersionInfoInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // `appVersion` is the fork's OWN product version (custom_browser/VERSION —
+  // the same `customBrowserProductVersion` the chrome://settings About patch
+  // shows); `chromiumVersion` is the Chromium base it's built on. They used
+  // to both report the Chromium number, which made the guest About page show
+  // the Chromium version as the client version.
+  base::DictValue result;
+  result.Set("appVersion",
+             std::string(custom_browser::kCustomBrowserProductVersion));
+  result.Set("chromiumVersion", std::string(version_info::GetVersionNumber()));
+  std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusAppInfoBridgeAdapter::HandleGetWebappUrlOnUI(
+    ::nexus::generated::GetWebappUrlInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  PrefService* prefs = profile_ ? profile_->GetPrefs() : nullptr;
+  const std::string url =
+      prefs ? prefs->GetString(nexus::prefs::kNexusWebappUrl) : std::string();
+  base::DictValue result;
+  result.Set("url", url);
+  // The built-in default guest URL — shown as the Agent URL field's hint /
+  // placeholder when no override is set (mirrors the Lit page's
+  // `customBrowserNexusWebappDefaultUrl`).
+  result.Set("defaultUrl", nexus::kDefaultNexusGuestURL);
+  std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusAppInfoBridgeAdapter::HandleSetWebappUrlOnUI(
+    ::nexus::generated::SetWebappUrlInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  PrefService* prefs = profile_ ? profile_->GetPrefs() : nullptr;
+  if (!prefs) {
+    std::move(done).Error("APP_INFO_ERROR", "Profile prefs unavailable");
+    return;
+  }
+  prefs->SetString(nexus::prefs::kNexusWebappUrl, input.url);
+  base::DictValue result;
+  result.Set("ok", true);
+  std::move(done).Success(base::Value(std::move(result)));
+}
+
+}  // namespace nexus

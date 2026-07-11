@@ -1,8 +1,8 @@
 {
   "_comment": "TODO: When this manifest's loader is identified, template the product name through custom_browser/common/branding_constants.h (kCustomBrowserProductName) so the rebrand stays single-sourced. Until then, keep these literals in sync with the C++ constant by hand.",
-  "name": "Default Nexus Agent",
+  "name": "Default Velloc Agent",
   "version": "1.0.0",
-  "description": "Default agent configuration for the Nexus AI platform",
+  "description": "Default agent configuration for the Velloc AI platform",
   "capabilities": [
     "browser",
     "llm"

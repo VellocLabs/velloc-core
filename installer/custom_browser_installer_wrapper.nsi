@@ -8,10 +8,10 @@
 !include "LogicLib.nsh"
 
 !ifndef PRODUCT_NAME
-  !define PRODUCT_NAME "Velloc Browser"
+  !define PRODUCT_NAME "Velloc Agent"
 !endif
 !ifndef PRODUCT_PUBLISHER
-  !define PRODUCT_PUBLISHER "Velloc Browser"
+  !define PRODUCT_PUBLISHER "Velloc Agent"
 !endif
 !define MINI_INSTALLER_NAME "mini_installer.exe"
 !ifndef MINI_INSTALLER_SOURCE
@@ -47,10 +47,10 @@
   !define MINI_COMPANY_NAME "Velloc"
 !endif
 !ifndef MINI_FILE_DESCRIPTION
-  !define MINI_FILE_DESCRIPTION "Velloc Browser Installer"
+  !define MINI_FILE_DESCRIPTION "Velloc Agent Installer"
 !endif
 !ifndef MINI_PRODUCT_NAME
-  !define MINI_PRODUCT_NAME "Velloc Browser Installer"
+  !define MINI_PRODUCT_NAME "Velloc Agent Installer"
 !endif
 !ifndef MINI_COPYRIGHT
   !define MINI_COPYRIGHT "Copyright 2026 Velloc. All rights reserved."

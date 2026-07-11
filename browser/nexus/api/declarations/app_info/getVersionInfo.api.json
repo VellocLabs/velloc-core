@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getVersionInfo",
+  "description": "Return application version strings for the Settings · About page: appVersion (product version) and chromiumVersion. Read-only. Replaces the loadTimeData appVersion/chromeVersion the Lit About page consumed.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

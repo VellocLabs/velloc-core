@@ -4,6 +4,6 @@
   "description": "Returns host-process platform identifiers used by the `# Environment` block in the guest's system prompt. Three fields: `platform` (one of 'win32' | 'darwin' | 'linux', Node-style for parity with Claude Code's `Platform:` line), `osVersion` (human-readable, e.g. 'Windows 11 Pro 10.0.26200'), and `shell` (interpreter name only, e.g. 'bash', 'zsh', 'PowerShell'; empty when no shell is known). The guest treats missing fields as 'omit that line' — there is intentionally no JS-side fallback (UA parsing was rejected in favor of accurate host-process info or no info).",
   "inputs": [],
   "runtime": {
-    "thread": "thread_pool"
+    "thread": "ui"
   }
 }

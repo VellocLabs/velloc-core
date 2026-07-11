@@ -16,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
 #include "chrome/browser/actor/actor_proto_conversion.h"
@@ -41,11 +42,14 @@
 #include "content/public/browser/web_contents.h"
 #include "custom_browser/browser/nexus/session/nexus_session_features.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
+#include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
+#include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/cpp/media_position.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace nexus {
 
@@ -238,8 +242,13 @@ void BrowserTool::BindTabToSession(tabs::TabHandle handle) {
 
   // Add to (or create) the session's tab group. Best-effort: some
   // browser types (devtools, app windows) disable groups; that's fine,
-  // the tag is still the source of truth.
+  // the tag is still the source of truth. The visual group chrome is
+  // kNexus-window-only: tabs hosted in a normal browsing window (the
+  // separate-agent-window pref, or a user drag) stay ordinary-looking
+  // tabs — the user asked for the session grouping to be invisible
+  // there. The tag still associates them with the session.
   if (located.browser && located.tab_strip &&
+      custom_browser::window_util::IsNexusBrowser(located.browser) &&
       located.tab_strip->SupportsTabGroups() &&
       located.index != TabStripModel::kNoTab) {
     if (tab_group_id_.has_value()) {
@@ -267,6 +276,30 @@ void BrowserTool::BindTabToSession(tabs::TabHandle handle) {
   }
 
   session_tabs_.insert(handle);
+
+  // Keep this agent tab's renderer painting even when its (separate) window is
+  // occluded behind the chat window — otherwise occlusion/background
+  // throttling freezes it and observations/screenshots hang. A visible
+  // capturer hold forces compositor frames regardless of occlusion
+  // (web_contents.h), scoped to THIS WebContents only (user tabs untouched).
+  // stay_hidden=false → page is treated visible; stay_awake=false → no
+  // display wake-lock; is_activity=false → don't fake user activity.
+  if (session_tab_capture_holds_.find(handle) ==
+      session_tab_capture_holds_.end()) {
+    session_tab_capture_holds_.emplace(
+        handle, located.contents->IncrementCapturerCount(
+                    gfx::Size(), /*stay_hidden=*/false,
+                    /*stay_awake=*/false, /*is_activity=*/false));
+  }
+
+  // Nudge the profile-wide tracker: its TabStripModelObserver saw the
+  // strip insert BEFORE the tag attach above, so the new tab was tallied
+  // as untagged. This recount flips the session's counts and emits
+  // `browser.sessionTabsChanged` to the guest (webview_area reveal).
+  if (NexusSessionTabTracker* tracker =
+          NexusSessionTabTrackerFactory::GetForProfile(GetProfile())) {
+    tracker->NotifyTabBound(located.contents);
+  }
 }
 
 void BrowserTool::RecordWorkTab(tabs::TabHandle handle) {
@@ -282,6 +315,13 @@ void BrowserTool::RecordWorkTab(tabs::TabHandle handle) {
     return;
   }
   last_work_tab_ = handle;
+  // Mirror into the profile-wide tracker so `session.setActiveSession`
+  // (handled on the page port, which cannot see this BrowserTool) can
+  // honor "activate the last-worked tab" on session switch.
+  if (NexusSessionTabTracker* tracker =
+          NexusSessionTabTrackerFactory::GetForProfile(GetProfile())) {
+    tracker->SetLastWorkTab(GetSessionKey(), handle);
+  }
 }
 
 std::optional<tabs::TabHandle> BrowserTool::LastWorkTab() const {
@@ -333,6 +373,7 @@ std::vector<tabs::TabHandle> BrowserTool::CollectSessionTabs() const {
 void BrowserTool::CloseAllSessionTabsOnDestroy() {
   if (!::nexus::features::IsSessionScopedTabsEnabled() ||
       GetSessionKey().empty()) {
+    session_tab_capture_holds_.clear();
     session_tabs_.clear();
     tab_group_id_.reset();
     return;
@@ -355,6 +396,9 @@ void BrowserTool::CloseAllSessionTabsOnDestroy() {
         TabCloseTypes::CLOSE_USER_GESTURE |
             TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
   }
+  // Drop every capture hold (safe no-op for tabs already gone) — releases the
+  // forced-render state before the tabs close.
+  session_tab_capture_holds_.clear();
   session_tabs_.clear();
   tab_group_id_.reset();
 }
@@ -715,18 +759,24 @@ void BrowserTool::RunActorAction(apc::Actions actions,
                      actor::ActorTask::State::kFailed)
           << " session=" << GetSessionKey();
 
+  // Keep a copy for the one-shot offscreen retry (see
+  // OnActorPerformActionsDone) — `actions` itself is consumed by
+  // BuildToolRequest above.
   service->PerformActions(
       *task_id, std::move(tool_request_result.value()),
       std::move(task_metadata),
       base::BindOnce(&BrowserTool::OnActorPerformActionsDone,
                      weak_ptr_factory_.GetWeakPtr(), std::move(done),
-                     std::string(action_name), start_time));
+                     std::string(action_name), start_time,
+                     /*actions_for_retry=*/actions, /*retried=*/false));
 }
 
 void BrowserTool::OnActorPerformActionsDone(
     ToolCallback done,
     std::string action_name,
     base::TimeTicks start_time,
+    apc::Actions actions_for_retry,
+    bool retried,
     std::vector<actor::ActionResultWithLatencyInfo> action_results) {
   // Chromium 149's PerformActions callback no longer passes a separate
   // result_code — it's folded into the per-action `action_results` vector.
@@ -767,6 +817,67 @@ void BrowserTool::OnActorPerformActionsDone(
         "no_actor_service",
         base::StrCat({action_name,
                       ": ActorKeyedService disappeared before observation"}));
+    return;
+  }
+
+  // One-shot transient-offscreen retry. A freshly-created same-window tab
+  // can be momentarily 0-sized while the panel's agent zone lays out, so
+  // the actor's visibility hit-test reports `kElementOffscreen` for an
+  // element that is about to become perfectly interactable (the element IS
+  // in the APC with a box — only the widget geometry lags). Re-dispatch the
+  // SAME actions once after a short settle; a genuinely offscreen element
+  // fails again and surfaces the normal error.
+  if (result_code == actor::mojom::ActionResultCode::kElementOffscreen &&
+      !retried && task_id_.has_value()) {
+    LOG(INFO) << "[BrowserTool] " << action_name
+              << ": kElementOffscreen on first attempt — retrying once "
+                 "after settle (same-window layout race)";
+    apc::Actions actions_copy = actions_for_retry;
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](base::WeakPtr<BrowserTool> self, apc::Actions actions,
+               std::string action_name, base::TimeTicks start_time,
+               ToolCallback done) {
+              if (!self) {
+                std::move(done).Reject(
+                    "tool_gone",
+                    base::StrCat({action_name,
+                                  ": BrowserTool destroyed before the "
+                                  "offscreen retry"}));
+                return;
+              }
+              auto* svc = actor::ActorKeyedService::Get(self->GetProfile());
+              if (!svc || !self->task_id_.has_value()) {
+                std::move(done).Reject(
+                    "no_actor_service",
+                    base::StrCat({action_name,
+                                  ": actor service/task gone before the "
+                                  "offscreen retry"}));
+                return;
+              }
+              actor::BuildToolRequestResult req =
+                  actor::BuildToolRequest(actions);
+              if (!req.has_value()) {
+                std::move(done).Reject(
+                    "invalid_action",
+                    base::StrCat({action_name,
+                                  ": failed to rebuild ToolRequest for the "
+                                  "offscreen retry"}));
+                return;
+              }
+              svc->PerformActions(
+                  *self->task_id_, std::move(req.value()),
+                  actor::ActorTaskMetadata{},
+                  base::BindOnce(&BrowserTool::OnActorPerformActionsDone,
+                                 self, std::move(done),
+                                 std::move(action_name), start_time,
+                                 /*actions_for_retry=*/actions,
+                                 /*retried=*/true));
+            },
+            weak_ptr_factory_.GetWeakPtr(), std::move(actions_copy),
+            action_name, start_time, std::move(done)),
+        base::Milliseconds(500));
     return;
   }
   if (!task_id_.has_value()) {
@@ -1058,8 +1169,18 @@ const char* FormControlTypeName(apc::FormControlType t) {
       return "contenteditable";
     case apc::FORM_CONTROL_TYPE_INPUT_CHECKBOX:
       return "checkbox";
+    case apc::FORM_CONTROL_TYPE_INPUT_COLOR:
+      return "color";
+    case apc::FORM_CONTROL_TYPE_INPUT_DATE:
+      return "date";
+    case apc::FORM_CONTROL_TYPE_INPUT_DATETIME_LOCAL:
+      return "datetime-local";
     case apc::FORM_CONTROL_TYPE_INPUT_EMAIL:
       return "email";
+    case apc::FORM_CONTROL_TYPE_INPUT_FILE:
+      // The model needs this to find the upload control for BrowserUpload;
+      // before, file inputs carried no input_type at all.
+      return "file";
     case apc::FORM_CONTROL_TYPE_INPUT_MONTH:
       return "month";
     case apc::FORM_CONTROL_TYPE_INPUT_NUMBER:
@@ -1068,18 +1189,55 @@ const char* FormControlTypeName(apc::FormControlType t) {
       return "password";
     case apc::FORM_CONTROL_TYPE_INPUT_RADIO:
       return "radio";
+    case apc::FORM_CONTROL_TYPE_INPUT_RANGE:
+      return "range";
     case apc::FORM_CONTROL_TYPE_INPUT_SEARCH:
       return "search";
     case apc::FORM_CONTROL_TYPE_INPUT_TELEPHONE:
       return "tel";
     case apc::FORM_CONTROL_TYPE_INPUT_TEXT:
       return "text";
+    case apc::FORM_CONTROL_TYPE_INPUT_TIME:
+      return "time";
     case apc::FORM_CONTROL_TYPE_INPUT_URL:
       return "url";
+    case apc::FORM_CONTROL_TYPE_INPUT_WEEK:
+      return "week";
     case apc::FORM_CONTROL_TYPE_SELECT_ONE:
       return "select";
     case apc::FORM_CONTROL_TYPE_SELECT_MULTIPLE:
       return "select-multiple";
+    case apc::FORM_CONTROL_TYPE_TEXT_AREA:
+      return "textarea";
+    // <input type="button|submit|reset"> AND <button type="button|submit|
+    // reset|popover">. The model previously saw no `input_type` AND
+    // role:"textbox" for these, hiding submit/CTA buttons inside busy
+    // forms behind the same shape as text fields. Empirically reproduced
+    // on AKC's RETRIEVE EVENTS button (`<input type="button"
+    // value="RETRIEVE EVENTS" class="retrieve-events">`): the model
+    // surfaced the index but dismissed it as "not the button" because
+    // role read "textbox". Mapping to the HTML type string here +
+    // returning "button" from ExtractRole below makes the entry
+    // unambiguous on the wire.
+    case apc::FORM_CONTROL_TYPE_INPUT_BUTTON:
+    case apc::FORM_CONTROL_TYPE_BUTTON_BUTTON:
+      return "button";
+    case apc::FORM_CONTROL_TYPE_INPUT_SUBMIT:
+    case apc::FORM_CONTROL_TYPE_BUTTON_SUBMIT:
+      return "submit";
+    case apc::FORM_CONTROL_TYPE_INPUT_RESET:
+    case apc::FORM_CONTROL_TYPE_BUTTON_RESET:
+      return "reset";
+    case apc::FORM_CONTROL_TYPE_BUTTON_POPOVER:
+      return "popover";
+    // <input type="image"> — a clickable image submit button.
+    // Common pattern: logo-as-submit on e-commerce sites, magnifying-
+    // glass icon submitting a search form. Same bug class as the
+    // button family above: emits role:"textbox" with no input_type
+    // if we don't handle it. Surfaces as input_type:"image" so the
+    // model can recognize the icon-button pattern.
+    case apc::FORM_CONTROL_TYPE_INPUT_IMAGE:
+      return "image";
     default:
       return nullptr;
   }
@@ -1110,6 +1268,22 @@ std::string ExtractRole(const apc::ContentAttributes& attrs) {
       return "combobox";
     }
     if (t == apc::FORM_CONTROL_TYPE_INPUT_SEARCH) return "searchbox";
+    // <input type="button|submit|reset"> AND <button type="button|submit
+    // |reset|popover">. Surface as role:"button" so the model recognizes
+    // submit/CTA controls as actuators rather than mistaking them for
+    // text fields. The empirical AKC failure was caused by RETRIEVE
+    // EVENTS surfacing as role:"textbox" — fixed by recognizing the
+    // button family here.
+    if (t == apc::FORM_CONTROL_TYPE_INPUT_BUTTON ||
+        t == apc::FORM_CONTROL_TYPE_INPUT_SUBMIT ||
+        t == apc::FORM_CONTROL_TYPE_INPUT_RESET ||
+        t == apc::FORM_CONTROL_TYPE_INPUT_IMAGE ||
+        t == apc::FORM_CONTROL_TYPE_BUTTON_BUTTON ||
+        t == apc::FORM_CONTROL_TYPE_BUTTON_SUBMIT ||
+        t == apc::FORM_CONTROL_TYPE_BUTTON_RESET ||
+        t == apc::FORM_CONTROL_TYPE_BUTTON_POPOVER) {
+      return "button";
+    }
     return "textbox";  // text / email / password / url / number / tel /
                        // contenteditable all behave as text input for
                        // the LLM's purposes
@@ -1117,6 +1291,35 @@ std::string ExtractRole(const apc::ContentAttributes& attrs) {
   if (attrs.has_interaction_info() &&
       attrs.interaction_info().is_clickable()) {
     return "button";
+  }
+  // Clickable images. Empirically `<input type="image">` reaches this
+  // function as `CONTENT_ATTRIBUTE_IMAGE` (NOT `FORM_CONTROL` — APC
+  // emits the input as an image node, the form-control sibling node
+  // either isn't produced or is filtered out before elements[]) and
+  // typically without `interaction_info.is_clickable()` set on the
+  // image node itself, so neither of the branches above fires and the
+  // element would otherwise emit as a bare `{index, type:"image"}` —
+  // hard to distinguish from a decorative <img>. IsActionable already
+  // accepted it (via `is_focusable` or `aria_role`), so it IS an
+  // actuator — surface it to the model as a button. Also catches
+  // `<img onclick>` / `<svg role="img" onclick>` icon-button patterns.
+  if (attrs.attribute_type() == apc::CONTENT_ATTRIBUTE_IMAGE) {
+    return "button";
+  }
+  // ARIA-only interactive widgets: the node is neither ANCHOR nor
+  // FORM_CONTROL and Blink didn't flag it as is_clickable (typically
+  // because the React/Vue framework delegates the click on the parent
+  // listbox and the child <li> has tabindex=-1 / cursor:auto). Surface
+  // the ARIA role string so the model sees `role: "option"` instead of
+  // a bare `{index, type:"list_item"}` it can't distinguish from a
+  // generic <li>. The allowlist + emitted role-string is the same
+  // shared `RoleStringFromAXRole` table that `IsActionable` checks —
+  // single source of truth, so adding a new role there automatically
+  // emits the matching role string here too.
+  if (attrs.has_aria_role()) {
+    if (const char* role = RoleStringFromAXRole(attrs.aria_role())) {
+      return role;
+    }
   }
   return std::string();
 }
@@ -1171,9 +1374,17 @@ void BrowserTool::CollectLabelTargets(const apc::ContentNode& node) {
         // First label with a visible box wins — keep it if already set.
         if (observation_label_targets_.find(input_id) ==
             observation_label_targets_.end()) {
+          // Capture the label's visible text ("Honda") so WalkContentNode can
+          // surface it on an otherwise-unlabeled control. The text may be on
+          // the label node itself or nested in a child span.
+          std::string label_text = ExtractNodeText(attrs);
+          if (label_text.empty()) {
+            label_text = ExtractDescendantTextSnippet(node);
+          }
           observation_label_targets_.insert_or_assign(
               input_id, LabelTarget{attrs.common_ancestor_dom_node_id(),
-                                    {r.x(), r.y(), r.width(), r.height()}});
+                                    {r.x(), r.y(), r.width(), r.height()},
+                                    std::move(label_text)});
         }
       }
     }
@@ -1208,6 +1419,21 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
       // LLM sees `text: "Sign in"` instead of a bare `{index, type}`.
       if (text.empty()) {
         text = ExtractDescendantTextSnippet(node);
+      }
+      // Still no accessible name? Borrow the associated `<label for=...>`'s
+      // text. A form control whose label is a separate element (the input and
+      // its name are siblings, not nested) otherwise emits as a bare
+      // `{index, input_type:checkbox}` — so on a filter list of identical
+      // checkboxes the model can't tell which is "Honda" and resorts to
+      // guessing by position. Surfacing the label text lets it target the
+      // control by name. (Keyed by node_id: APC guarantees the label's
+      // `label_for_dom_node_id` equals the input's `common_ancestor_dom_node_id`.)
+      if (text.empty()) {
+        auto lt = observation_label_targets_.find(node_id);
+        if (lt != observation_label_targets_.end() &&
+            !lt->second.text.empty()) {
+          text = lt->second.text;
+        }
       }
 
       NodeRegistry::Entry entry;
@@ -1273,6 +1499,42 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
           if (fc.form_control_type() == apc::FORM_CONTROL_TYPE_INPUT_CHECKBOX ||
               fc.form_control_type() == apc::FORM_CONTROL_TYPE_INPUT_RADIO) {
             elem.Set("is_checked", fc.is_checked());
+          }
+        }
+        // Native <select> options. APC carries the full option list (value +
+        // text) in `select_options`; without surfacing it the model sees only
+        // the currently-selected label (`value` above) and can neither
+        // DISCOVER that other options exist nor BrowserSelectOption one — that
+        // tool needs the exact `value` attribute, which clicking a native
+        // <select> can't reveal (the popup is OS-rendered, not DOM). Emit
+        // `options: [{value, text, selected?, disabled?}]` so the model can
+        // match a visible label to its value and select it. Capped so a huge
+        // <select> (country picker ~250) can't bloat the observation;
+        // `options_truncated: true` flags when the list was cut.
+        if (fc.select_options_size() > 0) {
+          constexpr int kMaxSelectOptions = 200;
+          const int total = fc.select_options_size();
+          const int emit_count =
+              total < kMaxSelectOptions ? total : kMaxSelectOptions;
+          base::ListValue options;
+          for (int i = 0; i < emit_count; ++i) {
+            const apc::SelectOption& opt = fc.select_options(i);
+            base::DictValue o;
+            o.Set("value", opt.value());
+            if (!opt.text().empty()) {
+              o.Set("text", opt.text());
+            }
+            if (opt.is_selected()) {
+              o.Set("selected", true);
+            }
+            if (opt.is_disabled()) {
+              o.Set("disabled", true);
+            }
+            options.Append(std::move(o));
+          }
+          elem.Set("options", std::move(options));
+          if (total > emit_count) {
+            elem.Set("options_truncated", true);
           }
         }
       }
@@ -1475,6 +1737,31 @@ base::DictValue BrowserTool::BuildObservationDict(
     base::DictValue tab_dict;
     tab_dict.Set("tab_id", tab_obs.id());
 
+    // Surface observation-fetch failures LOUDLY instead of silently
+    // emitting an empty tab. Upstream's FetchCallback
+    // (chrome/browser/actor/actor_proto_conversion.cc) sets
+    // `result = TAB_OBSERVATION_FETCH_ERROR` and returns WITHOUT
+    // attaching `annotated_page_content` when the APC fetch or a
+    // required screenshot capture fails — so without this field the
+    // model (and every e2e assertion) sees `elements: []` +
+    // `page_text: ""` with `ok: true` and misreads a broken
+    // observation as an empty page. The sub-result codes say which
+    // leg failed (APC vs screenshot).
+    if (tab_obs.result() != apc::TabObservation::TAB_OBSERVATION_OK) {
+      tab_dict.Set(
+          "observation_error",
+          base::StrCat(
+              {"tab observation failed: result=",
+               apc::TabObservation::TabObservationResult_Name(
+                   tab_obs.result()),
+               " apc=",
+               apc::TabObservation::AnnotatedPageContentResult_Name(
+                   tab_obs.annotated_page_content_result()),
+               " screenshot=",
+               apc::TabObservation::ScreenshotResult_Name(
+                   tab_obs.screenshot_result())}));
+    }
+
     // Pull `url` / `title` from main_frame_data — emitted for every
     // tab (basics for non-working, full envelope's basics for the
     // working one too).
@@ -1498,27 +1785,30 @@ base::DictValue BrowserTool::BuildObservationDict(
     }
 
     // ── Working tab: full payload ─────────────────────────────────
-    if (tab_obs.has_screenshot() && !tab_obs.screenshot().empty()) {
-      if (include_screenshot_image) {
-        // BrowserScreenshot path: deliver the actual pixels. The bridge
-        // browser-result transport is JSON-only, and the model API takes
-        // base64 regardless, so base64 here is the right carrier — JS
-        // lifts it straight into an image content block. `screenshot` is
-        // raw bytes; `screenshot_mime_type` is the captured format
-        // (defaults to JPEG when the framework didn't set one).
-        base::DictValue shot;
-        shot.Set("mime", (tab_obs.has_screenshot_mime_type() &&
-                          !tab_obs.screenshot_mime_type().empty())
-                             ? tab_obs.screenshot_mime_type()
-                             : std::string("image/jpeg"));
-        shot.Set("data_base64", base::Base64Encode(tab_obs.screenshot()));
-        tab_dict.Set("screenshot", std::move(shot));
-      } else {
-        // Every other tool: a lightweight flag only. Emitting the image
-        // on every observation would bloat each result with pixels the
-        // model didn't ask for.
-        tab_dict.Set("has_screenshot", true);
-      }
+    // Deliver the actual pixels ONLY for BrowserScreenshot. Every other action
+    // omits the image entirely: the structured observation already lists every
+    // actionable element, and shipping a base64 image on every action would
+    // bloat each result with pixels the model didn't ask for. We intentionally
+    // emit NO availability flag — the model can call BrowserScreenshot whenever
+    // it needs pixels regardless of any marker, and a bare `has_screenshot`
+    // flag read as if the image were attached (it wasn't), so it was removed.
+    // The presence of the `screenshot` key is the unambiguous "image included"
+    // signal. (`tab_obs.has_screenshot()` below is the APC proto getter, not a
+    // result field.)
+    if (include_screenshot_image && tab_obs.has_screenshot() &&
+        !tab_obs.screenshot().empty()) {
+      // The bridge browser-result transport is JSON-only, and the model API
+      // takes base64 regardless, so base64 here is the right carrier — JS
+      // lifts it straight into an image content block. `screenshot` is raw
+      // bytes; `screenshot_mime_type` is the captured format (defaults to JPEG
+      // when the framework didn't set one).
+      base::DictValue shot;
+      shot.Set("mime", (tab_obs.has_screenshot_mime_type() &&
+                        !tab_obs.screenshot_mime_type().empty())
+                           ? tab_obs.screenshot_mime_type()
+                           : std::string("image/jpeg"));
+      shot.Set("data_base64", base::Base64Encode(tab_obs.screenshot()));
+      tab_dict.Set("screenshot", std::move(shot));
     }
 
     base::ListValue elements;

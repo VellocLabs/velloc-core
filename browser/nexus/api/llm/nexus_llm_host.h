@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -105,6 +106,9 @@ class NexusLlmHost {
   };
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(NexusLlmHostTest,
+                           StreamErrorChunkAcceptsStringErrorPayload);
+
   // OAuth-backed providers need a fresh access token before dispatch. These
   // run an async refresh (no-op for non-OAuth providers), apply the token to
   // the provider in-memory, then continue the original Call / StreamStart.

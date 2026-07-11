@@ -12,10 +12,18 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 6> kBridgeCapabilities = {
+constexpr std::array<const char*, 8> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
+    "shell",
+    // Native-backed MCP (stdio + Streamable HTTP). The guest gates its
+    // native MCP pool on `supportsBridgeCapability('mcp')` (see
+    // createBrowserRuntime.ts), so the capability must be advertised here
+    // for the `NexusMcpBridgeAdapter` (registered unconditionally by
+    // NexusBridgePortService) to be reachable. See
+    // custom_browser/browser/nexus/api/mcp/.
+    "mcp",
     // The macro-DSL-driven browser tool catalog. Always advertised: the
     // adapter is unconditionally constructed by NexusBridgePortService
     // and its catalog is the source of truth for the LLM-facing browser

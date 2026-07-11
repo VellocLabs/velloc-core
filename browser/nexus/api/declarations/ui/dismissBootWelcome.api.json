@@ -1,9 +1,0 @@
-{
-  "$schema": "../../../codegen/api_schema.json",
-  "name": "dismissBootWelcome",
-  "description": "Tell the parent WebUI to dismiss its boot-welcome overlay and reveal the nexus-view-container. Does not show <main-contents-view>.",
-  "inputs": [],
-  "runtime": {
-    "thread": "ui"
-  }
-}

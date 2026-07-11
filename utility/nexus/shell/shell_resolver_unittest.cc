@@ -5,14 +5,104 @@
 #include "custom_browser/utility/nexus/shell/shell_resolver.h"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/scoped_environment_variable_override.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
+#include "custom_browser/common/nexus_runtime_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
 namespace {
+
+// Points the runtime-path helper at a throwaway home so the managed-bin
+// dir (~/.velloc/bin) lands inside a ScopedTempDir for the test.
+class ScopedManagedHome {
+ public:
+  ScopedManagedHome() {
+    CHECK(home_.CreateUniqueTempDir());
+    const std::string path = home_.GetPath().AsUTF8Unsafe();
+    home_env_ = std::make_unique<base::ScopedEnvironmentVariableOverride>(
+        "HOME", path);
+    userprofile_env_ =
+        std::make_unique<base::ScopedEnvironmentVariableOverride>("USERPROFILE",
+                                                                  path);
+  }
+
+  base::FilePath CreateManagedBinary(const std::string& id) {
+    base::FilePath exe = custom_browser::GetManagedBinaryPath(id);
+    CHECK(!exe.empty());
+    CHECK(base::CreateDirectory(exe.DirName()));
+    CHECK(base::WriteFile(exe, "binary"));
+    return exe;
+  }
+
+ private:
+  base::ScopedTempDir home_;
+  std::unique_ptr<base::ScopedEnvironmentVariableOverride> home_env_;
+  std::unique_ptr<base::ScopedEnvironmentVariableOverride> userprofile_env_;
+};
+
+TEST(ShellResolverTest, FindOnPathResolvesManagedBinary) {
+  // A unique id that won't be on the host PATH, so a hit can only come
+  // from the ~/.velloc/bin probe.
+  ScopedManagedHome home;
+  const std::string id = "nexus-managed-test-bin";
+  const base::FilePath exe = home.CreateManagedBinary(id);
+  const std::optional<base::FilePath> found = ShellResolver::FindOnPath(id);
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, exe);
+}
+
+TEST(ShellResolverTest, FindOnPathReturnsNulloptForAbsentManagedBinary) {
+  ScopedManagedHome home;
+  EXPECT_FALSE(
+      ShellResolver::FindOnPath("nexus-managed-absent-bin").has_value());
+}
+
+
+
+#if BUILDFLAG(IS_WIN)
+TEST(ShellResolverTest, FindOnPathHonorsExplicitBashPathEnvOverride) {
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  base::FilePath bash = tmp.GetPath().AppendASCII("custom-bash.exe");
+  ASSERT_TRUE(base::WriteFile(bash, "fake bash"));
+
+  base::ScopedEnvironmentVariableOverride override_env(
+      "NEXUS_BASH_PATH", bash.AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+
+  std::optional<base::FilePath> found = ShellResolver::FindOnPath("bash");
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, bash);
+}
+#endif
+
+#if BUILDFLAG(IS_WIN)
+TEST(ShellResolverTest, FindOnPathFindsGitBashFromCommonProgramFilesLocation) {
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  base::FilePath program_files = tmp.GetPath().AppendASCII("ProgramFiles");
+  base::FilePath bash =
+      program_files.AppendASCII("Git").AppendASCII("bin").AppendASCII("bash.exe");
+  ASSERT_TRUE(base::CreateDirectory(bash.DirName()));
+  ASSERT_TRUE(base::WriteFile(bash, "fake bash"));
+
+  base::ScopedEnvironmentVariableOverride program_files_env(
+      "ProgramFiles", program_files.AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+
+  std::optional<base::FilePath> found = ShellResolver::FindOnPath("bash");
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, bash);
+}
+#endif
 
 TEST(ShellResolverTest, KnownToolIdsIsAlphabetisedAndDeduped) {
   const std::vector<std::string> ids = ShellResolver::KnownToolIds();

@@ -1,21 +1,56 @@
 #include "custom_browser/browser/nexus/api/ui/nexus_ui_bridge_adapter.h"
 
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
+#include "base/environment.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/functional/bind.h"
+#include "base/functional/callback.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/notifications/notification_display_service.h"
+#include "chrome/browser/notifications/notification_display_service_factory.h"
+#include "chrome/browser/notifications/notification_handler.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/grit/chrome_unscaled_resources.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "custom_browser/browser/nexus/ui/nexus_ui_broadcast.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
+#include "ui/base/models/image_model.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/image/canvas_image_source.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/shell_dialogs/select_file_policy.h"
+#include "ui/shell_dialogs/selected_file_info.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
+#include "ui/message_center/public/cpp/notification.h"
+#include "ui/message_center/public/cpp/notification_delegate.h"
+#include "ui/message_center/public/cpp/notification_types.h"
+#include "ui/message_center/public/cpp/notifier_id.h"
+#include "components/prefs/pref_service.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "url/gurl.h"
 
 namespace nexus {
@@ -23,8 +58,44 @@ namespace nexus {
 namespace {
 
 bool IsValidSettingsSection(std::string_view section) {
-  return section == "models" || section == "webapp";
+  return section == "models" || section == "webapp" || section == "mcp" ||
+         section == "features";
 }
+
+// Draws the branded product logo inset within an 18-dip badge so the toast
+// header icon matches the visual footprint of message_center's default icon
+// (a vector that leaves internal whitespace rather than filling its box). The
+// product_logo PNG is a full-bleed rounded square, so without the inset it
+// reads noticeably larger/heavier than the icon it replaces. Scale-aware
+// (downscales the 64px source per display rep) so it stays crisp on HiDPI.
+class NexusHeaderIconSource : public gfx::CanvasImageSource {
+ public:
+  NexusHeaderIconSource()
+      : gfx::CanvasImageSource(gfx::Size(message_center::kSmallImageSizeMD,
+                                         message_center::kSmallImageSizeMD)) {}
+  NexusHeaderIconSource(const NexusHeaderIconSource&) = delete;
+  NexusHeaderIconSource& operator=(const NexusHeaderIconSource&) = delete;
+  ~NexusHeaderIconSource() override = default;
+
+  void Draw(gfx::Canvas* canvas) override {
+    // Logo occupies `kInner` of the `kBox`-dip badge; the remainder is
+    // transparent margin. Tune `kInner` to grow/shrink the badge.
+    constexpr int kBox = message_center::kSmallImageSizeMD;  // 18
+    constexpr int kInner = 14;
+    constexpr int kMargin = (kBox - kInner) / 2;
+    const gfx::ImageSkia logo =
+        *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            IDR_PRODUCT_LOGO_64);
+    canvas->DrawImageInt(logo, /*src_x=*/0, /*src_y=*/0, logo.width(),
+                         logo.height(), /*dest_x=*/kMargin, /*dest_y=*/kMargin,
+                         /*dest_w=*/kInner, /*dest_h=*/kInner, /*filter=*/true);
+  }
+};
+
+// Length cap (UTF-16 units) for the session title shown in the native window
+// title. Taskbar/alt-tab elide on their own; this is a sanity guard against
+// hostile prompt-derived titles.
+constexpr size_t kMaxNexusWindowTitleLength = 120;
 
 bool OpenNexusSettingsForProfile(Profile* profile, std::string_view section) {
   if (!profile) {
@@ -66,6 +137,121 @@ bool OpenNexusSettingsForProfile(Profile* profile, std::string_view section) {
   return opened;
 }
 
+// Pushes the nexus topbar's window-drag map (reported by the guest) into the
+// host's CustomBrowserWebUIView so the frameless window can be dragged from the
+// React topbar. Targets the most-recently-active nexus window for the profile
+// (the one the user is interacting with). NOTE: with multiple nexus windows the
+// regions are window-specific (right-aligned controls differ by width), and the
+// bridge adapter only knows the profile, not which window sent this — so only
+// the active window stays exactly correct. Single-window (the common case) is
+// always correct.
+void ApplyGuestDragRegionForProfile(Profile* profile,
+                                    const std::vector<gfx::Rect>& draggable,
+                                    const std::vector<gfx::Rect>& subtract) {
+  if (!profile) {
+    return;
+  }
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+        Browser* browser =
+            window ? window->GetBrowserForMigrationOnly() : nullptr;
+        if (!browser || browser->profile() != profile ||
+            !browser->is_type_normal()) {
+          return true;  // Keep scanning.
+        }
+        auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
+        if (!browser_view) {
+          return true;
+        }
+        auto* custom_browser_view = static_cast<CustomBrowserView*>(browser_view);
+        auto* webui_view =
+            custom_browser_view->views().custom_browser_webui_view.get();
+        if (!webui_view) {
+          return true;
+        }
+        webui_view->SetGuestDragRegion(draggable, subtract);
+        return false;  // Applied to the active nexus window; stop.
+      });
+}
+
+// Returns true if a normal browser window for `profile` is currently the
+// active (OS-focused) window. Used to suppress turn-end notifications while
+// the user is actively looking at Nexus.
+bool IsNexusBrowserWindowActiveForProfile(Profile* profile) {
+  if (!profile) {
+    return false;
+  }
+
+  bool active = false;
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+        Browser* browser =
+            window ? window->GetBrowserForMigrationOnly() : nullptr;
+        if (!browser || browser->profile() != profile ||
+            !browser->is_type_normal()) {
+          return true;  // Keep scanning.
+        }
+        auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
+        if (browser_view && browser_view->IsActive()) {
+          active = true;
+          return false;  // Found an active window; stop.
+        }
+        return true;
+      });
+  return active;
+}
+
+// Activates the normal browser window hosting Nexus for the profile
+// identified by `profile_id`. Invoked when the user clicks a turn-end
+// notification — which can happen long after it was posted, possibly after
+// the originating Profile was destroyed (the OS may keep the toast around).
+// So `profile_id` is an opaque identity token: it is only COMPARED against
+// live profiles' addresses, never dereferenced. If nothing matches (profile
+// gone, or all its windows closed) this is a no-op.
+void ActivateNexusWindowForProfileId(uintptr_t profile_id) {
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+        Browser* browser =
+            window ? window->GetBrowserForMigrationOnly() : nullptr;
+        if (!browser || !browser->is_type_normal() ||
+            reinterpret_cast<uintptr_t>(browser->profile()) != profile_id) {
+          return true;  // Keep scanning.
+        }
+        if (auto* browser_view =
+                BrowserView::GetBrowserViewForBrowser(browser)) {
+          browser_view->Activate();
+          return false;  // Brought the Nexus window forward; stop.
+        }
+        return true;
+      });
+}
+
+// Returns the native window of the most-recently-active normal browser window
+// hosting Nexus for `profile`, to parent the folder-picker dialog (so it is
+// modal to the Nexus window). Returns a null window when none is found — the
+// dialog then opens modeless, which is still functional.
+gfx::NativeWindow GetNexusOwningWindowForProfile(Profile* profile) {
+  gfx::NativeWindow owning_window = gfx::NativeWindow();
+  if (!profile) {
+    return owning_window;
+  }
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+        Browser* browser =
+            window ? window->GetBrowserForMigrationOnly() : nullptr;
+        if (!browser || browser->profile() != profile ||
+            !browser->is_type_normal()) {
+          return true;  // Keep scanning.
+        }
+        if (BrowserWindow* browser_window = browser->window()) {
+          owning_window = browser_window->GetNativeWindow();
+          return false;  // Found the Nexus window; stop.
+        }
+        return true;
+      });
+  return owning_window;
+}
+
 }  // namespace
 
 constexpr char kProviderMissingHeaderIconSvg[] =
@@ -92,7 +278,18 @@ NexusUiBridgeAdapter::NexusUiBridgeAdapter(
   // override here. The codegen wires the dispatch automatically.
 }
 
-NexusUiBridgeAdapter::~NexusUiBridgeAdapter() = default;
+NexusUiBridgeAdapter::~NexusUiBridgeAdapter() {
+  // If a folder dialog is still open at teardown, detach as its listener so
+  // it can't call back into freed memory (mirrors
+  // DownloadsHandler::~DownloadsHandler). Any pending bridge response is then
+  // dropped — the guest's promise settles via the bridge's disconnect path.
+  if (select_folder_dialog_) {
+    select_folder_dialog_->ListenerDestroyed();
+  }
+  if (select_files_dialog_) {
+    select_files_dialog_->ListenerDestroyed();
+  }
+}
 
 // ===========================================================================
 // Per-action handlers — all run on UI (the bridge's home sequence).
@@ -137,30 +334,14 @@ void NexusUiBridgeAdapter::HandleGetProviderMissingPromptOnUI(
   std::move(done).Success(std::move(result));
 }
 
-void NexusUiBridgeAdapter::HandleDismissBootWelcomeOnUI(
-    ::nexus::generated::DismissBootWelcomeInput /*input*/,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Tells the parent WebUI to dismiss its boot welcome overlay and reveal
-  // <nexus-view-container>. Does NOT show <main-contents-view> or
-  // <cr-splitter> — those stay hidden until the model explicitly invokes
-  // `showMainContents`. Called by the React guest on initial boot once
-  // sessions and worker snapshot are ready.
-  BroadcastWebUiListenerEventToProfile(profile_, "nexusDismissBootWelcome");
-  std::move(done).SuccessVoid();
-}
-
-void NexusUiBridgeAdapter::HandleShowMainContentsOnUI(
-    ::nexus::generated::ShowMainContentsInput /*input*/,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Reveals <main-contents-view> + <cr-splitter> in the parent WebUI. The
-  // boot path does NOT call this — only the model code calls it (e.g. when
-  // the agent decides to surface the main browser content alongside the
-  // chat pane). Idempotent: the parent latches its visibility flag.
-  BroadcastWebUiListenerEventToProfile(profile_, "nexusShowMainContents");
-  std::move(done).SuccessVoid();
-}
+// HandleDismissBootWelcomeOnUI + HandleShowMainContentsOnUI were
+// pure C++ pass-through relays. Deleted alongside their `.api.json`
+// declarations and BUILD.gn entries; the SharedWorker now fans
+// `nexus.ui.dismissBootWelcome` / `nexus.ui.showMainContents`
+// directly to attached WebUI bridge ports. See
+// `SharedWorkerSessionManager`'s `ui.broadcastEvent` message handler
+// for the worker side and `nexus_ui_event_client.ts` for the panel-
+// side subscriber.
 
 void NexusUiBridgeAdapter::HandleOpenUrlOnUI(
     ::nexus::generated::OpenUrlInput input,
@@ -178,6 +359,113 @@ void NexusUiBridgeAdapter::HandleOpenUrlOnUI(
     return;
   }
   custom_browser::window_util::OpenUrlInNormalWindow(profile_, url);
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleOpenBrowserWindowOnUI(
+    ::nexus::generated::OpenBrowserWindowInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Backs the React topbar's "Open browser window" button. Mirrors the
+  // retired Lit topbar sysbtn path (UIViewHandler::OpenBrowserWindow):
+  // focus an existing normal browser window for the profile, or open a new
+  // one. Deliberately does NOT change this pinned Nexus window's UI mode.
+  custom_browser::window_util::OpenOrFocusNormalWindow(profile_);
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleOpenLanguageSettingsOnUI(
+    ::nexus::generated::OpenLanguageSettingsInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Backs the React Settings · General "Open language settings" button. Opens
+  // Chrome's native languages page in a normal (non-kNexus) window so the user
+  // can change the browser/UI language — Chrome owns the language list and the
+  // restart-to-apply flow. This is a TRUSTED, fixed internal URL, so it goes
+  // straight through OpenUrlInNormalWindow rather than HandleOpenUrlOnUI (which
+  // rejects chrome:// because its URLs come from untrusted conversation links).
+  custom_browser::window_util::OpenUrlInNormalWindow(
+      profile_, GURL("chrome://settings/languages"));
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleSetActiveSessionTitleOnUI(
+    ::nexus::generated::SetActiveSessionTitleInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // The guest publishes the active session's resolved display title on every
+  // change (boot, switch, rename, auto-title). The final native title
+  // ("{title} - {product}") is composed by CustomBrowserView::GetWindowTitle;
+  // this handler only sanitizes and stores the raw session title.
+  //
+  // Titles are derived from prompt text (semi-untrusted): collapse whitespace
+  // runs (incl. newlines) and cap the length so a hostile first prompt can't
+  // garble the taskbar / alt-tab text.
+  std::u16string title =
+      base::CollapseWhitespace(base::UTF8ToUTF16(input.title),
+                               /*trim_sequences_with_line_breaks=*/true);
+  if (title.size() > kMaxNexusWindowTitleLength) {
+    title.resize(kMaxNexusWindowTitleLength);
+    // Never leave an unpaired lead surrogate as the last unit.
+    if (title.back() >= 0xD800 && title.back() <= 0xDBFF) {
+      title.pop_back();
+    }
+  }
+
+  // Fire-and-forget like setWindowDragRegions: no error when no kNexus window
+  // exists (e.g. mid-close) — the guest republishes on next mount.
+  if (Browser* nexus =
+          custom_browser::window_util::FindNexusWindow(profile_)) {
+    if (auto* view = static_cast<CustomBrowserView*>(
+            BrowserView::GetBrowserViewForBrowser(nexus))) {
+      view->SetNexusSessionTitle(title);
+    }
+  }
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleSetWindowDragRegionsOnUI(
+    ::nexus::generated::SetWindowDragRegionsInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Payload: { regions: [{x,y,width,height,draggable}] } in guest-viewport CSS
+  // px. `draggable:true` rects form the drag bar; `draggable:false` rects are
+  // the interactive controls, subtracted back out so clicks reach them.
+  std::vector<gfx::Rect> draggable;
+  std::vector<gfx::Rect> subtract;
+  if (const base::ListValue* regions = input.payload.FindList("regions")) {
+    for (const base::Value& entry_value : *regions) {
+      const base::DictValue* r = entry_value.GetIfDict();
+      if (!r) {
+        continue;
+      }
+      // Values arrive as JSON integers; tolerate doubles defensively.
+      auto px = [&](const char* key) -> std::optional<int> {
+        if (std::optional<int> i = r->FindInt(key)) {
+          return i;
+        }
+        if (std::optional<double> d = r->FindDouble(key)) {
+          return static_cast<int>(*d + (*d < 0 ? -0.5 : 0.5));
+        }
+        return std::nullopt;
+      };
+      std::optional<int> x = px("x");
+      std::optional<int> y = px("y");
+      std::optional<int> w = px("width");
+      std::optional<int> h = px("height");
+      if (!x || !y || !w || !h || *w <= 0 || *h <= 0) {
+        continue;
+      }
+      gfx::Rect rect(*x, *y, *w, *h);
+      if (r->FindBool("draggable").value_or(false)) {
+        draggable.push_back(rect);
+      } else {
+        subtract.push_back(rect);
+      }
+    }
+  }
+
+  ApplyGuestDragRegionForProfile(profile_, draggable, subtract);
   std::move(done).SuccessVoid();
 }
 
@@ -200,31 +488,332 @@ void NexusUiBridgeAdapter::HandleGetBootTimingsOnUI(
   std::move(done).Success(std::move(result));
 }
 
-void NexusUiBridgeAdapter::HandleBroadcastCurrentSessionStateOnUI(
-    ::nexus::generated::BroadcastCurrentSessionStateInput input,
+void NexusUiBridgeAdapter::HandleGetInspectMenuEnabledOnUI(
+    ::nexus::generated::GetInspectMenuEnabledInput /*input*/,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  // Pass-through relay. The SharedWorkerSessionManager has already done
-  // all the work — phase derivation, snapshot/delta selection, dedup —
-  // so this handler just fans the payload to every WebUI on the profile
-  // as `nexusCurrentSessionState`. The topbar (`nexus_topbar.ts`) and
-  // quick-settings (`nexus_quick_settings.ts`) listen for this event.
-  BroadcastWebUiListenerEventToProfile(
-      profile_, "nexusCurrentSessionState",
-      base::Value(std::move(input.payload)));
+  PrefService* pref_service = profile_ ? profile_->GetPrefs() : nullptr;
+  if (!pref_service) {
+    std::move(done).Error("UI_ERROR", "profile prefs unavailable");
+    return;
+  }
+  base::DictValue result;
+  result.Set("enabled",
+             pref_service->GetBoolean(prefs::kNexusInspectMenuEnabled));
+  std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusUiBridgeAdapter::HandleSetInspectMenuEnabledOnUI(
+    ::nexus::generated::SetInspectMenuEnabledInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  PrefService* pref_service = profile_ ? profile_->GetPrefs() : nullptr;
+  if (!pref_service) {
+    std::move(done).Error("UI_ERROR", "profile prefs unavailable");
+    return;
+  }
+  // Read at right-click time by MaybeHandleNexusGuestContextMenu, so the
+  // flip applies to the very next right-click — no reload or restart.
+  pref_service->SetBoolean(prefs::kNexusInspectMenuEnabled, input.enabled);
+  base::DictValue result;
+  result.Set("ok", true);
+  result.Set("enabled", input.enabled);
+  std::move(done).Success(base::Value(std::move(result)));
+}
+
+// HandleBroadcastCurrentSessionStateOnUI +
+// HandleBroadcastSessionsSummaryOnUI were pure C++ pass-through
+// relays. Deleted alongside their `.api.json` declarations; the
+// SharedWorker now broadcasts the same payloads directly through
+// the WebUI bridge port (one hop instead of three). See
+// `nexus_session_state_client.ts` for the panel-side subscriber and
+// `SharedWorkerSessionManager.flushCurrentSnapshot/flushSummary` for
+// the worker firing site.
+
+gfx::Image GetNexusNotificationHeaderIcon() {
+  // The branded product logo (IDR_PRODUCT_LOGO_64 — the Nexus "V") drawn inset
+  // within an 18-dip badge. This is the toast HEADER icon (the small image next
+  // to "Nexus"), replacing message_center's default `kProductIcon` (the
+  // unbranded Chromium spiral). On non-ChromeOS (Windows) message_center renders
+  // the small_image as-is (GenerateMaskedSmallIcon only accent-masks on
+  // ChromeOS), so the full-color brand logo shows directly; NexusHeaderIconSource
+  // adds the inset so it matches the default icon's footprint instead of
+  // filling the box edge-to-edge.
+  return gfx::Image(
+      gfx::CanvasImageSource::MakeImageSkia<NexusHeaderIconSource>());
+}
+
+void NexusUiBridgeAdapter::HandleShowNotificationOnUI(
+    ::nexus::generated::ShowNotificationInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // The SharedWorker fires this on every turn-end (phase → idle). We only
+  // want to surface an OS notification when the user isn't actively looking
+  // at Nexus, so suppress it whenever the Nexus browser window is the active
+  // window. This is the browser-process analog of Claude Code's "notify only
+  // after the user has been idle" gate — except here we consult real OS
+  // window activation instead of an idle timer.
+  if (IsNexusBrowserWindowActiveForProfile(profile_)) {
+    std::move(done).SuccessVoid();
+    return;
+  }
+
+  NotificationDisplayService* service =
+      profile_ ? NotificationDisplayServiceFactory::GetForProfile(profile_)
+               : nullptr;
+  if (!service) {
+    std::move(done).Error("UI_ERROR", "No notification display service");
+    return;
+  }
+
+  const std::u16string title = input.title && !input.title->empty()
+                                   ? base::UTF8ToUTF16(*input.title)
+                                   : u"Nexus";
+  const std::u16string message = base::UTF8ToUTF16(input.message);
+  // Stable id keyed on the category so repeated notifications of the same
+  // kind (e.g. successive turn-completions) replace rather than stack.
+  const std::string category =
+      input.notificationType && !input.notificationType->empty()
+          ? *input.notificationType
+          : "default";
+  const std::string notification_id = "nexus." + category;
+
+  // Clicking the toast brings the Nexus browser window back to the
+  // foreground. The profile is bound as an opaque identity token (see
+  // ActivateNexusWindowForProfileId) so this deferred click can never
+  // dereference a stale Profile*. A non-null delegate is also required:
+  // NotificationDisplayServiceImpl::Display DCHECKs that a TRANSIENT
+  // notification carries one.
+  base::RepeatingClosure on_click = base::BindRepeating(
+      &ActivateNexusWindowForProfileId,
+      reinterpret_cast<uintptr_t>(profile_.get()));
+  // `icon` (the 5th arg) is the LARGE image message_center draws on the RIGHT
+  // of the toast — left empty so the toast stays compact (an empty icon hides
+  // the right-side image entirely; see NotificationViewBase::CreateOrUpdateIconView).
+  message_center::Notification notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE, notification_id, title, message,
+      /*icon=*/ui::ImageModel(), u"Nexus", GURL(),
+      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
+                                 "nexus"),
+      message_center::RichNotificationData(),
+      base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
+          on_click));
+  // The small header icon (next to "Nexus") otherwise falls back to
+  // message_center's kProductIcon — the unbranded Chromium spiral. Set it to the
+  // branded Nexus logo instead.
+  notification.SetSmallImage(GetNexusNotificationHeaderIcon());
+
+  service->Display(NotificationHandler::Type::TRANSIENT, notification,
+                   /*metadata=*/nullptr);
   std::move(done).SuccessVoid();
 }
 
-void NexusUiBridgeAdapter::HandleBroadcastSessionsSummaryOnUI(
-    ::nexus::generated::BroadcastSessionsSummaryInput input,
+void NexusUiBridgeAdapter::HandlePickProjectFolderOnUI(
+    ::nexus::generated::PickProjectFolderInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  // Pass-through relay for the session-list summary
-  // (`nexus_session_list.ts`). Coalesced at source.
-  BroadcastWebUiListenerEventToProfile(
-      profile_, "nexusSessionsSummary",
-      base::Value(std::move(input.payload)));
+  // Test seam: e2e (Playwright) cannot drive a native OS dialog, so when
+  // NEXUS_E2E_PROJECT_FOLDER is set we resolve with that path directly,
+  // bypassing the dialog entirely. Production never sets this var.
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> seam =
+          env->GetVar("NEXUS_E2E_PROJECT_FOLDER");
+      seam.has_value() && !seam->empty()) {
+    base::DictValue result;
+    result.Set("path", *seam);
+    result.Set("canceled", false);
+    std::move(done).Success(std::move(result));
+    return;
+  }
+
+  // Single-in-flight: only one folder dialog at a time. A non-null
+  // `select_folder_dialog_` means one is already open — reject the new call
+  // (its promise must still settle, so Error rather than silently drop).
+  if (select_folder_dialog_) {
+    std::move(done).Error("UI_ERROR",
+                          "pickProjectFolder: a folder dialog is already open");
+    return;
+  }
+
+  select_folder_dialog_ =
+      ui::SelectFileDialog::Create(this, /*policy=*/nullptr);
+  if (!select_folder_dialog_) {
+    std::move(done).Error("UI_ERROR",
+                          "pickProjectFolder: could not create file dialog");
+    return;
+  }
+
+  // Stash the response; it fires from FileSelected / FileSelectionCanceled.
+  pending_pick_done_ = std::move(done);
+
+  const std::u16string title = input.title && !input.title->empty()
+                                   ? base::UTF8ToUTF16(*input.title)
+                                   : std::u16string();
+  ui::SelectFileDialog::FileTypeInfo file_types;
+  file_types.allowed_paths = ui::SelectFileDialog::FileTypeInfo::NATIVE_PATH;
+  select_folder_dialog_->SelectFile(
+      ui::SelectFileDialog::SELECT_FOLDER, title,
+      /*default_path=*/base::FilePath(), &file_types, /*file_type_index=*/0,
+      /*default_extension=*/base::FilePath::StringType(),
+      GetNexusOwningWindowForProfile(profile_), /*caller=*/nullptr);
+}
+
+void NexusUiBridgeAdapter::HandlePickAttachmentFilesOnUI(
+    ::nexus::generated::PickAttachmentFilesInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Test seam: e2e (Playwright) cannot drive a native OS dialog, so when
+  // NEXUS_E2E_ATTACHMENT_FILES is set we resolve with those paths directly
+  // (newline-separated, blank lines ignored), bypassing the dialog entirely.
+  // Production never sets this var.
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> seam =
+          env->GetVar("NEXUS_E2E_ATTACHMENT_FILES");
+      seam.has_value() && !seam->empty()) {
+    base::ListValue paths;
+    for (const std::string& line :
+         base::SplitString(*seam, "\n", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_NONEMPTY)) {
+      paths.Append(line);
+    }
+    base::DictValue result;
+    result.Set("canceled", paths.empty());
+    result.Set("paths", std::move(paths));
+    std::move(done).Success(std::move(result));
+    return;
+  }
+
+  // Single-in-flight: only one attachment dialog at a time. A non-null
+  // `select_files_dialog_` means one is already open — reject the new call
+  // (its promise must still settle, so Error rather than silently drop).
+  if (select_files_dialog_) {
+    std::move(done).Error(
+        "UI_ERROR", "pickAttachmentFiles: a file dialog is already open");
+    return;
+  }
+
+  select_files_dialog_ = ui::SelectFileDialog::Create(this, /*policy=*/nullptr);
+  if (!select_files_dialog_) {
+    std::move(done).Error("UI_ERROR",
+                          "pickAttachmentFiles: could not create file dialog");
+    return;
+  }
+
+  // Stash the response; it fires from MultiFilesSelected / FileSelectionCanceled.
+  pending_files_done_ = std::move(done);
+
+  const std::u16string title = input.title && !input.title->empty()
+                                   ? base::UTF8ToUTF16(*input.title)
+                                   : std::u16string();
+
+  // Optional extension filter (a UX hint — the guest composer re-validates each
+  // picked file). Always keep an "All files" option so nothing is unpickable.
+  ui::SelectFileDialog::FileTypeInfo file_types;
+  file_types.allowed_paths = ui::SelectFileDialog::FileTypeInfo::NATIVE_PATH;
+  file_types.include_all_files = true;
+  if (input.extensions && !input.extensions->empty()) {
+    std::vector<base::FilePath::StringType> group;
+    for (const std::string& raw : *input.extensions) {
+      std::string_view ext(raw);
+      while (!ext.empty() && ext.front() == '.') {
+        ext.remove_prefix(1);
+      }
+      if (!ext.empty()) {
+        group.push_back(base::FilePath::FromUTF8Unsafe(ext).value());
+      }
+    }
+    if (!group.empty()) {
+      file_types.extensions.push_back(std::move(group));
+    }
+  }
+  // file_type_index is 1-based; 1 selects our extension group when present,
+  // 0 lets the dialog default (no extension group ⇒ "All files").
+  const int file_type_index = file_types.extensions.empty() ? 0 : 1;
+
+  select_files_dialog_->SelectFile(
+      ui::SelectFileDialog::SELECT_OPEN_MULTI_FILE, title,
+      /*default_path=*/base::FilePath(), &file_types, file_type_index,
+      /*default_extension=*/base::FilePath::StringType(),
+      GetNexusOwningWindowForProfile(profile_), /*caller=*/nullptr);
+}
+
+void NexusUiBridgeAdapter::HandleRevealProjectFolderOnUI(
+    ::nexus::generated::RevealProjectFolderInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.path.empty()) {
+    std::move(done).InvalidArgs("revealProjectFolder: missing path");
+    return;
+  }
+  const base::FilePath path = base::FilePath::FromUTF8Unsafe(input.path);
+
+  // Test seam: e2e can't observe a native OS file-manager window, so when
+  // NEXUS_E2E_REVEAL_SINK is set we record the revealed path to that file
+  // instead of opening Explorer/Finder. Production never sets this var. The
+  // write is blocking, so it must run on a MayBlock thread pool (not the UI
+  // thread); the e2e polls the sink file for the result.
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> sink = env->GetVar("NEXUS_E2E_REVEAL_SINK");
+      sink.has_value() && !sink->empty()) {
+    base::ThreadPool::PostTask(
+        FROM_HERE, {base::MayBlock()},
+        base::BindOnce(
+            [](base::FilePath sink_path, std::string data) {
+              base::WriteFile(sink_path, data);
+            },
+            base::FilePath::FromUTF8Unsafe(*sink), input.path));
+    std::move(done).SuccessVoid();
+    return;
+  }
+
+  platform_util::ShowItemInFolder(profile_, path);
   std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::FileSelected(const ui::SelectedFileInfo& file,
+                                        int /*index*/) {
+  // SelectFileDialog guarantees exactly one terminal listener call per
+  // SelectFile(), and we only ever have one dialog open, so the stashed
+  // response is the live request. Clear the dialog ref first (it's done).
+  select_folder_dialog_ = nullptr;
+  base::DictValue result;
+  result.Set("path", file.path().AsUTF8Unsafe());
+  result.Set("canceled", false);
+  std::move(pending_pick_done_).Success(std::move(result));
+}
+
+void NexusUiBridgeAdapter::MultiFilesSelected(
+    const std::vector<ui::SelectedFileInfo>& files) {
+  // SELECT_OPEN_MULTI_FILE resolves here (even for a single pick). Only the
+  // attachment picker uses multi-select, so this is unambiguously its response.
+  select_files_dialog_ = nullptr;
+  base::ListValue paths;
+  for (const ui::SelectedFileInfo& file : files) {
+    paths.Append(file.path().AsUTF8Unsafe());
+  }
+  base::DictValue result;
+  result.Set("canceled", false);
+  result.Set("paths", std::move(paths));
+  std::move(pending_files_done_).Success(std::move(result));
+}
+
+void NexusUiBridgeAdapter::FileSelectionCanceled() {
+  // Cancel is the one shared listener callback. Disambiguate by which request
+  // is in flight — only one dialog is ever open at a time. Prefer the
+  // attachment (multi-file) pick, then fall back to the folder pick.
+  if (select_files_dialog_) {
+    select_files_dialog_ = nullptr;
+    base::DictValue result;
+    result.Set("canceled", true);
+    result.Set("paths", base::ListValue());  // empty — nothing chosen.
+    std::move(pending_files_done_).Success(std::move(result));
+    return;
+  }
+  select_folder_dialog_ = nullptr;
+  base::DictValue result;
+  result.Set("path", base::Value());  // null — no folder chosen.
+  result.Set("canceled", true);
+  std::move(pending_pick_done_).Success(std::move(result));
 }
 
 }  // namespace nexus

@@ -52,6 +52,41 @@ void OpenUrlInNormalWindow(Profile* profile, const GURL& url);
 void SetPendingNexusWindow(Profile* profile);
 bool ConsumePendingNexusWindow(Profile* profile);
 
+// True when |browser| is (or is becoming) the profile's kNexus window: a
+// normal-type browser whose CustomBrowserView reports IsNexusUIMode(). The
+// pending-aware predicate matters: during boot the kNexus decision is made
+// in InitializeCustomBrowser() but the mode only lands once the WebUI loads
+// its layout params, and routing/suppression decisions (startup tabs,
+// startup prompts) fire inside that gap. Null-safe.
+bool IsNexusBrowser(Browser* browser);
+
+// Routing policy for externally-opened URLs (OS default-browser opens /
+// second-instance command lines): the kNexus window is never the target.
+// Returns |candidate| unchanged when it is a non-kNexus window; otherwise
+// prefers an existing normal window; otherwise marks the profile (see
+// SetPendingExternalUrlWindow) and returns nullptr so the startup code
+// creates a fresh window that is pinned to normal mode. Called from the
+// ENABLE_CUSTOM_BROWSER hook in GetExistingBrowserForOpenBehavior
+// (chrome/browser/ui/startup/startup_browser_creator_impl.cc).
+Browser* AdjustBrowserForExternalUrlOpen(Profile* profile, Browser* candidate);
+
+// Marks the next CustomBrowserView created for |profile| as a window opened
+// to host externally-launched URLs: it stays in normal mode even when the
+// profile's startup default would otherwise make it kNexus (e.g. the first
+// window of a secondary profile launched via a URL). Transient Profile
+// user-data, exact mirror of the pending-kNexus marker; takes precedence
+// over it for the window that consumes it.
+void SetPendingExternalUrlWindow(Profile* profile);
+bool ConsumePendingExternalUrlWindow(Profile* profile);
+
+// True when the current process command line carries URL/file arguments,
+// i.e. this launch exists to open something (an OS default-browser open).
+// The bare `about:blank` placeholder is exempt: the e2e harness appends it
+// to every launch to keep the NTP from spawning (see
+// nexus_web/e2e/harness/launchBrowser.ts) and it must not demote the first
+// window from kNexus.
+bool HasExternalUrlStartupArgs();
+
 }  // namespace custom_browser::window_util
 
 #endif  // CUSTOM_BROWSER_UI_VIEW_CUSTOM_BROWSER_WINDOW_UTIL_H_

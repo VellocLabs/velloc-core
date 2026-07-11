@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setInspectMenuEnabled",
+  "description": "Write the nexus.inspect_menu_enabled profile pref. When true, right-clicking the Nexus guest <webview> shows a single 'Inspect' item that opens DevTools on the guest; when false (default) the guest shows no context menu. Applies immediately (read at right-click time). Returns {ok, enabled}.",
+  "inputs": [
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "required": true,
+      "description": "New value for nexus.inspect_menu_enabled."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

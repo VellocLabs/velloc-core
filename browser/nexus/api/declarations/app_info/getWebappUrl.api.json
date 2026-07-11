@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getWebappUrl",
+  "description": "Read the optional custom webapp URL (nexus.webapp_url profile pref) powering the Settings · About agent-URL editor. Returns {url}. The webapp-URL bootstrap read (which decides where the app loads from) stays panel-side; this only powers the editor. Replaces the chrome.send getWebappUrl route.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -85,6 +85,18 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
       ::nexus::generated::PublishCatalogInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  void HandlePublishProviderConfigsOnUI(
+      ::nexus::generated::PublishProviderConfigsInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleRegisterToolDefsOnUI(
+      ::nexus::generated::RegisterToolDefsInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandlePublishBinaryRegistryOnUI(
+      ::nexus::generated::PublishBinaryRegistryInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   // Phase 12f: `publishStatus` moved out of `llm/` into the new
   // `session/` capability — see
   // `api/session/nexus_session_bridge_adapter.{h,cc}`. The wire

@@ -82,6 +82,19 @@ class LlmBroker : public KeyedService {
   void SetTsModelCatalog(base::DictValue catalog);
   const base::DictValue& GetTsModelCatalog() const;
 
+  // Configure providers from the effective settings.json provider configs the
+  // guest worker pushes via `model.publishProviderConfigs` (at boot + on every
+  // providers write). Relaxed-credential path: settings.json is now the source
+  // of truth for the user-editable fields (api key / base url / default model
+  // / enabled models). MERGES onto the existing `nexus.provider_configs` pref
+  // per provider — preserving C++-owned secrets the settings.json shape does
+  // not carry (notably OAuth access/refresh tokens) — then refreshes the pref
+  // so the next cold boot (`LoadProviderConfigs`) reproduces the same state.
+  // `active_provider_id` (empty = leave unchanged) mirrors
+  // `nexus.active_provider_id`.
+  void SetProviderConfigs(base::DictValue configs,
+                          const std::string& active_provider_id);
+
   void SetSessionStatus(base::DictValue status);
   const base::DictValue& GetSessionStatus() const;
 

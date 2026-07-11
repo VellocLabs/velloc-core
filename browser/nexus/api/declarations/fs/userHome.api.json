@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "userHome",
+  "description": "Returns the OS user's home directory (HOME / USERPROFILE). Used as the user-scope settings root so per-user features carry across browser profiles and projects.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

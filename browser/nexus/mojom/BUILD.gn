@@ -4,6 +4,7 @@ mojom("mojom") {
   sources = [
     "nexus_bridge_bootstrap.mojom",
     "nexus_llm.mojom",
+    "nexus_media.mojom",
     "nexus_shell.mojom",
   ]
   public_deps = [

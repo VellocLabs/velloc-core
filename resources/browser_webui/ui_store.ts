@@ -16,7 +16,6 @@ export class UiStore {
 
   private mode_: UIMode = UIMode.kSidebar;
   private leftPaneWidth_: null | number = null;
-  private nexusViewWidth_: null | number = null;
   private leftPaneLocked_ = false;
   private readonly observers_ = new Set<UiStoreObserver>();
 
@@ -37,13 +36,11 @@ export class UiStore {
       }
     }
 
-    const nexusViewWidthKey = IntKey[IntKey.kNexusViewWidth];
-    if (loadTimeData.valueExists(nexusViewWidthKey)) {
-      const stored = loadTimeData.getInteger(nexusViewWidthKey);
-      if (stored > 0) {
-        this.nexusViewWidth_ = stored;
-      }
-    }
+    // IntKey.kNexusViewWidth is no longer read: the kNexus chat/browser
+    // split moved into the React guest (localStorage
+    // 'shift-webview-area-width'); the shell-side <cr-splitter> it sized
+    // is gone. The enum entry stays reserved so stale persisted ints are
+    // simply ignored.
 
     const leftPaneLockedKey = BoolKey[BoolKey.kLeftPanelLocked];
     if (loadTimeData.valueExists(leftPaneLockedKey)) {
@@ -84,10 +81,6 @@ export class UiStore {
     return this.leftPaneWidth_;
   }
 
-  get nexusViewWidth(): number | null {
-    return this.nexusViewWidth_;
-  }
-
   get leftPaneLocked(): boolean {
     return this.leftPaneLocked_;
   }
@@ -110,17 +103,6 @@ export class UiStore {
     this.leftPaneWidth_ = roundedWidth;
     BrowserApiProxyImpl.getInstance().saveIntPref(
         IntKey.kLeftPanelWidth, this.leftPaneWidth_);
-  }
-
-  setNexusViewWidth(width: number) {
-    const roundedWidth = Math.round(width);
-    if (!Number.isFinite(roundedWidth) || roundedWidth <= 0 ||
-        this.nexusViewWidth_ === roundedWidth) {
-      return;
-    }
-    this.nexusViewWidth_ = roundedWidth;
-    BrowserApiProxyImpl.getInstance().saveIntPref(
-        IntKey.kNexusViewWidth, this.nexusViewWidth_);
   }
 
   setLeftPaneLocked(locked: boolean) {

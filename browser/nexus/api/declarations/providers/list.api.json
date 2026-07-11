@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "list",
+  "description": "Return the list of registered LLM providers with their configured state, active selection, per-provider model lists, OAuth status, and last-verification metadata. Replaces the chrome.send 'getAgentProviders' route used by the Models settings page. Exposed on the panel WebUI bridge port only; the SharedWorker has its own provider-config read path through settings.json.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

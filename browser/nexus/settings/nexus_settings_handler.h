@@ -25,29 +25,35 @@ class Profile;
 namespace nexus {
 class LlmBroker;
 class LlmProvider;
+class NexusMcpHost;
+class NexusShellServiceLauncher;
 }  // namespace nexus
 
 namespace settings {
 
 // WebUI message handler for the chrome://settings/nexus subpage.
 //
-// Follows the GlicHandler pattern: registered as a SettingsPageUIHandler,
-// receives messages from the Polymer settings UI, and delegates to the Nexus
-// LlmBroker KeyedService for provider management.
+// Follows the SettingsPageUIHandler pattern: receives messages from the
+// Polymer settings UI and delegates to the Nexus LlmBroker KeyedService.
 //
-// Handler methods exposed to the settings WebUI:
-//   - getAgentProviders         → returns provider list + active provider
-//   - updateProviderConfig      → merges and persists provider settings
-//   - verifyProviderConfig      → verifies unsaved credentials and fetches
-//                                 models without persisting them
-//   - resetProviderConfig       → clears saved provider settings
-//   - refreshProviderModels     → fetches dynamic models for any provider
-//   - setProviderApiKey         → encrypts and stores an API key
-//   - validateProviderConnection → tests connectivity to a provider
-//   - getOllamaModels           → fetches model list from a running Ollama
-//   - setActiveProvider         → switches the active LLM provider
-//   - getNexusViewState         → reports whether LlmBroker has an active
-//                                 provider for the embedded Nexus view
+// Handler methods exposed via chrome.send (chrome://custom.top-chrome):
+//   - getAgentProviders / updateProviderConfig / verifyProviderConfig /
+//     resetProviderConfig — provider CRUD still on chrome.send because the
+//     e2e harness uses these routes directly (`harness/settingsRoundtrip.ts`
+//     etc.); production WebUI calls them through the panel bridge.
+//   - testMcpServer — live connect probe with side-channel state; stays.
+//   - getWebappUrl / setWebappUrl — launch-time C++ read; stays.
+//   - getBackgroundModeEnabled / setBackgroundModeEnabled — local_state pref.
+//   - getNexusLauncherEnabled / setNexusLauncherEnabled — local_state pref.
+//   - pickNexusSelection — quick-settings model picker (C++ owns the
+//     enriched catalog state; popup talks directly to it).
+//
+// Routes RETIRED in A5 (now exclusive to the panel ↔ C++ bridge,
+// `nexus.providers.*` capability — see
+// api/providers/nexus_providers_bridge_adapter.cc): refreshProviderModels,
+// beginProviderOAuth, getProviderOAuthStatus. Also vapor-retired:
+// setProviderApiKey, validateProviderConnection, getOllamaModels,
+// setActiveProvider, getNexusViewState — none had a JS caller.
 class NexusSettingsHandler : public SettingsPageUIHandler,
                              public nexus::LlmBroker::Observer {
  public:
@@ -98,50 +104,22 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // JS: cr.sendWithPromise('resetProviderConfig', providerId)
   void HandleResetProviderConfig(const base::ListValue& args);
 
-  // Fetches available models for any provider using its current config.
-  // JS: cr.sendWithPromise('refreshProviderModels', providerId)
-  void HandleRefreshProviderModels(const base::ListValue& args);
+  // HandleRefreshProviderModels / HandleBeginProviderOAuth /
+  // HandleGetProviderOAuthStatus declarations removed — all three
+  // chrome.send routes are fully migrated to the panel ↔ C++ bridge
+  // (`providers.refresh` / `providers.beginOAuth` /
+  // `providers.oauthStatus`). The matching `OnOAuthTokenForModels`,
+  // `OnProviderModelsFetched`, `OnDeviceCodeStarted` continuations were
+  // removed alongside their callers. See
+  // `api/providers/nexus_providers_bridge_adapter.cc` for the
+  // replacements and `settings/nexus_settings_handler.cc` for the
+  // per-method retirement rationale.
 
-  // Encrypts and stores an API key for a specific provider.
-  // JS: cr.sendWithPromise('setProviderApiKey', providerId, apiKey)
-  void HandleSetProviderApiKey(const base::ListValue& args);
-
-  // Tests connectivity to a provider using its current credentials.
-  // JS: cr.sendWithPromise('validateProviderConnection', providerId)
-  void HandleValidateProviderConnection(const base::ListValue& args);
-
-  // Fetches available models from a running Ollama instance.
-  // JS: cr.sendWithPromise('getOllamaModels', baseUrl)
-  void HandleGetOllamaModels(const base::ListValue& args);
-
-  // Switches the active LLM provider (immediate, no restart needed).
-  // JS: cr.sendWithPromise('setActiveProvider', providerId)
-  void HandleSetActiveProvider(const base::ListValue& args);
-
-  // Returns whether the current profile has an active LLM provider selected.
-  // JS: cr.sendWithPromise('getNexusViewState')
-  void HandleGetNexusViewState(const base::ListValue& args);
-
-  // --- OAuth-backed providers (ChatGPT Plus/Pro, …) ---
-  //
-  // Begins a PKCE login for an OAuth-backed provider and opens the
-  // authorization URL in a new tab. The loopback redirect is captured by a
-  // NavigationThrottle; the WebUI polls getProviderOAuthStatus to detect
-  // completion. Returns {started: bool}.
-  // JS: cr.sendWithPromise('beginProviderOAuth', providerId)
-  void HandleBeginProviderOAuth(const base::ListValue& args);
-
-  // Returns {connected: bool, connectedEmail?: string} for an OAuth-backed
-  // provider.
-  // JS: cr.sendWithPromise('getProviderOAuthStatus', providerId)
-  void HandleGetProviderOAuthStatus(const base::ListValue& args);
-
-  // Callback for StartDeviceCodeFlow: resolves beginProviderOAuth with the
-  // user code + verification URL (and opens the verification page).
-  void OnDeviceCodeStarted(const std::string& callback_id,
-                           bool ok,
-                           nexus::NexusOAuthManager::DeviceCodeInfo info,
-                           std::string error);
+  // HandleSetProviderApiKey, HandleValidateProviderConnection,
+  // HandleGetOllamaModels, HandleSetActiveProvider, HandleGetNexusViewState
+  // declarations removed — all five were vapor (registered + impl'd
+  // but never called from JS). See nexus_settings_handler.cc for the
+  // per-method removal rationale.
 
   // --- Custom Nexus web app URL ---
   //
@@ -161,34 +139,67 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // JS: cr.sendWithPromise('setWebappUrl', url)
   void HandleSetWebappUrl(const base::ListValue& args);
 
-  // --- Browser tools: tab-hosting window mode ---
-  //
-  // Returns whether the agent's tabs are created in a dedicated separate
-  // window (true) or the active Nexus window (false). Read by the
-  // Tools · Browser settings page.
-  // JS: cr.sendWithPromise('getBrowserToolsSeparateWindow')
-  void HandleGetBrowserToolsSeparateWindow(const base::ListValue& args);
+  // HandleGet/SetBrowserToolsSeparateWindow declarations removed:
+  // migrated to `browserTools.snapshot` / `browserTools.setField` on the
+  // panel WebUI bridge port (A5 Tier 2). See
+  // api/browserTools/nexus_browser_tools_bridge_adapter.h. The runtime
+  // pref read `ShouldHostAgentTabsInSeparateWindow` is unchanged.
 
-  // Persists the tab-hosting window mode. Applied to subsequently created
-  // agent tabs via nexus::ShouldHostAgentTabsInSeparateWindow().
-  // JS: cr.sendWithPromise('setBrowserToolsSeparateWindow', enabled)
-  void HandleSetBrowserToolsSeparateWindow(const base::ListValue& args);
+  // HandleGetBrowserToolsAllowEvaluate / HandleSetBrowserToolsAllowEvaluate
+  // declarations removed alongside the Settings · Tools opt-in toggle.
+  // BrowserEvaluate is now always available (no gate / pref); see
+  // nexus_browser_tools_config.h.
 
-  // --- Unified agent runtime config (nexus.agent_config) ---
+  // --- System: background mode ---
   //
-  // Generic get/set over the single agent-config dict pref. The transport is
-  // fixed: setting a key fires the session adapter's PrefChangeRegistrar,
-  // which pushes the whole dict live to the guest. Adding a setting never
-  // changes these handlers — only the UI (producer) and
-  // engine.applyRuntimeSettings (consumer).
+  // Mirrors chrome://settings/system's "Continue running background apps"
+  // toggle. Backed by the browser-wide local_state pref
+  // prefs::kBackgroundModeEnabled (default true); BackgroundModeManager
+  // observes that pref directly, so writing it here reproduces the exact
+  // behavior of the upstream setting. When ENABLE_BACKGROUND_MODE is off the
+  // pref is unregistered, so the getter reports false and the setter rejects.
   //
-  // Returns the effective config (defaults overlaid with stored overrides).
-  // JS: cr.sendWithPromise('getAgentConfig')
-  void HandleGetAgentConfig(const base::ListValue& args);
+  // Returns whether background apps keep running after the last window closes.
+  // JS: cr.sendWithPromise('getBackgroundModeEnabled')
+  void HandleGetBackgroundModeEnabled(const base::ListValue& args);
 
-  // Writes one key into the agent-config dict (value: number or dict).
-  // JS: cr.sendWithPromise('setAgentConfig', key, value)
-  void HandleSetAgentConfig(const base::ListValue& args);
+  // Persists the background-mode flag into local_state.
+  // JS: cr.sendWithPromise('setBackgroundModeEnabled', enabled)
+  void HandleSetBackgroundModeEnabled(const base::ListValue& args);
+
+  // --- System: Nexus launcher (tray icon + keep-alive) ---
+  //
+  // Backed by the browser-wide local_state pref
+  // nexus::prefs::kNexusLauncherEnabled (default false), which
+  // NexusBackgroundModeManager observes to acquire/release the keep-alive and
+  // the system-tray icon. Distinct from the background-mode toggle above (which
+  // gates extension background apps).
+  //
+  // Returns whether the Nexus launcher (tray icon) is enabled.
+  // JS: cr.sendWithPromise('getNexusLauncherEnabled')
+  void HandleGetNexusLauncherEnabled(const base::ListValue& args);
+
+  // Persists the launcher flag into local_state.
+  // JS: cr.sendWithPromise('setNexusLauncherEnabled', enabled)
+  void HandleSetNexusLauncherEnabled(const base::ListValue& args);
+
+  // HandleGetAgentConfig / HandleSetAgentConfig were the WebUI surface for
+  // the `nexus.agent_config` Profile pref before the about page moved to
+  // `~/.nexus/settings.json` (`agent` section, served via the WebUI ↔
+  // SharedWorker bridge). Dropped: no JS caller. The pref + the session
+  // adapter's live-push observer remain — they're still used by
+  // `nexus_guest_config.cc`, `llm_broker.cc`, and the in-runtime config
+  // push path.
+  //
+  // HandleGetMcpServers / HandleUpsertMcpServer / HandleRemoveMcpServer
+  // were similarly the WebUI CRUD over `prefs::kNexusMcpServerConfigs`.
+  // Dropped: no JS caller. The pref + `NexusMcpServerStore` remain for
+  // the bridge adapter's `GetOrCreateHost(id)` legacy fallback path
+  // (no inline config supplied).
+
+  // HandleTestMcpServer + OnTestMcpServerConnected removed: migrated to
+  // `mcp.testConnect` on the panel WebUI bridge port (A5 Tier 3a). See
+  // api/mcp/nexus_mcp_bridge_adapter.h::HandleTestConnectOnUI.
 
   // --- WebUI quick-settings popup support ---
   //
@@ -205,12 +216,9 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // JS: cr.sendWithPromise('getNexusSessionStatus')
   void HandleGetNexusSessionStatus(const base::ListValue& args);
 
-  // Validates the pick, persists the global default for future new
-  // threads, and pushes a `session.applySelection` event over the bridge
-  // so nexus_web rebinds the active session.
-  // JS: cr.sendWithPromise('pickNexusSelection',
-  //                        {providerId, modelId, thinkingTier?})
-  void HandlePickNexusSelection(const base::ListValue& args);
+  // HandlePickNexusSelection removed: migrated to `providers.setActive`
+  // on the panel WebUI bridge port (A5 Tier 3b). See
+  // api/providers/nexus_providers_bridge_adapter.h::HandleSetActiveOnUI.
 
   // Builds the enriched popup catalog (TS-pushed model list +
   // per-provider iconSvg / isConfigured / isVerified / enabledModels)
@@ -221,23 +229,9 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // on TS catalog updates and on provider-config writes.
   void BroadcastEnrichedCatalog_();
 
-  // Callback for asynchronous Ollama model fetch.
-  void OnOllamaModelsFetched(const std::string& callback_id,
-                             std::vector<nexus::ModelInfo> models);
-
-  // Callback for asynchronous generic provider model fetch.
-  void OnProviderModelsFetched(const std::string& callback_id,
-                               std::vector<nexus::ModelInfo> models);
-
-  // For OAuth providers, the model-discovery connect test must run with a
-  // backend-ready token (e.g. github-copilot's GitHub OAuth token is exchanged
-  // for a Copilot session token). This applies the fresh token to the provider
-  // before kicking off the actual /models fetch.
-  void OnOAuthTokenForModels(const std::string& callback_id,
-                             const std::string& provider_id,
-                             bool ok,
-                             std::string access_token,
-                             std::string account_id);
+  // OnOllamaModelsFetched removed alongside HandleGetOllamaModels.
+  // OnProviderModelsFetched / OnOAuthTokenForModels removed alongside
+  // HandleRefreshProviderModels (migrated to `providers.refresh`).
 
   // Callback for the verify-and-load flow. The transient provider fetches
   // its model catalogue as the connectivity probe, and this delivers the
@@ -261,6 +255,10 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   };
 
   std::map<std::string, PendingVerification> pending_verifications_;
+
+  // `pending_mcp_tests_` + `mcp_test_launcher_` removed: the transient-
+  // host probe lives in NexusMcpBridgeAdapter now (A5 Tier 3a). See
+  // api/mcp/nexus_mcp_bridge_adapter.{h,cc}.
 
   // Observes the broker so we can fan out catalog + session-status changes
   // to the WebUI quick-settings popup via FireWebUIListener. The

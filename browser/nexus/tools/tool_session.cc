@@ -9,10 +9,10 @@ namespace nexus {
 ToolSession::ToolSession(Profile* profile, std::string session_key)
     : profile_(profile),
       session_key_(std::move(session_key)),
-      // `this` is well-formed at this point â€” the storage is allocated
+      // `this` is well-formed at this point — the storage is allocated
       // and the vptrs / non-static-member init has finished. Each
       // category stores the back-pointer for later session-level reads
-      // (cwd, action_timeout, â€¦); none of them dereference `this`
+      // (cwd, action_timeout, …); none of them dereference `this`
       // during their own ctor body.
       browser_tool_(this, profile, session_key_),
       file_tool_(this, profile, session_key_),
@@ -22,7 +22,7 @@ ToolSession::ToolSession(Profile* profile, std::string session_key)
 }
 
 ToolSession::~ToolSession() {
-  // Defensive cascade â€” if the session is destructed without an
+  // Defensive cascade — if the session is destructed without an
   // explicit OnStop having run first (e.g. profile shutdown bypasses
   // the bridge layer), each category still gets a final notification.
   OnStop(OnStopReason::kDestructor);
@@ -31,10 +31,25 @@ ToolSession::~ToolSession() {
 void ToolSession::OnStop(OnStopReason reason) {
   LOG(INFO) << "[ToolSession] OnStop session=" << session_key_
             << " reason=" << OnStopReasonToString(reason);
+  ClearProgressSink();
   browser_tool_.OnStop(reason);
   file_tool_.OnStop(reason);
   process_tool_.OnStop(reason);
   // skill_tool_.OnStop(reason);  // future
+}
+
+void ToolSession::set_progress_sink(ProgressSink sink) {
+  progress_sink_ = std::move(sink);
+}
+
+void ToolSession::ClearProgressSink() {
+  progress_sink_.Reset();
+}
+
+void ToolSession::EmitToolProgress(base::Value progress) {
+  if (progress_sink_) {
+    progress_sink_.Run(std::move(progress));
+  }
 }
 
 void ToolSession::set_action_timeout(base::TimeDelta timeout) {
@@ -71,7 +86,7 @@ void ToolSession::set_step_timeout(base::TimeDelta timeout) {
 }
 
 void ToolSession::set_cwd(base::FilePath cwd) {
-  // Reject relative paths early â€” accepting one and letting downstream
+  // Reject relative paths early — accepting one and letting downstream
   // tools resolve it against the process cwd would be a stealth misfire
   // (the agent's intended cwd is almost never the browser process's
   // launch directory). An empty path also short-circuits here so a

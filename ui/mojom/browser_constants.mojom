@@ -14,13 +14,15 @@ module custom_browser.mojom;
 
 enum IntKey {
   kUIMode, /* key for UIMode enum */
+  // Retired, do not reuse: sized the shell-side kNexus <cr-splitter>,
+  // which moved into the React guest (localStorage
+  // 'shift-webview-area-width'). Stale persisted ints are ignored.
   kNexusViewWidth,
   kGlobalEnd = 1000, /*End of global keys.*/
   kLeftPanelWidth,
 };
 
 enum BoolKey {
-  kNexusWarningAcknowledged,
   kGlobalEnd = 1000, /*End of global keys.*/
   kLeftPanelLocked,
 };
@@ -31,4 +33,8 @@ const string kMainContentsViewName = "main-contents-view";
 const string kViewsContainerViewName = "views-container-view";
 const string kNewTabToolbarButtonViewName = "new-tab-toolbar-button";
 
-const int32 kUIVersion = 5;
+// v6: kNexus main-contents-view became a guest-driven absolute overlay
+// (position synced from nexus_web's per-session webview_area; hidden by
+// default until the guest reports). Persisted v5 layouts encode the old
+// flex-child geometry with visible:true and must not be restored.
+const int32 kUIVersion = 6;

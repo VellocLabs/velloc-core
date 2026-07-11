@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setActiveSessionTitle",
+  "description": "Report the active session's display title so the host can update the kNexus window's native title (taskbar / alt-tab / a11y). The host sanitizes the title and composes the final \"{title} - {product name}\" string itself (CustomBrowserView::GetWindowTitle); an empty string clears back to the bare product name. Fire-and-forget: succeeds even when no kNexus window exists (e.g. mid-close).",
+  "inputs": [
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "description": "The active session's resolved display title (customTitle > ai title > derived first prompt), without any product-name suffix. Empty string clears the title."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

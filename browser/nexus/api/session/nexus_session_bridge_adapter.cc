@@ -80,6 +80,14 @@ NexusSessionBridgeAdapter::NexusSessionBridgeAdapter(
         base::BindRepeating(&NexusSessionBridgeAdapter::PushAgentConfig,
                             base::Unretained(this)));
   }
+
+  // Observe per-session tab-count changes (lazily creating the profile's
+  // tracker) and fan them to the guest as `browser.sessionTabsChanged` —
+  // the live feed behind the automatic webview_area visibility.
+  if (NexusSessionTabTracker* tracker =
+          NexusSessionTabTrackerFactory::GetForProfile(profile_)) {
+    tab_tracker_observation_.Observe(tracker);
+  }
 }
 
 NexusSessionBridgeAdapter::~NexusSessionBridgeAdapter() = default;
@@ -183,6 +191,9 @@ void NexusSessionBridgeAdapter::HandleSetAgentLoopSettingsOnUI(
   if (input.cwd.has_value() && !input.cwd->empty()) {
     session.set_cwd(base::FilePath::FromUTF8Unsafe(*input.cwd));
   }
+  if (input.clearReadState.value_or(false)) {
+    session.file_tool().ClearReadState();
+  }
 
   Dict result;
   result.Set("ok", true);
@@ -194,6 +205,53 @@ void NexusSessionBridgeAdapter::HandleSetAgentLoopSettingsOnUI(
              static_cast<int>(session.step_timeout().InMilliseconds()));
   result.Set("appliedCwd", session.cwd().AsUTF8Unsafe());
   std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusSessionBridgeAdapter::HandleSetActiveSessionOnUI(
+    ::nexus::generated::SetActiveSessionInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Deliberately routed through the profile-keyed tracker, NOT
+  // tools_adapter_: this action arrives on the page port while the
+  // session's BrowserTool (and its tab state) lives on the worker port's
+  // ToolsAdapter. The tracker is the only cross-port view of the tab set.
+  // Never creates a ToolSession — switching to a fresh chat session must
+  // not allocate tool state.
+  NexusSessionTabTracker* tracker =
+      NexusSessionTabTrackerFactory::GetForProfile(profile_);
+  if (!tracker) {
+    std::move(done).Error("SESSION_ERROR", "tab tracker unavailable");
+    return;
+  }
+
+  const bool activated = tracker->ActivateSessionTab(input.sessionId);
+  const SessionTabCounts counts = tracker->GetCounts(input.sessionId);
+
+  Dict result;
+  result.Set("ok", true);
+  result.Set("activated", activated);
+  result.Set("nexusTabCount", counts.nexus_count);
+  result.Set("totalTabCount", counts.total_count);
+  std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusSessionBridgeAdapter::OnSessionTabCountsChanged(
+    const std::string& session_key,
+    const SessionTabCounts& counts) {
+  // Event envelope mirrors PushAgentConfig: the transport wraps this as
+  // {claudeBridge:true, direction:"event", ...}. The guest's
+  // `subscribeSessionTabsChanged` (nexusBridgeActions.ts) filters on the
+  // route; sessions it doesn't know (e.g. "__default__") are ignored there.
+  Dict route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "browser");
+  route.Set("action", "sessionTabsChanged");
+
+  Dict payload;
+  payload.Set("sessionId", session_key);
+  payload.Set("nexusTabCount", counts.nexus_count);
+  payload.Set("totalTabCount", counts.total_count);
+  SendEvent(route, base::Value(std::move(payload)));
 }
 
 }  // namespace nexus

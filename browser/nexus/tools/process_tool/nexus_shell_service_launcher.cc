@@ -8,73 +8,152 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
-#include "content/public/browser/service_process_host.h"
+#include "base/supports_user_data.h"
+#include "chrome/browser/profiles/profile.h"
 
 namespace nexus {
 
-NexusShellServiceLauncher::NexusShellServiceLauncher() = default;
+namespace {
+
+constexpr size_t kMaxCachedBackgroundOutputs = 100;
+
+class SharedShellLauncherUserData : public base::SupportsUserData::Data {
+ public:
+  NexusShellServiceLauncher launcher;
+};
+
+const char kSharedShellLauncherKey[] = "nexus::SharedShellLauncher";
+
+}  // namespace
+
+NexusShellServiceLauncher& GetSharedShellLauncher(Profile* profile) {
+  CHECK(profile);
+  auto* data = static_cast<SharedShellLauncherUserData*>(
+      profile->GetUserData(kSharedShellLauncherKey));
+  if (!data) {
+    auto owned = std::make_unique<SharedShellLauncherUserData>();
+    data = owned.get();
+    profile->SetUserData(kSharedShellLauncherKey, std::move(owned));
+  }
+  return data->launcher;
+}
+
+NexusShellServiceLauncher::NexusShellServiceLauncher()
+    : remote_("Nexus Shell Service", "NexusShellServiceLauncher",
+              kIdleTimeout) {}
+
+NexusShellServiceLauncher::CachedBackgroundOutput::CachedBackgroundOutput() =
+    default;
+NexusShellServiceLauncher::CachedBackgroundOutput::CachedBackgroundOutput(
+    const CachedBackgroundOutput&) = default;
+NexusShellServiceLauncher::CachedBackgroundOutput&
+NexusShellServiceLauncher::CachedBackgroundOutput::operator=(
+    const CachedBackgroundOutput&) = default;
+NexusShellServiceLauncher::CachedBackgroundOutput::CachedBackgroundOutput(
+    CachedBackgroundOutput&&) = default;
+NexusShellServiceLauncher::CachedBackgroundOutput&
+NexusShellServiceLauncher::CachedBackgroundOutput::operator=(
+    CachedBackgroundOutput&&) = default;
+NexusShellServiceLauncher::CachedBackgroundOutput::~CachedBackgroundOutput() =
+    default;
 
 NexusShellServiceLauncher::~NexusShellServiceLauncher() {
   Shutdown();
 }
 
-mojo::Remote<mojom::NexusShellService>&
-NexusShellServiceLauncher::GetService() {
+mojo::Remote<mojom::NexusShellService>& NexusShellServiceLauncher::GetService() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  EnsureLaunched();
-  return remote_;
+  return remote_.GetService();
 }
 
 void NexusShellServiceLauncher::Shutdown() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  remote_.reset();
+  remote_.Shutdown();
 }
 
-void NexusShellServiceLauncher::EnsureLaunched() {
+void NexusShellServiceLauncher::RetainBackgroundShell(
+    const std::string& shell_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (remote_.is_bound() && remote_.is_connected()) {
-    return;
+  if (shell_id.empty()) return;
+  const bool was_empty = retained_background_shells_.empty();
+  retained_background_shells_.insert(shell_id);
+  if (was_empty && remote_.is_bound()) ConfigureIdleHandler();
+}
+
+void NexusShellServiceLauncher::ReleaseBackgroundShell(
+    const std::string& shell_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (shell_id.empty()) return;
+  const size_t erased = retained_background_shells_.erase(shell_id);
+  if (erased > 0 && retained_background_shells_.empty() && remote_.is_bound()) {
+    ConfigureIdleHandler();
   }
-
-  // Drop any stale binding from a previous launch that disconnected
-  // (utility crash, idle timeout, etc.) before creating a new one.
-  remote_.reset();
-
-  // The launched utility process inherits the sandbox type declared on
-  // the mojom interface itself (see `[ServiceSandbox=...]` annotation
-  // on `nexus.mojom.NexusShellService`).
-  //
-  // The display name is intentionally hard-coded ASCII rather than an
-  // IDS_ resource id: we want this launcher to compile in
-  // `custom_browser` without forcing every dependent layer to add a
-  // string-resource entry. If/when we want a localised name in the
-  // task manager, swap to `WithDisplayName(IDS_NEXUS_SHELL_SERVICE_NAME)`
-  // and add the string upstream — see the upstream-hook report.
-  remote_ = content::ServiceProcessHost::Launch<mojom::NexusShellService>(
-      content::ServiceProcessHost::Options()
-          .WithDisplayName("Nexus Shell Service")
-          .Pass());
-
-  remote_.set_disconnect_handler(base::BindOnce(
-      &NexusShellServiceLauncher::OnDisconnect, base::Unretained(this)));
-
-  // Idle-recycle: after `kIdleTimeout` of no calls, drop the remote so
-  // the utility process exits. The next `GetService()` will relaunch.
-  remote_.set_idle_handler(
-      kIdleTimeout, base::BindRepeating(
-                        [](NexusShellServiceLauncher* self) {
-                          LOG(INFO) << "[NexusShellServiceLauncher] Idle "
-                                       "timeout; recycling utility process";
-                          self->Shutdown();
-                        },
-                        base::Unretained(this)));
 }
 
-void NexusShellServiceLauncher::OnDisconnect() {
+void NexusShellServiceLauncher::CacheBackgroundOutput(
+    const std::string& shell_id,
+    CachedBackgroundOutput output) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  LOG(WARNING) << "[NexusShellServiceLauncher] Utility process disconnected; "
-                  "next call will relaunch";
-  remote_.reset();
+  if (shell_id.empty()) return;
+  if (!cached_background_outputs_.contains(shell_id)) {
+    cached_background_output_order_.push_back(shell_id);
+  }
+  cached_background_outputs_[shell_id] = std::move(output);
+  while (cached_background_outputs_.size() > kMaxCachedBackgroundOutputs) {
+    const std::string oldest = cached_background_output_order_.front();
+    cached_background_output_order_.pop_front();
+    if (oldest == shell_id) continue;
+    cached_background_outputs_.erase(oldest);
+  }
+}
+
+std::optional<NexusShellServiceLauncher::CachedBackgroundOutput>
+NexusShellServiceLauncher::GetCachedBackgroundOutput(
+    const std::string& shell_id) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  auto it = cached_background_outputs_.find(shell_id);
+  if (it == cached_background_outputs_.end()) return std::nullopt;
+  return it->second;
+}
+
+bool NexusShellServiceLauncher::IsBackgroundShellRetainedForTesting(
+    const std::string& shell_id) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return retained_background_shells_.contains(shell_id);
+}
+
+size_t NexusShellServiceLauncher::retained_background_shell_count_for_testing()
+    const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return retained_background_shells_.size();
+}
+
+size_t NexusShellServiceLauncher::cached_background_output_count_for_testing()
+    const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return cached_background_outputs_.size();
+}
+
+base::WeakPtr<NexusShellServiceLauncher> NexusShellServiceLauncher::GetWeakPtr() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weak_factory_.GetWeakPtr();
+}
+
+void NexusShellServiceLauncher::ConfigureIdleHandler() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!remote_.is_bound()) return;
+  remote_.ConfigureIdleHandler(base::BindRepeating(
+      [](NexusShellServiceLauncher* self) {
+        if (!self->retained_background_shells_.empty()) {
+          LOG(INFO) << "[NexusShellServiceLauncher] Idle timeout ignored; "
+                    << self->retained_background_shells_.size()
+                    << " background shell(s) retained";
+          return;
+        }
+        LOG(INFO) << "[NexusShellServiceLauncher] Idle timeout; recycling utility process";
+        self->Shutdown();
+      },
+      base::Unretained(this)));
 }
 
 }  // namespace nexus

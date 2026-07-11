@@ -11,6 +11,7 @@
 #include "base/values.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
 namespace nexus {
 
@@ -69,10 +70,11 @@ std::optional<OAuthTokens> OAuthTokenStore::GetTokens(
     return std::nullopt;
   }
 
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
   OAuthTokens tokens;
-  tokens.access_token = *access;
+  tokens.access_token = crypt->Decrypt(*access);
   if (const std::string* refresh = config->FindString(kRefreshToken)) {
-    tokens.refresh_token = *refresh;
+    tokens.refresh_token = crypt->Decrypt(*refresh);
   }
   tokens.expires_at_ms = config->FindDouble(kExpiresAt).value_or(0);
   if (const std::string* account = config->FindString(kAccountId)) {
@@ -96,8 +98,13 @@ void OAuthTokenStore::SaveTokens(const std::string& provider_id,
       prefs_->GetDict(prefs::kNexusProviderConfigs).Clone();
   base::DictValue* config = all_configs.EnsureDict(provider_id);
 
-  config->Set(kAccessToken, tokens.access_token);
-  config->Set(kRefreshToken, tokens.refresh_token);
+  // Encrypt the bearer secrets at rest (access + refresh token, and the
+  // `api_key` mirror below). The provider's Configure() + GetTokens()
+  // decrypt on read; account_id / email / resource_url are identifiers,
+  // not bearer secrets, and stay plaintext.
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
+  config->Set(kAccessToken, crypt->Encrypt(tokens.access_token));
+  config->Set(kRefreshToken, crypt->Encrypt(tokens.refresh_token));
   config->Set(kExpiresAt, tokens.expires_at_ms);
   config->Set(kAccountId, tokens.account_id);
   config->Set(kEmail, tokens.email);
@@ -108,7 +115,7 @@ void OAuthTokenStore::SaveTokens(const std::string& provider_id,
   // provider is reconfigured from prefs (login reconfigure / browser restart)
   // — without these mirrors, IsConfigured() and the ChatGPT-Account-Id header
   // would be empty until the next inference call.
-  config->Set("api_key", tokens.access_token);
+  config->Set("api_key", crypt->Encrypt(tokens.access_token));
   config->Set("account_id", tokens.account_id);
 
   // Providers that return a per-account API host (Qwen Code) point the

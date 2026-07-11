@@ -18,6 +18,48 @@ import {
 
 import {getString} from './nexus_shared.js';
 
+// Localized welcome copy. Ported from the guest's i18n catalogs
+// (nexus_web src/browser/webview/i18n/messages/*) so the parent boot overlay
+// speaks the same language the React shell will. The overlay paints BEFORE the
+// guest loads, so it cannot read the guest's strings — it owns its own copy.
+// Locale resolution mirrors nexus_web's `resolveLocale()` (BCP-47 prefix → a
+// supported catalog, English fallback); both sides key off `navigator.language`
+// (Chrome's UI language), so the parent and guest always agree.
+type WelcomeLocale = 'en'|'zh'|'es'|'fr'|'de';
+
+interface WelcomeCopy {
+  greeting: string;
+  subtitle: string;
+}
+
+const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
+  en: {greeting: 'Hello there!', subtitle: 'How can I help you today?'},
+  zh: {greeting: '你好！', subtitle: '有什么可以帮你的吗？'},
+  es: {greeting: '¡Hola!', subtitle: '¿En qué puedo ayudarte hoy?'},
+  fr: {
+    greeting: 'Bonjour !',
+    subtitle: 'Comment puis-je vous aider aujourd’hui ?',
+  },
+  de: {greeting: 'Hallo!', subtitle: 'Wie kann ich dir heute helfen?'},
+};
+
+function resolveWelcomeLocale(raw: string|null|undefined): WelcomeLocale {
+  const lang = (raw ?? '').toLowerCase();
+  if (lang.startsWith('zh')) {
+    return 'zh';
+  }
+  if (lang.startsWith('es')) {
+    return 'es';
+  }
+  if (lang.startsWith('fr')) {
+    return 'fr';
+  }
+  if (lang.startsWith('de')) {
+    return 'de';
+  }
+  return 'en';
+}
+
 export class NexusWelcomeElement extends CrLitElement {
   static get is() {
     return 'nexus-welcome';
@@ -84,9 +126,10 @@ export class NexusWelcomeElement extends CrLitElement {
   `;
 
   protected override render() {
+    const copy = WELCOME_COPY[resolveWelcomeLocale(navigator.language)];
     return html`
       <span class="visually-hidden" role="status" aria-busy="true">
-        Loading ${getString('customBrowserProductName', 'Nexus')}
+        Loading ${getString('customBrowserProductName', 'Velloc')}
       </span>
       <img class="welcome-logo"
           srcset="nexus_welcome_logo.png 1x,
@@ -95,8 +138,8 @@ export class NexusWelcomeElement extends CrLitElement {
           alt=""
           role="presentation">
       <div class="welcome-text">
-        <div class="welcome-title">Hello there!</div>
-        <div class="welcome-subtitle">How can I help you today?</div>
+        <div class="welcome-title">${copy.greeting}</div>
+        <div class="welcome-subtitle">${copy.subtitle}</div>
       </div>
     `;
   }

@@ -547,6 +547,22 @@ bool ConvertBridgeTools(const Value* tools_value,
       tool->input_schema = std::move(default_schema);
     }
 
+    // Forward the JS-side strict-mode opt-in. The provider translator
+    // (anthropic_provider / openai_provider) decides what to put on
+    // the wire. Defaults to false on missing/invalid, matching the
+    // mojom default.
+    if (auto strict = entry->FindBool("strict")) {
+      tool->strict = *strict;
+    }
+
+    // Forward optional canonical example calls. The Anthropic provider
+    // translator surfaces them as `input_examples` on the wire; other
+    // providers silently drop. Each entry must validate against
+    // `input_schema` — Anthropic returns 400 on any violation.
+    if (const List* examples = entry->FindList("inputExamples")) {
+      tool->input_examples = examples->Clone();
+    }
+
     out->push_back(std::move(tool));
   }
 

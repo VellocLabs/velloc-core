@@ -80,6 +80,22 @@ struct NexusLlmTool {
   string name;
   string? description;
   mojo_base.mojom.DictionaryValue input_schema;
+  // Opt into provider-side grammar-constrained sampling (Anthropic
+  // "Strict tool use", OpenAI "Structured Outputs"). When true, the
+  // model literally cannot emit a tool_use block whose `input`
+  // violates `input_schema`. The provider bridges (anthropic_provider,
+  // openai_provider) forward this onto their wire payload; Google and
+  // Ollama don't have an equivalent flag and ignore the field.
+  bool strict = false;
+  // Optional canonical example calls. Each entry is a JSON-Schema-
+  // valid `input` dict (matches `input_schema`). Anthropic's
+  // `tool_use` API accepts these on the `input_examples` field of a
+  // tool definition (see Anthropic docs: "Providing tool use
+  // examples"). Other providers (OpenAI / Google / Ollama) don't
+  // accept this field and the bridge silently drops it for them.
+  // Examples must validate against `input_schema`; Anthropic returns
+  // a 400 if any entry violates the schema.
+  mojo_base.mojom.ListValue? input_examples;
 };
 
 struct NexusLlmContentPart {

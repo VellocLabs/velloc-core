@@ -2,6 +2,7 @@
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_NEXUS_TOOL_SCHEMA_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -92,6 +93,44 @@ struct ToolSchema {
   // format does not encode the response schema explicitly. Kept here so
   // a future iteration can surface it without another descriptor change.
   JsonSchemaKind output_kind = JsonSchemaKind::kAny;
+  // Optional hand-crafted JSON Schema variant for strict tool use
+  // (Anthropic / OpenAI / GLM grammar-constrained sampling). When
+  // present, BuildHostedToolDefinitionDict emits it as
+  // `parametersStrict` on the hosted-tool entry alongside the
+  // permissive `parameters` block.
+  //
+  // The author is responsible for keeping this strict-compliant per
+  // each provider's accepted JSON Schema subset:
+  //   - `additionalProperties: false` on every object
+  //   - no `maxItems` / `minItems` / `maxLength` / `minLength` /
+  //     `pattern` / `format` (Anthropic strict subset rejects these;
+  //     OpenAI accepts a slightly larger set but the safest
+  //     intersection is the Anthropic one)
+  //   - the runtime extractor still does per-action-type validation
+  //     (see browser_tool.cc), so the strict schema only needs to
+  //     enforce gross shape, not per-type required fields.
+  //
+  // The C++ JS guest (nexus_web) gates strict-mode use by the active
+  // model's `supportsStrictTools` catalog flag; tools that don't
+  // populate this field silently skip strict mode regardless of model.
+  std::optional<base::DictValue> strict_input_schema;
+
+  // Optional canonical example calls — each entry is a `base::Value`
+  // dict matching the tool's `input_schema`. When present,
+  // BuildHostedToolDefinitionDict emits these as `inputExamples` on
+  // the hosted-tool entry. The JS guest forwards them to the per-
+  // provider translator; only Anthropic surfaces them on the wire
+  // (as `input_examples`) — OpenAI / Google / Ollama ignore.
+  //
+  // Use this to anchor structurally-tricky tool calls. For
+  // browser_actions specifically, examples that show all four required
+  // top-level fields populated AND a real `actions[]` batch are the
+  // strongest defense against the empty-args failure mode without
+  // paying strict-mode's grammar-compilation cost.
+  //
+  // Each example MUST validate against `input_schema`; Anthropic
+  // returns 400 on any violation.
+  std::optional<base::ListValue> input_examples;
 };
 
 // Returns the JSON-Schema string used in the wire format for a kind.

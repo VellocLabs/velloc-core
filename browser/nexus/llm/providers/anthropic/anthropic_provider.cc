@@ -1033,6 +1033,29 @@ base::ListValue AnthropicProvider::TranslateTools(
     if (const auto* params = tool->FindDict("parameters"))
       d.Set("input_schema", params->Clone());
 
+    // Forward `strict: true` when the JS layer has opted into Anthropic
+    // Strict tool use (grammar-constrained sampling). When set, the
+    // model literally cannot emit a tool_use block whose `input`
+    // violates the schema — eliminates the `args:{}` failure mode
+    // that haiku-class models hit on `browser_actions`. The JS layer
+    // is also responsible for tightening the schema with
+    // `additionalProperties: false` before this lands here; the
+    // Anthropic API rejects strict tools that lack it.
+    if (auto strict = tool->FindBool("strict"))
+      d.Set("strict", *strict);
+
+    // Forward optional canonical example calls (Anthropic
+    // `input_examples`). Each entry should be a dict that validates
+    // against `input_schema`; Anthropic returns 400 on any violation.
+    // Used as a softer alternative to `strict: true` — the model isn't
+    // grammar-constrained but does see in-context examples that
+    // anchor the structurally-tricky shape of `browser_actions`. The
+    // JS guest hands this through under the camelCase key
+    // `inputExamples`; we rename to snake_case here for Anthropic's
+    // wire format.
+    if (const auto* examples = tool->FindList("inputExamples"))
+      d.Set("input_examples", examples->Clone());
+
     result.Append(std::move(d));
   }
 

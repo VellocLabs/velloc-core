@@ -90,9 +90,48 @@ ToolParameter& ToolParameter::operator=(ToolParameter&&) noexcept = default;
 ToolParameter::~ToolParameter() = default;
 
 ToolSchema::ToolSchema() = default;
-ToolSchema::ToolSchema(const ToolSchema&) = default;
+// Copy ops manually deep-clone `strict_input_schema` and
+// `input_examples` because both `base::DictValue` and
+// `base::ListValue` are non-copyable (Chromium values use explicit
+// `Clone()`). Without this, defaulting the copy ctor/assign produces
+// "defaulting this copy constructor would delete it after its first
+// declaration" because std::optional inherits its copyability from
+// the contained type. Move ops stay defaulted (Dict/ListValue move).
+ToolSchema::ToolSchema(const ToolSchema& other)
+    : name(other.name),
+      description(other.description),
+      parameters(other.parameters),
+      output_kind(other.output_kind),
+      strict_input_schema(
+          other.strict_input_schema.has_value()
+              ? std::optional<base::DictValue>(
+                    other.strict_input_schema->Clone())
+              : std::nullopt),
+      input_examples(
+          other.input_examples.has_value()
+              ? std::optional<base::ListValue>(
+                    other.input_examples->Clone())
+              : std::nullopt) {}
 ToolSchema::ToolSchema(ToolSchema&&) noexcept = default;
-ToolSchema& ToolSchema::operator=(const ToolSchema&) = default;
+ToolSchema& ToolSchema::operator=(const ToolSchema& other) {
+  if (this != &other) {
+    name = other.name;
+    description = other.description;
+    parameters = other.parameters;
+    output_kind = other.output_kind;
+    strict_input_schema =
+        other.strict_input_schema.has_value()
+            ? std::optional<base::DictValue>(
+                  other.strict_input_schema->Clone())
+            : std::nullopt;
+    input_examples =
+        other.input_examples.has_value()
+            ? std::optional<base::ListValue>(
+                  other.input_examples->Clone())
+            : std::nullopt;
+  }
+  return *this;
+}
 ToolSchema& ToolSchema::operator=(ToolSchema&&) noexcept = default;
 ToolSchema::~ToolSchema() = default;
 
@@ -147,6 +186,22 @@ base::DictValue BuildHostedToolDefinitionDict(const ToolSchema& schema) {
   tool.Set("name", schema.name);
   tool.Set("description", schema.description);
   tool.Set("parameters", std::move(parameters));
+  // Forward the optional strict-mode schema variant if the tool author
+  // populated it. nexus_web gates strict use per-model and only sends
+  // `strict: true` on the bridge when the active model's catalog
+  // entry has `supportsStrictTools: true` AND this field is present.
+  if (schema.strict_input_schema.has_value()) {
+    tool.Set("parametersStrict", schema.strict_input_schema->Clone());
+  }
+  // Forward the optional canonical example calls. The JS guest sends
+  // them through the bridge as part of the per-tool dict, and the
+  // Anthropic provider translator surfaces them on the wire as
+  // `input_examples` (other providers ignore — see
+  // anthropic_provider::TranslateTools and the mojom doc on
+  // NexusLlmTool::input_examples).
+  if (schema.input_examples.has_value()) {
+    tool.Set("inputExamples", schema.input_examples->Clone());
+  }
   return tool;
 }
 

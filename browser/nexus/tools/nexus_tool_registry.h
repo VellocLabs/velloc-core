@@ -89,6 +89,28 @@ class ToolBuilder {
   // `NEXUS_END_TOOL(<kind>)` macro.
   ToolBuilder& Returns(JsonSchemaKind kind);
 
+  // Attach a hand-crafted strict-tool-use schema variant. Optional;
+  // when set, `BuildHostedToolDefinitionDict` emits it as
+  // `parametersStrict` on the hosted-tool entry alongside the
+  // permissive `parameters` block. nexus_web sends this variant +
+  // `strict: true` when the active model's catalog flag
+  // `supportsStrictTools` is true.
+  //
+  // Author owns strict-compliance: the schema must satisfy each
+  // provider's accepted JSON Schema subset (no `maxItems` /
+  // `minItems` / `pattern` / `format` etc. — see ToolSchema's
+  // `strict_input_schema` doc for the full list).
+  ToolBuilder& StrictInputSchema(base::DictValue schema);
+
+  // Attach canonical example calls. Each entry must be a dict that
+  // validates against the tool's `input_schema`. When set,
+  // `BuildHostedToolDefinitionDict` emits these as `inputExamples` on
+  // the hosted-tool entry; the Anthropic provider then forwards them
+  // as `input_examples` on the wire (other providers silently drop).
+  // Use to anchor structurally-tricky tool calls when strict mode is
+  // either too expensive (grammar compilation) or too restrictive.
+  ToolBuilder& InputExamples(base::ListValue examples);
+
   // Bind the dispatcher and commit the entry to the registry. Idiomatic
   // call sites build a dispatcher via one of the `BindTo*` helpers in
   // nexus_tool_macros.h that wraps a member function pointer.

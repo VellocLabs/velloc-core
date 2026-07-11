@@ -69,6 +69,16 @@ ToolBuilder& ToolBuilder::Returns(JsonSchemaKind kind) {
   return *this;
 }
 
+ToolBuilder& ToolBuilder::StrictInputSchema(base::DictValue schema) {
+  schema_.strict_input_schema = std::move(schema);
+  return *this;
+}
+
+ToolBuilder& ToolBuilder::InputExamples(base::ListValue examples) {
+  schema_.input_examples = std::move(examples);
+  return *this;
+}
+
 void ToolBuilder::Bind(ToolDispatcher dispatcher) && {
   CHECK(sink_) << "Bind called twice or on a moved-from ToolBuilder";
   sink_->emplace_back(std::move(schema_), std::move(dispatcher));

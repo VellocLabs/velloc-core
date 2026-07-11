@@ -355,6 +355,21 @@ base::ListValue TranslateBridgeTools(
       translated_tool.Set("description", *tool->description);
     }
     translated_tool.Set("parameters", tool->input_schema.Clone());
+    // Forward the strict-mode opt-in to the per-provider translator.
+    // anthropic_provider::TranslateTools and
+    // openai_provider::TranslateToolDefinition both read this key and
+    // surface it on their wire payload; google/ollama ignore it.
+    if (tool->strict) {
+      translated_tool.Set("strict", true);
+    }
+    // Forward optional canonical example calls. Only the Anthropic
+    // provider surfaces these on the wire (as `input_examples`); other
+    // providers ignore. Stored under the same camelCase key the JS
+    // guest used (`inputExamples`) so the per-provider translator
+    // doesn't need to special-case naming.
+    if (tool->input_examples.has_value()) {
+      translated_tool.Set("inputExamples", tool->input_examples->Clone());
+    }
     translated.Append(std::move(translated_tool));
   }
   return translated;

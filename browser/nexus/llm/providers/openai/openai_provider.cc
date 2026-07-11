@@ -558,6 +558,16 @@ base::DictValue OpenAiProvider::TranslateToolDefinition(
   if (const base::DictValue* params = tool.FindDict("parameters"))
     function.Set("parameters", params->Clone());
 
+  // Forward `strict: true` when the JS layer has opted into OpenAI
+  // Structured Outputs (grammar-constrained sampling on tool inputs).
+  // OpenAI places `strict` on the inner `function` object alongside
+  // `name`/`description`/`parameters`. The JS layer is also
+  // responsible for tightening the schema with
+  // `additionalProperties: false` before this lands here; the OpenAI
+  // API rejects strict tools that lack it.
+  if (auto strict = tool.FindBool("strict"))
+    function.Set("strict", *strict);
+
   openai_tool.Set("function", std::move(function));
   return openai_tool;
 }

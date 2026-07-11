@@ -325,6 +325,28 @@ std::optional<int32_t> ResolveTabIdOrReject(
   return *active;
 }
 
+// If `target_tab_id` is not currently the active tab for `profile`,
+// prepend an `ActivateTabAction` to `actions` so the actor framework
+// foregrounds the target tab before the caller's action runs. Caller
+// invokes this BEFORE adding its own action(s) to the proto, so the
+// resulting sequence is [ActivateTab, <caller's action>].
+//
+// No-op when (a) the target tab is already active or (b) the active
+// tab can't be resolved (single-action runner has nothing to compare
+// against; the caller's action will fail downstream with the same
+// no-active-tab condition the actor surfaces).
+void MaybePrependActivateTab(apc::Actions* actions,
+                             int32_t target_tab_id,
+                             Profile* profile) {
+  std::optional<int32_t> active = GetActiveTabHandleId(profile);
+  if (!active.has_value() || *active == target_tab_id) {
+    return;
+  }
+  apc::ActivateTabAction* activate =
+      actions->add_actions()->mutable_activate_tab();
+  activate->set_tab_id(target_tab_id);
+}
+
 constexpr const char* kBrowserActionsDescription =
     "Submit browser actions for the current observed browser state. "
     "Use one clear goal per call. actions is an array of 1-5 action "
@@ -334,6 +356,10 @@ constexpr const char* kBrowserActionsDescription =
     "last because remaining queued actions are skipped after "
     "URL/focus changes, action errors, done, or sequence "
     "terminators.\n\n"
+    "Tab activation is automatic: when an action targets a tab_id "
+    "that is not currently the foreground tab, that tab is activated "
+    "first. create_tab opens the new tab in the foreground. You do not "
+    "need to emit a separate activate_tab before acting on a tab.\n\n"
     "Action types preserve the old browser_* tool behavior with simpler "
     "names:\n"
     "- click: Click a page element. Params: index, optional tab_id, button "
@@ -521,6 +547,349 @@ class PausableToolCallbackHolder
 // file. The static `ToolCatalog` calls this once at first access.
 // =============================================================================
 
+namespace {
+
+// Hand-crafted strict-tool-use JSON Schema for `browser_actions`.
+// Lives here, in the same file as `DefineTools` and the per-action
+// dispatch logic, so adding a new action type means editing both the
+// runtime extractor and this schema right next to each other.
+//
+// Design: `actions[].items` is a discriminated union via `anyOf` —
+// one small branch per action type. Each branch declares its spec-
+// required params PLUS `tab_id` (plain required `integer`, no union)
+// for actions that target a tab. Other spec-optional fields are
+// dropped from the strict schema entirely.
+//
+// Why this shape?
+//
+// Anthropic's strict subset caps the total number of union-typed
+// parameters across the schema at 16 ("Schemas contains too many
+// parameters with union types..."). An earlier attempt (every spec-
+// optional listed with type-array union `["integer","null"]`) hit 32
+// across 23 branches — exponential grammar compilation cost, request
+// rejected.
+//
+// Solution: promote `tab_id` to a plain required field on every
+// action that takes one. The model echoes the active-tab id back
+// from the browser-context attachment, or emits a different tab id
+// when it genuinely targets another tab. No nullable types, no
+// unions for tab_id — same primitive as `index` or `url`. Other
+// spec-optional fields (button, click_count, submit, clear, engine,
+// scope, max_chars, max_results, wait_ms, reuse_visible_tab) stay
+// out of the strict schema; the runtime extractor's `std::optional`
+// defaults take over for those (default engine, default click
+// button, etc.).
+//
+// Strict-subset rules satisfied (Anthropic + OpenAI strict mode):
+//   * `additionalProperties: false` on every object
+//   * `type` field (plain, no unions) on every property
+//   * NO `maxItems` / `minItems` / `pattern` / `format` / `minLength` /
+//     `maxLength` / numerical constraints
+//   * `anyOf` and `const` are explicitly listed as supported
+//   * Total union-typed params: 1 (the items-level anyOf). Well under
+//     the 16 cap.
+//
+// When new action types or per-type params are added in this file,
+// update this anyOf list and the runtime extractor in lockstep.
+
+base::DictValue ScalarProp(std::string_view type) {
+  base::DictValue d;
+  d.Set("type", std::string(type));
+  return d;
+}
+
+// Chained-builder for one discriminated-union branch. Use either:
+//
+//   // single-action branch (one `type` value):
+//   BranchBuilder("click").Add("index", ScalarProp("integer")).Build();
+//
+//   // shape-merged branch (multiple action types sharing one shape):
+//   BranchBuilder({"wait", "back", "forward"}).Build();
+//
+// Multi-type construction emits `type: {enum: [...]}` instead of a
+// single const, which lets several action types share one branch when
+// their property sets are identical. Reduces the total branch count
+// the compiler has to enumerate, which keeps Anthropic's grammar
+// compiler under its size limit.
+//
+// All field names get listed in `required[]` per strict-mode rules.
+// The branch itself has `additionalProperties: false` so no extra
+// keys leak through.
+//
+// `&&`-qualified members keep the chain operating on rvalues — needed
+// because `base::DictValue` is non-copyable, so a non-rvalue chain
+// would force copies that don't exist.
+class BranchBuilder {
+ public:
+  explicit BranchBuilder(std::string_view type_const) {
+    base::DictValue type_prop;
+    type_prop.Set("type", "string");
+    type_prop.Set("const", std::string(type_const));
+    properties_.Set("type", std::move(type_prop));
+    required_.Append("type");
+  }
+
+  // Multi-type form: emits `type: {type:"string", enum:[...]}`.
+  explicit BranchBuilder(std::initializer_list<std::string_view> types) {
+    base::DictValue type_prop;
+    type_prop.Set("type", "string");
+    base::ListValue type_enum;
+    for (auto t : types) {
+      type_enum.Append(std::string(t));
+    }
+    type_prop.Set("enum", std::move(type_enum));
+    properties_.Set("type", std::move(type_prop));
+    required_.Append("type");
+  }
+
+  BranchBuilder(BranchBuilder&&) noexcept = default;
+  BranchBuilder& operator=(BranchBuilder&&) noexcept = default;
+  BranchBuilder(const BranchBuilder&) = delete;
+  BranchBuilder& operator=(const BranchBuilder&) = delete;
+
+  BranchBuilder&& Add(std::string_view name, base::DictValue spec) && {
+    properties_.Set(std::string(name), std::move(spec));
+    required_.Append(std::string(name));
+    return std::move(*this);
+  }
+
+  base::DictValue Build() && {
+    base::DictValue branch;
+    branch.Set("type", "object");
+    branch.Set("properties", std::move(properties_));
+    branch.Set("required", std::move(required_));
+    branch.Set("additionalProperties", false);
+    return branch;
+  }
+
+ private:
+  base::DictValue properties_;
+  base::ListValue required_;
+};
+
+// Currently unused — the `.StrictInputSchema(...)` call site was
+// removed when strict tool use was disabled for browser_actions
+// (see the long comment block in `DefineTools` above the
+// `NEXUS_END_TOOL` for browser_actions). Kept around as dead code so
+// re-enabling strict (with the necessary tab_id-optional refactor) is
+// a one-line restore in DefineTools rather than a 150-line rewrite.
+// `[[maybe_unused]]` silences `-Werror,-Wunused-function`.
+// Canonical example calls forwarded to Anthropic via `input_examples`
+// on the wire (see anthropic_provider::TranslateTools and the
+// `InputExamples` ToolBuilder method). These are NOT a substitute for
+// the system prompt's "actions[] is REQUIRED" guidance — they're an
+// in-context anchor the model sees alongside the tool definition.
+//
+// Three examples were chosen to span the most common batch shapes:
+//   1. First-turn search (no prior goal, no actions yet) — anchors
+//      `evaluation_previous_goal: "No prior goal..."` plus a single
+//      `search` action.
+//   2. Mid-flight click (citing an observed element) — anchors
+//      reusing an `index` from the latest observation and writing a
+//      concrete `next_goal` the next turn can grade.
+//   3. Final `done` — anchors task termination with `success: true`
+//      and a short `text` summary for the user.
+//
+// Each example MUST validate against the relaxed `input_schema`
+// emitted by NEXUS_INPUT above (Anthropic returns 400 if any entry
+// fails validation). Only `type` is required on each action item;
+// per-action params (index/url/query) are validated at runtime by
+// `RunBrowserActionItem`. Token cost: ~30 tokens × 3 = ~90 tokens
+// added to every Anthropic request, paid once per cache miss.
+base::ListValue BuildBrowserActionsInputExamples() {
+  base::ListValue examples;
+
+  // Example 1 — first-turn search.
+  {
+    base::DictValue ex;
+    ex.Set("evaluation_previous_goal",
+           "No prior goal — this is the first turn.");
+    ex.Set("memory",
+           "User asked for X. Strategy: search the web for X, "
+           "then open the most relevant result.");
+    ex.Set("next_goal",
+           "Search the web for X to surface candidate results.");
+    base::ListValue actions;
+    base::DictValue act;
+    act.Set("type", "search");
+    act.Set("query", "your query here");
+    actions.Append(std::move(act));
+    ex.Set("actions", std::move(actions));
+    examples.Append(std::move(ex));
+  }
+
+  // Example 2 — click an observed element.
+  {
+    base::DictValue ex;
+    ex.Set("evaluation_previous_goal",
+           "Search results page loaded; the first result links to "
+           "the target page.");
+    ex.Set("memory",
+           "User asked for X. Search ran on Google; result list now "
+           "shows 10 candidates. First result (index 42) looks most "
+           "relevant.");
+    ex.Set("next_goal",
+           "Click the first organic result to open the target page.");
+    base::ListValue actions;
+    base::DictValue act;
+    act.Set("type", "click");
+    act.Set("index", 42);
+    actions.Append(std::move(act));
+    ex.Set("actions", std::move(actions));
+    examples.Append(std::move(ex));
+  }
+
+  // Example 3 — final done.
+  {
+    base::DictValue ex;
+    ex.Set("evaluation_previous_goal",
+           "Target page read; extracted the answer the user asked for.");
+    ex.Set("memory",
+           "User asked for X. Found and verified on tab N. "
+           "Reporting back and ending the task.");
+    ex.Set("next_goal",
+           "Finish the task and report the answer to the user.");
+    base::ListValue actions;
+    base::DictValue act;
+    act.Set("type", "done");
+    act.Set("success", true);
+    act.Set("text",
+            "Found X: <one-sentence answer with the concrete result>.");
+    actions.Append(std::move(act));
+    ex.Set("actions", std::move(actions));
+    examples.Append(std::move(ex));
+  }
+
+  return examples;
+}
+
+[[maybe_unused]] base::DictValue BuildBrowserActionsStrictSchema() {
+  base::ListValue branches;
+
+  // Branches are merged by shape: actions sharing the same property
+  // set collapse into a single branch with `type: {enum: [...]}`.
+  // 23 action types reduce to 11 branches. Anthropic's grammar
+  // compiler enumerates fewer paths, keeping the compiled grammar
+  // under its size limit.
+  //
+  // tab_id is plain required `integer` (no nullable union) on every
+  // tab-targeting action — the model echoes the active-tab id from
+  // the browser-context attachment when no specific tab is intended.
+  // Other spec-optional fields (button, click_count, submit, clear,
+  // engine, scope, max_chars, max_results, wait_ms,
+  // reuse_visible_tab) stay dropped from the strict schema; runtime
+  // defaults cover them.
+
+  // Shape: { type, tab_id } — 10 actions
+  // (no per-action params beyond tab targeting)
+  branches.Append(
+      BranchBuilder({"wait", "back", "forward", "close_tab", "activate_tab",
+                     "media_play", "media_pause", "media_state", "screenshot",
+                     "read_page"})
+          .Add("tab_id", ScalarProp("integer"))
+          .Build());
+
+  // Shape: { type, tab_id, index } — 4 actions
+  branches.Append(
+      BranchBuilder({"click", "hover", "scroll_to", "read_element"})
+          .Add("index", ScalarProp("integer"))
+          .Add("tab_id", ScalarProp("integer"))
+          .Build());
+
+  // input — req: index, text, tab_id (unique shape)
+  branches.Append(BranchBuilder("input")
+                      .Add("index", ScalarProp("integer"))
+                      .Add("text", ScalarProp("string"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // select — req: index, value, tab_id (unique shape)
+  branches.Append(BranchBuilder("select")
+                      .Add("index", ScalarProp("integer"))
+                      .Add("value", ScalarProp("string"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // drag_and_drop — req: from_index, to_index, tab_id (unique shape)
+  branches.Append(BranchBuilder("drag_and_drop")
+                      .Add("from_index", ScalarProp("integer"))
+                      .Add("to_index", ScalarProp("integer"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // navigate — req: url, tab_id (unique shape)
+  branches.Append(BranchBuilder("navigate")
+                      .Add("url", ScalarProp("string"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // scroll — req: direction, distance, tab_id (unique shape)
+  branches.Append(BranchBuilder("scroll")
+                      .Add("direction", ScalarProp("string"))
+                      .Add("distance", ScalarProp("number"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // media_seek — req: seek_time_ms, tab_id (unique shape)
+  branches.Append(BranchBuilder("media_seek")
+                      .Add("seek_time_ms", ScalarProp("integer"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // find_text — req: query, tab_id (unique shape)
+  branches.Append(BranchBuilder("find_text")
+                      .Add("query", ScalarProp("string"))
+                      .Add("tab_id", ScalarProp("integer"))
+                      .Build());
+
+  // Shape: { type, query OR url } — search creates a new tab via a
+  // query, create_tab via a URL. Different param names → can't merge.
+  // Kept as separate branches.
+  // search — req: query (no tab_id)
+  branches.Append(
+      BranchBuilder("search").Add("query", ScalarProp("string")).Build());
+
+  // create_tab — req: url (no tab_id)
+  branches.Append(
+      BranchBuilder("create_tab").Add("url", ScalarProp("string")).Build());
+
+  // done — req: success, text (terminates the task; no tab_id)
+  branches.Append(BranchBuilder("done")
+                      .Add("success", ScalarProp("boolean"))
+                      .Add("text", ScalarProp("string"))
+                      .Build());
+
+  // The items schema is the discriminated union. Strict mode supports
+  // anyOf per Anthropic's structured-outputs JSON Schema subset.
+  base::DictValue items;
+  items.Set("anyOf", std::move(branches));
+
+  base::DictValue actions_prop;
+  actions_prop.Set("type", "array");
+  actions_prop.Set("items", std::move(items));
+
+  base::DictValue properties;
+  properties.Set("evaluation_previous_goal", ScalarProp("string"));
+  properties.Set("memory", ScalarProp("string"));
+  properties.Set("next_goal", ScalarProp("string"));
+  properties.Set("actions", std::move(actions_prop));
+
+  base::ListValue required;
+  required.Append("evaluation_previous_goal");
+  required.Append("memory");
+  required.Append("next_goal");
+  required.Append("actions");
+
+  base::DictValue schema;
+  schema.Set("type", "object");
+  schema.Set("properties", std::move(properties));
+  schema.Set("required", std::move(required));
+  schema.Set("additionalProperties", false);
+  return schema;
+}
+
+}  // namespace
+
 // static
 void BrowserTool::DefineTools(ToolRegistry& registry) {
   NEXUS_BEGIN_TOOLS(BrowserTool, registry)
@@ -589,6 +958,39 @@ void BrowserTool::DefineTools(ToolRegistry& registry) {
                    "search, wait, read_page, find_text, or done, "
                    "plus the params documented in the tool "
                    "description.")
+      // Strict-mode JSON Schema variant DELIBERATELY NOT ATTACHED.
+      // browser_actions's anyOf-with-12-branches shape is the wrong
+      // fit for Anthropic's grammar-constrained sampling: even after
+      // shape-merging branches, the compiled grammar pushes against
+      // the per-request size limit, and the previous "tab_id required
+      // on every branch" mistake locked the model into the few
+      // branches without tab_id (search/create_tab/done) when the
+      // browser context didn't expose an active tab id. Strict can
+      // come back if/when the schema is restructured (the helpers
+      // below — BranchBuilder / BuildBrowserActionsStrictSchema /
+      // BranchBuilder::AddOptional — stay as dead code so re-enabling
+      // is a one-line `.StrictInputSchema(...)` re-add). For now we
+      // use a softer mechanism instead — see InputExamples below.
+      //
+      // Compares to claude_code: 52 tools defined, 8 strict, but
+      // every strict tool has a flat schema. claude_code's most
+      // complex tool (LSPTool, 9-branch anyOf) is deliberately not
+      // strict-marked. Same call we're making here.
+      //
+      // Anthropic `input_examples`: ships 3 canonical example calls
+      // alongside the tool definition (NOT grammar-constrained, just
+      // in-context anchors). The model sees what a well-formed
+      // browser_actions call looks like — all four required fields
+      // populated, a non-empty actions[] batch, realistic content for
+      // each — every time the tool definition is sent. This is the
+      // softer alternative to strict mode that still addresses the
+      // observed Haiku 4.5 empty-args failure mode without the
+      // grammar-compilation cost or the structural risk of putting
+      // an anyOf-12 schema under grammar constraints. Other providers
+      // (OpenAI / Google / Ollama) ignore the field; only Anthropic
+      // surfaces it on the wire.
+      _nexus_tool_builder.InputExamples(
+          BuildBrowserActionsInputExamples());
     NEXUS_END_TOOL(Object)
 
   NEXUS_END_TOOLS()
@@ -2076,16 +2478,26 @@ void BrowserTool::browser_actions(
   // (mechanism #2) this gives the model a unified per-step record
   // that survives microcompaction.
 
-  // Soft-recovery for malformed calls. `actions` is required by
-  // contract (the schema description says so), but we accept the key
-  // as optional at the extraction layer so a model that emits
-  // `args:{}` (no `actions` key at all) — the dominant failure mode
-  // for haiku-class models that have lost the thread — doesn't get a
-  // hard `invalid_args` rejection that tends to spiral into 5+
-  // identical empty calls and trip max_failures. Synthesize a single
-  // short `wait` so the call returns a fresh observation, and tag
-  // which slip occurred so `ResolveBrowserActions` can emit a
-  // matching `warnings[]` entry telling the model what it did wrong.
+  // Malformed-call rejection. `actions` is required by contract; we
+  // still accept the key as optional at the extraction layer (so a
+  // model emitting `args:{}` doesn't get an `invalid_args` reject
+  // before our handler runs) but we no longer synthesize a recovery
+  // `wait`.
+  //
+  // Why no synthetic wait: appending a wait gave the call a fresh
+  // observation, and the model would attend to the new page state
+  // instead of the error envelope — exactly the failure mode the
+  // 2026-05-07 Haiku 4.5 logs caught (5 consecutive `args:{}` calls
+  // before MAX_FAILURES tripped). With the JS dispatch site now
+  // setting `isError: true` on the canonical tool_result block (see
+  // nexus_web/src/services/tools/toolExecution.ts), the Anthropic
+  // wire layer emits `is_error: true`, which triggers Anthropic's
+  // documented 2-3x retry-with-corrections behaviour for the model.
+  // Bundling an observation with the error dilutes that signal —
+  // return ONLY the error envelope so the failure is unambiguous.
+  // OpenAI/Google/Ollama don't have a protocol-level error flag but
+  // still see the `ok:false` + structured `error.{code,message,
+  // remediation}` envelope at the top of the result dict.
   using WaitCause = BrowserActionBatchState::WaitSynthesisCause;
   WaitCause wait_cause = WaitCause::kNone;
   base::ListValue actions;
@@ -2098,10 +2510,61 @@ void BrowserTool::browser_actions(
     }
   }
   if (wait_cause != WaitCause::kNone) {
-    base::DictValue wait_action;
-    wait_action.Set("type", "wait");
-    wait_action.Set("wait_ms", 100);
-    actions.Append(std::move(wait_action));
+    // Build the error envelope inline and resolve immediately. No
+    // observation, no results, no synthetic action — just the failure
+    // signal plus echoed reflection fields (so the diary stays
+    // truthful about what the model itself wrote on this turn).
+    base::DictValue result;
+    result.Set("action", "browser_actions");
+    if (evaluation_previous_goal.has_value() &&
+        !evaluation_previous_goal->empty()) {
+      result.Set("evaluation_previous_goal", *evaluation_previous_goal);
+    }
+    if (memory.has_value() && !memory->empty()) {
+      result.Set("memory", *memory);
+    }
+    if (next_goal.has_value() && !next_goal->empty()) {
+      result.Set("next_goal", *next_goal);
+    }
+
+    std::string error_code;
+    std::string error_message;
+    std::string error_remediation;
+    std::string ltm;
+    if (wait_cause == WaitCause::kActionsKeyMissing) {
+      error_code = "MISSING_ACTIONS_KEY";
+      error_message =
+          "Your tool call had no `actions` key (e.g. args was `{}`). "
+          "`actions` is REQUIRED — send 1-5 action objects per call.";
+      error_remediation =
+          "Retry with ALL required fields populated: "
+          "`evaluation_previous_goal`, `memory`, `next_goal`, and "
+          "`actions` (1-5 items). Each action object needs a `type` "
+          "field plus that type's params — e.g. "
+          "[{type:\"click\",index:N}], [{type:\"navigate\",url:\"...\"}], "
+          "or [{type:\"done\",success:true,text:\"...\"}].";
+      ltm = "REJECTED: malformed call (no `actions` key); no action run";
+    } else {  // kActionsArrayEmpty
+      error_code = "EMPTY_ACTIONS_ARRAY";
+      error_message =
+          "Your tool call had `actions: []` (empty array). `actions` "
+          "is REQUIRED to contain 1-5 action objects.";
+      error_remediation =
+          "Retry with at least one action object inside `actions`. "
+          "Each item needs a `type` field plus that type's params.";
+      ltm = "REJECTED: malformed call (empty `actions: []`); no action run";
+    }
+    result.Set("long_term_memory", ltm);
+    result.Set("ok", false);
+
+    base::DictValue error_dict;
+    error_dict.Set("code", error_code);
+    error_dict.Set("message", error_message);
+    error_dict.Set("remediation", error_remediation);
+    result.Set("error", std::move(error_dict));
+
+    std::move(done).Resolve(base::Value(std::move(result)));
+    return;
   }
   if (actions.size() > kMaxBrowserActionsPerStep) {
     std::move(done).Reject(
@@ -2810,6 +3273,7 @@ void BrowserTool::RunNavigateAction(std::optional<int> tab_id,
     return;
   }
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, *resolved_tab_id, GetProfile());
   apc::NavigateAction* navigate = actions.add_actions()->mutable_navigate();
   navigate->mutable_url()->assign(url);
   navigate->set_tab_id(*resolved_tab_id);
@@ -2823,6 +3287,7 @@ void BrowserTool::RunBackAction(std::optional<int> tab_id, ToolCallback done) {
     return;
   }
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, *resolved_tab_id, GetProfile());
   apc::HistoryBackAction* back = actions.add_actions()->mutable_back();
   back->set_tab_id(*resolved_tab_id);
   RunActorAction(std::move(actions), "back", std::move(done));
@@ -2836,6 +3301,7 @@ void BrowserTool::RunForwardAction(std::optional<int> tab_id,
     return;
   }
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, *resolved_tab_id, GetProfile());
   apc::HistoryForwardAction* forward =
       actions.add_actions()->mutable_forward();
   forward->set_tab_id(*resolved_tab_id);
@@ -3081,6 +3547,7 @@ void BrowserTool::RunMediaPlayAction(std::optional<int> tab_id,
     return;
   }
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, *resolved_tab_id, GetProfile());
   apc::MediaControlAction* media =
       actions.add_actions()->mutable_media_control();
   media->mutable_play();
@@ -3096,6 +3563,7 @@ void BrowserTool::RunMediaPauseAction(std::optional<int> tab_id,
     return;
   }
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, *resolved_tab_id, GetProfile());
   apc::MediaControlAction* media =
       actions.add_actions()->mutable_media_control();
   media->mutable_pause();
@@ -3112,6 +3580,7 @@ void BrowserTool::RunMediaSeekAction(std::optional<int> tab_id,
     return;
   }
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, *resolved_tab_id, GetProfile());
   apc::MediaControlAction* media =
       actions.add_actions()->mutable_media_control();
   // Negative seek positions are clamped to 0 — the proto doc says
@@ -3214,6 +3683,9 @@ void BrowserTool::RunWaitAction(std::optional<int> tab_id,
                                 std::optional<int> wait_ms,
                                 ToolCallback done) {
   apc::Actions actions;
+  if (tab_id.has_value()) {
+    MaybePrependActivateTab(&actions, *tab_id, GetProfile());
+  }
   apc::WaitAction* wait = actions.add_actions()->mutable_wait();
   if (wait_ms.has_value()) {
     wait->set_wait_time_ms(*wait_ms);
@@ -3244,6 +3716,7 @@ void BrowserTool::RunClickAction(int node_id,
   }
 
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, entry->tab_id, GetProfile());
   apc::ClickAction* click = actions.add_actions()->mutable_click();
   click->mutable_target()->set_content_node_id(node_id);
   click->mutable_target()
@@ -3272,6 +3745,7 @@ void BrowserTool::RunInputAction(int node_id,
   }
 
   apc::Actions actions;
+  MaybePrependActivateTab(&actions, entry->tab_id, GetProfile());
   apc::TypeAction* type = actions.add_actions()->mutable_type();
   type->mutable_target()->set_content_node_id(node_id);
   type->mutable_target()
@@ -3298,13 +3772,15 @@ void BrowserTool::RunSelectAction(int node_id,
   }
 
   apc::Actions actions;
+  // Explicit tab_id wins; the registry's home tab is the fallback.
+  const int32_t resolved_tab_id = tab_id.value_or(entry->tab_id);
+  MaybePrependActivateTab(&actions, resolved_tab_id, GetProfile());
   apc::SelectAction* select = actions.add_actions()->mutable_select();
   select->mutable_target()->set_content_node_id(node_id);
   select->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
-  // Explicit tab_id wins; the registry's home tab is the fallback.
-  select->set_tab_id(tab_id.value_or(entry->tab_id));
+  select->set_tab_id(resolved_tab_id);
   select->set_value(std::move(value));
   RunActorAction(std::move(actions), "select", std::move(done));
 }
@@ -3318,14 +3794,16 @@ void BrowserTool::RunHoverAction(int node_id,
     return;
   }
   apc::Actions actions;
+  // Explicit tab_id wins; node's home tab is the fallback. Same
+  // convention as select / scroll_to.
+  const int32_t resolved_tab_id = tab_id.value_or(entry->tab_id);
+  MaybePrependActivateTab(&actions, resolved_tab_id, GetProfile());
   apc::MoveMouseAction* move = actions.add_actions()->mutable_move_mouse();
   move->mutable_target()->set_content_node_id(node_id);
   move->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
-  // Explicit tab_id wins; node's home tab is the fallback. Same
-  // convention as select / scroll_to.
-  move->set_tab_id(tab_id.value_or(entry->tab_id));
+  move->set_tab_id(resolved_tab_id);
   RunActorAction(std::move(actions), "hover", std::move(done));
 }
 
@@ -3363,6 +3841,8 @@ void BrowserTool::RunDragAndDropAction(int from_node_id,
     return;
   }
   apc::Actions actions;
+  const int32_t resolved_tab_id = tab_id.value_or(from_entry->tab_id);
+  MaybePrependActivateTab(&actions, resolved_tab_id, GetProfile());
   apc::DragAndReleaseAction* drag =
       actions.add_actions()->mutable_drag_and_release();
   drag->mutable_from_target()->set_content_node_id(from_node_id);
@@ -3373,7 +3853,7 @@ void BrowserTool::RunDragAndDropAction(int from_node_id,
   drag->mutable_to_target()
       ->mutable_document_identifier()
       ->set_serialized_token(to_entry->document_id);
-  drag->set_tab_id(tab_id.value_or(from_entry->tab_id));
+  drag->set_tab_id(resolved_tab_id);
   RunActorAction(std::move(actions), "drag_and_drop", std::move(done));
 }
 
@@ -3387,13 +3867,15 @@ void BrowserTool::RunScrollToAction(int node_id,
   }
 
   apc::Actions actions;
+  const int32_t resolved_tab_id = tab_id.value_or(entry->tab_id);
+  MaybePrependActivateTab(&actions, resolved_tab_id, GetProfile());
   apc::ScrollToAction* scroll_to =
       actions.add_actions()->mutable_scroll_to();
   scroll_to->mutable_target()->set_content_node_id(node_id);
   scroll_to->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
-  scroll_to->set_tab_id(tab_id.value_or(entry->tab_id));
+  scroll_to->set_tab_id(resolved_tab_id);
   RunActorAction(std::move(actions), "scroll_to", std::move(done));
 }
 
@@ -3402,26 +3884,43 @@ void BrowserTool::RunScrollAction(std::optional<int> node_id,
                                   std::string direction,
                                   double distance,
                                   ToolCallback done) {
-  apc::Actions actions;
-  apc::ScrollAction* scroll = actions.add_actions()->mutable_scroll();
-
-  // Index-targeted variant — populate the action's target from the
-  // registry; the actor will scroll inside that node. Without
-  // index the action falls through to a viewport scroll.
+  // Resolve the target tab first so we can prepend ActivateTab before
+  // building the scroll action proto.
+  int32_t resolved_tab_id = 0;
+  const NodeRegistry::Entry* entry = nullptr;
   if (node_id.has_value()) {
-    const NodeRegistry::Entry* entry =
-        LookupNode(*node_id, tab_id, done, "scroll");
+    entry = LookupNode(*node_id, tab_id, done, "scroll");
     if (!entry) {
       return;
     }
+    resolved_tab_id = tab_id.value_or(entry->tab_id);
+  } else {
+    // Viewport scroll — the actor's `BuildToolRequest` requires a
+    // tab_id on every ScrollAction (even with no node target), so
+    // resolve to the active tab when the LLM omits tab_id. Without
+    // this fallback the system-prompted shape
+    // `{type:"scroll", direction:"down", distance:N}` (no index, no
+    // tab_id) gets opaquely rejected with `invalid_action`, sending
+    // the agent into a wasted-turn loop chasing what looks like a
+    // schema mismatch.
+    std::optional<int32_t> resolved =
+        ResolveTabIdOrReject(tab_id, GetProfile(), "scroll", done);
+    if (!resolved.has_value()) {
+      return;
+    }
+    resolved_tab_id = *resolved;
+  }
+
+  apc::Actions actions;
+  MaybePrependActivateTab(&actions, resolved_tab_id, GetProfile());
+  apc::ScrollAction* scroll = actions.add_actions()->mutable_scroll();
+  if (entry != nullptr) {
     scroll->mutable_target()->set_content_node_id(*node_id);
     scroll->mutable_target()
         ->mutable_document_identifier()
         ->set_serialized_token(entry->document_id);
-    scroll->set_tab_id(tab_id.value_or(entry->tab_id));
-  } else if (tab_id.has_value()) {
-    scroll->set_tab_id(*tab_id);
   }
+  scroll->set_tab_id(resolved_tab_id);
 
   // Map the LLM-facing direction string to the actor's enum. Reject
   // values that aren't in the NEXUS_INPUT enum list.

@@ -6,6 +6,7 @@
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "WordFunc.nsh"
 
 !ifndef PRODUCT_NAME
   !define PRODUCT_NAME "Velloc Agent"
@@ -100,7 +101,63 @@ Function .onInit
   ${EndIf}
 FunctionEnd
 
+; Reads the installed product version (registry `pv`) for the current
+; install mode into $R2 ("" if not installed).
+!macro READ_INSTALL_INFO
+  ${If} $InstallMode == "system"
+    ReadRegStr $R2 HKLM "Software\\Velloc" "pv"
+    ReadRegStr $R3 HKLM "Software\\Velloc" "UninstallString"
+    ReadRegStr $R4 HKLM "Software\\Velloc" "UninstallArguments"
+  ${Else}
+    ReadRegStr $R2 HKCU "Software\\Velloc" "pv"
+    ReadRegStr $R3 HKCU "Software\\Velloc" "UninstallString"
+    ReadRegStr $R4 HKCU "Software\\Velloc" "UninstallArguments"
+  ${EndIf}
+!macroend
+
+; Legacy-scheme migration. Releases up to custom_browser-v149.0.3.x were
+; versioned {chromium major}.{minor}.{build}.{patch} — their first dotted
+; field is a chromium major (144..149). The composed scheme
+; ({CUSTOM_BROWSER_MAJOR}.{chromium major}.{interface}.{patch}, first field
+; a small product major, documented to stay < 100) sorts BELOW them, so
+; setup.exe would refuse the install as a downgrade (HIGHER_VERSION_EXISTS,
+; exit code 4). Detect a legacy install (first field >= 100) and silently
+; run its own recorded uninstaller first. User data is preserved (no
+; --delete-profile). Success is verified by re-reading `pv` rather than by
+; trusting setup.exe exit codes.
+Function UninstallLegacySchemeInstall
+  !insertmacro READ_INSTALL_INFO
+  ${If} $R2 == ""
+    Return                          ; nothing installed
+  ${EndIf}
+  ${WordFind} "$R2" "." "+1" $R5    ; first dotted field ("" -> 0 below)
+  ${If} $R5 < 100
+    Return                          ; already on the composed scheme
+  ${EndIf}
+
+  DetailPrint "Found legacy install $R2 — uninstalling it first..."
+  ${If} $R3 == ""
+    DetailPrint "Legacy install has no UninstallString; continuing (the mini installer will report the conflict)."
+    Return
+  ${EndIf}
+  ; $R4 (UninstallArguments) is registry-recorded, e.g. " --uninstall".
+  ; --force-uninstall makes Chromium's setup.exe uninstall without prompting.
+  ExecWait '"$R3"$R4 --force-uninstall' $R6
+
+  !insertmacro READ_INSTALL_INFO
+  ${If} $R2 != ""
+    ${WordFind} "$R2" "." "+1" $R5
+    ${If} $R5 >= 100
+      MessageBox MB_ICONSTOP "Could not remove the previous ${PRODUCT_NAME} version ($R2, uninstaller exit $R6). Close ${PRODUCT_NAME} and run this installer again, or uninstall it from Windows Settings first."
+      SetErrorLevel $R6
+      Abort
+    ${EndIf}
+  ${EndIf}
+  DetailPrint "Legacy install removed."
+FunctionEnd
+
 Section "Install"
+  Call UninstallLegacySchemeInstall
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
   SetCompress off

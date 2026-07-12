@@ -6,12 +6,15 @@ import {
   type CSSResultGroup,
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {
+  onBuildInfo,
   onDismissBootWelcome,
   onMainContentsLayout,
+  type BuildInfoPayload,
   type MainContentsLayoutPayload,
 } from './nexus_ui_event_client.js';
 
 import './nexus_welcome.js';
+import type {LoadingStage} from './nexus_welcome.js';
 import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 
 // Wall-clock fallback in case the React guest never sends
@@ -91,6 +94,16 @@ export class NexusViewElement extends CrLitElement {
   // 'nexusDismissBootWelcome' event (fired when the React guest calls
   // nexus.ui.dismissBootWelcome) or the fallback timer.
   private bootWelcomeDismissed_ = false;
+  // Guest bundle build time (ISO string), pushed once by the guest early in
+  // boot via nexus.ui.buildInfo. Empty until it arrives; passed down to the
+  // <nexus-welcome> overlay whose footer renders it. Applied via
+  // requestUpdate() (like bootWelcomeDismissed_) — a single low-frequency
+  // event, not a per-frame stream.
+  private buildTime_ = '';
+  // Current boot stage, advanced by the host handshake (bootstrapNexusGuest)
+  // and passed to <nexus-welcome> for the footer's live loading-status
+  // segment. Applied via requestUpdate() like the other overlay inputs.
+  private loadingStage_: LoadingStage = 'starting';
   // Latest guest-reported webview_area geometry. Null until the first
   // event. Applied imperatively (not via render()) — splitter drags in
   // the guest stream one event per frame and a full lit re-render per
@@ -107,6 +120,7 @@ export class NexusViewElement extends CrLitElement {
   private mainContentsEl_: HTMLElement|null = null;
   private dismissBootWelcomeUnsubscribe_: (() => void)|null = null;
   private mainContentsLayoutUnsubscribe_: (() => void)|null = null;
+  private buildInfoUnsubscribe_: (() => void)|null = null;
   private dismissBootWelcomeFallbackTimer_: number|null = null;
 
   constructor() {
@@ -121,6 +135,8 @@ export class NexusViewElement extends CrLitElement {
         () => this.onDismissBootWelcome_('signal'));
     this.mainContentsLayoutUnsubscribe_ = onMainContentsLayout(
         payload => this.onMainContentsLayout_(payload));
+    this.buildInfoUnsubscribe_ = onBuildInfo(
+        payload => this.onBuildInfo_(payload));
   }
 
   override firstUpdated() {
@@ -141,12 +157,21 @@ export class NexusViewElement extends CrLitElement {
     // — no chrome://glic intermediate.
     const webview = this.shadowRoot?.getElementById('nexusPane');
     if (webview) {
-      void bootstrapNexusGuest(webview).catch((error: unknown) => {
-        console.error('[NexusView] bootstrapNexusGuest failed', error);
-      });
+      void bootstrapNexusGuest(webview, stage => this.onLoadingStage_(stage))
+          .catch((error: unknown) => {
+            console.error('[NexusView] bootstrapNexusGuest failed', error);
+          });
     } else {
       console.error('[NexusView] missing #nexusPane <webview> element');
     }
+  }
+
+  private onLoadingStage_(stage: LoadingStage) {
+    if (stage === this.loadingStage_) {
+      return;
+    }
+    this.loadingStage_ = stage;
+    this.requestUpdate();
   }
 
   override disconnectedCallback(): void {
@@ -157,6 +182,10 @@ export class NexusViewElement extends CrLitElement {
     if (this.mainContentsLayoutUnsubscribe_) {
       this.mainContentsLayoutUnsubscribe_();
       this.mainContentsLayoutUnsubscribe_ = null;
+    }
+    if (this.buildInfoUnsubscribe_) {
+      this.buildInfoUnsubscribe_();
+      this.buildInfoUnsubscribe_ = null;
     }
     this.clearDismissBootWelcomeFallbackTimer_();
     super.disconnectedCallback();
@@ -178,6 +207,16 @@ export class NexusViewElement extends CrLitElement {
   private onMainContentsLayout_(payload: MainContentsLayoutPayload) {
     this.mainContentsLayout_ = payload;
     this.applyMainContentsLayout_();
+  }
+
+  private onBuildInfo_(payload: BuildInfoPayload) {
+    if (payload.buildTime === this.buildTime_) {
+      return;
+    }
+    this.buildTime_ = payload.buildTime;
+    // Only the overlay renders it, so a re-render after dismissal is wasted;
+    // still cheap and harmless (the overlay is gone from the tree by then).
+    this.requestUpdate();
   }
 
   // Mirrors the guest-reported rect into <main-contents-view>'s inline
@@ -246,7 +285,9 @@ export class NexusViewElement extends CrLitElement {
       </webview>
       <main-contents-view></main-contents-view>
       ${this.bootWelcomeDismissed_ ? nothing : html`
-        <nexus-welcome class="welcome-overlay"></nexus-welcome>
+        <nexus-welcome class="welcome-overlay"
+            .buildTime=${this.buildTime_}
+            .loadingStage=${this.loadingStage_}></nexus-welcome>
       `}
     `;
   }

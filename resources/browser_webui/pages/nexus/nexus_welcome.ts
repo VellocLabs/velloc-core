@@ -27,20 +27,88 @@ import {getString} from './nexus_shared.js';
 // (Chrome's UI language), so the parent and guest always agree.
 type WelcomeLocale = 'en'|'zh'|'es'|'fr'|'de';
 
+// Host-observable boot stages, in order. Driven by <nexus-view> from the
+// `bootstrapNexusGuest` handshake (nexus_runtime_bootstrap.ts) — the overlay
+// lives in the same page, so no bridge is needed. `starting` is the default
+// before the handshake begins; the overlay is torn down at the interactive
+// moment so there is no terminal "ready" stage to show.
+export type LoadingStage = 'starting'|'connecting'|'linking'|'loading';
+
 interface WelcomeCopy {
   greeting: string;
   subtitle: string;
+  // Footer client label; `{product}` is substituted with the product name.
+  // Placement mirrors the guest's `settings.about.client` per locale.
+  client: string;
+  // Footer runtime line; `{date}` is substituted with the formatted build
+  // time. Uses "built" (vs the About page's "Runtime ({date})") to make
+  // explicit that the date is the runtime's build time.
+  runtimeBuilt: string;
+  // Footer live loading-status label per boot stage.
+  loading: Record<LoadingStage, string>;
 }
 
 const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
-  en: {greeting: 'Hello there!', subtitle: 'How can I help you today?'},
-  zh: {greeting: '你好！', subtitle: '有什么可以帮你的吗？'},
-  es: {greeting: '¡Hola!', subtitle: '¿En qué puedo ayudarte hoy?'},
+  en: {
+    greeting: 'Hello there!',
+    subtitle: 'How can I help you today?',
+    client: '{product} Client',
+    runtimeBuilt: 'Runtime built {date}',
+    loading: {
+      starting: 'Starting up…',
+      connecting: 'Connecting…',
+      linking: 'Preparing…',
+      loading: 'Almost ready…',
+    },
+  },
+  zh: {
+    greeting: '你好！',
+    subtitle: '有什么可以帮你的吗？',
+    client: '{product} 客户端',
+    runtimeBuilt: '运行时构建于 {date}',
+    loading: {
+      starting: '正在启动…',
+      connecting: '正在连接…',
+      linking: '正在准备…',
+      loading: '即将就绪…',
+    },
+  },
+  es: {
+    greeting: '¡Hola!',
+    subtitle: '¿En qué puedo ayudarte hoy?',
+    client: 'Cliente {product}',
+    runtimeBuilt: 'Runtime compilado el {date}',
+    loading: {
+      starting: 'Iniciando…',
+      connecting: 'Conectando…',
+      linking: 'Preparando…',
+      loading: 'Casi listo…',
+    },
+  },
   fr: {
     greeting: 'Bonjour !',
     subtitle: 'Comment puis-je vous aider aujourd’hui ?',
+    client: 'Client {product}',
+    runtimeBuilt: 'Runtime compilé le {date}',
+    loading: {
+      starting: 'Démarrage…',
+      connecting: 'Connexion…',
+      linking: 'Préparation…',
+      loading: 'Bientôt prêt…',
+    },
   },
-  de: {greeting: 'Hallo!', subtitle: 'Wie kann ich dir heute helfen?'},
+  de: {
+    greeting: 'Hallo!',
+    subtitle: 'Wie kann ich dir heute helfen?',
+    client: '{product}-Client',
+    runtimeBuilt: 'Runtime erstellt am {date}',
+    loading: {
+      starting: 'Wird gestartet…',
+      connecting: 'Verbinden…',
+      linking: 'Wird vorbereitet…',
+      loading: 'Fast fertig…',
+    },
+  },
 };
 
 function resolveWelcomeLocale(raw: string|null|undefined): WelcomeLocale {
@@ -73,13 +141,29 @@ export class NexusWelcomeElement extends CrLitElement {
       justify-content: center;
       width: 100%;
       height: 100%;
+      /* Keep padding INSIDE the 100% box. Without this the default
+       * content-box sizing makes the host 48px (2 x 24px) taller than its
+       * container, and the container's overflow:hidden clips the bottom —
+       * which pushed the bottom-anchored .welcome-footer off-screen. */
+      box-sizing: border-box;
       padding: 24px;
       background:
           linear-gradient(180deg, #e2e8f0 0%, #f8fafc 45%, #ffffff 100%);
       color: #0f172a;
       font-family: ui-sans-serif, system-ui, sans-serif;
       overflow: hidden;
-      pointer-events: none;
+      /* The whole boot overlay is a window-drag handle. The parent WebUI view
+       * (custom_browser_webui_view.cc) supports web draggable regions, so
+       * -webkit-app-region:drag here makes dragging anywhere on the welcome
+       * page move the window. pointer-events:auto (was :none) makes the
+       * overlay the interaction surface — click-through to the still-booting
+       * guest isn't needed while the overlay is up. */
+      -webkit-app-region: drag;
+      pointer-events: auto;
+      /* Containing block for the absolutely positioned footer. The parent's
+       * .welcome-overlay rule also sets position:absolute (higher
+       * specificity); either way the footer anchors to this host. */
+      position: relative;
     }
 
     @keyframes nexus-loading-flash {
@@ -123,13 +207,102 @@ export class NexusWelcomeElement extends CrLitElement {
       white-space: nowrap;
       border: 0;
     }
+
+    /* Subtle version/build metadata pinned to the bottom center. Transparent,
+     * no card/border/shadow; label and value share one muted color. */
+    .welcome-footer {
+      position: absolute;
+      bottom: 28px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 18px;
+      color: #8A8F98;
+      white-space: nowrap;
+    }
+
+    .welcome-footer .sep {
+      color: #C2C7CF;
+    }
   `;
 
+  // ISO build-time string, set by <nexus-view> via the `.buildTime=` binding
+  // once the guest's nexus.ui.buildInfo broadcast arrives. Empty until then;
+  // while empty the footer shows only the client + version line.
+  //
+  // A plain field + manual setter (NOT a Lit `static properties` reactive
+  // prop): Lit's `.buildTime=` binding assigns the JS property, which invokes
+  // this setter and calls requestUpdate() to repaint the footer. This matches
+  // the requestUpdate() convention the other pages/nexus/ elements use and
+  // avoids the reactive-property machinery entirely.
+  private buildTime_ = '';
+
+  get buildTime(): string {
+    return this.buildTime_;
+  }
+
+  set buildTime(value: string) {
+    if (value === this.buildTime_) {
+      return;
+    }
+    this.buildTime_ = value;
+    this.requestUpdate();
+  }
+
+  // Current boot stage, set by <nexus-view> via the `.loadingStage=` binding
+  // as the host handshake progresses. Same manual-setter pattern as
+  // `buildTime`; rendered as the live trailing footer segment.
+  private loadingStage_: LoadingStage = 'starting';
+
+  get loadingStage(): LoadingStage {
+    return this.loadingStage_;
+  }
+
+  set loadingStage(value: LoadingStage) {
+    if (value === this.loadingStage_) {
+      return;
+    }
+    this.loadingStage_ = value;
+    this.requestUpdate();
+  }
+
+  // Format an ISO build timestamp for the footer, matching the guest's
+  // formatBuildTime() options so the boot overlay and the About page render
+  // the same "Jul 11, 2026, 5:30 PM" form. Empty for missing/invalid input.
+  private formatBuildTime_(iso: string, locale: string): string {
+    if (!iso) {
+      return '';
+    }
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+      return '';
+    }
+    return d.toLocaleString(locale, {dateStyle: 'medium', timeStyle: 'short'});
+  }
+
   protected override render() {
-    const copy = WELCOME_COPY[resolveWelcomeLocale(navigator.language)];
+    const locale = navigator.language;
+    const copy = WELCOME_COPY[resolveWelcomeLocale(locale)];
+    const productName = getString('customBrowserProductName', 'Velloc');
+    const version = getString('customBrowserProductVersion', '');
+    // e.g. "Velloc Client 1.149.1.0" (client-label placement is localized).
+    const clientText =
+        copy.client.replace('{product}', productName) +
+        (version ? ` ${version}` : '');
+    // Async: empty until the guest pushes the build time.
+    const buildTime = this.formatBuildTime_(this.buildTime, locale);
+    const runtimeText =
+        buildTime ? copy.runtimeBuilt.replace('{date}', buildTime) : '';
+    const loadingText = copy.loading[this.loadingStage_] ?? '';
+    // Footer format: {client version} · {runtime} · {loading status}. The
+    // runtime segment is omitted until the async build time arrives; the
+    // segments are dot-separated with a lighter middot.
+    const segments = [clientText, runtimeText, loadingText].filter(Boolean);
     return html`
       <span class="visually-hidden" role="status" aria-busy="true">
-        Loading ${getString('customBrowserProductName', 'Velloc')}
+        Loading ${productName}
       </span>
       <img class="welcome-logo"
           srcset="nexus_welcome_logo.png 1x,
@@ -140,6 +313,10 @@ export class NexusWelcomeElement extends CrLitElement {
       <div class="welcome-text">
         <div class="welcome-title">${copy.greeting}</div>
         <div class="welcome-subtitle">${copy.subtitle}</div>
+      </div>
+      <div class="welcome-footer">
+        ${segments.map((seg, i) => html`${
+            i > 0 ? html`<span class="sep"> · </span>` : ''}${seg}`)}
       </div>
     `;
   }

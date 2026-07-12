@@ -64,6 +64,20 @@ export interface MainContentsLayoutPayload {
 export type MainContentsLayoutHandler =
     (payload: MainContentsLayoutPayload) => void;
 
+/**
+ * Wire shape of the `ui.buildInfo` payload — the guest bundle's build
+ * time (`__NEXUS_BUILD_TIME__`, an ISO string). Re-declared here (not
+ * imported) because the WebUI bundle is a separate build — same rationale
+ * as `MainContentsLayoutPayload`. Only the guest knows this value, so the
+ * boot-welcome footer learns it via this push (the host can't read it from
+ * `loadTimeData`).
+ */
+export interface BuildInfoPayload {
+  buildTime: string;
+}
+
+export type BuildInfoHandler = (payload: BuildInfoPayload) => void;
+
 // -----------------------------------------------------------------------------
 // Transport cache — same shape as nexus_session_state_client.
 // -----------------------------------------------------------------------------
@@ -75,6 +89,7 @@ let cachedTransport: NexusWebUiBridgeTransport|null = null;
 let readyPromise: Promise<NexusWebUiBridgeTransport>|null = null;
 const dismissHandlers = new Set<UiEventHandler>();
 const mainContentsLayoutHandlers = new Set<MainContentsLayoutHandler>();
+const buildInfoHandlers = new Set<BuildInfoHandler>();
 let subscribedToBridge = false;
 
 const WEBVIEW_READY_TIMEOUT_MS = 30_000;
@@ -162,6 +177,18 @@ async function getTransportAsync(): Promise<NexusWebUiBridgeTransport> {
                     '[nexus-ui-event] mainContentsLayout handler threw:', e);
               }
             }
+          } else if (event.route.action === 'buildInfo') {
+            const payload = event.payload as unknown as
+                BuildInfoPayload | undefined;
+            if (!payload || typeof payload.buildTime !== 'string') return;
+            for (const handler of buildInfoHandlers) {
+              try {
+                handler(payload);
+              } catch (e) {
+                console.error(
+                    '[nexus-ui-event] buildInfo handler threw:', e);
+              }
+            }
           }
         });
         subscribedToBridge = true;
@@ -221,5 +248,23 @@ export function onMainContentsLayout(
   });
   return () => {
     mainContentsLayoutHandlers.delete(handler);
+  };
+}
+
+/**
+ * Subscribe to `nexus.ui.buildInfo` push events. Returns an unsubscribe
+ * function. Fired once early in the guest's boot with the guest bundle's
+ * build time; the `nexus_view.ts` host feeds it into the boot-welcome
+ * overlay's footer. The SharedWorker replays the last payload on port
+ * attach, so a late subscriber still converges.
+ */
+export function onBuildInfo(handler: BuildInfoHandler): () => void {
+  buildInfoHandlers.add(handler);
+  void getTransportAsync().catch(() => {
+    /* connection failures surface as missed events; the worker's
+     * replay-on-attach covers reconnects. */
+  });
+  return () => {
+    buildInfoHandlers.delete(handler);
   };
 }

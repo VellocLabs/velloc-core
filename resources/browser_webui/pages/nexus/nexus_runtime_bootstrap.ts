@@ -27,6 +27,12 @@ import {NexusBridgeBootstrap} from
     '../../nexus_bridge_bootstrap.mojom-webui.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 
+import type {LoadingStage} from './nexus_welcome.js';
+
+// Reports host-side handshake progress to the boot-welcome overlay's footer.
+// Same page/process as the overlay, so this is a direct callback — no bridge.
+export type BootStatusReporter = (stage: LoadingStage) => void;
+
 const NEXUS_INIT_PING_INTERVAL_MS = 100;
 const NEXUS_INIT_TIMEOUT_MS = 30_000;
 const BRIDGE_BOOTSTRAP_TIMEOUT_MS = 30_000;
@@ -232,12 +238,20 @@ function waitForBootstrapAndForward(
 }
 
 export async function bootstrapNexusGuest(
-    webview: HTMLElement | null): Promise<void> {
+    webview: HTMLElement | null,
+    onStatus?: BootStatusReporter): Promise<void> {
   if (!isBootstrapWebView(webview)) {
     throw new Error(
         'bootstrapNexusGuest requires a <webview> element; got ' +
         (webview ? webview.tagName : 'null'));
   }
+  const reportStatus = (stage: LoadingStage) => {
+    try {
+      onStatus?.(stage);
+    } catch {
+      // Status is cosmetic; never let a reporter throw break the handshake.
+    }
+  };
 
   // Capture the narrowed element in a const so the BootstrapWebView
   // narrowing survives into the closures below (a mutable parameter widens
@@ -283,9 +297,13 @@ export async function bootstrapNexusGuest(
     void (async () => {
       try {
         await waitForGuestAck(guest, guestOrigin, signal);
+        // Guest acked the handshake; mint + forward the bridge ports next.
+        reportStatus('linking');
         NexusBridgeBootstrap.getRemote().guestReady();
         debugTrace('called NexusBridgeBootstrap.guestReady()', {reason});
         await waitForBootstrapAndForward(guest, guestOrigin, signal);
+        // Ports handed to the webview; the guest now boots its own runtime.
+        reportStatus('loading');
         debugTrace('bootstrap complete; runtime ports owned by the webview', {
           reason,
         });
@@ -307,5 +325,7 @@ export async function bootstrapNexusGuest(
   // listener before setting `src` so the very first load is captured.
   guest.addEventListener('contentload', () => runHandshake('contentload'));
 
+  // About to load the guest page + run the handshake.
+  reportStatus('connecting');
   guest.src = guestUrl.toString();
 }

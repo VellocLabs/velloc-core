@@ -29,6 +29,15 @@
   !define /math MINI_VER_BUILD ${MINI_VER_LOW} >> 16
   !define /math MINI_VER_PATCH ${MINI_VER_LOW} & 0xFFFF
   !define PRODUCT_VERSION "${MINI_VER_MAJOR}.${MINI_VER_MINOR}.${MINI_VER_BUILD}.${MINI_VER_PATCH}"
+  ; Packaging guard: the wrapper EMBEDS mini_installer.exe at compile time,
+  ; so a stale artifact ships silently. A first field >= 100 is the legacy
+  ; {chromium major}-first scheme — this wrapper would then uninstall the
+  ; user's legacy install only to reinstall another legacy build (looks
+  ; exactly like "the installer did not overwrite"). Rebuild it first:
+  ;   autoninja -C out/Velloc mini_installer
+  !if ${MINI_VER_MAJOR} >= 100
+    !error "mini_installer.exe at ${MINI_INSTALLER_SOURCE} is version ${MINI_VER_MAJOR}.${MINI_VER_MINOR}.${MINI_VER_BUILD}.${MINI_VER_PATCH} — a legacy-scheme build. Rebuild mini_installer before packaging the wrapper."
+  !endif
   !undef MINI_VER_HIGH
   !undef MINI_VER_LOW
   !undef MINI_VER_MAJOR
@@ -148,7 +157,7 @@ Function UninstallLegacySchemeInstall
   ${If} $R2 != ""
     ${WordFind} "$R2" "." "+1" $R5
     ${If} $R5 >= 100
-      MessageBox MB_ICONSTOP "Could not remove the previous ${PRODUCT_NAME} version ($R2, uninstaller exit $R6). Close ${PRODUCT_NAME} and run this installer again, or uninstall it from Windows Settings first."
+      MessageBox MB_ICONSTOP "Could not remove the previous ${PRODUCT_NAME} version ($R2, uninstaller exit $R6). Close ${PRODUCT_NAME} and run this installer again, or uninstall it from Windows Settings first." /SD IDOK
       SetErrorLevel $R6
       Abort
     ${EndIf}
@@ -179,7 +188,7 @@ Section "Install"
     DetailPrint "Mini installer completed successfully."
   ${Else}
     DetailPrint "Mini installer failed with exit code $MiniExit."
-    MessageBox MB_ICONSTOP "Installation failed (exit code $MiniExit)."
+    MessageBox MB_ICONSTOP "Installation failed (exit code $MiniExit)." /SD IDOK
     SetErrorLevel $MiniExit
     Abort
   ${EndIf}

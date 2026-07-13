@@ -32,6 +32,8 @@ constexpr const char* kProviderIds[] = {
     "kimi",
     "deepseek",
     "ollama",
+    "custom-openai",
+    "custom-anthropic",
 };
 
 // OpenAI-compatible providers. The request/response format, SSE streaming,
@@ -119,6 +121,25 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
 
   if (provider_id == "ollama")
     return std::make_unique<OllamaProvider>(url_loader_factory);
+
+  // User-configurable custom endpoints. No default base URL (the user supplies
+  // it in Settings → Models) and no required API key — many compatible
+  // endpoints run keyless (e.g. cursor-api-proxy, LM Studio, local gateways).
+  // The wire dialect is chosen by which class we instantiate: custom-openai
+  // speaks OpenAI /chat/completions, custom-anthropic speaks the Anthropic
+  // /v1/messages API.
+  if (provider_id == "custom-openai") {
+    return std::make_unique<OpenAiProvider>(
+        url_loader_factory, "custom-openai", "Custom (OpenAI-compatible)",
+        /*default_base_url=*/std::string(), /*uses_responses_api=*/false,
+        /*extra_headers=*/std::map<std::string, std::string>{},
+        /*requires_api_key=*/false);
+  }
+  if (provider_id == "custom-anthropic") {
+    return std::make_unique<AnthropicProvider>(
+        url_loader_factory, "custom-anthropic", "Custom (Anthropic-compatible)",
+        /*default_base_url=*/std::string(), /*requires_api_key=*/false);
+  }
 
   for (const auto& config : kOpenAiCompatConfigs) {
     if (provider_id == config.id) {

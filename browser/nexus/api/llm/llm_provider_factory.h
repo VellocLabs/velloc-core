@@ -19,8 +19,10 @@ class LlmProvider;
 // Creates LlmProvider instances by provider ID.
 //
 // Adding a new provider:
-//   1. Create files in providers/{name}/.
-//   2. Register the ID in CreateProvider() and GetRegisteredProviderIds().
+//   1. Create files in providers/{name}/ — or, for an endpoint that speaks the
+//      OpenAI or Anthropic wire format, reuse OpenAiProvider / AnthropicProvider
+//      via their parameterized (id, display_name, default_base_url) ctor.
+//   2. Register the ID in CreateProvider() and add it to kProviderIds.
 class LlmProviderFactory {
  public:
   LlmProviderFactory() = delete;

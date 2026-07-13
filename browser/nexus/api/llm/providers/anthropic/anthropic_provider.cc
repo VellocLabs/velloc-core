@@ -504,7 +504,22 @@ struct AnthropicProvider::PendingGenerate {
 
 AnthropicProvider::AnthropicProvider(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
-    : base_url_("https://api.anthropic.com"),
+    : AnthropicProvider(std::move(url_loader_factory),
+                        std::string(kAnthropicProviderId),
+                        std::string(kAnthropicDisplayName),
+                        "https://api.anthropic.com") {}
+
+AnthropicProvider::AnthropicProvider(
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    std::string provider_id,
+    std::string display_name,
+    std::string default_base_url,
+    bool requires_api_key)
+    : provider_id_(std::move(provider_id)),
+      display_name_(std::move(display_name)),
+      default_base_url_(std::move(default_base_url)),
+      requires_api_key_(requires_api_key),
+      base_url_(default_base_url_),
       url_loader_factory_(std::move(url_loader_factory)) {}
 
 AnthropicProvider::~AnthropicProvider() {
@@ -512,11 +527,11 @@ AnthropicProvider::~AnthropicProvider() {
 }
 
 std::string AnthropicProvider::GetId() const {
-  return std::string(kAnthropicProviderId);
+  return provider_id_;
 }
 
 std::string AnthropicProvider::GetDisplayName() const {
-  return std::string(kAnthropicDisplayName);
+  return display_name_;
 }
 
 LlmProviderType AnthropicProvider::GetProviderType() const {
@@ -543,7 +558,9 @@ bool AnthropicProvider::SupportsTools() const {
 
 bool AnthropicProvider::IsConfigured() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return !api_key_.empty();
+  // Custom/proxy providers may run keyless (requires_api_key_ == false); they
+  // count as configured once a base URL is set.
+  return requires_api_key_ ? !api_key_.empty() : !base_url_.empty();
 }
 
 bool AnthropicProvider::Configure(const base::DictValue& config) {
@@ -563,7 +580,7 @@ bool AnthropicProvider::Configure(const base::DictValue& config) {
     }
   }
 
-  return !api_key_.empty();
+  return IsConfigured();
 }
 
 // ---------------------------------------------------------------------------
@@ -1347,7 +1364,7 @@ std::string AnthropicProvider::GenerateRequestId() {
 }
 
 std::string AnthropicProvider::GetDefaultBaseUrl() const {
-  return "https://api.anthropic.com";
+  return default_base_url_;
 }
 
 std::string AnthropicProvider::GetBaseUrl() const {

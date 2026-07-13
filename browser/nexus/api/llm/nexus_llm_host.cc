@@ -497,6 +497,11 @@ std::string ResolveProviderIconSvg(const std::string& provider_id) {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_GLM_SVG;
   } else if (provider_id == "deepseek") {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_DEEPSEEK_SVG;
+  } else if (provider_id == "custom-openai" ||
+             provider_id == "custom-anthropic") {
+    // Both user-configured custom-endpoint dialects share one neutral cube
+    // mark (no vendor brand applies to an arbitrary endpoint).
+    resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_CUSTOM_SVG;
   }
 
   if (resource_id != 0 && ui::ResourceBundle::HasSharedInstance()) {

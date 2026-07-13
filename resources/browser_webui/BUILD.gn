@@ -27,6 +27,7 @@ build_webui("build") {
     "components/tab_indicators/alert_indicators/tab_usb_connected.svg",
     "components/tab_indicators/alert_indicators/vr_headset.svg",
     "components/nexus/anthropic.svg",
+    "components/nexus/custom.svg",
     "components/nexus/deepseek.svg",
     "components/nexus/githubcopilot.svg",
     "components/nexus/glm.svg",

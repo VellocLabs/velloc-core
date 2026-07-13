@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/values.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,8 +29,15 @@ TEST(LlmProviderFactoryTest, CreateKnownProvidersReturnsInstanceWithMatchingId) 
     EXPECT_EQ(provider->GetId(), id);
     EXPECT_FALSE(provider->GetDisplayName().empty())
         << "DisplayName was empty for id=" << id;
-    EXPECT_FALSE(provider->GetDefaultBaseUrl().empty())
-        << "DefaultBaseUrl was empty for id=" << id;
+    // Custom endpoints intentionally ship no default base URL — the user
+    // supplies it in Settings → Models. Every built-in provider has a default.
+    if (id == "custom-openai" || id == "custom-anthropic") {
+      EXPECT_TRUE(provider->GetDefaultBaseUrl().empty())
+          << "Custom endpoint should have no default base URL: id=" << id;
+    } else {
+      EXPECT_FALSE(provider->GetDefaultBaseUrl().empty())
+          << "DefaultBaseUrl was empty for id=" << id;
+    }
   }
 }
 
@@ -62,6 +70,49 @@ TEST(LlmProviderFactoryTest, RegisteredIdsIncludeAllExpectedProviders) {
   EXPECT_TRUE(contains("minimax"));
   EXPECT_TRUE(contains("qwen"));
   EXPECT_TRUE(contains("deepseek"));
+  // User-configurable custom endpoints (one per wire dialect).
+  EXPECT_TRUE(contains("custom-openai"));
+  EXPECT_TRUE(contains("custom-anthropic"));
+}
+
+TEST(LlmProviderFactoryTest, CustomProvidersHaveExpectedIdentity) {
+  auto openai =
+      LlmProviderFactory::CreateProvider("custom-openai", NullLoaderFactory());
+  auto anthropic = LlmProviderFactory::CreateProvider("custom-anthropic",
+                                                       NullLoaderFactory());
+  ASSERT_TRUE(openai && anthropic);
+
+  EXPECT_EQ(openai->GetId(), "custom-openai");
+  EXPECT_EQ(openai->GetDisplayName(), "Custom (OpenAI-compatible)");
+  EXPECT_TRUE(openai->GetDefaultBaseUrl().empty());
+
+  EXPECT_EQ(anthropic->GetId(), "custom-anthropic");
+  EXPECT_EQ(anthropic->GetDisplayName(), "Custom (Anthropic-compatible)");
+  EXPECT_TRUE(anthropic->GetDefaultBaseUrl().empty());
+}
+
+// Custom endpoints run keyless: unconfigured until a base URL is set, then
+// configured without any API key (many compatible proxies need none).
+TEST(LlmProviderFactoryTest, CustomProvidersAreKeylessConfigurable) {
+  auto openai =
+      LlmProviderFactory::CreateProvider("custom-openai", NullLoaderFactory());
+  ASSERT_TRUE(openai);
+  EXPECT_FALSE(openai->IsConfigured());
+  base::Value::Dict openai_cfg;
+  openai_cfg.Set("base_url", "http://127.0.0.1:8765/v1");
+  EXPECT_TRUE(openai->Configure(openai_cfg));
+  EXPECT_TRUE(openai->IsConfigured());
+  EXPECT_EQ(openai->GetBaseUrl(), "http://127.0.0.1:8765/v1");
+
+  auto anthropic = LlmProviderFactory::CreateProvider("custom-anthropic",
+                                                      NullLoaderFactory());
+  ASSERT_TRUE(anthropic);
+  EXPECT_FALSE(anthropic->IsConfigured());
+  base::Value::Dict anthropic_cfg;
+  anthropic_cfg.Set("base_url", "http://127.0.0.1:8765");
+  EXPECT_TRUE(anthropic->Configure(anthropic_cfg));
+  EXPECT_TRUE(anthropic->IsConfigured());
+  EXPECT_EQ(anthropic->GetBaseUrl(), "http://127.0.0.1:8765");
 }
 
 TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveDistinctBaseUrls) {

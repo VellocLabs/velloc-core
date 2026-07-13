@@ -257,12 +257,14 @@ OpenAiProvider::OpenAiProvider(
     std::string display_name,
     std::string default_base_url,
     bool uses_responses_api,
-    std::map<std::string, std::string> extra_headers)
+    std::map<std::string, std::string> extra_headers,
+    bool requires_api_key)
     : provider_id_(std::move(provider_id)),
       display_name_(std::move(display_name)),
       default_base_url_(std::move(default_base_url)),
       base_url_(default_base_url_),
       uses_responses_api_(uses_responses_api),
+      requires_api_key_(requires_api_key),
       extra_headers_(std::move(extra_headers)),
       url_loader_factory_(std::move(url_loader_factory)) {}
 
@@ -304,18 +306,21 @@ bool OpenAiProvider::SupportsTools() const {
 }
 
 bool OpenAiProvider::IsConfigured() const {
-  return !api_key_.empty();
+  // Custom/proxy providers may run keyless (requires_api_key_ == false); they
+  // count as configured once a base URL is set.
+  return requires_api_key_ ? !api_key_.empty() : !base_url_.empty();
 }
 
 bool OpenAiProvider::Configure(const base::DictValue& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   const std::string* api_key = config.FindString("api_key");
-  if (!api_key || api_key->empty()) {
+  if (api_key && !api_key->empty()) {
+    api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*api_key);
+  } else if (requires_api_key_) {
     DLOG(ERROR) << display_name_ << " provider requires a non-empty api_key";
     return false;
   }
-  api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*api_key);
 
   if (const std::string* base_url = config.FindString("base_url");
       base_url && !base_url->empty()) {
@@ -334,7 +339,7 @@ bool OpenAiProvider::Configure(const base::DictValue& config) {
     account_id_ = *account_id;
   }
 
-  return true;
+  return IsConfigured();
 }
 
 void OpenAiProvider::ApplyExtraHeaders(

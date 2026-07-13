@@ -26,6 +26,18 @@ class AnthropicProvider : public LlmProvider {
  public:
   explicit AnthropicProvider(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+
+  // Parameterized constructor for reusing the Anthropic Messages-API wire
+  // format under a different identity / endpoint (e.g. the user-configured
+  // "custom-anthropic" provider). `requires_api_key` false lets a keyless
+  // proxy count as configured once a base URL is set.
+  AnthropicProvider(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      std::string provider_id,
+      std::string display_name,
+      std::string default_base_url,
+      bool requires_api_key = true);
+
   ~AnthropicProvider() override;
 
   AnthropicProvider(const AnthropicProvider&) = delete;
@@ -77,6 +89,10 @@ class AnthropicProvider : public LlmProvider {
   void OnFetchModelsComplete(FetchModelsCallback callback,
                              std::optional<std::string> response_body);
 
+  const std::string provider_id_;
+  const std::string display_name_;
+  const std::string default_base_url_;
+  const bool requires_api_key_;
   std::string api_key_;
   std::string base_url_;
   std::string model_id_;

@@ -42,14 +42,17 @@ class OpenAiProvider : public LlmProvider {
   // and event-driven SSE parser (vs /chat/completions). `extra_headers` are
   // added to every inference request. Used by the OAuth-backed ChatGPT
   // Plus/Pro provider, which speaks the Responses API against the Codex
-  // backend with `originator` / `OpenAI-Beta` headers.
+  // backend with `originator` / `OpenAI-Beta` headers. `requires_api_key`
+  // false lets a keyless proxy (e.g. the user-configured "custom-openai"
+  // provider) count as configured with only a base URL.
   OpenAiProvider(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::string provider_id,
       std::string display_name,
       std::string default_base_url,
       bool uses_responses_api,
-      std::map<std::string, std::string> extra_headers);
+      std::map<std::string, std::string> extra_headers,
+      bool requires_api_key = true);
 
   ~OpenAiProvider() override;
 
@@ -147,6 +150,10 @@ class OpenAiProvider : public LlmProvider {
   // True → route requests through the OpenAI Responses API (/responses) and
   // its event-driven SSE parser. Set per-provider in the constructor.
   const bool uses_responses_api_;
+  // False → this provider may run keyless (custom/proxy endpoints); it counts
+  // as configured once a base URL is set, and Configure() tolerates an empty
+  // api_key. True for every built-in cloud provider.
+  const bool requires_api_key_;
   // Extra headers added to every inference request (e.g. originator,
   // OpenAI-Beta for the ChatGPT Codex backend).
   const std::map<std::string, std::string> extra_headers_;

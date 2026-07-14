@@ -6,15 +6,17 @@ import {
   type CSSResultGroup,
 } from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import {
+  onBootProgress,
   onBuildInfo,
   onDismissBootWelcome,
   onMainContentsLayout,
+  type BootProgressPayload,
   type BuildInfoPayload,
   type MainContentsLayoutPayload,
 } from './nexus_ui_event_client.js';
 
 import './nexus_welcome.js';
-import type {LoadingStage} from './nexus_welcome.js';
+import {LOADING_STAGE_ORDER, type LoadingStage} from './nexus_welcome.js';
 import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 
 // Wall-clock fallback in case the React guest never sends
@@ -121,6 +123,7 @@ export class NexusViewElement extends CrLitElement {
   private dismissBootWelcomeUnsubscribe_: (() => void)|null = null;
   private mainContentsLayoutUnsubscribe_: (() => void)|null = null;
   private buildInfoUnsubscribe_: (() => void)|null = null;
+  private bootProgressUnsubscribe_: (() => void)|null = null;
   private dismissBootWelcomeFallbackTimer_: number|null = null;
 
   constructor() {
@@ -137,6 +140,8 @@ export class NexusViewElement extends CrLitElement {
         payload => this.onMainContentsLayout_(payload));
     this.buildInfoUnsubscribe_ = onBuildInfo(
         payload => this.onBuildInfo_(payload));
+    this.bootProgressUnsubscribe_ = onBootProgress(
+        payload => this.onBootProgress_(payload));
   }
 
   override firstUpdated() {
@@ -166,8 +171,30 @@ export class NexusViewElement extends CrLitElement {
     }
   }
 
+  // Host-handshake stage source (bootstrapNexusGuest's onStatus callback):
+  // starting → connecting → linking → loading.
   private onLoadingStage_(stage: LoadingStage) {
-    if (stage === this.loadingStage_) {
+    this.advanceLoadingStage_(stage);
+  }
+
+  // Guest stage source (nexus.ui.bootProgress broadcast): the post-handshake
+  // milestones the host can't observe (rendering, finalizing). The stage is a
+  // free-form string on the wire so a newer guest can add stages without
+  // breaking us; an unknown value is ignored by advanceLoadingStage_.
+  private onBootProgress_(payload: BootProgressPayload) {
+    this.advanceLoadingStage_(payload.stage as LoadingStage);
+  }
+
+  // Single funnel for BOTH stage sources. Advances the footer's loading-status
+  // strictly FORWARD (by LOADING_STAGE_ORDER): the host handshake callback and
+  // the guest's real-milestone `bootProgress` broadcasts feed it over two
+  // channels, so a late-arriving earlier stage — or an unknown stage from a
+  // newer guest — must never move the footer backwards. There is deliberately
+  // NO timed advance: every stage change reflects a real boot event.
+  private advanceLoadingStage_(stage: LoadingStage) {
+    const next = LOADING_STAGE_ORDER.indexOf(stage);
+    const current = LOADING_STAGE_ORDER.indexOf(this.loadingStage_);
+    if (next < 0 || next <= current) {
       return;
     }
     this.loadingStage_ = stage;
@@ -186,6 +213,10 @@ export class NexusViewElement extends CrLitElement {
     if (this.buildInfoUnsubscribe_) {
       this.buildInfoUnsubscribe_();
       this.buildInfoUnsubscribe_ = null;
+    }
+    if (this.bootProgressUnsubscribe_) {
+      this.bootProgressUnsubscribe_();
+      this.bootProgressUnsubscribe_ = null;
     }
     this.clearDismissBootWelcomeFallbackTimer_();
     super.disconnectedCallback();

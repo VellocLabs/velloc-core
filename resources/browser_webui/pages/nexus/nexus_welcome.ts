@@ -27,12 +27,36 @@ import {getString} from './nexus_shared.js';
 // (Chrome's UI language), so the parent and guest always agree.
 type WelcomeLocale = 'en'|'zh'|'es'|'fr'|'de';
 
-// Host-observable boot stages, in order. Driven by <nexus-view> from the
-// `bootstrapNexusGuest` handshake (nexus_runtime_bootstrap.ts) — the overlay
-// lives in the same page, so no bridge is needed. `starting` is the default
-// before the handshake begins; the overlay is torn down at the interactive
-// moment so there is no terminal "ready" stage to show.
-export type LoadingStage = 'starting'|'connecting'|'linking'|'loading';
+// Boot stages, in order. The first four are HOST-observable, driven by
+// <nexus-view> from the `bootstrapNexusGuest` handshake
+// (nexus_runtime_bootstrap.ts) — the overlay lives in the same page, so no
+// bridge is needed. `starting` is the default before the handshake begins.
+//
+// `rendering`…`finalizing` are the boot TAIL: once the bridge ports are
+// forwarded (the `loading` stage) the host can no longer see the guest. Every
+// tail stage is tied to a REAL guest milestone (NOT a timer — debug and release
+// have completely different timings, so a fixed schedule mis-paces): the guest
+// broadcasts each one over `nexus.ui.bootProgress` as it genuinely happens, so
+// the footer reflects actual progress through the tail:
+//   rendering  — React shell built (nexusBoot, after prepareNexusBoot)
+//   sessions   — session list arrived (MultiSessionShell session.list)
+//   opening    — active session snapshot ready (worker.ready)
+//   finalizing — transcript merged, assistant-ui painting the conversation
+// The host handshake and these broadcasts all feed one monotonic setter.
+//
+// The overlay is torn down at the interactive moment, so there is no terminal
+// "ready" stage to show.
+export type LoadingStage = 'starting'|'connecting'|'linking'|'loading'|
+    'rendering'|'sessions'|'opening'|'finalizing';
+
+// Canonical stage order. <nexus-view> uses this to advance the footer
+// MONOTONICALLY: the host handshake and the guest's `bootProgress` broadcasts
+// feed the stage over two channels, and a later-arriving lower stage (or an
+// unknown one from a newer guest) must never move the footer backwards.
+export const LOADING_STAGE_ORDER: readonly LoadingStage[] = [
+  'starting', 'connecting', 'linking', 'loading', 'rendering', 'sessions',
+  'opening', 'finalizing',
+];
 
 interface WelcomeCopy {
   greeting: string;
@@ -58,7 +82,11 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       starting: 'Starting up…',
       connecting: 'Connecting…',
       linking: 'Preparing…',
-      loading: 'Almost ready…',
+      loading: 'Loading tools…',
+      rendering: 'Building interface…',
+      sessions: 'Loading sessions…',
+      opening: 'Opening session…',
+      finalizing: 'Almost ready…',
     },
   },
   zh: {
@@ -70,7 +98,11 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       starting: '正在启动…',
       connecting: '正在连接…',
       linking: '正在准备…',
-      loading: '即将就绪…',
+      loading: '正在加载工具…',
+      rendering: '正在构建界面…',
+      sessions: '正在加载会话列表…',
+      opening: '正在打开会话…',
+      finalizing: '即将就绪…',
     },
   },
   es: {
@@ -82,7 +114,11 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       starting: 'Iniciando…',
       connecting: 'Conectando…',
       linking: 'Preparando…',
-      loading: 'Casi listo…',
+      loading: 'Cargando herramientas…',
+      rendering: 'Construyendo la interfaz…',
+      sessions: 'Cargando sesiones…',
+      opening: 'Abriendo sesión…',
+      finalizing: 'Casi listo…',
     },
   },
   fr: {
@@ -94,7 +130,11 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       starting: 'Démarrage…',
       connecting: 'Connexion…',
       linking: 'Préparation…',
-      loading: 'Bientôt prêt…',
+      loading: 'Chargement des outils…',
+      rendering: 'Construction de l’interface…',
+      sessions: 'Chargement des sessions…',
+      opening: 'Ouverture de la session…',
+      finalizing: 'Bientôt prêt…',
     },
   },
   de: {
@@ -106,7 +146,11 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       starting: 'Wird gestartet…',
       connecting: 'Verbinden…',
       linking: 'Wird vorbereitet…',
-      loading: 'Fast fertig…',
+      loading: 'Tools werden geladen…',
+      rendering: 'Oberfläche wird erstellt…',
+      sessions: 'Sitzungen werden geladen…',
+      opening: 'Sitzung wird geöffnet…',
+      finalizing: 'Fast fertig…',
     },
   },
 };

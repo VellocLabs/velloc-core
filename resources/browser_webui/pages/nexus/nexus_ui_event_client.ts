@@ -78,6 +78,22 @@ export interface BuildInfoPayload {
 
 export type BuildInfoHandler = (payload: BuildInfoPayload) => void;
 
+/**
+ * Wire shape of the `ui.bootProgress` payload — a fine-grained boot stage
+ * the guest advances the boot-welcome footer through once the host handshake
+ * can no longer see progress (post bridge-port forward). `stage` is a
+ * `LoadingStage` string (nexus_welcome.ts); re-declared as a bare `string`
+ * here (not imported) because the WebUI bundle is a separate build — same
+ * rationale as `BuildInfoPayload` — and so a newer guest can add stages
+ * without breaking this handler. Additive + ignore-if-absent: an old host
+ * simply never receives it and the footer stays on the host-driven stages.
+ */
+export interface BootProgressPayload {
+  stage: string;
+}
+
+export type BootProgressHandler = (payload: BootProgressPayload) => void;
+
 // -----------------------------------------------------------------------------
 // Transport cache — same shape as nexus_session_state_client.
 // -----------------------------------------------------------------------------
@@ -90,6 +106,7 @@ let readyPromise: Promise<NexusWebUiBridgeTransport>|null = null;
 const dismissHandlers = new Set<UiEventHandler>();
 const mainContentsLayoutHandlers = new Set<MainContentsLayoutHandler>();
 const buildInfoHandlers = new Set<BuildInfoHandler>();
+const bootProgressHandlers = new Set<BootProgressHandler>();
 let subscribedToBridge = false;
 
 const WEBVIEW_READY_TIMEOUT_MS = 30_000;
@@ -189,6 +206,18 @@ async function getTransportAsync(): Promise<NexusWebUiBridgeTransport> {
                     '[nexus-ui-event] buildInfo handler threw:', e);
               }
             }
+          } else if (event.route.action === 'bootProgress') {
+            const payload = event.payload as unknown as
+                BootProgressPayload | undefined;
+            if (!payload || typeof payload.stage !== 'string') return;
+            for (const handler of bootProgressHandlers) {
+              try {
+                handler(payload);
+              } catch (e) {
+                console.error(
+                    '[nexus-ui-event] bootProgress handler threw:', e);
+              }
+            }
           }
         });
         subscribedToBridge = true;
@@ -266,5 +295,25 @@ export function onBuildInfo(handler: BuildInfoHandler): () => void {
   });
   return () => {
     buildInfoHandlers.delete(handler);
+  };
+}
+
+/**
+ * Subscribe to `nexus.ui.bootProgress` push events. Returns an unsubscribe
+ * function. Fired by the guest's boot path as it crosses post-handshake
+ * milestones the host can't observe (React build, worker snapshot); the
+ * `nexus_view.ts` host advances the boot-welcome footer's loading-status
+ * MONOTONICALLY so the tail after the host's `loading` stage keeps moving.
+ * The SharedWorker replays the last payload on port attach, so a late
+ * subscriber converges to the current stage.
+ */
+export function onBootProgress(handler: BootProgressHandler): () => void {
+  bootProgressHandlers.add(handler);
+  void getTransportAsync().catch(() => {
+    /* connection failures surface as missed events; the worker's
+     * replay-on-attach covers reconnects. */
+  });
+  return () => {
+    bootProgressHandlers.delete(handler);
   };
 }

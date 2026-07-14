@@ -31,6 +31,21 @@ struct SafeCommandLimits {
   // (claude_code/src/utils/timeouts.ts: MAX_TIMEOUT_MS = 600_000).
   static constexpr uint32_t kMaxTimeoutMs = 10u * 60u * 1000u;
 
+  // No-timeout-cap sentinel. When a command's requested timeout equals this,
+  // ClampTimeoutMs passes it through UNCLAMPED (rather than lowering to
+  // kMaxTimeoutMs) so the process runs with no meaningful wall-clock kill —
+  // `base::Milliseconds(kNoTimeoutCapSentinelMs)` is ~24.8 days, effectively
+  // unbounded; the child still ends on natural exit, an explicit Kill, or the
+  // output-size watchdog. Set only by the auto-background middle layer (a
+  // detached foreground command that must run to completion, matching Claude
+  // Code's backgrounded-command lifetime — `background()` clears the kill timer).
+  // Chosen as INT32_MAX: it fits the browser-side `int timeout_ms`, and an OLD
+  // browser that predates the sentinel clamps it to kMaxTimeoutMs (the prior
+  // 10-minute kill), so version skew degrades safely. Kept in sync with
+  // process_tool.cc kNoTimeoutCapSentinelMs and nexus_web hostedTools.ts
+  // SHELL_NO_TIMEOUT_CAP_SENTINEL_MS.
+  static constexpr uint32_t kNoTimeoutCapSentinelMs = 2147483647u;
+
   static constexpr uint32_t kDefaultMaxOutputBytes = 1u * 1024u * 1024u;
   static constexpr uint32_t kMaxMaxOutputBytes = 16u * 1024u * 1024u;
 };

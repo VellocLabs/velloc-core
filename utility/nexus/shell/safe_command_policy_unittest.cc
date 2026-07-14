@@ -310,6 +310,19 @@ TEST(SafeCommandPolicyTest, ClampTimeoutMs) {
             SafeCommandLimits::kMaxTimeoutMs);
 }
 
+TEST(SafeCommandPolicyTest, ClampTimeoutMsNoCapSentinelPassesThrough) {
+  // The no-timeout-cap sentinel (an auto-backgrounded command that must run to
+  // completion) is passed through UNCLAMPED — NOT lowered to kMaxTimeoutMs — so a
+  // long build is never killed at the 10-minute ceiling. A value one below the
+  // sentinel is still clamped normally, proving the passthrough is exact.
+  EXPECT_EQ(
+      SafeCommandPolicy::ClampTimeoutMs(SafeCommandLimits::kNoTimeoutCapSentinelMs),
+      SafeCommandLimits::kNoTimeoutCapSentinelMs);
+  EXPECT_EQ(SafeCommandPolicy::ClampTimeoutMs(
+                SafeCommandLimits::kNoTimeoutCapSentinelMs - 1u),
+            SafeCommandLimits::kMaxTimeoutMs);
+}
+
 TEST(SafeCommandPolicyTest, ClampMaxOutputBytes) {
   EXPECT_EQ(SafeCommandPolicy::ClampMaxOutputBytes(0),
             SafeCommandLimits::kDefaultMaxOutputBytes);

@@ -33,6 +33,15 @@ namespace {
 
 constexpr int kDefaultBashTimeoutMs = 120000;
 constexpr int kMaxBashTimeoutMs = 600000;
+// No-timeout-cap sentinel: a `run_in_background` command carrying this `timeout`
+// runs with no wall-clock kill (the auto-background middle layer sets it so a
+// detached command runs to completion — CC's `background()` clears the kill
+// timer). Passed through to the utility, which recognises the same value
+// (SafeCommandLimits::kNoTimeoutCapSentinelMs). INT32_MAX so it fits `int
+// timeout_ms` and an OLD utility clamps it to kMaxBashTimeoutMs (safe degrade).
+// Never sent by the model — bash.tool.json caps `timeout` at kMaxBashTimeoutMs.
+// Kept in sync with nexus_web hostedTools.ts SHELL_NO_TIMEOUT_CAP_SENTINEL_MS.
+constexpr int kNoTimeoutCapSentinelMs = 2147483647;
 constexpr int kMaxOutputBytes = 30000;
 constexpr char kProcessUnavailableCode[] = "process_unavailable";
 constexpr char kProcessUnavailableMessage[] =
@@ -571,10 +580,18 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   }
 
   int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
-  if (timeout_ms <= 0) {
-    timeout_ms = kDefaultBashTimeoutMs;
-  } else if (timeout_ms > kMaxBashTimeoutMs) {
-    timeout_ms = kMaxBashTimeoutMs;
+  // A run_in_background command may carry the no-timeout-cap sentinel (the JS
+  // auto-background middle layer sets it so a detached command runs to
+  // completion). Pass it through UNCLAMPED — the utility's ClampTimeoutMs
+  // recognises the same value. Every other value keeps the normal default/clamp.
+  const bool no_timeout_cap = input.run_in_background.value_or(false) &&
+                              timeout_ms == kNoTimeoutCapSentinelMs;
+  if (!no_timeout_cap) {
+    if (timeout_ms <= 0) {
+      timeout_ms = kDefaultBashTimeoutMs;
+    } else if (timeout_ms > kMaxBashTimeoutMs) {
+      timeout_ms = kMaxBashTimeoutMs;
+    }
   }
 
   // Hook-exec path: the host-internal `hook_shell` field (set by the JS hook
@@ -974,10 +991,18 @@ void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
   }
 
   int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
-  if (timeout_ms <= 0) {
-    timeout_ms = kDefaultBashTimeoutMs;
-  } else if (timeout_ms > kMaxBashTimeoutMs) {
-    timeout_ms = kMaxBashTimeoutMs;
+  // A run_in_background command may carry the no-timeout-cap sentinel (the JS
+  // auto-background middle layer sets it so a detached command runs to
+  // completion). Pass it through UNCLAMPED — the utility's ClampTimeoutMs
+  // recognises the same value. Every other value keeps the normal default/clamp.
+  const bool no_timeout_cap = input.run_in_background.value_or(false) &&
+                              timeout_ms == kNoTimeoutCapSentinelMs;
+  if (!no_timeout_cap) {
+    if (timeout_ms <= 0) {
+      timeout_ms = kDefaultBashTimeoutMs;
+    } else if (timeout_ms > kMaxBashTimeoutMs) {
+      timeout_ms = kMaxBashTimeoutMs;
+    }
   }
 
   // Prefer PowerShell 7 (pwsh); OnPowerShellExecDone falls back to Windows

@@ -411,6 +411,13 @@ uint32_t SafeCommandPolicy::ClampTimeoutMs(uint32_t requested) {
   if (requested == 0) {
     return SafeCommandLimits::kDefaultTimeoutMs;
   }
+  if (requested == SafeCommandLimits::kNoTimeoutCapSentinelMs) {
+    // No wall-clock cap requested (auto-backgrounded, run-to-completion): pass
+    // the sentinel through untouched instead of lowering to kMaxTimeoutMs.
+    // `base::Milliseconds` of it is ~24.8 days — effectively unbounded; the
+    // child still ends on natural exit, an explicit Kill, or the size watchdog.
+    return SafeCommandLimits::kNoTimeoutCapSentinelMs;
+  }
   return std::min(requested, SafeCommandLimits::kMaxTimeoutMs);
 }
 

@@ -19,13 +19,24 @@ import './nexus_welcome.js';
 import {LOADING_STAGE_ORDER, type LoadingStage} from './nexus_welcome.js';
 import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 
-// Wall-clock fallback in case the React guest never sends
-// nexus.ui.dismissBootWelcome (e.g. boot stalls in an error state). After
-// this timeout the welcome is hidden so the user is never stuck staring at
-// it, surfacing whatever state React is in (incl. its error UI).
-// <main-contents-view> is independent — it tracks the guest's
+// Fallback in case the React guest never signals nexus.ui.dismissBootWelcome
+// (e.g. boot stalls in an error state). It bounds time SINCE THE LAST SIGN OF
+// PROGRESS, not total boot time: every progress signal re-arms it (see
+// onLoadingStage_ / onBootProgress_), so a slow-but-progressing boot keeps the
+// splash up until the guest is genuinely ready — only a true stall (no progress
+// for this long) hides it, surfacing whatever state React is in (incl. its
+// error UI). The old flat 10 s cap dismissed the splash mid-boot on slow
+// profiles: a legitimately slow guest (worker.ready at ~12-15 s cold) was
+// revealed still loading — the "guidance page → loading skeleton → conversation"
+// flash. The window need only exceed the largest gap BETWEEN progress signals:
+// the SharedWorker re-emits a keepalive every few seconds through its long,
+// stage-boundary-less runtime build (MCP connect + transcript hydration +
+// engine construction — see BrowserRuntimeWorker.runInit), so the only
+// uncovered gap is the guest's initial boot (handshake + worker warm-up + React
+// import, the `loading → rendering` span). This is sized to clear that with
+// margin. <main-contents-view> is independent — it tracks the guest's
 // `mainContentsLayout` events (see below).
-const DISMISS_BOOT_WELCOME_FALLBACK_MS = 10_000;
+const DISMISS_BOOT_WELCOME_FALLBACK_MS = 25_000;
 
 export class NexusViewElement extends CrLitElement {
   static get is() {
@@ -148,12 +159,7 @@ export class NexusViewElement extends CrLitElement {
     this.mainContentsEl_ =
         this.shadowRoot?.querySelector('main-contents-view') ?? null;
     this.applyMainContentsLayout_();
-    if (this.dismissBootWelcomeFallbackTimer_ === null &&
-        !this.bootWelcomeDismissed_) {
-      this.dismissBootWelcomeFallbackTimer_ = setTimeout(
-          () => this.onDismissBootWelcome_('timeout'),
-          DISMISS_BOOT_WELCOME_FALLBACK_MS);
-    }
+    this.armDismissBootWelcomeFallback_();
     // Hand the guest <webview> off to the bootstrap controller. It sets the
     // src, runs the nexus-init handshake, calls
     // NexusBridgeBootstrap.guestReady(), and forwards the bridge ports
@@ -174,14 +180,22 @@ export class NexusViewElement extends CrLitElement {
   // Host-handshake stage source (bootstrapNexusGuest's onStatus callback):
   // starting → connecting → linking → loading.
   private onLoadingStage_(stage: LoadingStage) {
+    this.armDismissBootWelcomeFallback_();
     this.advanceLoadingStage_(stage);
   }
 
   // Guest stage source (nexus.ui.bootProgress broadcast): the post-handshake
-  // milestones the host can't observe (rendering, finalizing). The stage is a
+  // milestones the host can't observe (rendering, finalizing) PLUS keepalives
+  // the SharedWorker re-emits during its long runtime build. The stage is a
   // free-form string on the wire so a newer guest can add stages without
   // breaking us; an unknown value is ignored by advanceLoadingStage_.
   private onBootProgress_(payload: BootProgressPayload) {
+    // Re-arm on EVERY progress signal, not only forward advances: the worker
+    // re-broadcasts its current stage every few seconds during phases with no
+    // stage boundary of their own (MCP connect, transcript hydration, engine
+    // build), so a slow-but-progressing build keeps the splash up even when a
+    // single phase runs longer than the fallback window.
+    this.armDismissBootWelcomeFallback_();
     this.advanceLoadingStage_(payload.stage as LoadingStage);
   }
 
@@ -199,6 +213,9 @@ export class NexusViewElement extends CrLitElement {
     }
     this.loadingStage_ = stage;
     this.requestUpdate();
+    // NB: the dismiss-fallback re-arm happens in the two signal entry points
+    // (onLoadingStage_ / onBootProgress_) so EVERY progress signal — including
+    // the worker's same-stage keepalives — re-arms it, not just forward advances.
   }
 
   override disconnectedCallback(): void {
@@ -289,6 +306,21 @@ export class NexusViewElement extends CrLitElement {
         (HTMLElement & {contentWindow?: Window | null}) | null;
     webview?.contentWindow?.postMessage(
         {type: 'nexus-settings-deep-link', section}, '*');
+  }
+
+  // (Re)arm the dismiss fallback from now, unless the welcome is already
+  // dismissed. Called at boot and on every real loading-stage advance, so the
+  // window bounds "time since the last sign of progress" rather than total boot
+  // time — a slow-but-progressing boot keeps the splash up until the guest
+  // signals ready. Clearing first makes each call a reset, not a stack of timers.
+  private armDismissBootWelcomeFallback_() {
+    if (this.bootWelcomeDismissed_) {
+      return;
+    }
+    this.clearDismissBootWelcomeFallbackTimer_();
+    this.dismissBootWelcomeFallbackTimer_ = setTimeout(
+        () => this.onDismissBootWelcome_('timeout'),
+        DISMISS_BOOT_WELCOME_FALLBACK_MS);
   }
 
   private clearDismissBootWelcomeFallbackTimer_() {

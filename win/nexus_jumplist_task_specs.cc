@@ -1,57 +1,19 @@
 #include "custom_browser/win/nexus_jumplist_task_specs.h"
 
-#include <utility>
-
-#include "chrome/common/chrome_switches.h"
-#include "custom_browser/common/custom_browser_switches.h"
-
 namespace custom_browser {
 
-namespace {
-
-// Builds the relaunch command line shared by every task: the current
-// --user-data-dir and (when set) the launch profile directory, mirroring
-// jumplist.cc's file-static AppendCommonSwitches. `::switches::` is the global
-// Chrome switches namespace (distinct from custom_browser::switches).
-base::CommandLine MakeBaseCommandLine(
-    const base::FilePath& cmd_line_profile_dir) {
-  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
-  static constexpr const char* kSwitchNames[] = {::switches::kUserDataDir};
-  command_line.CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
-                                kSwitchNames);
-  if (!cmd_line_profile_dir.empty()) {
-    command_line.AppendSwitchPath(::switches::kProfileDirectory,
-                                  cmd_line_profile_dir);
-  }
-  return command_line;
-}
-
-}  // namespace
-
 std::vector<NexusJumpListTaskSpec> BuildNexusJumpListTaskSpecs(
-    policy::IncognitoModeAvailability incognito_availability,
-    const base::FilePath& cmd_line_profile_dir) {
-  std::vector<NexusJumpListTaskSpec> specs;
-
-  // "New browser window" — --browser-mode launches a normal (non-kNexus)
-  // window. Suppressed under forced-incognito, mirroring upstream suppressing
-  // its non-incognito "New Window" task.
-  if (incognito_availability != policy::IncognitoModeAvailability::kForced) {
-    base::CommandLine browser_cl = MakeBaseCommandLine(cmd_line_profile_dir);
-    browser_cl.AppendSwitch(switches::kBrowserMode);
-    specs.push_back(
-        {NexusJumpListTaskSpec::Kind::kBrowserWindow, std::move(browser_cl)});
-  }
-
-  // "New Incognito Window" — unchanged from upstream.
-  if (incognito_availability != policy::IncognitoModeAvailability::kDisabled) {
-    base::CommandLine incognito_cl = MakeBaseCommandLine(cmd_line_profile_dir);
-    incognito_cl.AppendSwitch(::switches::kIncognito);
-    specs.push_back({NexusJumpListTaskSpec::Kind::kIncognitoWindow,
-                     std::move(incognito_cl)});
-  }
-
-  return specs;
+    policy::IncognitoModeAvailability /*incognito_availability*/,
+    const base::FilePath& /*cmd_line_profile_dir*/) {
+  // The Nexus product deliberately exposes NO taskbar Jump List "Tasks". The
+  // Nexus window is the per-profile singleton that a plain taskbar-icon click /
+  // cold launch already opens, and the "New browser window" (--browser-mode)
+  // and "New Incognito Window" escape-hatches were intentionally dropped from
+  // the taskbar menu. Returning an empty list makes UpdateTaskCategory add an
+  // empty Tasks category and skip the upstream default New Window / New
+  // Incognito Window items. The incognito policy no longer gates anything now
+  // that no tasks are emitted.
+  return {};
 }
 
 }  // namespace custom_browser

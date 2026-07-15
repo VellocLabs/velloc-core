@@ -10,15 +10,15 @@
 namespace custom_browser {
 
 // One product taskbar Jump List task: its kind (selects the title + icon in
-// the decorator) and the relaunch command line (current --user-data-dir +
-// launch profile dir + the task-specific switch).
+// the decorator, nexus_jumplist_tasks.cc) and the relaunch command line. This
+// type is the shared vocabulary between the pure policy core
+// (BuildNexusJumpListTaskSpecs) and the decorator.
 //
-// There is deliberately no "New <Product> window" task: the Nexus window is a
-// per-profile singleton and is the default target of a plain taskbar-icon
-// click / cold launch, so the Jump List offers only the browser escape-hatches.
-// (A no-switch relaunch would also warm-misroute: a second instance forwarded
-// to the running process finds the kNexus startup-default already consumed and
-// opens a normal window, not Nexus.)
+// The Nexus product currently emits NO tasks (see BuildNexusJumpListTaskSpecs):
+// there is deliberately no "New <Product> window" task (the Nexus window is a
+// per-profile singleton, already the default target of a plain taskbar-icon
+// click / cold launch), and the "New browser window" / "New Incognito Window"
+// escape-hatches were intentionally removed from the taskbar menu as well.
 struct NexusJumpListTaskSpec {
   enum class Kind { kBrowserWindow, kIncognitoWindow };
 
@@ -27,9 +27,9 @@ struct NexusJumpListTaskSpec {
 };
 
 // Pure, string-free core (unit-testable without a ResourceBundle): returns the
-// product Jump List task specs in display order, honoring the incognito policy
-// — kForced drops the browser-window task (mirrors upstream dropping its
-// non-incognito "New Window"); kDisabled drops incognito.
+// product's taskbar Jump List task specs in display order. The Nexus product
+// deliberately exposes no tasks, so this currently returns an empty list
+// regardless of the incognito policy (see the .cc for the rationale).
 // Worker-thread safe: no Browser*/Profile/UI access.
 std::vector<NexusJumpListTaskSpec> BuildNexusJumpListTaskSpecs(
     policy::IncognitoModeAvailability incognito_availability,

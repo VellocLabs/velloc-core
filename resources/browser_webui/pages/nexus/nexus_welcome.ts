@@ -38,16 +38,26 @@ type WelcomeLocale = 'en'|'zh'|'es'|'fr'|'de';
 // have completely different timings, so a fixed schedule mis-paces): the guest
 // broadcasts each one over `nexus.ui.bootProgress` as it genuinely happens, so
 // the footer reflects actual progress through the tail:
-//   rendering  — React shell built (nexusBoot, after prepareNexusBoot)
-//   sessions   — session list arrived (MultiSessionShell session.list)
-//   opening    — active session snapshot ready (worker.ready)
-//   finalizing — transcript merged, assistant-ui painting the conversation
+//   rendering       — React shell built (nexusBoot, after prepareNexusBoot)
+//   sessions        — session list arrived (MultiSessionShell session.list)
+//   connectingTools — worker runtime build reached the MCP-server connect
+//                     (SharedWorker createBrowserRuntime, before ensureMCPPool
+//                     — the longest single step inside the previously-opaque
+//                     sessions→opening window when MCP servers are configured)
+//   restoring       — worker is restoring the active session's persisted
+//                     transcript (before getRecordedMessages)
+//   opening         — active session snapshot ready (worker.ready)
+//   finalizing      — transcript merged, assistant-ui painting the conversation
 // The host handshake and these broadcasts all feed one monotonic setter.
+// `connectingTools`/`restoring` come from the SharedWorker itself (see
+// SharedWorkerSessionManager.broadcastBootStage) — the page can't see inside
+// the worker's runtime build, and that build is the dominant boot phase.
 //
 // The overlay is torn down at the interactive moment, so there is no terminal
 // "ready" stage to show.
 export type LoadingStage = 'starting'|'connecting'|'linking'|'loading'|
-    'rendering'|'sessions'|'opening'|'finalizing';
+    'rendering'|'sessions'|'connectingTools'|'restoring'|'opening'|
+    'finalizing';
 
 // Canonical stage order. <nexus-view> uses this to advance the footer
 // MONOTONICALLY: the host handshake and the guest's `bootProgress` broadcasts
@@ -55,7 +65,7 @@ export type LoadingStage = 'starting'|'connecting'|'linking'|'loading'|
 // unknown one from a newer guest) must never move the footer backwards.
 export const LOADING_STAGE_ORDER: readonly LoadingStage[] = [
   'starting', 'connecting', 'linking', 'loading', 'rendering', 'sessions',
-  'opening', 'finalizing',
+  'connectingTools', 'restoring', 'opening', 'finalizing',
 ];
 
 interface WelcomeCopy {
@@ -85,6 +95,8 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       loading: 'Loading tools…',
       rendering: 'Building interface…',
       sessions: 'Loading sessions…',
+      connectingTools: 'Connecting tools…',
+      restoring: 'Restoring conversation…',
       opening: 'Opening session…',
       finalizing: 'Almost ready…',
     },
@@ -101,6 +113,8 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       loading: '正在加载工具…',
       rendering: '正在构建界面…',
       sessions: '正在加载会话列表…',
+      connectingTools: '正在连接工具…',
+      restoring: '正在恢复对话…',
       opening: '正在打开会话…',
       finalizing: '即将就绪…',
     },
@@ -117,6 +131,8 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       loading: 'Cargando herramientas…',
       rendering: 'Construyendo la interfaz…',
       sessions: 'Cargando sesiones…',
+      connectingTools: 'Conectando herramientas…',
+      restoring: 'Restaurando la conversación…',
       opening: 'Abriendo sesión…',
       finalizing: 'Casi listo…',
     },
@@ -133,6 +149,8 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       loading: 'Chargement des outils…',
       rendering: 'Construction de l’interface…',
       sessions: 'Chargement des sessions…',
+      connectingTools: 'Connexion des outils…',
+      restoring: 'Restauration de la conversation…',
       opening: 'Ouverture de la session…',
       finalizing: 'Bientôt prêt…',
     },
@@ -149,6 +167,8 @@ const WELCOME_COPY: Record<WelcomeLocale, WelcomeCopy> = {
       loading: 'Tools werden geladen…',
       rendering: 'Oberfläche wird erstellt…',
       sessions: 'Sitzungen werden geladen…',
+      connectingTools: 'Tools werden verbunden…',
+      restoring: 'Unterhaltung wird wiederhergestellt…',
       opening: 'Sitzung wird geöffnet…',
       finalizing: 'Fast fertig…',
     },

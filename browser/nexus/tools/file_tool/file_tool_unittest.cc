@@ -760,6 +760,87 @@ TEST(FileToolTest, EditRequiresPriorFullRead) {
   EXPECT_EQ("file_not_read", result.error_code);
 }
 
+TEST(FileToolTest, EditAfterPartialReadReportsSpecificErrorMessage) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("notes.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha
+beta
+gamma
+"));
+
+  // Partial read (limit=1)
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult read_result;
+  ::nexus::generated::ReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  read_input.limit = 1;
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(read_result.resolved);
+
+  // Edit should be rejected with a specific partial-read message
+  CallResult edit_result;
+  ::nexus::generated::EditInput edit_input;
+  edit_input.file_path = file.AsUTF8Unsafe();
+  edit_input.old_string = "beta";
+  edit_input.new_string = "delta";
+  session.file_tool().RunEditOnUI(std::move(edit_input),
+                                  MakeRecordingCallback(&edit_result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_FALSE(edit_result.resolved);
+  EXPECT_TRUE(edit_result.rejected);
+  EXPECT_EQ("file_not_read", edit_result.error_code);
+  EXPECT_NE(std::string::npos, edit_result.error_message.find("partially read"));
+  EXPECT_NE(std::string::npos, edit_result.error_message.find("offset"));
+  EXPECT_NE(std::string::npos, edit_result.error_message.find("limit"));
+  EXPECT_NE(std::string::npos, edit_result.error_message.find("full file"));
+}
+
+TEST(FileToolTest, WriteAfterPartialReadReportsSpecificErrorMessage) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("notes.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha
+beta
+gamma
+"));
+
+  // Partial read (offset=2, limit=1)
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult read_result;
+  ::nexus::generated::ReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  read_input.offset = 2;
+  read_input.limit = 1;
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(read_result.resolved);
+
+  // Write should be rejected with a specific partial-read message
+  CallResult write_result;
+  ::nexus::generated::WriteInput write_input;
+  write_input.file_path = file.AsUTF8Unsafe();
+  write_input.content = "delta
+";
+  session.file_tool().RunWriteOnUI(std::move(write_input),
+                                   MakeRecordingCallback(&write_result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_FALSE(write_result.resolved);
+  EXPECT_TRUE(write_result.rejected);
+  EXPECT_EQ("file_not_read", write_result.error_code);
+  EXPECT_NE(std::string::npos, write_result.error_message.find("partially read"));
+  EXPECT_NE(std::string::npos, write_result.error_message.find("offset: 2"));
+  EXPECT_NE(std::string::npos, write_result.error_message.find("limit: 1"));
+  EXPECT_NE(std::string::npos, write_result.error_message.find("full file"));
+}
+
 TEST(FileToolTest, EditAfterReadSucceedsAndUpdatesReadState) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

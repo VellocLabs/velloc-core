@@ -266,7 +266,11 @@ OpenAiProvider::OpenAiProvider(
       uses_responses_api_(uses_responses_api),
       requires_api_key_(requires_api_key),
       extra_headers_(std::move(extra_headers)),
-      url_loader_factory_(std::move(url_loader_factory)) {}
+      url_loader_factory_(std::move(url_loader_factory)),
+      stream_guard_(provider_id_) {
+  stream_guard_.set_on_stream_idle(base::BindRepeating(
+      &OpenAiProvider::OnStreamIdleTimeout, weak_factory_.GetWeakPtr()));
+}
 
 OpenAiProvider::~OpenAiProvider() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -337,6 +341,20 @@ bool OpenAiProvider::Configure(const base::DictValue& config) {
   if (const std::string* account_id = config.FindString("account_id");
       account_id) {
     account_id_ = *account_id;
+  }
+
+  // Stream guard overrides. `stream_idle_timeout_s` (seconds, >0) replaces the
+  // default 180s watchdog; `max_concurrent_streams` (>=0, 0 = unlimited) caps
+  // concurrent SSE streams and FIFO-queues the rest. Both are optional; absent
+  // keys keep the defaults.
+  if (std::optional<int> timeout_s = config.FindInt("stream_idle_timeout_s");
+      timeout_s.has_value() && *timeout_s > 0) {
+    stream_guard_.set_stream_idle_timeout(base::Seconds(*timeout_s));
+  }
+  if (std::optional<int> max_concurrent =
+          config.FindInt("max_concurrent_streams");
+      max_concurrent.has_value() && *max_concurrent >= 0) {
+    stream_guard_.set_max_concurrent_streams(*max_concurrent);
   }
 
   return IsConfigured();
@@ -1584,6 +1602,29 @@ void OpenAiProvider::DoStream(const base::DictValue& call_options,
   }
 
   std::string request_id = ResolveRequestId(call_options);
+
+  // Concurrency pool: over the cap the stream waits FIFO instead of opening
+  // another socket the (Codex) backend would silently hang.
+  if (!stream_guard_.CanStartStream()) {
+    LlmStreamGuard::QueuedStream queued;
+    queued.request_id = request_id;
+    queued.call_options = call_options.Clone();
+    queued.chunk_callback = std::move(chunk_callback);
+    queued.done_callback = std::move(done_callback);
+    stream_guard_.EnqueueStream(std::move(queued));
+    return;
+  }
+
+  StartStream(request_id, call_options, std::move(chunk_callback),
+              std::move(done_callback));
+}
+
+void OpenAiProvider::StartStream(const std::string& request_id,
+                               const base::DictValue& call_options,
+                               StreamChunkCallback chunk_callback,
+                               StreamDoneCallback done_callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   const bool use_responses_api = uses_responses_api_;
   base::DictValue body =
       use_responses_api
@@ -1623,12 +1664,19 @@ void OpenAiProvider::DoStream(const base::DictValue& call_options,
 
   active_streams_.emplace(request_id, std::move(ctx));
 
+  // Begin the idle watchdog + count the slot BEFORE starting the loader.
+  stream_guard_.TrackStream(request_id);
+
   loader_ptr->DownloadAsStream(url_loader_factory_.get(), consumer_ptr);
 }
 
 void OpenAiProvider::OnStreamDataReceived(const std::string& request_id,
                                           std::string_view data) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Any inbound bytes (chunk, SSE comment/keep-alive, blank line) prove the
+  // connection is alive — refresh the idle clock before parsing.
+  stream_guard_.NoteStreamBytes(request_id);
 
   auto it = active_streams_.find(request_id);
   if (it == active_streams_.end())
@@ -1832,6 +1880,8 @@ void OpenAiProvider::OnStreamComplete(const std::string& request_id,
 
   auto ctx = std::move(it->second);
   active_streams_.erase(it);
+  stream_guard_.OnStreamFinished(request_id);
+  PumpQueuedStreams();
 
   // If a finish_reason was buffered but the finish chunk was never emitted
   // (e.g. usage arrived out of order or never arrived), flush it now so
@@ -1898,8 +1948,50 @@ void OpenAiProvider::CancelRequest(const std::string& request_id) {
   if (it != active_streams_.end()) {
     auto ctx = std::move(it->second);
     active_streams_.erase(it);
+    stream_guard_.OnStreamFinished(request_id);
     if (ctx->done_callback)
       std::move(ctx->done_callback).Run("Cancelled");
+    PumpQueuedStreams();
+  }
+}
+
+void OpenAiProvider::OnStreamIdleTimeout(const std::string& request_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  auto it = active_streams_.find(request_id);
+  if (it == active_streams_.end()) {
+    return;
+  }
+  auto ctx = std::move(it->second);
+  active_streams_.erase(it);
+  stream_guard_.OnStreamFinished(request_id);
+
+  // Destroying the loader tears down the upstream SSE socket.
+  ctx->loader.reset();
+
+  const std::string error =
+      display_name_ + " stream idle timeout after "+
+      base::NumberToString(stream_guard_.stream_idle_timeout().InSeconds()) +
+      "s with no data from the server (connection hung or over the"
+      " provider concurrency limit). " + stream_guard_.BuildDebugString();
+  if (ctx->done_callback) {
+    std::move(ctx->done_callback).Run(error);
+  }
+  PumpQueuedStreams();
+}
+
+void OpenAiProvider::PumpQueuedStreams() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  while (stream_guard_.CanStartStream()) {
+    std::optional<LlmStreamGuard::QueuedStream> queued =
+        stream_guard_.DequeueStream();
+    if (!queued.has_value()) {
+      return;
+    }
+    StartStream(queued->request_id, queued->call_options,
+                std::move(queued->chunk_callback),
+                std::move(queued->done_callback));
   }
 }
 

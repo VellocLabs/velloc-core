@@ -13,6 +13,7 @@
 #include "base/sequence_checker.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
+#include "custom_browser/browser/nexus/api/llm/llm_stream_guard.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
@@ -137,6 +138,18 @@ class OpenAiProvider : public LlmProvider {
   void OnStreamComplete(const std::string& request_id, bool success);
   void ProcessSseLine(StreamContext& ctx, std::string_view line);
 
+  // Actually builds + starts the SSE loader for a stream. Called directly
+  // from DoStream when a concurrency slot is free, or from PumpQueuedStreams
+  // when a queued stream is admitted.
+  void StartStream(const std::string& request_id,
+                   const base::DictValue& call_options,
+                   StreamChunkCallback chunk_callback,
+                   StreamDoneCallback done_callback);
+  // Guard callback: a tracked stream went silent past the idle timeout.
+  void OnStreamIdleTimeout(const std::string& request_id);
+  // Admits queued streams while a concurrency slot is free.
+  void PumpQueuedStreams();
+
   const std::string provider_id_;
   const std::string display_name_;
   const std::string default_base_url_;
@@ -167,6 +180,11 @@ class OpenAiProvider : public LlmProvider {
   std::map<std::string, std::unique_ptr<network::SimpleURLLoader>>
       pending_loaders_;
   std::map<std::string, std::unique_ptr<StreamContext>> active_streams_;
+
+  // Shared idle-timeout + concurrency guard (per-provider instance). See
+  // llm_stream_guard.h. Defaults preserve prior behaviour (180s idle, 0 =
+  // unlimited concurrency); provider config overrides land in Configure().
+  LlmStreamGuard stream_guard_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<OpenAiProvider> weak_factory_{this};

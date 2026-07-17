@@ -76,6 +76,10 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
         {"originator", "browseros"},
         {"OpenAI-Beta", "responses=experimental"},
     };
+    // Concurrency / idle-timeout for this provider is driven by the TS
+    // model config (nexusModelConfig/providers/chatgptPro.ts
+    // `maxConcurrentStreams: 1`), pushed here via publishProviderConfigs ->
+    // Configure(), NOT hard-coded — a settings.json override still wins.
     return std::make_unique<OpenAiProvider>(
         url_loader_factory, config->id, config->display_name,
         config->backend_base_url, /*uses_responses_api=*/true,

@@ -129,6 +129,18 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   copy_string("baseUrl", "base_url");
   copy_string("defaultModel", "default_model");
   copy_string("model", "model");
+  // Stream-guard overrides (ints). settings.json is the source of truth:
+  // mirror presence — an absent key removes a stale override so the provider
+  // falls back to its compiled-in default.
+  auto copy_int = [&](const char* from, const char* to) {
+    if (std::optional<int> v = settings.FindInt(from)) {
+      out.Set(to, *v);
+    } else {
+      out.Remove(to);
+    }
+  };
+  copy_int("streamIdleTimeoutSeconds", "stream_idle_timeout_s");
+  copy_int("maxConcurrentStreams", "max_concurrent_streams");
   if (const base::ListValue* models = settings.FindList("enabledModels")) {
     out.Set("enabled_models", models->Clone());
   }

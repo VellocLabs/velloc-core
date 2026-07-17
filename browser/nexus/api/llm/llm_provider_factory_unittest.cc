@@ -98,7 +98,7 @@ TEST(LlmProviderFactoryTest, CustomProvidersAreKeylessConfigurable) {
       LlmProviderFactory::CreateProvider("custom-openai", NullLoaderFactory());
   ASSERT_TRUE(openai);
   EXPECT_FALSE(openai->IsConfigured());
-  base::Value::Dict openai_cfg;
+  base::DictValue openai_cfg;
   openai_cfg.Set("base_url", "http://127.0.0.1:8765/v1");
   EXPECT_TRUE(openai->Configure(openai_cfg));
   EXPECT_TRUE(openai->IsConfigured());
@@ -108,7 +108,7 @@ TEST(LlmProviderFactoryTest, CustomProvidersAreKeylessConfigurable) {
                                                       NullLoaderFactory());
   ASSERT_TRUE(anthropic);
   EXPECT_FALSE(anthropic->IsConfigured());
-  base::Value::Dict anthropic_cfg;
+  base::DictValue anthropic_cfg;
   anthropic_cfg.Set("base_url", "http://127.0.0.1:8765");
   EXPECT_TRUE(anthropic->Configure(anthropic_cfg));
   EXPECT_TRUE(anthropic->IsConfigured());

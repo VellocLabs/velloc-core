@@ -84,6 +84,18 @@ source_set("provider") {
   ]
 }
 
+# Generic per-provider stream guard: idle-timeout watchdog + concurrency pool
+# + a /debug diagnostic string. Provider-agnostic; only depends on //base.
+source_set("stream_guard") {
+  sources = [
+    "llm_stream_guard.cc",
+    "llm_stream_guard.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+
 # Provider factory — creates provider instances by ID.
 source_set("provider_factory") {
   sources = [
@@ -187,6 +199,7 @@ source_set("openai_provider") {
   deps = [
     ":line_splitter",
     ":provider",
+    ":stream_guard",
     ":types",
     "//base",
     "//custom_browser/browser/nexus:secret_crypt",

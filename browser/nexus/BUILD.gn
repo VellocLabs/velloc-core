@@ -1024,6 +1024,7 @@ source_set("unit_tests_lite") {
   sources = [
     "api/llm/llm_line_splitter_unittest.cc",
     "api/llm/llm_provider_factory_unittest.cc",
+    "api/llm/llm_stream_guard_unittest.cc",
     "api/llm/llm_text_helpers_unittest.cc",
     "api/llm/llm_types_unittest.cc",
     "api/llm/oauth/oauth_providers_unittest.cc",
@@ -1068,6 +1069,7 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:provider",
     "//custom_browser/browser/nexus/api/llm:provider_config",
     "//custom_browser/browser/nexus/api/llm:provider_factory",
+    "//custom_browser/browser/nexus/api/llm:stream_guard",
     "//custom_browser/browser/nexus/api/llm:text_helpers",
     "//custom_browser/browser/nexus/api/llm:types",
     "//services/network/public/cpp",

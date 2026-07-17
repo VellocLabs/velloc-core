@@ -1190,7 +1190,7 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
     if (!last_read.has_value() || last_read->is_partial_view) {
       result.error_code = "file_not_read";
       result.error_message =
-          "File has not been read yet. Read it first before writing to it.";
+          "File has not been read yet. Read the full file without offset/limit before writing to it.";
       return result;
     }
     std::string current_contents;
@@ -1298,7 +1298,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
   if (!last_read.has_value() || last_read->is_partial_view) {
     result.error_code = "file_not_read";
     result.error_message =
-        "File has not been read yet. Read it first before writing to it.";
+        "File has not been read yet. Read the full file without offset/limit before editing.";
     return result;
   }
   std::string current_contents;

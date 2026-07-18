@@ -694,8 +694,22 @@ base::ListValue OpenAiProvider::TranslateMessages(
           image_part.Set("type", "image_url");
           base::DictValue image_url;
 
-          if (const std::string* url = part->FindString("image")) {
+          // Prefer a fully-qualified URL (`data:`/http(s)) carried on the
+          // block; OpenAI-compatible backends (e.g. Kimi) reject a bare
+          // base64 payload in `image_url.url`. Fall back to wrapping the
+          // raw-base64 `image`/`data` fields with a `data:` prefix.
+          if (const std::string* url = part->FindString("url")) {
             image_url.Set("url", *url);
+          } else if (const std::string* raw = part->FindString("image")) {
+            if (raw->starts_with("http://") || raw->starts_with("https://") ||
+                raw->starts_with("data:")) {
+              image_url.Set("url", *raw);
+            } else {
+              const std::string* mime = part->FindString("mimeType");
+              image_url.Set("url", "data:" +
+                  (mime ? *mime : std::string("image/png")) + ";base64," +
+                  *raw);
+            }
           } else if (const std::string* b64 = part->FindString("data")) {
             const std::string* mime = part->FindString("mimeType");
             std::string data_uri = "data:";

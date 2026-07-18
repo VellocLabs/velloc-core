@@ -1158,8 +1158,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   result.last_modified = last_modified;
   result.offset = offset;
   result.limit = limit;
-  result.is_partial_view =
-      offset.has_value() || limit.has_value() || projection.truncated;
+  result.is_partial_view = offset.has_value() || limit.has_value();
   result.cache_read_state = true;
   result.message = std::move(projection.projection);
   if (projection.truncated) {

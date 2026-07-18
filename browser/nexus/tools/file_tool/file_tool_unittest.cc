@@ -841,6 +841,78 @@ gamma
   EXPECT_NE(std::string::npos, write_result.error_message.find("full file"));
 }
 
+TEST(FileToolTest, EditAfterTruncatedReadSucceeds) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("big.txt");
+  std::string content;
+  for (int i = 1; i <= 3000; ++i) {
+    content += "line " + base::NumberToString(i) + "
+";
+  }
+  ASSERT_TRUE(base::WriteFile(file, content));
+
+  // Read with no offset/limit — will be truncated at 2000 lines
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult read_result;
+  ::nexus::generated::ReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(read_result.resolved);
+
+  // Edit should succeed because truncated read is NOT a partial view
+  CallResult edit_result;
+  ::nexus::generated::EditInput edit_input;
+  edit_input.file_path = file.AsUTF8Unsafe();
+  edit_input.old_string = "line 1500";
+  edit_input.new_string = "edited line 1500";
+  session.file_tool().RunEditOnUI(std::move(edit_input),
+                                  MakeRecordingCallback(&edit_result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(edit_result.resolved);
+  EXPECT_FALSE(edit_result.rejected);
+}
+
+TEST(FileToolTest, WriteAfterTruncatedReadSucceeds) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("big.txt");
+  std::string content;
+  for (int i = 1; i <= 3000; ++i) {
+    content += "line " + base::NumberToString(i) + "
+";
+  }
+  ASSERT_TRUE(base::WriteFile(file, content));
+
+  // Read with no offset/limit — will be truncated at 2000 lines
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult read_result;
+  ::nexus::generated::ReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(read_result.resolved);
+
+  // Write should succeed because truncated read is NOT a partial view
+  CallResult write_result;
+  ::nexus::generated::WriteInput write_input;
+  write_input.file_path = file.AsUTF8Unsafe();
+  write_input.content = "completely new content
+";
+  session.file_tool().RunWriteOnUI(std::move(write_input),
+                                   MakeRecordingCallback(&write_result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(write_result.resolved);
+  EXPECT_FALSE(write_result.rejected);
+}
+
 TEST(FileToolTest, EditAfterReadSucceedsAndUpdatesReadState) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

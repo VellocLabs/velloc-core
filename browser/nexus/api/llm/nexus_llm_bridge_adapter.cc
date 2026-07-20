@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
 #include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
 #include "custom_browser/browser/nexus/binaries/nexus_binary_config_registry.h"
@@ -16,6 +17,13 @@ namespace {
 
 using base::Value;
 using Dict = base::DictValue;
+
+// Wall-clock epoch-ms for the bridge timeline stamps (t_recv_native). Uses
+// base::Time so the stamps line up with JS-side Date.now() values.
+double NowEpochMs() {
+  return static_cast<double>(
+      base::Time::Now().InMillisecondsFSinceUnixEpochIgnoringNull());
+}
 
 }  // namespace
 
@@ -81,8 +89,20 @@ void NexusLlmBridgeAdapter::HandleCallOnUI(
     return;
   }
 
+  // Native deadline contract: the guest stamps `deadlineMs` at the top of
+  // the passthrough payload (absolute epoch-ms = JS t0 + budget). When the
+  // deadline fires before the provider answers, the host cancels the
+  // upstream request via broker->CancelRequest and resolves with
+  // status:'timeout' — see NexusLlmHost::OnCallDeadlineTimeout.
+  std::optional<double> deadline_ms;
+  if (std::optional<double> v = input.payload.FindDouble("deadlineMs")) {
+    deadline_ms = *v;
+  }
+  Dict timeline;
+  timeline.Set("t_recv_native", NowEpochMs());
+
   llm_host_->Call(
-      std::move(request),
+      std::move(request), deadline_ms, std::move(timeline),
       base::BindOnce(
           [](::nexus::BridgeResponseCallback done, bool success,
              mojom::NexusLlmCallResultPtr result,
@@ -140,19 +160,33 @@ void NexusLlmBridgeAdapter::HandleStreamReadOnUI(
     ::nexus::generated::StreamReadInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  if (bridge_stream_states_.find(input.streamId) ==
-      bridge_stream_states_.end()) {
-    bridge_stream_states_[input.streamId] = NexusLlmBridgeStreamState();
-  }
+  // NOTE: the per-stream bridge state is created lazily in the completion
+  // callback below, and only for reads the host answered successfully.
+  // Pre-creating it here leaked one NexusLlmBridgeStreamState per unknown /
+  // guest-invented stream id (the host errors and the error path returned
+  // without erasing) — an unbounded map for a hostile or buggy guest.
+
+  // Hold-read contract: when the guest supplies `waitMs` / `deadlineMs`,
+  // the host may hold this read (queue empty, stream not done) until fresh
+  // data arrives, the stream finishes, or the hold window expires — see
+  // NexusLlmHost::StreamRead. A native timeout ALSO cancels the upstream
+  // loader, so the guest can stop polling without an explicit streamCancel.
+  Dict timeline;
+  timeline.Set("t_recv_native", NowEpochMs());
 
   llm_host_->StreamRead(
-      input.streamId,
+      input.streamId, input.deadlineMs, input.waitMs, std::move(timeline),
       base::BindOnce(
           [](base::WeakPtr<NexusLlmBridgeAdapter> self, std::string stream_id,
              ::nexus::BridgeResponseCallback done, bool success,
              mojom::NexusLlmStreamReadResultPtr result,
              std::optional<std::string> error_message) {
             if (!success || !result) {
+              if (self) {
+                // Drop any bridge-side state for a stream the host no longer
+                // recognizes — it would otherwise leak per errored read.
+                self->bridge_stream_states_.erase(stream_id);
+              }
               std::move(done).Error(
                   "LLM_ERROR",
                   error_message.value_or("StreamRead failed"));
@@ -175,7 +209,12 @@ void NexusLlmBridgeAdapter::HandleStreamReadOnUI(
             Dict bridge_result = StreamReadResultToBridge(
                 &state_it->second, *result, &stream_done, &should_cancel);
 
-            if (stream_done) {
+            // On a native hold-read timeout the host has already cancelled
+            // the upstream loader and erased ITS stream entry, and the guest
+            // abandons the stream (no further read, no cancel). Mirror that
+            // here or the bridge state leaks once per timed-out stream.
+            const bool host_timed_out = result->status == "timeout";
+            if (stream_done || host_timed_out) {
               self->bridge_stream_states_.erase(state_it);
             }
             if (should_cancel) {

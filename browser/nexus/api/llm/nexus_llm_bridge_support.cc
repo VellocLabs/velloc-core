@@ -5,6 +5,7 @@
 
 #include "base/check.h"
 #include "base/json/json_reader.h"
+#include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/uuid.h"
 #include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
@@ -153,6 +154,30 @@ mojom::NexusLlmContentPartPtr MakeTextContentPart(const std::string& text) {
 
 bool FailInvalidBridgeFormat(std::string* error_message,
                              const std::string& message) {
+  // Bridge payloads carry model-generated and persisted-session content from
+  // the guest, so a malformed part — e.g. a tool-call with an empty toolCallId
+  // left behind by a streaming-parse bug, or a session saved by an older
+  // version — is a NORMAL error case, not an internal invariant. Reject it with
+  // the graceful error below (propagated to the guest as an INVALID_ARGS reply)
+  // instead of a DCHECK, which would crash the browser on untrusted input.
+  DLOG(ERROR) << "Invalid bridge format: " << message;
+  if (error_message) {
+    *error_message = message;
+  }
+  return false;
+}
+
+// Like FailInvalidBridgeFormat, but for genuine protocol-DIALECT violations:
+// the guest speaking a LEGACY bridge format (id/name/input parts,
+// tool_use/tool_result content types, legacy message wrappers) instead of the
+// canonical one. That only happens when the guest is out of sync with the
+// browser — an invariant worth a loud DCHECK in debug (and asserted by
+// BuildMojoLlmRequestRejectsLegacyToolFormats). FailInvalidBridgeFormat above
+// instead covers MALFORMED data (empty/missing fields, bad shapes) that a
+// persisted session or a prior streaming-parse bug can legitimately produce;
+// that must be rejected gracefully, never crash the browser.
+bool DcheckInvalidBridgeFormat(std::string* error_message,
+                               const std::string& message) {
   DCHECK(false) << message;
   if (error_message) {
     *error_message = message;
@@ -168,7 +193,7 @@ bool ValidateCanonicalToolCallPart(const Dict& part_dict,
                                    std::string* error_message) {
   if (HasField(part_dict, "id") || HasField(part_dict, "name") ||
       HasField(part_dict, "input")) {
-    return FailInvalidBridgeFormat(
+    return DcheckInvalidBridgeFormat(
         error_message,
         "Bridge tool-call parts must use toolCallId/toolName/args, not "
         "legacy id/name/input fields");
@@ -191,7 +216,7 @@ bool ValidateCanonicalToolResultPart(const Dict& part_dict,
   if (HasField(part_dict, "tool_use_id") || HasField(part_dict, "tool_name") ||
       HasField(part_dict, "name") || HasField(part_dict, "content") ||
       HasField(part_dict, "is_error")) {
-    return FailInvalidBridgeFormat(
+    return DcheckInvalidBridgeFormat(
         error_message,
         "Bridge tool-result parts must use toolCallId/toolName/result/isError,"
         " not legacy tool_use_id/tool_name/content/is_error fields");
@@ -229,7 +254,7 @@ bool ValidateCanonicalBridgeContent(const Value& part_value,
   }
 
   if (*type == "tool_use" || *type == "tool_result") {
-    return FailInvalidBridgeFormat(
+    return DcheckInvalidBridgeFormat(
         error_message,
         "Bridge content parts must use canonical tool-call/tool-result types");
   }
@@ -265,7 +290,7 @@ bool ValidateCanonicalBridgeMessages(const Value* messages_value,
           error_message, "Bridge messages must be objects");
     }
     if (entry->Find("message") != nullptr || entry->Find("type") != nullptr) {
-      return FailInvalidBridgeFormat(
+      return DcheckInvalidBridgeFormat(
           error_message,
           "Bridge messages must use plain {role, content} payloads without "
           "legacy wrapper fields");
@@ -1007,6 +1032,15 @@ base::DictValue CallResultToBridge(const mojom::NexusLlmCallResult& result) {
 
   Dict response;
   response.Set("message", std::move(message_dict));
+  // Surface the host-side outcome + timeline when present (native deadline /
+  // hold-read contract). Absent on older hosts — the JS guest treats missing
+  // status as 'ok'.
+  if (result.status.has_value() && !result.status->empty()) {
+    response.Set("status", *result.status);
+  }
+  if (result.timeline.has_value() && !result.timeline->empty()) {
+    response.Set("timeline", result.timeline->Clone());
+  }
   return response;
 }
 
@@ -1164,6 +1198,15 @@ base::DictValue StreamReadResultToBridge(
   Dict response;
   response.Set("chunks", std::move(chunks));
   response.Set("done", done);
+  // Surface host-side outcome + timeline (hold-read contract). On a native
+  // timeout the host has already cancelled the upstream loader; the JS guest
+  // just logs the timeline and stops polling.
+  if (result.status.has_value() && !result.status->empty()) {
+    response.Set("status", *result.status);
+  }
+  if (result.timeline.has_value() && !result.timeline->empty()) {
+    response.Set("timeline", result.timeline->Clone());
+  }
   return response;
 }
 

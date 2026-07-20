@@ -1185,6 +1185,11 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
 
   // CC parity: overwriting an existing file requires a previous full Read and a
   // matching on-disk content snapshot. New files do not require a prior Read.
+  // The single read below serves BOTH the staleness guard and the UI-diff
+  // snapshot — reading twice would be a TOCTOU window where a concurrent
+  // writer slips content past the guard.
+  std::string original_contents;
+  bool have_original = false;
   if (!was_create) {
     if (!last_read.has_value() || last_read->is_partial_view) {
       result.error_code = "file_not_read";
@@ -1192,10 +1197,9 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
           "File must be fully read before editing. A partial read (using offset/limit) does not count, read the entire file first, then retry the edit.";
       return result;
     }
-    std::string current_contents;
+    have_original = base::ReadFileToString(path, &original_contents);
     const bool content_unchanged =
-        base::ReadFileToString(path, &current_contents) &&
-        current_contents == last_read->content;
+        have_original && original_contents == last_read->content;
     if (!content_unchanged) {
       result.error_code = "file_modified_since_read";
       result.error_message =
@@ -1203,17 +1207,6 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
           "linter. Read it again before attempting to write it.";
       return result;
     }
-  }
-
-  // Capture pre-write content for the UI diff when overwriting an existing
-  // file (CC's FileWriteTool reads the old contents to compute its diff). This
-  // is read-only + best-effort: a read failure simply omits the diff. The
-  // content rides a UI-only side channel (see OnWriteDone) and never reaches
-  // the model.
-  std::string original_contents;
-  bool have_original = false;
-  if (!was_create) {
-    have_original = base::ReadFileToString(path, &original_contents);
   }
 
   // Ensure the parent directory exists. base::WriteFile fails silently
@@ -1300,23 +1293,21 @@ FileTool::EditResult FileTool::EditFileBlocking(
         "File must be fully read before editing. A partial read (using offset/limit) does not count, read the entire file first, then retry the edit.";
     return result;
   }
-  std::string current_contents;
-  const bool content_unchanged =
-      base::ReadFileToString(path, &current_contents) &&
-      current_contents == last_read->content;
-  if (!content_unchanged) {
-    result.error_code = "file_modified_since_read";
-    result.error_message =
-        "File has been modified since read, either by the user or by a "
-        "linter. Read it again before attempting to write it.";
-    return result;
-  }
-
+  // Single read serves both the staleness guard and the edit input — a
+  // second read would open a TOCTOU window where the edit applies to content
+  // the guard never validated.
   std::string contents;
   if (!base::ReadFileToString(path, &contents)) {
     result.error_code = "read_failed";
     result.error_message =
         base::StrCat({"failed to read file for edit: ", path.AsUTF8Unsafe()});
+    return result;
+  }
+  if (contents != last_read->content) {
+    result.error_code = "file_modified_since_read";
+    result.error_message =
+        "File has been modified since read, either by the user or by a "
+        "linter. Read it again before attempting to write it.";
     return result;
   }
 

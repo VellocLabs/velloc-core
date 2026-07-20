@@ -14,8 +14,11 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -1513,6 +1516,28 @@ void OpenAiProvider::DoGenerate(const base::DictValue& call_options,
   }
 
   std::string request_id = ResolveRequestId(call_options);
+
+  // Concurrency pool: blocking calls take the SAME gate as streams so a low
+  // cap (e.g. chatgpt-pro's max_concurrent_streams: 1) can't be defeated by a
+  // one-shot call opening a second connection the Codex backend would silently
+  // hang. Over the cap the request waits FIFO alongside streams.
+  if (!stream_guard_.CanStartStream()) {
+    LlmStreamGuard::QueuedStream queued;
+    queued.request_id = request_id;
+    queued.call_options = call_options.Clone();
+    queued.generate_callback = std::move(callback);
+    stream_guard_.EnqueueStream(std::move(queued));
+    return;
+  }
+
+  StartGenerate(request_id, call_options, std::move(callback));
+}
+
+void OpenAiProvider::StartGenerate(const std::string& request_id,
+                                   const base::DictValue& call_options,
+                                   GenerateCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   const bool use_responses_api = uses_responses_api_;
   base::DictValue body =
       use_responses_api
@@ -1539,6 +1564,15 @@ void OpenAiProvider::DoGenerate(const base::DictValue& call_options,
 
   auto* loader_ptr = loader.get();
   pending_loaders_.emplace(request_id, std::move(loader));
+
+  // Count the slot BEFORE starting the loader. TrackBlocking (not TrackStream)
+  // deliberately does NOT arm the idle watchdog: a blocking DownloadToString
+  // delivers the whole body at once (no per-chunk idle signal), so the
+  // watchdog would fire spuriously on any long one-shot download. The blocking
+  // timeout is the host deadline, which cancels via broker->CancelRequest ->
+  // this provider's CancelRequest. The slot is still released through
+  // OnStreamFinished on the success / error / cancel paths below.
+  stream_guard_.TrackBlocking(request_id);
 
   loader_ptr->DownloadToString(
       url_loader_factory_.get(),
@@ -1567,6 +1601,12 @@ void OpenAiProvider::OnGenerateComplete(
     }
     pending_loaders_.erase(it);
   }
+
+  // Release the concurrency slot and admit the next queued request. Safe even
+  // if this request was never pool-tracked (OnStreamFinished ignores unknown
+  // ids).
+  stream_guard_.OnStreamFinished(request_id);
+  PumpQueuedStreams();
 
   if (!response_body) {
     std::string error = "Network error (net::ERR = " +
@@ -1609,6 +1649,21 @@ void OpenAiProvider::DoStream(const base::DictValue& call_options,
                               StreamChunkCallback chunk_callback,
                               StreamDoneCallback done_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Deliver chunk/done callbacks via a posted task instead of synchronously.
+  // The host/guest callback chain behind these callbacks can call back into
+  // CancelRequest (or otherwise complete this stream) — if that happened
+  // synchronously from inside ProcessSseLine / OnStreamDataReceived it would
+  // destroy the StreamContext (and its StreamConsumer) under our feet,
+  // leaving dangling references on the stack (this caused a field crash:
+  // INVALID_POINTER_READ in memcmp via active_streams_.find on a freed
+  // request-id string). Posting breaks the re-entrancy: provider code always
+  // finishes its current stack frame before any cancel/complete can run.
+  // Both callbacks are posted to the SAME sequence, so relative ordering
+  // (all chunks, then done) is preserved.
+  auto task_runner = base::SequencedTaskRunner::GetCurrentDefault();
+  chunk_callback = base::BindPostTask(task_runner, std::move(chunk_callback));
+  done_callback = base::BindPostTask(task_runner, std::move(done_callback));
 
   if (!IsConfigured()) {
     std::move(done_callback).Run(display_name_ + " provider not configured");
@@ -1671,6 +1726,9 @@ void OpenAiProvider::StartStream(const std::string& request_id,
   auto ctx = std::make_unique<StreamContext>();
   ctx->consumer = std::move(consumer);
   ctx->loader = std::move(loader);
+  // chunk/done callbacks were already wrapped in BindPostTask by DoStream
+  // (the single entry point for both direct and queued streams), so emitting
+  // through them can never re-entrantly destroy this StreamContext.
   ctx->chunk_callback = std::move(chunk_callback);
   ctx->done_callback = std::move(done_callback);
   ctx->id = request_id;
@@ -1684,9 +1742,14 @@ void OpenAiProvider::StartStream(const std::string& request_id,
   loader_ptr->DownloadAsStream(url_loader_factory_.get(), consumer_ptr);
 }
 
-void OpenAiProvider::OnStreamDataReceived(const std::string& request_id,
+void OpenAiProvider::OnStreamDataReceived(std::string request_id,
                                           std::string_view data) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // `request_id` is a by-value copy on purpose: the caller passes
+  // StreamConsumer::request_id_, and the consumer (owned by the
+  // StreamContext) can be destroyed while this method runs — see the
+  // declaration comment.
 
   // Any inbound bytes (chunk, SSE comment/keep-alive, blank line) prove the
   // connection is alive — refresh the idle clock before parsing.
@@ -1699,8 +1762,17 @@ void OpenAiProvider::OnStreamDataReceived(const std::string& request_id,
   StreamContext& ctx = *it->second;
   ctx.raw_response.append(data);
 
-  for (const std::string& line : ctx.line_splitter.Feed(data)) {
-    ProcessSseLine(ctx, line);
+  // Snapshot the completed lines (Feed returns them by value). Chunk/done
+  // callbacks are wired through BindPostTask (see DoStream), so emitting a
+  // chunk cannot re-entrantly cancel/complete this stream. The per-line
+  // re-fetch below is kept as cheap defence-in-depth in case a future caller
+  // wires a synchronous callback again.
+  std::vector<std::string> lines = ctx.line_splitter.Feed(data);
+  for (const std::string& line : lines) {
+    auto cur = active_streams_.find(request_id);
+    if (cur == active_streams_.end())
+      return;
+    ProcessSseLine(*cur->second, line);
   }
 }
 
@@ -1826,44 +1898,18 @@ void OpenAiProvider::ProcessSseLine(StreamContext& ctx,
       }
     }
 
-    // Tool-call deltas.
+    // Tool-call deltas. Correlating argument deltas to their tool-call id by
+    // SSE index — and opening each call exactly once, even when a backend
+    // (DashScope/Qwen) repeats the tool-call object with an empty `id` on
+    // every chunk — lives in a shared helper so the quirk is unit-tested.
     if (const base::ListValue* tool_calls =
             delta->FindList("tool_calls")) {
       for (const auto& tc_val : *tool_calls) {
         const base::DictValue* tc = tc_val.GetIfDict();
         if (!tc)
           continue;
-
-        int index = tc->FindInt("index").value_or(0);
-
-        if (const std::string* id = tc->FindString("id")) {
-          ctx.tool_call_ids[index] = *id;
-
-          base::DictValue chunk;
-          chunk.Set("type", "tool-call-streaming-start");
-          chunk.Set("toolCallId", *id);
-          chunk.Set("toolCallType", "function");
-
-          if (const base::DictValue* fn = tc->FindDict("function")) {
-            if (const std::string* name = fn->FindString("name"))
-              chunk.Set("toolName", *name);
-          }
-          ctx.chunk_callback.Run(std::move(chunk));
-        }
-
-        if (const base::DictValue* fn = tc->FindDict("function")) {
-          if (const std::string* args = fn->FindString("arguments")) {
-            if (!args->empty()) {
-              base::DictValue chunk;
-              chunk.Set("type", "tool-call-delta");
-              auto id_it = ctx.tool_call_ids.find(index);
-              if (id_it != ctx.tool_call_ids.end())
-                chunk.Set("toolCallId", id_it->second);
-              chunk.Set("argsTextDelta", *args);
-              ctx.chunk_callback.Run(std::move(chunk));
-            }
-          }
-        }
+        TranslateChatCompletionToolCallDelta(*tc, ctx.tool_call_ids,
+                                             ctx.chunk_callback);
       }
     }
   }
@@ -1884,9 +1930,12 @@ void OpenAiProvider::ProcessSseLine(StreamContext& ctx,
   }
 }
 
-void OpenAiProvider::OnStreamComplete(const std::string& request_id,
-                                      bool success) {
+void OpenAiProvider::OnStreamComplete(std::string request_id, bool success) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // `request_id` is a by-value copy on purpose — the argument aliases
+  // StreamConsumer::request_id_ and the consumer is destroyed below when the
+  // StreamContext is erased from active_streams_.
 
   auto it = active_streams_.find(request_id);
   if (it == active_streams_.end())
@@ -1956,7 +2005,13 @@ void OpenAiProvider::OnStreamComplete(const std::string& request_id,
 void OpenAiProvider::CancelRequest(const std::string& request_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  pending_loaders_.erase(request_id);
+  // Blocking (DoGenerate) requests hold their loader here. Erasing the loader
+  // tears down the socket and suppresses OnGenerateComplete, so release the
+  // slot + admit the next queued request now.
+  if (pending_loaders_.erase(request_id) > 0) {
+    stream_guard_.OnStreamFinished(request_id);
+    PumpQueuedStreams();
+  }
 
   auto it = active_streams_.find(request_id);
   if (it != active_streams_.end()) {
@@ -2003,9 +2058,14 @@ void OpenAiProvider::PumpQueuedStreams() {
     if (!queued.has_value()) {
       return;
     }
-    StartStream(queued->request_id, queued->call_options,
-                std::move(queued->chunk_callback),
-                std::move(queued->done_callback));
+    if (queued->is_blocking()) {
+      StartGenerate(queued->request_id, queued->call_options,
+                    std::move(queued->generate_callback));
+    } else {
+      StartStream(queued->request_id, queued->call_options,
+                  std::move(queued->chunk_callback),
+                  std::move(queued->done_callback));
+    }
   }
 }
 
@@ -2020,6 +2080,30 @@ void OpenAiProvider::FetchAvailableModels(FetchModelsCallback callback) {
     std::move(callback).Run({});
     return;
   }
+
+  // Coalesce concurrent fetches. The previous pattern replaced
+  // models_loader_, which silently DROPPED the in-flight caller's callback
+  // (SimpleURLLoader never runs it on destruction) — upstream,
+  // NexusLlmHost::Catalog()'s BarrierClosure then never fired and the
+  // guest's catalog call hung forever.
+  if (models_loader_) {
+    pending_models_callbacks_.push_back(std::move(callback));
+    return;
+  }
+  callback = base::BindOnce(
+      [](base::WeakPtr<OpenAiProvider> self, FetchModelsCallback primary,
+         std::vector<ModelInfo> models) {
+        std::move(primary).Run(models);
+        if (self) {
+          std::vector<FetchModelsCallback> waiting =
+              std::move(self->pending_models_callbacks_);
+          self->pending_models_callbacks_.clear();
+          for (FetchModelsCallback& cb : waiting) {
+            std::move(cb).Run(models);
+          }
+        }
+      },
+      weak_factory_.GetWeakPtr(), std::move(callback));
 
   const bool codex = IsCodexBackend();
   std::string models_url = base_url_ + "/models";

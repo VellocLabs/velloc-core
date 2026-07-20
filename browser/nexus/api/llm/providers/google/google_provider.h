@@ -77,12 +77,20 @@ class GoogleProvider : public LlmProvider {
   void OnGenerateComplete(const std::string& request_id,
                           std::optional<std::string> response_body);
 
+  // Posted by StreamHandler once it has delivered its done callback; erases
+  // the handler from pending_streams_ (previously completed handlers leaked
+  // there until provider destruction).
+  void OnStreamFinished(const std::string& request_id);
+
   void OnFetchModelsComplete(FetchModelsCallback callback,
                              std::optional<std::string> response_body);
 
   std::vector<ModelInfo> fetched_models_;
   std::string last_raw_catalog_json_;
   std::unique_ptr<network::SimpleURLLoader> models_loader_;
+  // Fetch requests that arrived while models_loader_ was in flight; resolved
+  // with the active fetch's result (see FetchAvailableModels).
+  std::vector<FetchModelsCallback> pending_models_callbacks_;
 
   std::string api_key_;
   std::string base_url_;

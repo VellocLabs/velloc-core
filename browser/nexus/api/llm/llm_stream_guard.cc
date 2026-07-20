@@ -60,6 +60,15 @@ void LlmStreamGuard::TrackStream(const std::string& request_id) {
   streams_.emplace(request_id, std::move(state));
 }
 
+void LlmStreamGuard::TrackBlocking(const std::string& request_id) {
+  auto state = std::make_unique<StreamState>();
+  state->last_activity = base::TimeTicks::Now();
+  // No ArmIdleTimer: blocking requests have no per-chunk idle signal, so the
+  // watchdog would fire spuriously on any long one-shot download. The slot is
+  // released via OnStreamFinished (success/error/cancel) only.
+  streams_.emplace(request_id, std::move(state));
+}
+
 void LlmStreamGuard::NoteStreamBytes(const std::string& request_id) {
   auto it = streams_.find(request_id);
   if (it != streams_.end()) {

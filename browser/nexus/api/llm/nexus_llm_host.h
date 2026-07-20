@@ -2,6 +2,7 @@
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_NEXUS_LLM_HOST_H_
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -11,6 +12,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "base/values.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "custom_browser/browser/nexus/mojom/nexus_llm.mojom.h"
 
@@ -70,11 +73,34 @@ class NexusLlmHost {
   NexusLlmHost& operator=(const NexusLlmHost&) = delete;
 
   void Catalog(CatalogCallback callback);
+  // `deadline_ms` is an absolute epoch-ms deadline for the whole call; when
+  // present, the host starts a one-shot timer that, on expiry before
+  // OnGenerateComplete, cancels the upstream request via
+  // LlmBroker::CancelRequest and resolves the callback with a
+  // `status:'timeout'` result. `timeline` carries the caller-captured
+  // t_recv_native stamp; the host fills t_host_read / t_resolve and returns
+  // it on the result.
   void Call(mojom::NexusLlmRequestParamsPtr request,
+            std::optional<double> deadline_ms,
+            base::DictValue timeline,
             CallCallback callback);
   void StreamStart(mojom::NexusLlmRequestParamsPtr request,
                    StreamStartCallback callback);
+  // `deadline_ms` / `wait_ms` implement the "hold-read" contract:
+  //   - queue non-empty OR stream done  → resolve immediately (legacy).
+  //   - queue empty AND (deadline_ms OR wait_ms) present → HOLD the read:
+  //       the callback is stored on the stream and a one-shot timer starts
+  //       for `min(wait_ms, deadline_ms - now)`. OnStreamChunk/OnStreamDone
+  //       resolve the pending read when fresh data arrives. On timer expiry
+  //       with no new data, the host resolves with `status:'timeout'` AND
+  //       calls broker->CancelRequest(stream_id) so the upstream loader /
+  //       socket is torn down server-side.
+  // `timeline` carries the caller-captured t_recv_native stamp; the host
+  // fills t_host_read / t_resolve and returns it on the result.
   void StreamRead(const std::string& stream_id,
+                  std::optional<double> deadline_ms,
+                  std::optional<double> wait_ms,
+                  base::DictValue timeline,
                   StreamReadCallback callback);
   void Cancel(const std::string& stream_id, CancelCallback callback);
   bool SetDefaultSelection(const std::string& provider_id,
@@ -85,6 +111,24 @@ class NexusLlmHost {
     std::string tool_call_id;
     std::string tool_name;
     std::string args_json;
+  };
+
+  // One held streamRead (the JS guest is waiting for new data). Bound into
+  // StreamState so OnStreamChunk / OnStreamDone can resolve it and so the
+  // hold timer can fire a timeout. The timer is a unique_ptr because
+  // base::OneShotTimer is not movable and StreamState needs to stay movable
+  // (it's emplaced into streams_ by value).
+  struct PendingStreamRead {
+    PendingStreamRead();
+    PendingStreamRead(const PendingStreamRead&) = delete;
+    PendingStreamRead& operator=(const PendingStreamRead&) = delete;
+    PendingStreamRead(PendingStreamRead&&);
+    PendingStreamRead& operator=(PendingStreamRead&&);
+    ~PendingStreamRead();
+
+    StreamReadCallback callback;
+    base::DictValue timeline;
+    std::unique_ptr<base::OneShotTimer> hold_timer;
   };
 
   struct StreamState {
@@ -103,11 +147,34 @@ class NexusLlmHost {
     std::vector<std::string> pending_tool_call_order;
     bool terminal_event_queued = false;
     bool done = false;
+    // Held streamRead waiting for data; nullopt when no read is pending.
+    std::optional<PendingStreamRead> pending_read;
   };
 
  private:
   FRIEND_TEST_ALL_PREFIXES(NexusLlmHostTest,
                            StreamErrorChunkAcceptsStringErrorPayload);
+  FRIEND_TEST_ALL_PREFIXES(NexusLlmHostHoldReadTest,
+                           OnStreamDoneErasesEntryAfterResolvingHeldRead);
+  FRIEND_TEST_ALL_PREFIXES(NexusLlmHostHoldReadTest,
+                           HoldTimeoutErasesEntryAndCancelsUpstream);
+
+  // One held Call waiting on its provider result. Keyed by request_id so
+  // OnGenerateComplete can find and cancel the deadline timer before
+  // resolving.
+  struct PendingCall {
+    PendingCall();
+    PendingCall(const PendingCall&) = delete;
+    PendingCall& operator=(const PendingCall&) = delete;
+    PendingCall(PendingCall&&);
+    PendingCall& operator=(PendingCall&&);
+    ~PendingCall();
+
+    std::string resolved_model_id;
+    CallCallback callback;
+    base::DictValue timeline;
+    std::unique_ptr<base::OneShotTimer> deadline_timer;
+  };
 
   // OAuth-backed providers need a fresh access token before dispatch. These
   // run an async refresh (no-op for non-OAuth providers), apply the token to
@@ -120,22 +187,33 @@ class NexusLlmHost {
                           std::string access_token,
                           std::string account_id);
   void ContinueCall(mojom::NexusLlmRequestParamsPtr request,
+                    std::optional<double> deadline_ms,
+                    base::DictValue timeline,
                     CallCallback callback,
                     bool auth_ok);
   void ContinueStreamStart(mojom::NexusLlmRequestParamsPtr request,
                            StreamStartCallback callback,
                            bool auth_ok);
 
-  void OnGenerateComplete(const std::string& resolved_model_id,
-                          CallCallback callback,
+  void OnGenerateComplete(const std::string& request_id,
                           GenerateResult result,
                           std::optional<std::string> error);
   void OnStreamChunk(const std::string& stream_id, base::DictValue chunk);
   void OnStreamDone(const std::string& stream_id,
                     std::optional<std::string> error);
 
+  // Hold-read machinery. ResolveHeldRead pulls the pending read off `state`
+  // (if any), stops its timer, builds a result from the current queue/done
+  // and runs the callback. Returns true when a read was resolved.
+  bool ResolveHeldRead(StreamState& state, const char* status);
+  void OnStreamReadHoldTimeout(const std::string& stream_id);
+
+  // Call deadline machinery.
+  void OnCallDeadlineTimeout(const std::string& request_id);
+
   raw_ptr<Profile> profile_;
   std::map<std::string, StreamState> streams_;
+  std::map<std::string, PendingCall> pending_calls_;
   base::TimeTicks last_catalog_refresh_time_;
   std::vector<std::string> last_catalog_refresh_provider_ids_;
   base::WeakPtrFactory<NexusLlmHost> weak_factory_{this};

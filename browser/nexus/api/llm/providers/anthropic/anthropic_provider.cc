@@ -14,6 +14,8 @@
 #include "base/logging.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -192,7 +194,12 @@ class AnthropicProvider::StreamSession
     if (completed_)
       return;
     ReadRemainingPipeData();
-    ProcessBuffer();
+    // Only parse the buffer as SSE for successful responses. A non-200 body
+    // is a JSON error payload — running it through the SSE parser could
+    // consume parts of buffer_ (anything containing "\n\n") before the error
+    // extraction below reads it.
+    if (response_code_ == 200)
+      ProcessBuffer();
 
     if (response_code_ != 200) {
       std::string error =
@@ -233,6 +240,11 @@ class AnthropicProvider::StreamSession
     ReadRemainingPipeData();
     if (response_code_ == 200)
       ProcessBuffer();
+    // ProcessBuffer can hit a terminal `error` SSE event, which runs
+    // Complete() and cancels the watcher — re-arming a cancelled watcher is
+    // invalid, so bail out once completed.
+    if (completed_)
+      return;
     pipe_watcher_.ArmOrNotify();
   }
 
@@ -253,7 +265,9 @@ class AnthropicProvider::StreamSession
   }
 
   void ProcessBuffer() {
-    while (true) {
+    // Stop as soon as a terminal `error` SSE event completes the session —
+    // don't keep emitting chunks for a stream that already reported done.
+    while (!completed_) {
       size_t pos = buffer_.find("\n\n");
       if (pos == std::string::npos)
         break;
@@ -654,10 +668,26 @@ void AnthropicProvider::DoStream(const base::DictValue& call_options,
   std::string body_json;
   base::JSONWriter::Write(body, &body_json);
 
+  // All three callbacks are wired through BindPostTask on purpose:
+  //  - chunk/done: the host/guest chain behind them can call back into
+  //    CancelRequest synchronously; that erases pending_streams_ and
+  //    destroys the StreamSession while it is still executing
+  //    (ProcessBuffer/HandleEvent) — a use-after-free. Posting breaks the
+  //    re-entrancy.
+  //  - completion: Complete() runs it from inside ProcessBuffer when a
+  //    terminal `error` SSE event arrives; running OnStreamComplete
+  //    synchronously would destroy the session mid-ProcessBuffer (the loop
+  //    then touches the freed buffer_, and ReadPipe re-arms a destroyed
+  //    watcher). Posting defers destruction until the session unwinds; the
+  //    `completed_` flag suppresses any further emission in the meantime.
+  auto task_runner = base::SequencedTaskRunner::GetCurrentDefault();
   auto session = std::make_unique<StreamSession>(
-      std::move(chunk_callback), std::move(done_callback),
-      base::BindOnce(&AnthropicProvider::OnStreamComplete,
-                     weak_ptr_factory_.GetWeakPtr(), request_id));
+      base::BindPostTask(task_runner, std::move(chunk_callback)),
+      base::BindPostTask(task_runner, std::move(done_callback)),
+      base::BindPostTask(
+          task_runner,
+          base::BindOnce(&AnthropicProvider::OnStreamComplete,
+                         weak_ptr_factory_.GetWeakPtr(), request_id)));
 
   auto resource_request = CreateResourceRequest();
   session->Start(url_loader_factory_, std::move(resource_request), body_json);
@@ -696,6 +726,28 @@ void AnthropicProvider::FetchAvailableModels(FetchModelsCallback callback) {
     std::move(callback).Run({});
     return;
   }
+
+  // Coalesce concurrent fetches — replacing models_loader_ mid-flight would
+  // silently drop the earlier caller's callback (SimpleURLLoader never runs
+  // it on destruction), hanging NexusLlmHost::Catalog()'s barrier.
+  if (models_loader_) {
+    pending_models_callbacks_.push_back(std::move(callback));
+    return;
+  }
+  callback = base::BindOnce(
+      [](base::WeakPtr<AnthropicProvider> self, FetchModelsCallback primary,
+         std::vector<ModelInfo> models) {
+        std::move(primary).Run(models);
+        if (self) {
+          std::vector<FetchModelsCallback> waiting =
+              std::move(self->pending_models_callbacks_);
+          self->pending_models_callbacks_.clear();
+          for (FetchModelsCallback& cb : waiting) {
+            std::move(cb).Run(models);
+          }
+        }
+      },
+      weak_ptr_factory_.GetWeakPtr(), std::move(callback));
 
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = GURL(base_url_ + "/v1/models");

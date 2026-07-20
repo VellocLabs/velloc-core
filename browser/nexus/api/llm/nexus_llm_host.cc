@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <set>
 #include <utility>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "base/logging.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/uuid.h"
@@ -1125,11 +1127,37 @@ void QueueErrorEvent(NexusLlmHost::StreamState* state,
 
 }  // namespace
 
+namespace {
+
+// Epoch-ms "now" for the timeline stamps the JS guest logs. Uses
+// base::Time::Now() (wall clock) because the stamps are compared against
+// JS-side Date.now() values — NOT base::TimeTicks (monotonic, different
+// epoch).
+double NowEpochMs() {
+  return static_cast<double>(
+      base::Time::Now().InMillisecondsFSinceUnixEpochIgnoringNull());
+}
+
+}  // namespace
+
 NexusLlmHost::StreamState::StreamState() = default;
 NexusLlmHost::StreamState::StreamState(StreamState&&) = default;
 NexusLlmHost::StreamState& NexusLlmHost::StreamState::operator=(StreamState&&) =
     default;
 NexusLlmHost::StreamState::~StreamState() = default;
+
+NexusLlmHost::PendingStreamRead::PendingStreamRead() = default;
+NexusLlmHost::PendingStreamRead::PendingStreamRead(PendingStreamRead&&) =
+    default;
+NexusLlmHost::PendingStreamRead& NexusLlmHost::PendingStreamRead::operator=(
+    PendingStreamRead&&) = default;
+NexusLlmHost::PendingStreamRead::~PendingStreamRead() = default;
+
+NexusLlmHost::PendingCall::PendingCall() = default;
+NexusLlmHost::PendingCall::PendingCall(PendingCall&&) = default;
+NexusLlmHost::PendingCall& NexusLlmHost::PendingCall::operator=(PendingCall&&) =
+    default;
+NexusLlmHost::PendingCall::~PendingCall() = default;
 
 NexusLlmHost::NexusLlmHost(Profile* profile) : profile_(profile) {}
 
@@ -1299,6 +1327,8 @@ void NexusLlmHost::OnEnsureFreshToken(const std::string& provider_id,
 }
 
 void NexusLlmHost::Call(mojom::NexusLlmRequestParamsPtr request,
+                        std::optional<double> deadline_ms,
+                        base::DictValue timeline,
                         CallCallback callback) {
   if (!request) {
     std::move(callback).Run(false, nullptr,
@@ -1322,13 +1352,17 @@ void NexusLlmHost::Call(mojom::NexusLlmRequestParamsPtr request,
     return;
   }
 
+  timeline.Set("t_host_read", NowEpochMs());
   EnsureProviderAuthThen(
       provider_id,
       base::BindOnce(&NexusLlmHost::ContinueCall, weak_factory_.GetWeakPtr(),
-                     std::move(request), std::move(callback)));
+                     std::move(request), deadline_ms, std::move(timeline),
+                     std::move(callback)));
 }
 
 void NexusLlmHost::ContinueCall(mojom::NexusLlmRequestParamsPtr request,
+                                std::optional<double> deadline_ms,
+                                base::DictValue timeline,
                                 CallCallback callback,
                                 bool auth_ok) {
   if (!auth_ok) {
@@ -1355,11 +1389,40 @@ void NexusLlmHost::ContinueCall(mojom::NexusLlmRequestParamsPtr request,
   const std::string resolved_model_id =
       ResolveModelId(profile_, *request, provider_id, provider);
 
+  // Track the in-flight call so OnCallDeadlineTimeout can find + cancel it,
+  // and so OnGenerateComplete can stop the deadline timer before resolving.
+  PendingCall pending;
+  pending.resolved_model_id = resolved_model_id;
+  pending.callback = std::move(callback);
+  pending.timeline = std::move(timeline);
+  if (deadline_ms.has_value()) {
+    const double now_ms = NowEpochMs();
+    const double remaining_ms = *deadline_ms - now_ms;
+    if (remaining_ms <= 0) {
+      // Already past the deadline — cancel upstream and resolve as timeout
+      // without ever dispatching to the provider.
+      if (LlmBroker* broker = GetBroker(profile_)) {
+        broker->CancelRequest(request_id);
+      }
+      pending.timeline.Set("t_resolve", now_ms);
+      auto response = mojom::NexusLlmCallResult::New();
+      response->status = "timeout";
+      response->timeline = std::move(pending.timeline);
+      std::move(pending.callback).Run(true, std::move(response), std::nullopt);
+      return;
+    }
+    auto timer = std::make_unique<base::OneShotTimer>();
+    timer->Start(FROM_HERE, base::Milliseconds(static_cast<int64_t>(remaining_ms)),
+                 base::BindOnce(&NexusLlmHost::OnCallDeadlineTimeout,
+                                weak_factory_.GetWeakPtr(), request_id));
+    pending.deadline_timer = std::move(timer);
+  }
+  pending_calls_.emplace(request_id, std::move(pending));
+
   provider->DoGenerate(
       call_options,
       base::BindOnce(&NexusLlmHost::OnGenerateComplete,
-                     weak_factory_.GetWeakPtr(), resolved_model_id,
-                     std::move(callback)));
+                     weak_factory_.GetWeakPtr(), request_id));
 }
 
 void NexusLlmHost::StreamStart(mojom::NexusLlmRequestParamsPtr request,
@@ -1439,6 +1502,9 @@ void NexusLlmHost::ContinueStreamStart(mojom::NexusLlmRequestParamsPtr request,
 }
 
 void NexusLlmHost::StreamRead(const std::string& stream_id,
+                              std::optional<double> deadline_ms,
+                              std::optional<double> wait_ms,
+                              base::DictValue timeline,
                               StreamReadCallback callback) {
   auto it = streams_.find(stream_id);
   if (it == streams_.end()) {
@@ -1447,16 +1513,164 @@ void NexusLlmHost::StreamRead(const std::string& stream_id,
     return;
   }
 
-  auto result = mojom::NexusLlmStreamReadResult::New();
-  result->events = std::move(it->second.queued_events);
-  result->done = it->second.done;
-  it->second.queued_events.clear();
+  StreamState& state = it->second;
+  timeline.Set("t_host_read", NowEpochMs());
 
-  if (it->second.done) {
+  // Legacy fast path: data already queued, or stream is done — resolve
+  // immediately with whatever is buffered (possibly empty on done).
+  const bool has_data = !state.queued_events.empty();
+  if (has_data || state.done) {
+    auto result = mojom::NexusLlmStreamReadResult::New();
+    result->events = std::move(state.queued_events);
+    result->done = state.done;
+    state.queued_events.clear();
+    result->status = state.done ? "done" : "ok";
+    timeline.Set("t_resolve", NowEpochMs());
+    result->timeline = std::move(timeline);
+
+    if (state.done) {
+      streams_.erase(it);
+    }
+
+    std::move(callback).Run(true, std::move(result), std::nullopt);
+    return;
+  }
+
+  // No data, not done, and the caller asked us to wait — HOLD the read.
+  if (deadline_ms.has_value() || wait_ms.has_value()) {
+    // Compute the hold window: min(wait_ms, deadline_ms - now). Whichever
+    // fires first wins; both are optional, and either alone is sufficient.
+    const double now_ms = NowEpochMs();
+    double hold_ms = -1;
+    if (wait_ms.has_value() && *wait_ms > 0) {
+      hold_ms = *wait_ms;
+    }
+    if (deadline_ms.has_value()) {
+      const double remaining_ms = *deadline_ms - now_ms;
+      if (hold_ms < 0 || remaining_ms < hold_ms) {
+        hold_ms = remaining_ms;
+      }
+    }
+
+    if (hold_ms > 0) {
+      // Disallow stacking: a second streamRead for the same stream while one
+      // is held replaces the previous pending read. The previous read is
+      // RESOLVED (empty, status "ok") rather than dropped — destroying an
+      // unrun mojo response callback while the receiver is still bound
+      // triggers a DCHECK/bad-message, and the guest contract only ever has
+      // one outstanding read per stream anyway.
+      ResolveHeldRead(state, "ok");
+      PendingStreamRead pending;
+      pending.callback = std::move(callback);
+      pending.timeline = std::move(timeline);
+      auto timer = std::make_unique<base::OneShotTimer>();
+      timer->Start(
+          FROM_HERE, base::Milliseconds(static_cast<int64_t>(hold_ms)),
+          base::BindOnce(&NexusLlmHost::OnStreamReadHoldTimeout,
+                         weak_factory_.GetWeakPtr(), stream_id));
+      pending.hold_timer = std::move(timer);
+      state.pending_read = std::move(pending);
+      return;
+    }
+    // hold_ms <= 0: deadline already passed — fall through to immediate
+    // empty+timeout resolution below.
+  }
+
+  // No hold requested (or deadline already passed): legacy immediate
+  // resolution with an empty queue. `status:'timeout'` when a deadline was
+  // supplied and has already elapsed; otherwise 'ok'.
+  auto result = mojom::NexusLlmStreamReadResult::New();
+  result->done = false;
+  const bool deadline_elapsed =
+      deadline_ms.has_value() && NowEpochMs() >= *deadline_ms;
+  result->status = deadline_elapsed ? "timeout" : "ok";
+  timeline.Set("t_resolve", NowEpochMs());
+  result->timeline = std::move(timeline);
+
+  // The guest abandons a stream on ANY `status:'timeout'` read (it throws
+  // and starts a fresh stream). Mirror OnStreamReadHoldTimeout: tear down
+  // the upstream loader and drop the entry, or both leak per abandoned
+  // stream.
+  if (deadline_elapsed) {
+    if (LlmBroker* broker = GetBroker(profile_)) {
+      broker->CancelRequest(stream_id);
+    }
     streams_.erase(it);
   }
 
   std::move(callback).Run(true, std::move(result), std::nullopt);
+}
+
+bool NexusLlmHost::ResolveHeldRead(StreamState& state, const char* status) {
+  if (!state.pending_read.has_value()) {
+    return false;
+  }
+
+  PendingStreamRead pending = std::move(*state.pending_read);
+  state.pending_read.reset();
+  if (pending.hold_timer) {
+    pending.hold_timer->Stop();
+  }
+
+  auto result = mojom::NexusLlmStreamReadResult::New();
+  result->events = std::move(state.queued_events);
+  result->done = state.done;
+  state.queued_events.clear();
+  result->status = status;
+  pending.timeline.Set("t_resolve", NowEpochMs());
+  result->timeline = std::move(pending.timeline);
+  // POST the callback instead of running it synchronously. The callback is
+  // the bridge adapter's read lambda, which can decide to call
+  // NexusLlmHost::Cancel — synchronously that would re-enter this host,
+  // erase the StreamState most callers of ResolveHeldRead still reference
+  // on their stack (OnStreamChunk's `state`, OnStreamDone/Cancel's `it`),
+  // and re-enter the provider from inside its own chunk-emission chain —
+  // the exact re-entrancy family behind the memcmp field crash. Posting
+  // breaks the loop; same-sequence posting preserves per-stream ordering.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(std::move(pending.callback), true, std::move(result),
+                     std::optional<std::string>()));
+  return true;
+}
+
+void NexusLlmHost::OnStreamReadHoldTimeout(const std::string& stream_id) {
+  auto it = streams_.find(stream_id);
+  if (it == streams_.end()) {
+    return;
+  }
+
+  StreamState& state = it->second;
+  if (!state.pending_read.has_value()) {
+    return;
+  }
+
+  // The hold window expired with no new data — resolve with status:'timeout'
+  // (empty chunks, done=false) AND cancel the upstream loader so the socket
+  // closes server-side. The JS guest has its own 100s transport fallback;
+  // the native side is the PRIMARY timeout.
+  PendingStreamRead pending = std::move(*state.pending_read);
+  state.pending_read.reset();
+  if (pending.hold_timer) {
+    pending.hold_timer->Stop();
+  }
+
+  if (LlmBroker* broker = GetBroker(profile_)) {
+    broker->CancelRequest(stream_id);
+  }
+
+  auto result = mojom::NexusLlmStreamReadResult::New();
+  result->done = false;
+  result->status = "timeout";
+  pending.timeline.Set("t_resolve", NowEpochMs());
+  result->timeline = std::move(pending.timeline);
+  std::move(pending.callback).Run(true, std::move(result), std::nullopt);
+
+  // The guest abandons this stream on a native timeout (it throws and starts a
+  // fresh stream under a new id) and sends neither another read nor a cancel,
+  // so drop the entry now — otherwise it leaks in `streams_` for the host's
+  // lifetime. The upstream loader was already cancelled above.
+  streams_.erase(it);
 }
 
 void NexusLlmHost::Cancel(const std::string& stream_id,
@@ -1464,22 +1678,74 @@ void NexusLlmHost::Cancel(const std::string& stream_id,
   if (LlmBroker* broker = GetBroker(profile_)) {
     broker->CancelRequest(stream_id);
   }
-  streams_.erase(stream_id);
+  auto it = streams_.find(stream_id);
+  if (it != streams_.end()) {
+    // Drain any held streamRead so its callback resolves before the stream
+    // state is erased — otherwise the guest's outstanding read would hang
+    // until its own transport-level fallback fires. Mark the state done
+    // first so the resolved read carries a self-consistent
+    // {done: true, status: "done"} (and the bridge adapter drops its
+    // per-stream state via the stream_done signal).
+    it->second.done = true;
+    ResolveHeldRead(it->second, "done");
+    streams_.erase(it);
+  }
   std::move(callback).Run(true, std::nullopt);
 }
 
-void NexusLlmHost::OnGenerateComplete(const std::string& resolved_model_id,
-                                      CallCallback callback,
+void NexusLlmHost::OnGenerateComplete(const std::string& request_id,
                                       GenerateResult result,
                                       std::optional<std::string> error) {
-  if (error.has_value()) {
-    std::move(callback).Run(false, nullptr, std::move(error));
+  auto it = pending_calls_.find(request_id);
+  if (it == pending_calls_.end()) {
+    // The deadline already fired and consumed the pending call (or the host
+    // is mid-teardown). Nothing to resolve.
     return;
   }
 
+  PendingCall pending = std::move(it->second);
+  pending_calls_.erase(it);
+  if (pending.deadline_timer) {
+    pending.deadline_timer->Stop();
+  }
+
+  if (error.has_value()) {
+    std::move(pending.callback).Run(false, nullptr, std::move(error));
+    return;
+  }
+
+  pending.timeline.Set("t_resolve", NowEpochMs());
   auto response = mojom::NexusLlmCallResult::New();
-  response->message = BuildAssistantMessage(resolved_model_id, result);
-  std::move(callback).Run(true, std::move(response), std::nullopt);
+  response->message = BuildAssistantMessage(pending.resolved_model_id, result);
+  response->status = "ok";
+  response->timeline = std::move(pending.timeline);
+  std::move(pending.callback).Run(true, std::move(response), std::nullopt);
+}
+
+void NexusLlmHost::OnCallDeadlineTimeout(const std::string& request_id) {
+  auto it = pending_calls_.find(request_id);
+  if (it == pending_calls_.end()) {
+    return;
+  }
+
+  PendingCall pending = std::move(it->second);
+  pending_calls_.erase(it);
+
+  // Cancel the upstream loader so the provider socket closes server-side.
+  if (LlmBroker* broker = GetBroker(profile_)) {
+    broker->CancelRequest(request_id);
+  }
+
+  pending.timeline.Set("t_resolve", NowEpochMs());
+  auto response = mojom::NexusLlmCallResult::New();
+  // Default-construct the (non-nullable) message so the result stays valid if
+  // it ever crosses a real mojo serialization boundary — today the host→
+  // adapter hop is same-process so a null message is tolerated, but a remote
+  // pipe would CHECK-fail validation on the unset non-nullable struct field.
+  response->message = mojom::NexusLlmAssistantMessage::New();
+  response->status = "timeout";
+  response->timeline = std::move(pending.timeline);
+  std::move(pending.callback).Run(true, std::move(response), std::nullopt);
 }
 
 void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
@@ -1495,6 +1761,29 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     return;
   }
 
+  // Backpressure: if the guest has stopped reading (wedged tab, JS error
+  // after streamStart) the queue would otherwise grow without bound while a
+  // provider keeps streaming — the idle guard never fires because bytes keep
+  // arriving. Past the cap, kill the upstream request and terminate the
+  // stream with an error event; a late read still drains the buffered error.
+  constexpr size_t kMaxQueuedStreamEvents = 8192;
+  if (state.queued_events.size() >= kMaxQueuedStreamEvents &&
+      !state.terminal_event_queued) {
+    if (LlmBroker* broker = GetBroker(profile_)) {
+      broker->CancelRequest(stream_id);
+    }
+    QueueErrorEvent(&state,
+                    "Nexus LLM stream buffered too many unread events; "
+                    "cancelled upstream request");
+    state.done = true;
+    return;
+  }
+
+  // Resolve the held streamRead (if any) whenever this chunk produces a
+  // queued event. `wake` is called at each branch's tail; branches that
+  // early-return without queueing anything skip it.
+  auto wake = [this, &state]() { ResolveHeldRead(state, "ok"); };
+
   if (*type == "text-delta") {
     const std::string* text_delta = chunk.FindString("textDelta");
     if (!text_delta || text_delta->empty()) {
@@ -1505,6 +1794,7 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     event->type = mojom::NexusLlmStreamEventType::kTextDelta;
     event->text_delta = *text_delta;
     EnqueueEvent(&state, std::move(event));
+    wake();
     return;
   }
 
@@ -1521,14 +1811,19 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     event->type = mojom::NexusLlmStreamEventType::kReasoningDelta;
     event->text_delta = *text_delta;
     EnqueueEvent(&state, std::move(event));
+    wake();
     return;
   }
 
   if (*type == "tool-call-streaming-start") {
+    // Treat an EMPTY id like a missing one (matching the "tool-call" branch)
+    // — an empty string would otherwise become a valid correlation key and
+    // collide across distinct id-less calls.
     PendingToolCall pending;
+    const std::string* start_id = chunk.FindString("toolCallId");
     pending.tool_call_id =
-        chunk.FindString("toolCallId")
-            ? *chunk.FindString("toolCallId")
+        (start_id && !start_id->empty())
+            ? *start_id
             : base::Uuid::GenerateRandomV4().AsLowercaseString();
     if (const auto* tool_name = chunk.FindString("toolName");
         tool_name && !tool_name->empty()) {
@@ -1547,13 +1842,15 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
       event->name = pending.tool_name;
     }
     EnqueueEvent(&state, std::move(event));
+    wake();
     return;
   }
 
   if (*type == "tool-call-delta") {
+    const std::string* delta_id = chunk.FindString("toolCallId");
     std::string tool_call_id =
-        chunk.FindString("toolCallId")
-            ? *chunk.FindString("toolCallId")
+        (delta_id && !delta_id->empty())
+            ? *delta_id
             : base::Uuid::GenerateRandomV4().AsLowercaseString();
 
     PendingToolCall& pending = state.pending_tool_calls[tool_call_id];
@@ -1581,6 +1878,7 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
       event->args_text_delta = *args_delta;
     }
     EnqueueEvent(&state, std::move(event));
+    wake();
     return;
   }
 
@@ -1619,11 +1917,13 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     }
 
     QueueCompletedToolCallEvent(&state, tool_call_id, tool_name, args_json);
+    wake();
     return;
   }
 
   if (*type == "usage-update") {
     QueueUsageUpdate(&state, UsageFromProviderDict(chunk.FindDict("usage")));
+    wake();
     return;
   }
 
@@ -1635,6 +1935,7 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
       reason = ParseFinishReasonString(*finish_reason);
     }
     QueueFinishEvent(&state, reason, chunk.FindDict("usage"));
+    wake();
     return;
   }
 
@@ -1651,6 +1952,14 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     }
     QueueErrorEvent(&state, message);
     state.done = true;
+    // Resolve a held read with the terminal state ("done", matching
+    // OnStreamDone). If the held read consumed it, the guest has observed
+    // `done` and will issue no further read — erase the entry now, or it
+    // leaks: the later OnStreamDone finds no held read and leaves the entry
+    // for a next StreamRead that never comes.
+    if (ResolveHeldRead(state, "done")) {
+      streams_.erase(it);
+    }
   }
 }
 
@@ -1669,6 +1978,17 @@ void NexusLlmHost::OnStreamDone(const std::string& stream_id,
   }
 
   it->second.done = true;
+  // Wake the held streamRead (if any) — the terminal event is now queued and
+  // the stream is done, so the guest's outstanding read can resolve. When a
+  // held read consumed the terminal state, the guest has received `done` and
+  // will issue no further read (it sends no cancel on normal completion), so
+  // drop the entry here — nothing else erases it on this path, and leaving it
+  // would leak one StreamState per completed stream over the host's lifetime.
+  // A legacy polling guest has no held read: ResolveHeldRead returns false and
+  // its next StreamRead observes `done` and erases the entry itself (unchanged).
+  if (ResolveHeldRead(it->second, "done")) {
+    streams_.erase(it);
+  }
 }
 
 // --- Public helpers re-exported from the anonymous namespace ----------------

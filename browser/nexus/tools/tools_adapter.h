@@ -83,7 +83,9 @@ class ToolsAdapter : public NexusBridgeCapabilityHandler {
   // by the next tool call's `EnsureTaskCreated`).
   //
   // Idempotent — no-op if `session_key` isn't present.
-  void OnSessionStopped(const std::string& session_key, OnStopReason reason);
+  // NOTE: `session_key` is by value on purpose — this method can destroy the
+  // ToolSession that owns the string a caller might pass (session_key()).
+  void OnSessionStopped(std::string session_key, OnStopReason reason);
 
   // Forwarders used by per-tool `ToolCallback` resolutions. Public so
   // `base::BindOnce(&ToolsAdapter::ForwardSuccess, weak_ptr, …)` can

@@ -99,10 +99,17 @@ void NexusShellServiceLauncher::CacheBackgroundOutput(
     cached_background_output_order_.push_back(shell_id);
   }
   cached_background_outputs_[shell_id] = std::move(output);
-  while (cached_background_outputs_.size() > kMaxCachedBackgroundOutputs) {
-    const std::string oldest = cached_background_output_order_.front();
+  while (cached_background_outputs_.size() > kMaxCachedBackgroundOutputs &&
+         !cached_background_output_order_.empty()) {
+    std::string oldest = cached_background_output_order_.front();
     cached_background_output_order_.pop_front();
-    if (oldest == shell_id) continue;
+    if (oldest == shell_id) {
+      // The entry just written is at the front — keep map and order deque in
+      // sync by re-appending it as most-recently-used instead of dropping it
+      // from the deque (which would make it un-evictable forever).
+      cached_background_output_order_.push_back(std::move(oldest));
+      continue;
+    }
     cached_background_outputs_.erase(oldest);
   }
 }

@@ -73,6 +73,15 @@ std::optional<OAuthTokens> OAuthTokenStore::GetTokens(
   NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
   OAuthTokens tokens;
   tokens.access_token = crypt->Decrypt(*access);
+  if (tokens.access_token.empty()) {
+    // Non-empty ciphertext decrypted to nothing — the OS encryptor isn't
+    // ready yet (cold-boot window). Without this guard, IsConnected() reports
+    // true and EnsureFreshToken hands the provider an EMPTY api_key with
+    // ok=true, so the first requests after startup 401 confusingly. Treat
+    // "can't decrypt yet" as "no tokens yet"; callers retry naturally once
+    // the encryptor arrives.
+    return std::nullopt;
+  }
   if (const std::string* refresh = config->FindString(kRefreshToken)) {
     tokens.refresh_token = crypt->Decrypt(*refresh);
   }

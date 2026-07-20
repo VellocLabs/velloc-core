@@ -87,8 +87,13 @@ bool ToolsAdapter::HasSession(const std::string& session_key) const {
   return sessions_.find(session_key) != sessions_.end();
 }
 
-void ToolsAdapter::OnSessionStopped(const std::string& session_key,
-                                     OnStopReason reason) {
+void ToolsAdapter::OnSessionStopped(std::string session_key,
+                                    OnStopReason reason) {
+  // `session_key` is taken BY VALUE on purpose: `sessions_.erase(it)` below
+  // destroys the ToolSession that owns `session_key_`. A caller passing
+  // `session->session_key()` with a by-ref parameter would leave the
+  // reference dangling mid-function (same pattern as the OpenAI provider's
+  // field crash).
   auto it = sessions_.find(session_key);
   if (it == sessions_.end()) {
     return;

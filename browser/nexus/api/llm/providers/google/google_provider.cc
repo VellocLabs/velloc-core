@@ -13,6 +13,8 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -434,10 +436,12 @@ class GoogleProvider::StreamHandler
  public:
   StreamHandler(std::unique_ptr<network::SimpleURLLoader> loader,
                 StreamChunkCallback chunk_callback,
-                StreamDoneCallback done_callback)
+                StreamDoneCallback done_callback,
+                base::OnceClosure finished_closure)
       : loader_(std::move(loader)),
         chunk_callback_(std::move(chunk_callback)),
-        done_callback_(std::move(done_callback)) {}
+        done_callback_(std::move(done_callback)),
+        finished_closure_(std::move(finished_closure)) {}
 
   ~StreamHandler() override = default;
 
@@ -465,6 +469,9 @@ class GoogleProvider::StreamHandler
       std::move(done_callback_)
           .Run(base::StrCat({"Stream failed with network error ",
                              base::NumberToString(net_error)}));
+      // May destroy |this| — must be the last statement.
+      if (finished_closure_)
+        std::move(finished_closure_).Run();
       return;
     }
 
@@ -486,6 +493,9 @@ class GoogleProvider::StreamHandler
 
     chunk_callback_.Run(std::move(finish_chunk));
     std::move(done_callback_).Run(std::nullopt);
+    // May destroy |this| — must be the last statement.
+    if (finished_closure_)
+      std::move(finished_closure_).Run();
   }
 
   void OnRetry(base::OnceClosure start_retry) override {
@@ -618,6 +628,11 @@ class GoogleProvider::StreamHandler
   std::unique_ptr<network::SimpleURLLoader> loader_;
   StreamChunkCallback chunk_callback_;
   StreamDoneCallback done_callback_;
+  // Notifies the owning GoogleProvider that this stream is finished so the
+  // pending_streams_ entry can be erased. Posted (not synchronous) — see
+  // DoStream. Without this the handler + loader leaked in pending_streams_
+  // for the lifetime of the provider after every completed stream.
+  base::OnceClosure finished_closure_;
   std::string buffer_;
   std::string last_finish_reason_;
   int cached_content_tokens_ = 0;
@@ -1006,9 +1021,22 @@ void GoogleProvider::DoStream(const base::DictValue& call_options,
 
   std::string request_id = ResolveRequestId(call_options);
 
+  // Wire chunk/done through BindPostTask: the host/guest chain behind them
+  // can call back into CancelRequest synchronously, which erases
+  // pending_streams_ and destroys the StreamHandler while it is still
+  // executing (ProcessBuffer / EmitStreamParts) — a use-after-free. Posting
+  // breaks the re-entrancy; same-sequence posting preserves chunk→done order.
+  // The finished closure is posted too, so erasing the handler never happens
+  // from inside its own OnComplete stack frame.
+  auto task_runner = base::SequencedTaskRunner::GetCurrentDefault();
   auto handler = std::make_unique<StreamHandler>(
-      std::move(loader), std::move(chunk_callback),
-      std::move(done_callback));
+      std::move(loader),
+      base::BindPostTask(task_runner, std::move(chunk_callback)),
+      base::BindPostTask(task_runner, std::move(done_callback)),
+      base::BindPostTask(
+          task_runner,
+          base::BindOnce(&GoogleProvider::OnStreamFinished,
+                         weak_factory_.GetWeakPtr(), request_id)));
   auto* handler_ptr = handler.get();
   pending_streams_[request_id] = std::move(handler);
 
@@ -1021,6 +1049,11 @@ void GoogleProvider::CancelRequest(const std::string& request_id) {
   pending_streams_.erase(request_id);
 }
 
+void GoogleProvider::OnStreamFinished(const std::string& request_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  pending_streams_.erase(request_id);
+}
+
 void GoogleProvider::FetchAvailableModels(FetchModelsCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -1028,6 +1061,28 @@ void GoogleProvider::FetchAvailableModels(FetchModelsCallback callback) {
     std::move(callback).Run({});
     return;
   }
+
+  // Coalesce concurrent fetches — replacing models_loader_ mid-flight would
+  // silently drop the earlier caller's callback (SimpleURLLoader never runs
+  // it on destruction), hanging NexusLlmHost::Catalog()'s barrier.
+  if (models_loader_) {
+    pending_models_callbacks_.push_back(std::move(callback));
+    return;
+  }
+  callback = base::BindOnce(
+      [](base::WeakPtr<GoogleProvider> self, FetchModelsCallback primary,
+         std::vector<ModelInfo> models) {
+        std::move(primary).Run(models);
+        if (self) {
+          std::vector<FetchModelsCallback> waiting =
+              std::move(self->pending_models_callbacks_);
+          self->pending_models_callbacks_.clear();
+          for (FetchModelsCallback& cb : waiting) {
+            std::move(cb).Run(models);
+          }
+        }
+      },
+      weak_factory_.GetWeakPtr(), std::move(callback));
 
   std::string api_base = base_url_;
   if (!api_base.empty() && api_base.back() == '/') {

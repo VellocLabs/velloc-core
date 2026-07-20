@@ -113,9 +113,13 @@ class OllamaProvider final : public LlmProvider {
   void OnGenerateComplete(const std::string& request_id,
                           GenerateCallback callback,
                           std::optional<std::string> response_body);
-  void OnStreamDataReceived(const std::string& request_id,
+  // NOTE: `request_id` is taken BY VALUE on purpose: the bound argument is
+  // owned by the StreamBodyConsumer inside the StreamContext, which these
+  // methods can destroy mid-call (see the OpenAI provider's field crash for
+  // the dangling const-ref variant of this pattern).
+  void OnStreamDataReceived(std::string request_id,
                             std::string_view string_piece);
-  void OnStreamComplete(const std::string& request_id, bool success);
+  void OnStreamComplete(std::string request_id, bool success);
   void ProcessNdjsonLine(StreamContext& ctx, const std::string& line);
 
   void OnFetchModelsComplete(FetchModelsCallback callback,
@@ -128,6 +132,9 @@ class OllamaProvider final : public LlmProvider {
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::unique_ptr<network::SimpleURLLoader> models_loader_;
+  // Fetch requests that arrived while models_loader_ was in flight; resolved
+  // with the active fetch's result (see FetchAvailableModels).
+  std::vector<FetchModelsCallback> pending_models_callbacks_;
 
   std::map<std::string, PendingRequest> pending_requests_;
   std::map<std::string, std::unique_ptr<StreamContext>> active_streams_;

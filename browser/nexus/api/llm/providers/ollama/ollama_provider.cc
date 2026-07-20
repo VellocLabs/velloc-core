@@ -14,6 +14,8 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -28,6 +30,13 @@ namespace {
 
 constexpr std::string_view kDefaultBaseUrl = "http://localhost:11434";
 constexpr int kModelFetchTimeoutSeconds = 10;
+
+// Upper bound for non-streaming completion bodies and the /api/tags model
+// catalogue. Replaces DownloadToStringOfUnboundedSizeUntilCrashAndDie — a
+// misbehaving (or merely mis-addressed) server must not be able to OOM the
+// browser process.
+constexpr size_t kMaxResponseSizeBytes =
+    network::SimpleURLLoader::kMaxBoundedStringDownloadSize;
 
 const net::NetworkTrafficAnnotationTag kOllamaTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("nexus_ollama_provider", R"(
@@ -327,17 +336,28 @@ void OllamaProvider::DoGenerate(const base::DictValue& call_options,
   pending_requests_[request_id] =
       PendingRequest{std::move(loader), request_id};
 
-  loader_ptr->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+  loader_ptr->DownloadToString(
       url_loader_factory_.get(),
       base::BindOnce(&OllamaProvider::OnGenerateComplete,
                      weak_factory_.GetWeakPtr(), request_id,
-                     std::move(callback)));
+                     std::move(callback)),
+      kMaxResponseSizeBytes);
 }
 
 void OllamaProvider::DoStream(const base::DictValue& call_options,
                               StreamChunkCallback chunk_callback,
                               StreamDoneCallback done_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Wire chunk/done through BindPostTask: the host/guest chain behind them
+  // can call back into CancelRequest synchronously, which erases
+  // active_streams_ and destroys the StreamContext (including the consumer
+  // whose bound request-id string is still referenced on the stack) — a
+  // use-after-free. Posting breaks the re-entrancy; same-sequence posting
+  // preserves chunk→done ordering.
+  auto task_runner = base::SequencedTaskRunner::GetCurrentDefault();
+  chunk_callback = base::BindPostTask(task_runner, std::move(chunk_callback));
+  done_callback = base::BindPostTask(task_runner, std::move(done_callback));
 
   base::DictValue body = BuildRequestBody(call_options, /*stream=*/true);
 
@@ -385,6 +405,28 @@ void OllamaProvider::CancelRequest(const std::string& request_id) {
 void OllamaProvider::FetchAvailableModels(FetchModelsCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  // Coalesce concurrent fetches — replacing models_loader_ mid-flight would
+  // silently drop the earlier caller's callback (SimpleURLLoader never runs
+  // it on destruction), hanging NexusLlmHost::Catalog()'s barrier.
+  if (models_loader_) {
+    pending_models_callbacks_.push_back(std::move(callback));
+    return;
+  }
+  callback = base::BindOnce(
+      [](base::WeakPtr<OllamaProvider> self, FetchModelsCallback primary,
+         std::vector<ModelInfo> models) {
+        std::move(primary).Run(models);
+        if (self) {
+          std::vector<FetchModelsCallback> waiting =
+              std::move(self->pending_models_callbacks_);
+          self->pending_models_callbacks_.clear();
+          for (FetchModelsCallback& cb : waiting) {
+            std::move(cb).Run(models);
+          }
+        }
+      },
+      weak_factory_.GetWeakPtr(), std::move(callback));
+
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->url = GURL(base::StrCat({base_url_, "/api/tags"}));
   resource_request->method = "GET";
@@ -394,10 +436,11 @@ void OllamaProvider::FetchAvailableModels(FetchModelsCallback callback) {
   models_loader_->SetTimeoutDuration(
       base::Seconds(kModelFetchTimeoutSeconds));
 
-  models_loader_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+  models_loader_->DownloadToString(
       url_loader_factory_.get(),
       base::BindOnce(&OllamaProvider::OnFetchModelsComplete,
-                     weak_factory_.GetWeakPtr(), std::move(callback)));
+                     weak_factory_.GetWeakPtr(), std::move(callback)),
+      kMaxResponseSizeBytes);
 }
 
 // --- Request translation ---
@@ -889,9 +932,14 @@ void OllamaProvider::OnGenerateComplete(
   std::move(callback).Run(std::move(result), std::nullopt);
 }
 
-void OllamaProvider::OnStreamDataReceived(const std::string& request_id,
+void OllamaProvider::OnStreamDataReceived(std::string request_id,
                                           std::string_view string_piece) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // `request_id` is a by-value copy on purpose: the bound argument lives in
+  // the StreamBodyConsumer owned by the StreamContext this method may cause
+  // to be destroyed. See the OpenAI provider's field crash for the dangling
+  // const-ref variant of this pattern.
 
   auto it = active_streams_.find(request_id);
   if (it == active_streams_.end()) {
@@ -906,9 +954,11 @@ void OllamaProvider::OnStreamDataReceived(const std::string& request_id,
   }
 }
 
-void OllamaProvider::OnStreamComplete(const std::string& request_id,
-                                      bool success) {
+void OllamaProvider::OnStreamComplete(std::string request_id, bool success) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // `request_id` by value — the bound argument is destroyed with the
+  // StreamContext erased below.
 
   auto it = active_streams_.find(request_id);
   if (it == active_streams_.end()) {

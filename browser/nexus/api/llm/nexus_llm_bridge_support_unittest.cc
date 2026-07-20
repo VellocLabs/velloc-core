@@ -8,6 +8,8 @@
 #include <string>
 
 #include "base/test/gtest_util.h"
+#include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -30,7 +32,8 @@ TEST(NexusLlmHostTest, StreamErrorChunkAcceptsStringErrorPayload) {
   mojom::NexusLlmStreamReadResultPtr result;
   std::optional<std::string> error_message;
   host.StreamRead(
-      "stream-1",
+      "stream-1", /*deadline_ms=*/std::nullopt, /*wait_ms=*/std::nullopt,
+      base::DictValue(),
       base::BindOnce(
           [](bool* callback_called, bool* success,
              mojom::NexusLlmStreamReadResultPtr* result,
@@ -54,6 +57,93 @@ TEST(NexusLlmHostTest, StreamErrorChunkAcceptsStringErrorPayload) {
   EXPECT_EQ(result->events[0]->type, mojom::NexusLlmStreamEventType::kError);
   EXPECT_EQ(result->events[0]->error_message,
             std::optional<std::string>("upstream overloaded"));
+}
+
+// Hold-read leak regressions. These drive the real StreamRead hold path (which
+// arms a one-shot hold timer, hence MOCK_TIME) and assert the stream entry is
+// erased once the guest can no longer reach it. Before the fix, OnStreamDone
+// (stream finishes while a read is held) and OnStreamReadHoldTimeout (hold
+// window expires with no data) resolved the held read but left the StreamState
+// in `streams_` forever - the guest stops reading on `done`/`timeout` and sends
+// no cancel - leaking one entry per stream over the host's lifetime.
+class NexusLlmHostHoldReadTest : public ::testing::Test {
+ protected:
+  NexusLlmHostHoldReadTest()
+      : task_environment_(
+            base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
+
+  base::test::TaskEnvironment task_environment_;
+};
+
+TEST_F(NexusLlmHostHoldReadTest,
+       OnStreamDoneErasesEntryAfterResolvingHeldRead) {
+  NexusLlmHost host(nullptr);
+  NexusLlmHost::StreamState state;
+  state.stream_id = "stream-1";
+  host.streams_.emplace("stream-1", std::move(state));
+
+  bool callback_called = false;
+  mojom::NexusLlmStreamReadResultPtr result;
+  host.StreamRead(
+      "stream-1", /*deadline_ms=*/1e15, /*wait_ms=*/60000.0, base::DictValue(),
+      base::BindOnce(
+          [](bool* called, mojom::NexusLlmStreamReadResultPtr* out, bool,
+             mojom::NexusLlmStreamReadResultPtr res,
+             std::optional<std::string>) {
+            *called = true;
+            *out = std::move(res);
+          },
+          &callback_called, &result));
+
+  // Queue empty + not done + waitMs present -> the read is HELD, not resolved.
+  EXPECT_FALSE(callback_called);
+  EXPECT_EQ(host.streams_.count("stream-1"), 1u);
+
+  // Stream finishes while the read is held.
+  host.OnStreamDone("stream-1", std::nullopt);
+
+  EXPECT_TRUE(callback_called);
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(result->done);
+  ASSERT_TRUE(result->status.has_value());
+  EXPECT_EQ(*result->status, "done");
+  // Regression: the terminal entry must be erased, not leaked.
+  EXPECT_EQ(host.streams_.count("stream-1"), 0u);
+}
+
+TEST_F(NexusLlmHostHoldReadTest, HoldTimeoutErasesEntryAndCancelsUpstream) {
+  NexusLlmHost host(nullptr);
+  NexusLlmHost::StreamState state;
+  state.stream_id = "stream-1";
+  host.streams_.emplace("stream-1", std::move(state));
+
+  bool callback_called = false;
+  mojom::NexusLlmStreamReadResultPtr result;
+  host.StreamRead(
+      "stream-1", /*deadline_ms=*/1e15, /*wait_ms=*/60000.0, base::DictValue(),
+      base::BindOnce(
+          [](bool* called, mojom::NexusLlmStreamReadResultPtr* out, bool,
+             mojom::NexusLlmStreamReadResultPtr res,
+             std::optional<std::string>) {
+            *called = true;
+            *out = std::move(res);
+          },
+          &callback_called, &result));
+
+  EXPECT_FALSE(callback_called);
+  EXPECT_EQ(host.streams_.count("stream-1"), 1u);
+
+  // Fire the 60s hold timer with no data arriving. GetBroker(nullptr) is a
+  // no-op, so the upstream cancel is skipped harmlessly.
+  task_environment_.FastForwardBy(base::Seconds(61));
+
+  EXPECT_TRUE(callback_called);
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(result->done);
+  ASSERT_TRUE(result->status.has_value());
+  EXPECT_EQ(*result->status, "timeout");
+  // Regression: the abandoned stream must be erased, not leaked.
+  EXPECT_EQ(host.streams_.count("stream-1"), 0u);
 }
 
 namespace {
@@ -226,6 +316,37 @@ TEST(NexusLlmBridgeSupportTest,
   EXPECT_EQ(*parsed_doc->FindString("type"), "document");
   ASSERT_NE(parsed_doc->FindString("mimeType"), nullptr);
   EXPECT_EQ(*parsed_doc->FindString("mimeType"), "application/pdf");
+}
+
+// A malformed tool-call part (empty toolCallId — the exact shape the
+// qwen/DashScope streaming-parse bug used to persist) must be rejected with a
+// graceful error, NOT crash the browser. Bridge payloads carry untrusted
+// model-generated + persisted-session content; before the fix the DCHECK(false)
+// in FailInvalidBridgeFormat aborted the process on exactly this input.
+TEST(NexusLlmBridgeSupportTest,
+     BuildMojoLlmRequestRejectsMalformedToolCallWithoutCrashing) {
+  base::DictValue payload;
+  base::ListValue messages;
+  base::DictValue assistant_message;
+  assistant_message.Set("role", "assistant");
+  base::ListValue content;
+  base::DictValue tool_call;
+  tool_call.Set("type", "tool-call");
+  tool_call.Set("toolCallId", "");  // empty -> invalid
+  tool_call.Set("toolName", "Bash");
+  tool_call.Set("args", base::DictValue());
+  content.Append(std::move(tool_call));
+  assistant_message.Set("content", std::move(content));
+  messages.Append(std::move(assistant_message));
+  payload.Set("messages", std::move(messages));
+
+  std::string error_message;
+  mojom::NexusLlmRequestParamsPtr request =
+      BuildMojoLlmRequest(payload, &error_message);
+
+  // Graceful rejection: null request + a non-empty error, and no crash.
+  EXPECT_FALSE(request);
+  EXPECT_FALSE(error_message.empty());
 }
 
 // Helper: construct an NexusLlmUsagePtr with the four canonical token fields.

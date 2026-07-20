@@ -312,12 +312,33 @@ NexusFsHost::ReadRangeResult NexusFsHost::ReadRange(const std::string& path,
                                                    uint64_t offset,
                                                    uint32_t length) const {
   ReadRangeResult result;
+
+  // `length` is guest-supplied — cap the allocation before touching it, and
+  // never allocate more than the file could actually satisfy from `offset`.
+  // Without this a hostile/buggy guest requests up to 4 GiB and the browser
+  // process eagerly allocates it before the read.
+  constexpr uint32_t kMaxReadRangeBytes = 256 * 1024 * 1024;
+  if (length > kMaxReadRangeBytes) {
+    result.error = "Requested range is too large";
+    return result;
+  }
+
   const base::FilePath resolved = ResolvePath(cwd_, path);
 
   base::File file(resolved, base::File::FLAG_OPEN | base::File::FLAG_READ);
   if (!file.IsValid()) {
     result.error = "Failed to open file";
     return result;
+  }
+
+  const int64_t file_length = file.GetLength();
+  if (file_length >= 0 && offset < static_cast<uint64_t>(file_length)) {
+    const uint64_t available = static_cast<uint64_t>(file_length) - offset;
+    if (available < length) {
+      length = static_cast<uint32_t>(available);
+    }
+  } else if (file_length >= 0) {
+    length = 0;  // Offset at/past EOF — nothing to read.
   }
 
   std::vector<uint8_t> buffer(length);

@@ -1219,15 +1219,21 @@ void ProcessTool::OnBashExecDone(
       BigBufferToString(result->stdout_buffer, kMaxOutputBytes);
   std::string stderr_text =
       BigBufferToString(result->stderr_buffer, kMaxOutputBytes);
-  int exit_code = result->exit->code.has_value() ? *result->exit->code : -1;
+  // `exit` is a nullable mojo struct — the foreground-poll finished path can
+  // synthesize a result whose exit was moved from a null `output->exit`.
+  // Every other consumer in this file guards it; do the same here.
+  const bool timed_out = result->exit && result->exit->timed_out;
+  int exit_code = (result->exit && result->exit->code.has_value())
+                      ? *result->exit->code
+                      : -1;
 
   std::string base = ExtractBaseCommand(original_command);
   CommandInterpretation interp = InterpretExit(base, exit_code);
-  bool is_error = result->exit->timed_out || interp.is_error;
+  bool is_error = timed_out || interp.is_error;
 
   // Build the prose body.
   std::string body;
-  if (result->exit->timed_out) {
+  if (timed_out) {
     body.append("Command timed out.\n");
   } else if (exit_code != 0) {
     body.append(base::StrCat(
@@ -1285,8 +1291,8 @@ void ProcessTool::OnBashExecDone(
   // isError, matching CC's BashTool which sets is_error: true when
   // exit_code != 0 / timed_out.
   if (is_error) {
-    std::string code = base::StrCat(
-        {tool_label, result->exit->timed_out ? "_timeout" : "_failed"});
+    std::string code =
+        base::StrCat({tool_label, timed_out ? "_timeout" : "_failed"});
     std::move(done).Reject(std::move(code), std::move(body));
     return;
   }
@@ -1331,8 +1337,11 @@ void ProcessTool::OnHookExecDone(
       BigBufferToString(result->stdout_buffer, kMaxOutputBytes);
   std::string stderr_text =
       BigBufferToString(result->stderr_buffer, kMaxOutputBytes);
-  int exit_code = result->exit->code.has_value() ? *result->exit->code : -1;
-  if (result->exit->timed_out) {
+  // `exit` is nullable — guard like every other consumer in this file.
+  int exit_code = (result->exit && result->exit->code.has_value())
+                      ? *result->exit->code
+                      : -1;
+  if (result->exit && result->exit->timed_out) {
     exit_code = -1;
   }
 

@@ -16,6 +16,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/llm/llm_types.h"
 
 namespace nexus {
 
@@ -32,11 +33,13 @@ namespace nexus {
 //     keepalives) refresh the activity clock, so a reasoning model's long
 //     thinking phase is NOT killed while the server keeps the connection
 //     warm.
-//   - max_concurrent_streams (default 0 = unlimited): when positive, streams
+//   - max_concurrent_streams (default 0 = unlimited): when positive, requests
 //     beyond the cap are queued FIFO and started only when an active slot
 //     frees. The ChatGPT-subscription (Codex) backend enforces a per-account
 //     concurrency ceiling and silently hangs over-quota connections; capping
-//     chatgpt-pro to 1 (via provider config) keeps it serial.
+//     chatgpt-pro to 1 (via provider config) keeps it serial. The cap applies
+//     to BOTH streaming and blocking requests — a single FIFO queue holds both
+//     so neither can defeat the pool by opening a second connection.
 //
 // Sequenced: all methods must run on the provider's sequence.
 class LlmStreamGuard {
@@ -46,17 +49,30 @@ class LlmStreamGuard {
   using OnStreamIdleCallback =
       base::RepeatingCallback<void(const std::string& request_id)>;
 
-  // One queued stream, held until a concurrency slot frees.
+  // One queued request, held until a concurrency slot frees. A single FIFO
+  // queue holds both streaming and blocking (non-streaming) requests so a
+  // blocking call can never jump ahead of a queued stream under a low cap
+  // (e.g. max_concurrent_streams: 1). The entry is a stream when
+  // `generate_callback` is null; a blocking request when it is set (blocking
+  // requests carry no chunk/done callbacks).
   struct QueuedStream {
     QueuedStream();
     QueuedStream(QueuedStream&&);
     QueuedStream& operator=(QueuedStream&&);
     ~QueuedStream();
 
+    // True when this entry is a blocking (DoGenerate) request rather than a
+    // stream. Blocking entries only use request_id / call_options /
+    // generate_callback.
+    bool is_blocking() const { return !generate_callback.is_null(); }
+
     std::string request_id;
     base::DictValue call_options;
     base::RepeatingCallback<void(base::DictValue)> chunk_callback;
     base::OnceCallback<void(std::optional<std::string>)> done_callback;
+    // Blocking (DoGenerate) completion callback. Mutually exclusive with the
+    // stream callbacks above.
+    GenerateCallback generate_callback;
   };
 
   // `provider_id` is used only for the debug string.
@@ -89,6 +105,13 @@ class LlmStreamGuard {
   // Registers a newly-started stream: begins its idle watchdog and counts it
   // as active.
   void TrackStream(const std::string& request_id);
+  // Registers a newly-started BLOCKING (non-streaming) request: counts the
+  // concurrency slot but does NOT arm the idle watchdog. A blocking request
+  // is a single DownloadToString with no per-chunk idle signal, so the
+  // watchdog is meaningless for it; its timeout is the caller/host deadline,
+  // which cancels via the provider's CancelRequest. The slot is still released
+  // through OnStreamFinished like any stream.
+  void TrackBlocking(const std::string& request_id);
   // Records inbound bytes — refreshes the stream's idle clock.
   void NoteStreamBytes(const std::string& request_id);
   // Marks a stream finished (success, error, cancel, or idle-timeout): stops

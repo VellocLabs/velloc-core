@@ -191,7 +191,21 @@ void NexusBridgeCapabilityHandler::FinishPendingBinaryReceive(
   }
   base::OnceCallback<void(BinaryReceiveResult)> callback =
       std::move(it->second.on_done);
+  // This method runs synchronously from INSIDE the endpoint's own message
+  // dispatch (NexusMessagePortEndpoint::Accept → on_message_ callback).
+  // Erasing the map entry here would destroy the live mojo::Connector and
+  // the RepeatingCallback currently executing on the stack — a
+  // use-after-free of the same shape as the OpenAI provider's field crash.
+  // Move the endpoint out and defer its destruction to the next task
+  // instead. (The disconnect path already defers via PostTask before
+  // calling into here, but deferring destruction handles both paths.)
+  std::unique_ptr<NexusMessagePortEndpoint> endpoint =
+      std::move(it->second.endpoint);
   pending_binary_receives_.erase(it);
+  if (endpoint) {
+    base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(
+        FROM_HERE, std::move(endpoint));
+  }
   std::move(callback).Run(std::move(result));
 }
 

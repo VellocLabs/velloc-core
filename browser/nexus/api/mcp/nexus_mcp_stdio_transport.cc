@@ -18,6 +18,12 @@ namespace nexus {
 
 namespace {
 constexpr size_t kStderrTailCap = 4096;
+
+// Upper bound on the stdout line-reassembly buffer. A single JSON-RPC frame
+// larger than this (or a server that streams bytes without ever emitting a
+// newline) is treated as a protocol violation and the transport is closed —
+// otherwise a misbehaving server grows browser-process memory without bound.
+constexpr size_t kReadBufferCap = 64 * 1024 * 1024;
 }  // namespace
 
 NexusMcpStdioTransport::NexusMcpStdioTransport(
@@ -120,6 +126,17 @@ void NexusMcpStdioTransport::Close() {
 void NexusMcpStdioTransport::OnStdout(const std::vector<uint8_t>& data) {
   read_buffer_.append(reinterpret_cast<const char*>(data.data()), data.size());
   ProcessIncoming();
+  if (read_buffer_.size() > kReadBufferCap) {
+    LOG(ERROR) << "[mcp] \"" << config_.id
+               << "\" exceeded the stdout frame cap ("
+               << read_buffer_.size() << " bytes without a newline); closing";
+    read_buffer_.clear();
+    const bool was_closed = closed_;
+    Close();
+    if (!was_closed && on_closed_) {
+      on_closed_.Run("server exceeded the maximum stdout frame size");
+    }
+  }
 }
 
 void NexusMcpStdioTransport::OnStderr(const std::vector<uint8_t>& data) {

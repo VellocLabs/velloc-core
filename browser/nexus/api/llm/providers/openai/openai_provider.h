@@ -133,9 +133,15 @@ class OpenAiProvider : public LlmProvider {
   void OnFetchModelsComplete(FetchModelsCallback callback,
                              std::optional<std::string> response_body);
 
-  void OnStreamDataReceived(const std::string& request_id,
-                            std::string_view data);
-  void OnStreamComplete(const std::string& request_id, bool success);
+  // NOTE: `request_id` is taken BY VALUE on purpose. Both methods are invoked
+  // by StreamConsumer with its own `request_id_` member as the argument, and
+  // both can destroy that consumer mid-call (the chunk/done callback chain or
+  // an erase from active_streams_ destroys the StreamContext, which owns the
+  // consumer). A const-ref parameter would dangle the moment that happens —
+  // this exact bug crashed in the field as an INVALID_POINTER_READ inside
+  // memcmp under active_streams_.find(request_id).
+  void OnStreamDataReceived(std::string request_id, std::string_view data);
+  void OnStreamComplete(std::string request_id, bool success);
   void ProcessSseLine(StreamContext& ctx, std::string_view line);
 
   // Actually builds + starts the SSE loader for a stream. Called directly
@@ -147,8 +153,14 @@ class OpenAiProvider : public LlmProvider {
                    StreamDoneCallback done_callback);
   // Guard callback: a tracked stream went silent past the idle timeout.
   void OnStreamIdleTimeout(const std::string& request_id);
-  // Admits queued streams while a concurrency slot is free.
+  // Admits queued requests (streams and blocking) while a slot is free.
   void PumpQueuedStreams();
+  // Actually builds + starts the blocking (DownloadToString) loader. Called
+  // directly from DoGenerate when a concurrency slot is free, or from
+  // PumpQueuedStreams when a queued blocking request is admitted.
+  void StartGenerate(const std::string& request_id,
+                     const base::DictValue& call_options,
+                     GenerateCallback callback);
 
   const std::string provider_id_;
   const std::string display_name_;
@@ -176,6 +188,11 @@ class OpenAiProvider : public LlmProvider {
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::unique_ptr<network::SimpleURLLoader> models_loader_;
+  // Callers that requested a model fetch while one was already in flight;
+  // resolved (with the same result) when the active fetch completes. Without
+  // this, starting a second fetch destroyed the first loader and silently
+  // dropped its callback — hanging NexusLlmHost::Catalog()'s barrier.
+  std::vector<FetchModelsCallback> pending_models_callbacks_;
 
   std::map<std::string, std::unique_ptr<network::SimpleURLLoader>>
       pending_loaders_;

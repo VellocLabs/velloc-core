@@ -129,5 +129,72 @@ TEST_F(LlmStreamGuardTest, BuildDebugStringReportsState) {
   EXPECT_NE(dbg.find("idle_timeout_s=180"), std::string::npos);
 }
 
+
+TEST_F(LlmStreamGuardTest, BlockingEntriesShareTheSameFifoQueue) {
+  LlmStreamGuard guard("chatgpt-pro");
+  guard.set_max_concurrent_streams(1);
+
+  // One active stream occupies the only slot.
+  guard.TrackStream("s1");
+  EXPECT_FALSE(guard.CanStartStream());
+
+  // A blocking request and a stream both queue behind it; FIFO order is
+  // preserved across the two kinds.
+  LlmStreamGuard::QueuedStream blocking;
+  blocking.request_id = "g1";
+  blocking.generate_callback =
+      base::BindOnce([](GenerateResult, std::optional<std::string>) {});
+  EXPECT_TRUE(blocking.is_blocking());
+
+  LlmStreamGuard::QueuedStream stream;
+  stream.request_id = "s2";
+  EXPECT_FALSE(stream.is_blocking());
+
+  guard.EnqueueStream(std::move(blocking));
+  guard.EnqueueStream(std::move(stream));
+  EXPECT_EQ(guard.queued_stream_count(), 2u);
+
+  // Free the slot: the blocking entry comes back first.
+  guard.OnStreamFinished("s1");
+  auto next = guard.DequeueStream();
+  ASSERT_TRUE(next.has_value());
+  EXPECT_TRUE(next->is_blocking());
+  EXPECT_EQ(next->request_id, "g1");
+  guard.TrackBlocking(next->request_id);
+
+  guard.OnStreamFinished("g1");
+  next = guard.DequeueStream();
+  ASSERT_TRUE(next.has_value());
+  EXPECT_FALSE(next->is_blocking());
+  EXPECT_EQ(next->request_id, "s2");
+}
+
+TEST_F(LlmStreamGuardTest, TrackBlockingCountsSlotWithoutArmingWatchdog) {
+  LlmStreamGuard guard("chatgpt-pro");
+  guard.set_stream_idle_timeout(base::Seconds(20));
+  guard.set_max_concurrent_streams(1);
+
+  std::string idle_fired_for;
+  guard.set_on_stream_idle(base::BindRepeating(
+      [](std::string* out, const std::string& request_id) { *out = request_id; },
+      &idle_fired_for));
+
+  // A blocking request occupies the slot (cap reached) ...
+  guard.TrackBlocking("g1");
+  EXPECT_FALSE(guard.CanStartStream());
+  EXPECT_EQ(guard.active_stream_count(), 1u);
+
+  // ... but its idle watchdog is NOT armed, so simulated time well past the
+  // timeout never fires the idle callback for it.
+  task_environment_.FastForwardBy(base::Seconds(60));
+  EXPECT_TRUE(idle_fired_for.empty());
+  EXPECT_EQ(guard.active_stream_count(), 1u);
+
+  // The slot is released only via OnStreamFinished.
+  guard.OnStreamFinished("g1");
+  EXPECT_EQ(guard.active_stream_count(), 0u);
+  EXPECT_TRUE(guard.CanStartStream());
+}
+
 }  // namespace
 }  // namespace nexus

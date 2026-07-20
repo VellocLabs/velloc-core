@@ -190,6 +190,20 @@ source_set("webui_host") {
 }
 
 # Individual provider implementations.
+# Translates OpenAI-compatible /chat/completions streaming tool-call deltas
+# into the bridge's stream-chunk vocabulary. Deliberately a tiny base-only
+# source_set (same pattern as :anthropic_schema_sanitizer) so the lite
+# unit-test binary can cover the DashScope/Qwen empty-`id` streaming quirk
+# without linking the full provider.
+source_set("openai_tool_call_stream") {
+  sources = [
+    "providers/openai/openai_tool_call_stream.cc",
+    "providers/openai/openai_tool_call_stream.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 source_set("openai_provider") {
   sources = [
     "providers/openai/openai_provider.cc",
@@ -198,6 +212,7 @@ source_set("openai_provider") {
 
   deps = [
     ":line_splitter",
+    ":openai_tool_call_stream",
     ":provider",
     ":stream_guard",
     ":types",

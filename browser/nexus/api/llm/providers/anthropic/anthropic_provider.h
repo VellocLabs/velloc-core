@@ -104,6 +104,9 @@ class AnthropicProvider : public LlmProvider {
   std::vector<ModelInfo> fetched_models_;
   std::string last_raw_catalog_json_;
   std::unique_ptr<network::SimpleURLLoader> models_loader_;
+  // Fetch requests that arrived while models_loader_ was in flight; resolved
+  // with the active fetch's result (see FetchAvailableModels).
+  std::vector<FetchModelsCallback> pending_models_callbacks_;
 
   int next_request_id_ = 0;
 

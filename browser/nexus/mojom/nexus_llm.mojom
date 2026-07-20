@@ -138,6 +138,14 @@ struct NexusLlmAssistantMessage {
 
 struct NexusLlmCallResult {
   NexusLlmAssistantMessage message;
+  // Optional host-side outcome: "ok" (normal), "timeout" (native deadline
+  // fired before OnGenerateComplete). Absent on hosts that predate the
+  // native-deadline contract.
+  string? status;
+  // Optional host-captured epoch-ms stamps for each hop
+  // (t_recv_native / t_host_read / t_resolve) so the JS guest can log
+  // end-to-end latency without an extra round-trip.
+  mojo_base.mojom.DictionaryValue? timeline;
 };
 
 struct NexusLlmStreamEvent {
@@ -156,6 +164,13 @@ struct NexusLlmStreamEvent {
 struct NexusLlmStreamReadResult {
   array<NexusLlmStreamEvent> events;
   bool done;
+  // Optional host-side outcome for this read: "ok" (data or legacy poll),
+  // "done" (stream terminal), "timeout" (hold window expired with no new
+  // data — host also cancels the upstream loader).
+  string? status;
+  // Optional host-captured epoch-ms stamps (t_recv_native / t_host_read /
+  // t_resolve) so the JS guest can log end-to-end latency.
+  mojo_base.mojom.DictionaryValue? timeline;
 };
 
 // NOTE: This file is "data types only" — the LLM bridge is dispatched via

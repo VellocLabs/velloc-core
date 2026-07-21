@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -68,6 +69,16 @@ class ProcessTool : public ToolBase,
                          ToolCallback done) override;
   void RunGrepOnUI(::nexus::generated::GrepInput input,
                    ToolCallback done) override;
+
+  // Test-only entry points for the anonymous-namespace Grep helpers.
+  // Exposed so process_tool_unittest.cc can pin spec 2-4-5 (arg build)
+  // and 2-4-6 (result shaping) without a live utility process.
+  static std::vector<std::string> BuildRipgrepArgsForTesting(
+      const ::nexus::generated::GrepInput& input,
+      const std::string& output_mode,
+      bool show_line_numbers);
+  static std::vector<std::string> SplitGlobPatternsForTesting(
+      const std::string& glob);
   // Windows-only model-facing PowerShell tool (gated into the catalog by
   // the listHostedTools filter). Tries PowerShell 7 (`pwsh`) first, falling
   // back to Windows PowerShell (`powershell`) when pwsh isn't installed, and
@@ -216,6 +227,7 @@ class ProcessTool : public ToolBase,
                     std::string output_mode,
                     int head_limit,
                     int offset,
+                    base::FilePath cwd,
                     RipgrepRunResult result);
 
   // Per-PROFILE shared launcher (Profile user-data via

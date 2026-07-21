@@ -204,6 +204,20 @@ source_set("openai_tool_call_stream") {
   public_deps = [ "//base" ]
 }
 
+# Normalizes an OpenAI-compatible /chat/completions usage block into the
+# bridge's camelCase stream-usage vocabulary, emitting the cache-EXCLUSIVE
+# prompt count (see openai_usage.h). Tiny base-only source_set (same pattern as
+# :openai_tool_call_stream) so the lite unit-test binary can cover the
+# cache-double-count regression without linking the full provider.
+source_set("openai_usage") {
+  sources = [
+    "providers/openai/openai_usage.cc",
+    "providers/openai/openai_usage.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 source_set("openai_provider") {
   sources = [
     "providers/openai/openai_provider.cc",
@@ -213,6 +227,7 @@ source_set("openai_provider") {
   deps = [
     ":line_splitter",
     ":openai_tool_call_stream",
+    ":openai_usage",
     ":provider",
     ":stream_guard",
     ":types",

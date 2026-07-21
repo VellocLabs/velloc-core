@@ -6,6 +6,7 @@
 
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -489,6 +490,77 @@ SliceResult ApplyHeadLimit(std::vector<std::string>&& items,
 // NOTE: ripgrep stdout → lines parsing now lives in NexusRipgrepRunner
 // (tools/nexus_ripgrep_runner.cc), shared by Grep and Glob. The runner hands
 // back already-parsed `lines`, so the Grep path below only shapes them.
+
+// Convert an absolute path to a path relative to `cwd`, mirroring CC's
+// `toRelativePath`: if the relative form would escape cwd (starts with ".."),
+// keep the absolute path. Saves tokens in tool output.
+std::string ToRelativePath(const base::FilePath& abs,
+                           const base::FilePath& cwd) {
+  if (cwd.empty() || abs.empty()) {
+    return abs.AsUTF8Unsafe();
+  }
+  base::FilePath rel;
+  if (!cwd.AppendRelativePath(abs, &rel)) {
+    return abs.AsUTF8Unsafe();
+  }
+  std::string rel_str = rel.AsUTF8Unsafe();
+  if (base::StartsWith(rel_str, "..", base::CompareCase::SENSITIVE)) {
+    return abs.AsUTF8Unsafe();
+  }
+  return rel_str;
+}
+
+// Relativize the file-path prefix of a ripgrep output line. Content lines
+// look like "/abs/path:linenum:content"; count lines "/abs/path:count".
+// `sep` is the separator strategy: first colon (content) or last colon
+// (count). Returns the line with the path portion made relative to `cwd`.
+std::string RelativizeGrepLine(const std::string& line,
+                               const base::FilePath& cwd,
+                               bool use_last_colon) {
+  size_t colon = use_last_colon ? line.find_last_of(':')
+                                : line.find(':');
+  if (colon == std::string::npos || colon == 0) {
+    return line;
+  }
+  std::string path_part = line.substr(0, colon);
+  std::string rest = line.substr(colon);
+  base::FilePath abs_path = base::FilePath::FromUTF8Unsafe(path_part);
+  if (!abs_path.IsAbsolute()) {
+    return line;
+  }
+  return ToRelativePath(abs_path, cwd) + rest;
+}
+
+// Sort file paths by modification time descending (most recent first),
+// matching CC GrepTool's files_with_matches sort. Falls back to filename
+// ascending as a tiebreaker. Paths that can't be stat'd sort as mtime 0.
+void SortByMtimeDesc(std::vector<std::string>* paths) {
+  struct Entry {
+    std::string path;
+    int64_t mtime_ms;
+  };
+  std::vector<Entry> entries;
+  entries.reserve(paths->size());
+  for (auto& p : *paths) {
+    base::File::Info info;
+    int64_t mtime = 0;
+    if (base::GetFileInfo(base::FilePath::FromUTF8Unsafe(p), &info)) {
+      mtime = info.last_modified.InMillisecondsSinceUnixEpoch();
+    }
+    entries.push_back({std::move(p), mtime});
+  }
+  std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+    if (a.mtime_ms != b.mtime_ms) {
+      return a.mtime_ms > b.mtime_ms;  // descending
+    }
+    return a.path < b.path;  // filename tiebreaker ascending
+  });
+  paths->clear();
+  paths->reserve(entries.size());
+  for (auto& e : entries) {
+    paths->push_back(std::move(e.path));
+  }
+}
 
 }  // namespace
 
@@ -1385,6 +1457,18 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
     return;
   }
 
+  // CC parity (2-4-4): validate that the target path exists. Skip for
+  // UNC paths to avoid NTLM credential leaks (CC validateInput 207-210).
+  std::string target_utf8 = target.AsUTF8Unsafe();
+  bool is_unc = base::StartsWith(target_utf8, "\\\\", base::CompareCase::SENSITIVE) ||
+                base::StartsWith(target_utf8, "//", base::CompareCase::SENSITIVE);
+  if (!is_unc && !base::PathExists(target)) {
+    std::move(done).Reject(
+        "path_not_found",
+        base::StrCat({"Path does not exist: ", input.path.value_or("")}));
+    return;
+  }
+
   // Normalize output_mode; reject unknown values rather than silently
   // falling back, since the model just hallucinated otherwise.
   std::string output_mode = input.output_mode.value_or("files_with_matches");
@@ -1427,13 +1511,14 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
       launcher_.get(), GetProfile(), std::move(rg_args), std::move(options),
       base::BindOnce(&ProcessTool::OnGrepRgDone, weak_ptr_factory_.GetWeakPtr(),
                      std::move(done), std::move(output_mode), head_limit,
-                     offset));
+                     offset, default_root));
 }
 
 void ProcessTool::OnGrepRgDone(ToolCallback done,
                                std::string output_mode,
                                int head_limit,
                                int offset,
+                               base::FilePath cwd,
                                RipgrepRunResult result) {
   // Pre-launch failure: rg was unavailable and the runner's one-shot
   // auto-install didn't recover it. The runner already shaped a diagnostic
@@ -1453,16 +1538,20 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
   if (output_mode == "content") {
     SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
     if (sliced.items.empty()) {
-      std::move(done).Resolve(base::Value("No files found"));
+      std::move(done).Resolve(base::Value("No matches found"));
       return;
+    }
+    // Relativize file paths in content lines (first colon separator).
+    for (auto& line : sliced.items) {
+      line = RelativizeGrepLine(line, cwd, /*use_last_colon=*/false);
     }
     std::string body = base::JoinString(sliced.items, "\n");
     if (sliced.truncated) {
       body.append(base::StrCat(
-          {"\n\n[Showing results with pagination = limit ",
+          {"\n\n[Showing results with pagination = limit: ",
            base::NumberToString(sliced.applied_limit),
            offset > 0
-               ? base::StrCat({", offset ", base::NumberToString(offset)})
+               ? base::StrCat({", offset: ", base::NumberToString(offset)})
                : std::string(),
            "]"}));
     }
@@ -1474,9 +1563,10 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
     SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
     int total_matches = 0;
     int file_count = 0;
-    for (const std::string& line : sliced.items) {
-      // rg --count emits "path:N" per file. Take the LAST colon to
-      // avoid mis-splitting Windows-style paths like "C:\foo:42".
+    // Relativize file paths in count lines (last colon separator).
+    for (auto& line : sliced.items) {
+      line = RelativizeGrepLine(line, cwd, /*use_last_colon=*/true);
+      // Parse count from the relativized line.
       size_t colon = line.find_last_of(':');
       if (colon == std::string::npos || colon == 0) {
         continue;
@@ -1488,30 +1578,44 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
       }
     }
     std::string body = base::JoinString(sliced.items, "\n");
+    // CC format: "Found N total occurrence(s) across M file(s)."
     body.append(base::StrCat({"\n\nFound ", base::NumberToString(total_matches),
-                              " total occurrence(s) across ",
-                              base::NumberToString(file_count), " file(s)."}));
+                              " total ", total_matches == 1 ? "occurrence" : "occurrences",
+                              " across ", base::NumberToString(file_count),
+                              " ", file_count == 1 ? "file" : "files", "."}));
     if (sliced.truncated) {
       body.append(
-          base::StrCat({" [Showing results with pagination = limit ",
-                        base::NumberToString(sliced.applied_limit), "]"}));
+          base::StrCat({" with pagination = limit: ",
+                        base::NumberToString(sliced.applied_limit),
+                        offset > 0
+                            ? base::StrCat({", offset: ", base::NumberToString(offset)})
+                            : std::string()}));
     }
     std::move(done).Resolve(base::Value(std::move(body)));
     return;
   }
 
   // files_with_matches: rg already returns one path per line.
+  // CC parity: sort by mtime descending before applying head_limit.
+  SortByMtimeDesc(&lines);
   SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
   if (sliced.items.empty()) {
     std::move(done).Resolve(base::Value("No files found"));
     return;
   }
+  // Relativize all file paths.
+  for (auto& path : sliced.items) {
+    path = ToRelativePath(base::FilePath::FromUTF8Unsafe(path), cwd);
+  }
+  // CC format: "Found N file(s)" + optional limit info + newline + paths
   std::string body = base::StrCat(
-      {"Found ", base::NumberToString(sliced.items.size()), " file(s)"});
+      {"Found ", base::NumberToString(sliced.items.size()), " ",
+       sliced.items.size() == 1 ? "file" : "files"});
   if (sliced.truncated) {
-    body.append(
-        base::StrCat({" [Showing results with pagination = limit ",
-                      base::NumberToString(sliced.applied_limit), "]"}));
+    body.append(base::StrCat({" limit: ", base::NumberToString(sliced.applied_limit)}));
+    if (offset > 0) {
+      body.append(base::StrCat({", offset: ", base::NumberToString(offset)}));
+    }
   }
   body.push_back('\n');
   body.append(base::JoinString(sliced.items, "\n"));
@@ -1527,3 +1631,23 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
 // nexus_tools_registry.gen.cc invokes this via
 // `CategoryAccessor<ProcessTool>::Get(session)`.
 NEXUS_DEFINE_CATEGORY(nexus::ProcessTool, process_tool);
+
+// =============================================================================
+// Test-only static wrappers — thin shims around the anonymous-namespace
+// helpers so process_tool_unittest.cc can pin spec 2-4-5 / 2-4-6 without
+// a live utility process.
+// =============================================================================
+
+// static
+std::vector<std::string> nexus::ProcessTool::BuildRipgrepArgsForTesting(
+    const ::nexus::generated::GrepInput& input,
+    const std::string& output_mode,
+    bool show_line_numbers) {
+  return BuildRipgrepArgs(input, output_mode, show_line_numbers);
+}
+
+// static
+std::vector<std::string> nexus::ProcessTool::SplitGlobPatternsForTesting(
+    const std::string& glob) {
+  return SplitGlobPatterns(glob);
+}

@@ -86,7 +86,10 @@ TEST(FileToolTest, ReadResolvesWithLineNumberedProjection) {
       << result.value.GetString();
 }
 
-TEST(FileToolTest, ReadDefaultLineLimitScalesWithContextWindow) {
+// CC parity (2-1-9 / 2-1-10): MAX_LINES_TO_READ=2000 is prompt-only and NOT
+// enforced. A no-limit Read returns the whole file regardless of context
+// window; overflow is caught by the token guard (which throws), not a line cap.
+TEST(FileToolTest, ReadWithNoLimitReturnsWholeFile) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -99,6 +102,7 @@ TEST(FileToolTest, ReadDefaultLineLimitScalesWithContextWindow) {
   }
   ASSERT_TRUE(base::WriteFile(file, contents));
 
+  // Small context window — previously capped at 1000 lines; now returns all.
   ToolSession small_session(/*profile=*/nullptr, kSessionKey);
   CallResult small_result;
   ::nexus::generated::ReadInput small_input;
@@ -110,12 +114,11 @@ TEST(FileToolTest, ReadDefaultLineLimitScalesWithContextWindow) {
   ASSERT_TRUE(small_result.resolved);
   ASSERT_TRUE(small_result.value.is_string());
   const std::string& small = small_result.value.GetString();
-  EXPECT_NE(std::string::npos, small.find("1000\tline 1000")) << small;
-  EXPECT_EQ(std::string::npos, small.find("1001\tline 1001")) << small;
-  EXPECT_NE(std::string::npos,
-            small.find("[file truncated after line 1000"))
-      << small;
+  EXPECT_NE(std::string::npos, small.find("2100\tline 2100")) << small;
+  EXPECT_EQ(std::string::npos, small.find("[file truncated")) << small;
 
+  // Large context window — same result (context window no longer scales the
+  // line cap; the token budget is a fixed 25000).
   ToolSession large_session(/*profile=*/nullptr, kSessionKey);
   CallResult large_result;
   ::nexus::generated::ReadInput large_input;
@@ -128,11 +131,8 @@ TEST(FileToolTest, ReadDefaultLineLimitScalesWithContextWindow) {
   ASSERT_TRUE(large_result.resolved);
   ASSERT_TRUE(large_result.value.is_string());
   const std::string& large = large_result.value.GetString();
-  EXPECT_NE(std::string::npos, large.find("2000\tline 2000")) << large;
-  EXPECT_EQ(std::string::npos, large.find("2001\tline 2001")) << large;
-  EXPECT_NE(std::string::npos,
-            large.find("[file truncated after line 2000"))
-      << large;
+  EXPECT_NE(std::string::npos, large.find("2100\tline 2100")) << large;
+  EXPECT_EQ(std::string::npos, large.find("[file truncated")) << large;
 }
 
 TEST(FileToolTest, ReadDedupsUnchangedFullTextRead) {
@@ -203,7 +203,11 @@ TEST(FileToolTest, ReadDoesNotDedupAfterContentChange) {
                                    "File unchanged since last read"));
 }
 
-TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeButKeepsEditWriteUnsafe) {
+// CC parity (2-1-8 / 2-1-10 inv.4): Read never sets isPartialView, so a partial
+// read (offset/limit) does NOT block a later Edit/Write — the staleness guard is
+// the content comparison, not the read's range. Repeated exact-range reads still
+// dedup to the unchanged stub.
+TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -236,6 +240,7 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeButKeepsEditWriteUnsafe) {
   EXPECT_NE(std::string::npos, second_result.value.GetString().find(
                                    "File unchanged since last read"));
 
+  // CC parity: a partial read does NOT block Edit (no isPartialView).
   CallResult edit_result;
   ::nexus::generated::EditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
@@ -244,10 +249,11 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeButKeepsEditWriteUnsafe) {
   session.file_tool().RunEditOnUI(std::move(edit_input),
                                   MakeRecordingCallback(&edit_result));
   task_environment.RunUntilIdle();
-  EXPECT_FALSE(edit_result.resolved);
-  EXPECT_TRUE(edit_result.rejected);
-  EXPECT_EQ("file_not_read", edit_result.error_code);
+  EXPECT_TRUE(edit_result.resolved)
+      << edit_result.error_code << ": " << edit_result.error_message;
+  EXPECT_FALSE(edit_result.rejected);
 
+  // CC parity: a partial read does NOT block Write either.
   CallResult write_result;
   ::nexus::generated::WriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
@@ -255,9 +261,9 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeButKeepsEditWriteUnsafe) {
   session.file_tool().RunWriteOnUI(std::move(write_input),
                                    MakeRecordingCallback(&write_result));
   task_environment.RunUntilIdle();
-  EXPECT_FALSE(write_result.resolved);
-  EXPECT_TRUE(write_result.rejected);
-  EXPECT_EQ("file_not_read", write_result.error_code);
+  EXPECT_TRUE(write_result.resolved)
+      << write_result.error_code << ": " << write_result.error_message;
+  EXPECT_FALSE(write_result.rejected);
 }
 
 TEST(FileToolTest, PartialReadFollowedByFullReadDoesNotDedup) {
@@ -487,6 +493,56 @@ TEST(FileToolTest, ReadIgnoresPagesForNonPdfTextFile) {
       << result.value.GetString();
 }
 
+// CC parity (spec 2-1-5 errorCode 7): a malformed `pages` string is rejected
+// before any I/O.
+TEST(FileToolTest, ReadRejectsInvalidPagesFormat) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("doc.pdf");
+  ASSERT_TRUE(base::WriteFile(file, "%PDF-1.4\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.pages = "abc";
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_FALSE(result.resolved);
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("invalid_pages", result.error_code);
+  EXPECT_NE(std::string::npos,
+            result.error_message.find("Invalid pages parameter"));
+}
+
+// CC parity (spec 2-1-5 errorCode 8): a page range wider than 20 pages is
+// rejected before any I/O.
+TEST(FileToolTest, ReadRejectsTooManyPages) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("doc.pdf");
+  ASSERT_TRUE(base::WriteFile(file, "%PDF-1.4\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.pages = "1-99";
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_FALSE(result.resolved);
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("too_many_pages", result.error_code);
+  EXPECT_NE(std::string::npos,
+            result.error_message.find("exceeds maximum of 20 pages"));
+}
+
 TEST(FileToolTest, ReadRejectsUnsupportedBinaryFile) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
@@ -506,6 +562,33 @@ TEST(FileToolTest, ReadRejectsUnsupportedBinaryFile) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("unsupported_binary_file", result.error_code);
+}
+
+// CC parity (utils/fileRead.ts:20-49): a UTF-16LE file (BOM FF FE) is decoded
+// to UTF-8 for the projection, NOT rejected as binary despite its null bytes.
+TEST(FileToolTest, ReadDecodesUtf16LeInsteadOfRejectingAsBinary) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("utf16.txt");
+  // UTF-16LE BOM + "hi\n" in little-endian code units.
+  const std::string utf16_content("\xFF\xFE"
+                                  "h\x00i\x00\n\x00", 8);
+  ASSERT_TRUE(base::WriteFile(file, utf16_content));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  ASSERT_TRUE(result.value.is_string());
+  // The projection shows the decoded UTF-8 text with line numbers.
+  EXPECT_NE(std::string::npos, result.value.GetString().find("1\thi"))
+      << result.value.GetString();
 }
 
 TEST(FileToolTest, ReadRejectsNoLimitTextFileOverDefaultSizeCap) {
@@ -760,15 +843,15 @@ TEST(FileToolTest, EditRequiresPriorFullRead) {
   EXPECT_EQ("file_not_read", result.error_code);
 }
 
-TEST(FileToolTest, EditAfterPartialReadReportsSpecificErrorMessage) {
+// CC parity (2-1-8 / 2-1-10 inv.4): a partial read does NOT block Edit. The
+// read-state content snapshot is the full file (Read caches full_content), so
+// the staleness guard passes and the edit applies.
+TEST(FileToolTest, EditAfterPartialReadSucceeds) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   const base::FilePath file = temp_dir.GetPath().AppendASCII("notes.txt");
-  ASSERT_TRUE(base::WriteFile(file, "alpha
-beta
-gamma
-"));
+  ASSERT_TRUE(base::WriteFile(file, "alpha\nbeta\ngamma\n"));
 
   // Partial read (limit=1)
   ToolSession session(/*profile=*/nullptr, kSessionKey);
@@ -781,7 +864,7 @@ gamma
   task_environment.RunUntilIdle();
   ASSERT_TRUE(read_result.resolved);
 
-  // Edit should be rejected with a specific partial-read message
+  // Edit succeeds — a partial read is not a partial view (CC parity).
   CallResult edit_result;
   ::nexus::generated::EditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
@@ -791,24 +874,18 @@ gamma
                                   MakeRecordingCallback(&edit_result));
   task_environment.RunUntilIdle();
 
-  EXPECT_FALSE(edit_result.resolved);
-  EXPECT_TRUE(edit_result.rejected);
-  EXPECT_EQ("file_not_read", edit_result.error_code);
-  EXPECT_NE(std::string::npos, edit_result.error_message.find("partially read"));
-  EXPECT_NE(std::string::npos, edit_result.error_message.find("offset"));
-  EXPECT_NE(std::string::npos, edit_result.error_message.find("limit"));
-  EXPECT_NE(std::string::npos, edit_result.error_message.find("full file"));
+  EXPECT_TRUE(edit_result.resolved)
+      << edit_result.error_code << ": " << edit_result.error_message;
+  EXPECT_FALSE(edit_result.rejected);
 }
 
-TEST(FileToolTest, WriteAfterPartialReadReportsSpecificErrorMessage) {
+// CC parity (2-1-8 / 2-1-10 inv.4): a partial read does NOT block Write.
+TEST(FileToolTest, WriteAfterPartialReadSucceeds) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   const base::FilePath file = temp_dir.GetPath().AppendASCII("notes.txt");
-  ASSERT_TRUE(base::WriteFile(file, "alpha
-beta
-gamma
-"));
+  ASSERT_TRUE(base::WriteFile(file, "alpha\nbeta\ngamma\n"));
 
   // Partial read (offset=2, limit=1)
   ToolSession session(/*profile=*/nullptr, kSessionKey);
@@ -822,23 +899,18 @@ gamma
   task_environment.RunUntilIdle();
   ASSERT_TRUE(read_result.resolved);
 
-  // Write should be rejected with a specific partial-read message
+  // Write succeeds — a partial read is not a partial view (CC parity).
   CallResult write_result;
   ::nexus::generated::WriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
-  write_input.content = "delta
-";
+  write_input.content = "delta\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
                                    MakeRecordingCallback(&write_result));
   task_environment.RunUntilIdle();
 
-  EXPECT_FALSE(write_result.resolved);
-  EXPECT_TRUE(write_result.rejected);
-  EXPECT_EQ("file_not_read", write_result.error_code);
-  EXPECT_NE(std::string::npos, write_result.error_message.find("partially read"));
-  EXPECT_NE(std::string::npos, write_result.error_message.find("offset: 2"));
-  EXPECT_NE(std::string::npos, write_result.error_message.find("limit: 1"));
-  EXPECT_NE(std::string::npos, write_result.error_message.find("full file"));
+  EXPECT_TRUE(write_result.resolved)
+      << write_result.error_code << ": " << write_result.error_message;
+  EXPECT_FALSE(write_result.rejected);
 }
 
 TEST(FileToolTest, EditAfterTruncatedReadSucceeds) {
@@ -848,8 +920,7 @@ TEST(FileToolTest, EditAfterTruncatedReadSucceeds) {
   const base::FilePath file = temp_dir.GetPath().AppendASCII("big.txt");
   std::string content;
   for (int i = 1; i <= 3000; ++i) {
-    content += "line " + base::NumberToString(i) + "
-";
+    content += "line " + base::NumberToString(i) + "\n";
   }
   ASSERT_TRUE(base::WriteFile(file, content));
 
@@ -884,8 +955,7 @@ TEST(FileToolTest, WriteAfterTruncatedReadSucceeds) {
   const base::FilePath file = temp_dir.GetPath().AppendASCII("big.txt");
   std::string content;
   for (int i = 1; i <= 3000; ++i) {
-    content += "line " + base::NumberToString(i) + "
-";
+    content += "line " + base::NumberToString(i) + "\n";
   }
   ASSERT_TRUE(base::WriteFile(file, content));
 
@@ -903,8 +973,7 @@ TEST(FileToolTest, WriteAfterTruncatedReadSucceeds) {
   CallResult write_result;
   ::nexus::generated::WriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
-  write_input.content = "completely new content
-";
+  write_input.content = "completely new content\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
                                    MakeRecordingCallback(&write_result));
   task_environment.RunUntilIdle();
@@ -1193,6 +1262,830 @@ TEST(FileToolTest, NotebookReadRecordsReadStateEnablingWrite) {
   EXPECT_TRUE(write_result.resolved)
       << write_result.error_code << ": " << write_result.error_message;
   EXPECT_FALSE(write_result.rejected);
+}
+
+// =============================================================================
+// Edit CC-parity regression tests (spec 2-2)
+// =============================================================================
+
+// Helper: seed a full read so EditFileBlocking passes the read gate.
+static void SeedReadState(ToolSession& session,
+                          base::test::TaskEnvironment& env,
+                          const base::FilePath& file) {
+  CallResult read_result;
+  ::nexus::generated::ReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  env.RunUntilIdle();
+  ASSERT_TRUE(read_result.resolved) << "seed read failed";
+}
+
+// Spec 2-2-4 code 5: .ipynb → reject with NotebookEdit hint.
+TEST(FileToolTest, EditRejectsNotebookFile) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("nb.ipynb");
+  ASSERT_TRUE(base::WriteFile(file, "{\"cells\":[]}"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "cells";
+  input.new_string = "blocks";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("notebook_file", result.error_code);
+  EXPECT_NE(std::string::npos, result.error_message.find("NotebookEdit"));
+}
+
+// Spec 2-2-4 code 4: missing file + non-empty old_string → file_not_found.
+TEST(FileToolTest, EditMissingFileWithOldStringReportsNotFound) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("ghost.txt");
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "hello";
+  input.new_string = "world";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("file_not_found", result.error_code);
+}
+
+// Spec 2-2-4 code 7 (creation): missing file + empty old_string → creates file.
+TEST(FileToolTest, EditCreatesNewFileWithEmptyOldString) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("new.txt");
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "";
+  input.new_string = "hello world";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("hello world", written);
+}
+
+// Spec 2-2-4 code 3: existing non-empty file + empty old_string → error.
+TEST(FileToolTest, EditEmptyOldStringOnNonEmptyFileRejects) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("existing.txt");
+  ASSERT_TRUE(base::WriteFile(file, "content"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "";
+  input.new_string = "new content";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("file_already_exists", result.error_code);
+}
+
+// Spec 2-2-8: CRLF file edited → stays CRLF.
+TEST(FileToolTest, EditPreservesCRLFLineEndings) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("crlf.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\r\nbeta\r\ngamma\r\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "beta";
+  input.new_string = "delta";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("alpha\r\ndelta\r\ngamma\r\n", written);
+}
+
+// Spec 2-2-6: delete (new_string='') of a full line → trailing newline removed.
+TEST(FileToolTest, EditDeleteStripsTrailingNewline) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("lines.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\nbeta\ngamma\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "beta";
+  input.new_string = "";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("alpha\ngamma\n", written);
+}
+
+// Spec 2-2-6: curly quotes in file, straight quotes from model → match +
+// preserve curly style in new_string.
+TEST(FileToolTest, EditNormalizesCurlyQuotesAndPreservesStyle) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("curly.txt");
+  // U+201C "hello" U+201D in UTF-8.
+  ASSERT_TRUE(base::WriteFile(
+      file, "\xE2\x80\x9Chello\xE2\x80\x9D world\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "\"hello\"";  // straight quotes from model
+  input.new_string = "\"goodbye\"";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  // new_string should have curly quotes applied.
+  EXPECT_EQ("\xE2\x80\x9Cgoodbye\xE2\x80\x9D world\n", written);
+}
+
+// Spec 2-2-6: trailing whitespace stripped from new_string for non-.md files.
+TEST(FileToolTest, EditStripsTrailingWhitespaceForNonMarkdown) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("code.ts");
+  ASSERT_TRUE(base::WriteFile(file, "const x = 1;\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "const x = 1;";
+  input.new_string = "const x = 2;   ";  // trailing spaces
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("const x = 2;\n", written);
+}
+
+// Spec 2-2-6: .md trailing double-space preserved (hard line break).
+TEST(FileToolTest, EditPreservesTrailingSpacesForMarkdown) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("doc.md");
+  ASSERT_TRUE(base::WriteFile(file, "line one\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "line one";
+  input.new_string = "line one  ";  // markdown hard break
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("line one  \n", written);
+}
+
+// Spec 2-2-4 code 9: multiple matches + replace_all:false → ambiguous_match.
+TEST(FileToolTest, EditAmbiguousMatchReportsCount) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("dup.txt");
+  ASSERT_TRUE(base::WriteFile(file, "foo bar foo baz foo\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "foo";
+  input.new_string = "qux";
+  input.replace_all = false;
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("ambiguous_match", result.error_code);
+  EXPECT_NE(std::string::npos, result.error_message.find("3"));
+}
+
+// Spec 2-2-4 code 9: multiple matches + replace_all:true → replaces all.
+TEST(FileToolTest, EditReplaceAllReplacesEveryOccurrence) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("dup.txt");
+  ASSERT_TRUE(base::WriteFile(file, "foo bar foo baz foo\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "foo";
+  input.new_string = "qux";
+  input.replace_all = true;
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("qux bar qux baz qux\n", written);
+  EXPECT_NE(std::string::npos,
+            result.value.GetDict().FindString("message")->find(
+                "All occurrences"));
+}
+
+// Spec 2-2-4 code 1: old_string === new_string → no-op error.
+TEST(FileToolTest, EditNoOpRejects) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("noop.txt");
+  ASSERT_TRUE(base::WriteFile(file, "same\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "same";
+  input.new_string = "same";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_NE(std::string::npos,
+            result.error_message.find("No changes to make"));
+}
+
+// Spec 2-2-6.9: desanitize — old has the sanitized `<e>`, file has `<error>`
+// → match; same replacement applied to new_string. (`<e>`/`</e>` are clean
+// tokens with no substring overlap, so both open and close desanitize and
+// mirror onto new_string deterministically.)
+TEST(FileToolTest, EditDesanitizesMatchAndNewString) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("desan.txt");
+  ASSERT_TRUE(base::WriteFile(file, "<error>oops</error>\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "<e>oops</e>";  // sanitized form from model
+  input.new_string = "<e>fixed</e>";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("<error>fixed</error>\n", written);
+}
+
+// Spec 2-3-7.1: Write ALWAYS outputs LF, even if the model sends CRLF.
+TEST(FileToolTest, WriteNormalizesCRLFToLF) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("crlf.txt");
+  ASSERT_TRUE(base::WriteFile(file, "line1\r\nline2\r\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  // Model sends CRLF content — Write must normalize to LF on disk.
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.content = "new1\r\nnew2\r\n";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("new1\nnew2\n", written);
+}
+
+// Spec 2-3-7.2: Write preserves UTF-8 BOM from the original file.
+TEST(FileToolTest, WritePreservesUtf8Bom) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("bom.txt");
+  const std::string bom_content = "\xEF\xBB\xBFhello\n";
+  ASSERT_TRUE(base::WriteFile(file, bom_content));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.content = "world\n";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("\xEF\xBB\xBFworld\n", written);
+}
+
+// Spec 2-3-7.2: Write preserves UTF-16LE encoding (BOM-detected) from the
+// original file. Read now decodes UTF-16LE (CC parity 2-1), so SeedReadState
+// can seed the read_state_ cache and Write can re-encode on output.
+TEST(FileToolTest, WritePreservesUtf16LeEncoding) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("utf16.txt");
+  // UTF-16LE BOM + "hello\n" in little-endian code units.
+  const std::string utf16_content(
+      "\xFF\xFE"
+      "h\x00e\x00l\x00l\x00o\x00\n\x00", 14);
+  ASSERT_TRUE(base::WriteFile(file, utf16_content));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.content = "world\n";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  // Expect UTF-16LE BOM + "world\n" in little-endian.
+  const std::string expected(
+      "\xFF\xFE"
+      "w\x00o\x00r\x00l\x00" "d\x00\n\x00", 14);
+  EXPECT_EQ(expected, written);
+}
+
+// Spec 2-2-8.2: Edit preserves UTF-16LE encoding (BOM-detected). Read decodes
+// to UTF-8 for matching; Edit re-encodes to UTF-16LE on write.
+TEST(FileToolTest, EditPreservesUtf16LeEncoding) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("utf16.txt");
+  // UTF-16LE BOM + "hello\n" in little-endian code units.
+  // NOTE: split before 'e' — \x00e would be parsed as \x{00e}=14.
+  const std::string utf16_content(
+      "\xFF\xFE"
+      "h\x00" "e\x00l\x00l\x00o\x00\n\x00", 14);
+  ASSERT_TRUE(base::WriteFile(file, utf16_content));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "hello";
+  input.new_string = "world";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  // Expect UTF-16LE BOM + "world\n" in little-endian.
+  const std::string expected(
+      "\xFF\xFE"
+      "w\x00o\x00r\x00l\x00" "d\x00\n\x00", 14);
+  EXPECT_EQ(expected, written);
+}
+
+// Spec 2-3-4 item 3: UNC paths are rejected to prevent NTLM credential leaks.
+TEST(FileToolTest, WriteRejectsUncPath) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = "\\\\server\\share\\file.txt";
+  input.content = "data";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("invalid_args", result.error_code);
+  EXPECT_NE(std::string::npos,
+            result.error_message.find("UNC paths are not supported"));
+}
+
+// Spec 2-3-4 item 3: forward-slash UNC variant is also rejected.
+TEST(FileToolTest, WriteRejectsForwardSlashUncPath) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = "//server/share/file.txt";
+  input.content = "data";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("invalid_args", result.error_code);
+}
+
+// Spec 2-3-5.2: overwriting an existing file renders the update message and
+// includes original_file in the structured result.
+TEST(FileToolTest, WriteUpdateRendersUpdateMessage) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("update.txt");
+  ASSERT_TRUE(base::WriteFile(file, "old content\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.content = "new content\n";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(result.resolved) << result.error_message;
+  ASSERT_TRUE(result.value.is_dict());
+  const std::string* msg = result.value.GetDict().FindString("message");
+  ASSERT_TRUE(msg);
+  EXPECT_NE(std::string::npos, msg->find("has been updated successfully"));
+  // original_file must be present for the update branch.
+  EXPECT_TRUE(result.value.GetDict().FindString("original_file"));
+}
+
+// Spec 2-3-5.4: mtime advanced but content unchanged → Write passes.
+// The local implementation uses content comparison (not mtime), so a
+// same-content rewrite with a bumped mtime must succeed.
+TEST(FileToolTest, WritePassesWhenContentUnchangedDespiteMtimeAdvance) {
+  base::test::TaskEnvironment task_environment(
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("same.txt");
+  ASSERT_TRUE(base::WriteFile(file, "unchanged\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  // Bump mtime without changing content.
+  task_environment.FastForwardBy(base::Seconds(5));
+  ASSERT_TRUE(base::WriteFile(file, "unchanged\n"));
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.content = "replaced\n";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("replaced\n", written);
+}
+
+// Spec 2-3-5.5: after Write, ReadState is updated so a subsequent Write
+// without a fresh Read still passes (content matches what was written).
+TEST(FileToolTest, WriteUpdatesReadStateForSubsequentWrite) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("chain.txt");
+  ASSERT_TRUE(base::WriteFile(file, "v1\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  // First write.
+  CallResult first;
+  ::nexus::generated::WriteInput input1;
+  input1.file_path = file.AsUTF8Unsafe();
+  input1.content = "v2\n";
+  session.file_tool().RunWriteOnUI(std::move(input1),
+                                   MakeRecordingCallback(&first));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(first.resolved) << first.error_message;
+
+  // Second write without a fresh Read — must succeed because Write updated
+  // ReadState with the content it wrote.
+  CallResult second;
+  ::nexus::generated::WriteInput input2;
+  input2.file_path = file.AsUTF8Unsafe();
+  input2.content = "v3\n";
+  session.file_tool().RunWriteOnUI(std::move(input2),
+                                   MakeRecordingCallback(&second));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(second.resolved) << second.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("v3\n", written);
+}
+
+// Spec 2-3-5.6: writing to a path under a missing directory creates the
+// directory tree and writes the file.
+TEST(FileToolTest, WriteCreatesMissingParentDirectory) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file =
+      temp_dir.GetPath().AppendASCII("newdir").AppendASCII("f.txt");
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+
+  CallResult result;
+  ::nexus::generated::WriteInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.content = "created\n";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  EXPECT_EQ("created\n", written);
+}
+
+// =============================================================================
+// Read CC-parity regression tests (spec 2-1) — added 2026-07-21
+// =============================================================================
+
+// Spec 2-1-6.1: exact line-numbered content for "a\nb\nc".
+TEST(FileToolTest, ReadExactLineNumberedContent) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("abc.txt");
+  ASSERT_TRUE(base::WriteFile(file, "a\nb\nc\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(result.resolved);
+  ASSERT_TRUE(result.value.is_string());
+  EXPECT_EQ("1\ta\n2\tb\n3\tc\n", result.value.GetString());
+}
+
+// Spec 2-1-6.4: offset:0 is equivalent to offset:1 (both start at line 1).
+TEST(FileToolTest, ReadOffsetZeroEquivalentToOffsetOne) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("lines.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\nbeta\ngamma\n"));
+
+  ToolSession session0(/*profile=*/nullptr, kSessionKey);
+  CallResult result0;
+  ::nexus::generated::ReadInput input0;
+  input0.file_path = file.AsUTF8Unsafe();
+  input0.offset = 0;
+  session0.file_tool().RunReadOnUI(std::move(input0),
+                                   MakeRecordingCallback(&result0));
+  task_environment.RunUntilIdle();
+
+  ToolSession session1(/*profile=*/nullptr, kSessionKey);
+  CallResult result1;
+  ::nexus::generated::ReadInput input1;
+  input1.file_path = file.AsUTF8Unsafe();
+  input1.offset = 1;
+  session1.file_tool().RunReadOnUI(std::move(input1),
+                                   MakeRecordingCallback(&result1));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(result0.resolved);
+  ASSERT_TRUE(result1.resolved);
+  ASSERT_TRUE(result0.value.is_string());
+  ASSERT_TRUE(result1.value.is_string());
+  EXPECT_EQ(result0.value.GetString(), result1.value.GetString());
+  EXPECT_NE(std::string::npos, result0.value.GetString().find("1\talpha"));
+}
+
+// Spec 2-1-6.5: CRLF line endings are stripped to LF in the projection.
+TEST(FileToolTest, ReadStripsCrlfToLf) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("crlf.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\r\nbeta\r\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(result.resolved);
+  ASSERT_TRUE(result.value.is_string());
+  const std::string& content = result.value.GetString();
+  EXPECT_NE(std::string::npos, content.find("1\talpha\n"));
+  EXPECT_NE(std::string::npos, content.find("2\tbeta\n"));
+  // No \r should survive in the projection.
+  EXPECT_EQ(std::string::npos, content.find('\r'));
+}
+
+// Spec 2-1-2.6: offset < 1 is clamped to 1 (reads from the beginning).
+TEST(FileToolTest, ReadClampsNegativeOffsetToOne) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("lines.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\nbeta\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.offset = -1;
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(result.resolved);
+  ASSERT_TRUE(result.value.is_string());
+  EXPECT_NE(std::string::npos, result.value.GetString().find("1\talpha"));
+}
+
+// Spec 2-1-2.6: limit < 1 is treated as no limit (reads the whole file).
+TEST(FileToolTest, ReadTreatsZeroLimitAsNoLimit) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("lines.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\nbeta\ngamma\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.limit = 0;
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(result.resolved);
+  ASSERT_TRUE(result.value.is_string());
+  // All three lines should be present (limit=0 → no cap).
+  EXPECT_NE(std::string::npos, result.value.GetString().find("1\talpha"));
+  EXPECT_NE(std::string::npos, result.value.GetString().find("2\tbeta"));
+  EXPECT_NE(std::string::npos, result.value.GetString().find("3\tgamma"));
+}
+
+// Spec 2-1-4.1: a file_too_large rejection does NOT set read state, so a
+// subsequent Edit still gets file_not_read.
+TEST(FileToolTest, ReadFileTooLargeDoesNotSetReadState) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("large.txt");
+  std::string contents = "alpha\n";
+  contents.append(256 * 1024, 'b');
+  ASSERT_TRUE(base::WriteFile(file, contents));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+
+  // Read fails with file_too_large.
+  CallResult read_result;
+  ::nexus::generated::ReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(read_result.rejected);
+  EXPECT_EQ("file_too_large", read_result.error_code);
+
+  // Edit must still fail with file_not_read (read state was NOT set).
+  CallResult edit_result;
+  ::nexus::generated::EditInput edit_input;
+  edit_input.file_path = file.AsUTF8Unsafe();
+  edit_input.old_string = "alpha";
+  edit_input.new_string = "beta";
+  session.file_tool().RunEditOnUI(std::move(edit_input),
+                                  MakeRecordingCallback(&edit_result));
+  task_environment.RunUntilIdle();
+  EXPECT_TRUE(edit_result.rejected);
+  EXPECT_EQ("file_not_read", edit_result.error_code);
+}
+
+// Spec 2-1-5.5: a .zip file (binary content) is rejected as unsupported binary.
+TEST(FileToolTest, ReadRejectsZipAsBinary) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("archive.zip");
+  // Minimal ZIP local file header (PK\x03\x04) — enough for binary detection.
+  constexpr uint8_t kZipHeader[] = {0x50, 0x4B, 0x03, 0x04, 0x14, 0x00,
+                                    0x00, 0x00, 0x08, 0x00, 0x00, 0x00};
+  ASSERT_TRUE(base::WriteFile(file, base::span(kZipHeader)));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult result;
+  ::nexus::generated::ReadInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_FALSE(result.resolved);
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("unsupported_binary_file", result.error_code);
 }
 
 }  // namespace nexus

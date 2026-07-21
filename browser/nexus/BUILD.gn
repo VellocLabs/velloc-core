@@ -1032,6 +1032,7 @@ source_set("unit_tests_lite") {
     "api/llm/provider_config_unittest.cc",
     "api/llm/providers/anthropic/anthropic_schema_sanitizer_unittest.cc",
     "api/llm/providers/openai/openai_tool_call_stream_unittest.cc",
+    "api/llm/providers/openai/openai_usage_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1067,6 +1068,7 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:line_splitter",
     "//custom_browser/browser/nexus/api/llm:oauth",
     "//custom_browser/browser/nexus/api/llm:openai_tool_call_stream",
+    "//custom_browser/browser/nexus/api/llm:openai_usage",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:provider",
     "//custom_browser/browser/nexus/api/llm:provider_config",
@@ -1103,6 +1105,7 @@ source_set("unit_tests") {
     "tools/nexus_tool_schema_unittest.cc",
     "tools/nexus_tool_signature_unittest.cc",
     "tools/process_tool/nexus_shell_service_launcher_unittest.cc",
+    "tools/process_tool/process_tool_unittest.cc",
     "tools/tool_base_unittest.cc",
     "tools/tool_session_unittest.cc",
   ]

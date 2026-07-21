@@ -19,6 +19,7 @@
 #include "base/uuid.h"
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_usage.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -851,9 +852,21 @@ GenerateResult OpenAiProvider::ParseResponse(
   }
 
   if (const base::DictValue* usage = response.FindDict("usage")) {
-    result.prompt_tokens = usage->FindInt("prompt_tokens").value_or(0);
+    // OpenAI-compatible `prompt_tokens` is INCLUSIVE of cached tokens, with
+    // `prompt_tokens_details.cached_tokens` a subset. The bridge follows the
+    // Anthropic convention where `input_tokens` EXCLUDES cache (the JS token
+    // counter sums input + cache_read + cache_creation + output), so emit the
+    // exclusive input or the cache ratio double-counts and pins at ~50%.
+    const int prompt = usage->FindInt("prompt_tokens").value_or(0);
     result.completion_tokens =
         usage->FindInt("completion_tokens").value_or(0);
+    int cached = 0;
+    if (const base::DictValue* details =
+            usage->FindDict("prompt_tokens_details")) {
+      cached = details->FindInt("cached_tokens").value_or(0);
+    }
+    result.cache_read_input_tokens = cached;
+    result.prompt_tokens = prompt > cached ? prompt - cached : 0;
   }
 
   return result;
@@ -1463,8 +1476,19 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
 
     if (const base::DictValue* usage = response_obj->FindDict("usage")) {
       base::DictValue u;
-      u.Set("promptTokens", usage->FindInt("input_tokens").value_or(0));
+      const int input = usage->FindInt("input_tokens").value_or(0);
       u.Set("completionTokens", usage->FindInt("output_tokens").value_or(0));
+      // Responses-API `input_tokens` is INCLUSIVE of cached tokens; emit the
+      // EXCLUSIVE input to match the bridge's Anthropic convention (see the
+      // response.completed path above).
+      int cached = 0;
+      if (const base::DictValue* details =
+              usage->FindDict("input_tokens_details")) {
+        cached = details->FindInt("cached_tokens").value_or(0);
+      }
+      if (cached > 0)
+        u.Set("cacheReadInputTokens", cached);
+      u.Set("promptTokens", input > cached ? input - cached : 0);
       chunk.Set("usage", std::move(u));
     }
 
@@ -1842,17 +1866,7 @@ void OpenAiProvider::ProcessSseLine(StreamContext& ctx,
   const base::DictValue& dict = *parsed;
 
   auto build_usage_dict = [](const base::DictValue& usage) {
-    base::DictValue u;
-    u.Set("promptTokens", usage.FindInt("prompt_tokens").value_or(0));
-    u.Set("completionTokens",
-          usage.FindInt("completion_tokens").value_or(0));
-    if (const base::DictValue* details =
-            usage.FindDict("prompt_tokens_details")) {
-      if (auto cached = details->FindInt("cached_tokens")) {
-        u.Set("cacheReadInputTokens", *cached);
-      }
-    }
-    return u;
+    return NormalizeChatCompletionUsage(usage);
   };
 
   auto maybe_emit_finish = [&ctx]() {

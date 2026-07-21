@@ -22,6 +22,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
@@ -47,31 +49,27 @@ namespace nexus {
 // =============================================================================
 namespace {
 
-// Default caps for `read` when the caller doesn't supply `limit`, scaled by
-// the active model context window. Overridable via the per-call `limit` input
-// field declared in read.tool.json.
-constexpr int kLargeContextWindowThresholdTokens = 500000;
-constexpr int kLargeContextReadLineLimit = 2000;
-constexpr int kSmallContextReadLineLimit = 1000;
-
 // CC rejects no-limit text reads when the total file exceeds 0.25 MiB,
-// before projecting the first 2000 lines. Explicit `limit` skips this
-// total-file guard so targeted large-file reads remain possible.
+// before reading. Explicit `limit` skips this total-file guard so targeted
+// large-file reads remain possible. (CC parity: `maxSizeBytes` gates on TOTAL
+// file size, pre-read — see tools/FileReadTool/limits.ts.)
 constexpr int64_t kDefaultReadMaxSizeBytes = 256 * 1024;
 
-// Read max output budget, scaled with the same context-window threshold as the
-// default line limit. Nexus cannot call the model token-count API from native
-// C++, so use CC's rough fallback estimator by file type.
-constexpr int kLargeContextReadMaxOutputTokens = 25000;
-constexpr int kSmallContextReadMaxOutputTokens = 12500;
-
-// Per-call hard cap (independent of the user-supplied `limit`) so a
-// pathological 100MB single-line file doesn't blow the response
-// budget. Kept for explicit-limit reads where CC's token guard may be
-// looser than a raw byte cap.
-constexpr size_t kReadResponseByteCap = 4 * 1024 * 1024;  // 4 MiB
+// Read max output budget. CC parity (1-1-3 / 2-1-4): a FIXED 25000-token cap,
+// independent of the active model's context window — CC's
+// `DEFAULT_MAX_OUTPUT_TOKENS` does not scale. Nexus cannot call the model
+// token-count API from native C++, so it approximates tokens by file type
+// (EstimateReadTokens below). The prior context-window-scaled 12500/25000
+// budget was removed to match the spec.
+constexpr int kReadMaxOutputTokens = 25000;
 
 constexpr size_t kMediaReadByteCap = 12 * 1024 * 1024;  // raw bytes
+
+// CC parity (constants/apiLimits.ts `PDF_MAX_PAGES_PER_READ`): the most PDF
+// pages a single Read may request. A range larger than this is rejected with
+// errorCode 8 (spec 2-1-5).
+constexpr int kPdfMaxPagesPerRead = 20;
+
 constexpr char kFileUnchangedStub[] =
     "File unchanged since last read. The content from the earlier Read "
     "tool_result in this conversation is still current — refer to that instead "
@@ -130,15 +128,11 @@ std::string BuildFileTooLargeMessage(int64_t size_in_bytes) {
 }
 
 struct ReadBudget {
-  int default_line_limit;
   int max_output_tokens;
 };
 
-ReadBudget GetReadBudget(std::optional<int> context_window) {
-  if (context_window.value_or(0) > kLargeContextWindowThresholdTokens) {
-    return {kLargeContextReadLineLimit, kLargeContextReadMaxOutputTokens};
-  }
-  return {kSmallContextReadLineLimit, kSmallContextReadMaxOutputTokens};
+ReadBudget GetReadBudget() {
+  return {kReadMaxOutputTokens};
 }
 
 std::string BuildTokenLimitMessage(int token_count, int max_output_tokens) {
@@ -157,6 +151,74 @@ std::string LowercaseExtension(const base::FilePath& path) {
     ext.erase(ext.begin());
   }
   return base::ToLowerASCII(ext);
+}
+
+// CC parity (utils/pdfUtils.ts `parsePDFPageRange`): parse a PDF `pages`
+// string into a (first, last) 1-indexed range. Supports "5", "1-10", and the
+// open-ended "3-". Returns false on invalid input (empty, non-numeric, <1, or
+// an inverted range). `last` is set to INT_MAX for the open-ended form.
+bool ParsePdfPageRange(const std::string& pages, int* first, int* last) {
+  const std::string trimmed(
+      base::TrimWhitespaceASCII(pages, base::TRIM_ALL));
+  if (trimmed.empty()) {
+    return false;
+  }
+  if (trimmed.back() == '-') {
+    int f = 0;
+    if (!base::StringToInt(trimmed.substr(0, trimmed.size() - 1), &f) ||
+        f < 1) {
+      return false;
+    }
+    *first = f;
+    *last = std::numeric_limits<int>::max();
+    return true;
+  }
+  const size_t dash = trimmed.find('-');
+  if (dash == std::string::npos) {
+    int page = 0;
+    if (!base::StringToInt(trimmed, &page) || page < 1) {
+      return false;
+    }
+    *first = page;
+    *last = page;
+    return true;
+  }
+  int f = 0;
+  int l = 0;
+  if (!base::StringToInt(trimmed.substr(0, dash), &f) ||
+      !base::StringToInt(trimmed.substr(dash + 1), &l) || f < 1 || l < 1 ||
+      l < f) {
+    return false;
+  }
+  *first = f;
+  *last = l;
+  return true;
+}
+
+// CC parity (FileReadTool.ts `isBlockedDevicePath` / `BLOCKED_DEVICE_PATHS`):
+// device files that would hang the read (infinite output or blocking input).
+// Path-only check, no I/O; safe devices like /dev/null are intentionally
+// allowed. Nexus runs on a Windows host where these POSIX paths don't resolve,
+// but the check is kept for spec parity and to guard a future POSIX host.
+bool IsBlockedDevicePath(const std::string& path) {
+  static constexpr std::string_view kBlocked[] = {
+      "/dev/zero",   "/dev/random", "/dev/urandom", "/dev/full",
+      "/dev/stdin",  "/dev/tty",    "/dev/console", "/dev/stdout",
+      "/dev/stderr", "/dev/fd/0",   "/dev/fd/1",    "/dev/fd/2",
+  };
+  for (std::string_view blocked : kBlocked) {
+    if (path == blocked) {
+      return true;
+    }
+  }
+  // /proc/self/fd/0-2 and /proc/<pid>/fd/0-2 are Linux aliases for stdio.
+  if (base::StartsWith(path, "/proc/", base::CompareCase::SENSITIVE) &&
+      (base::EndsWith(path, "/fd/0", base::CompareCase::SENSITIVE) ||
+       base::EndsWith(path, "/fd/1", base::CompareCase::SENSITIVE) ||
+       base::EndsWith(path, "/fd/2", base::CompareCase::SENSITIVE))) {
+    return true;
+  }
+  return false;
 }
 
 bool IsSupportedImageMime(std::string_view mime) {
@@ -392,7 +454,6 @@ FileTool::ReadResult ReadNotebookFile(const base::FilePath& path,
   }
 
   base::ListValue parts;
-  size_t text_bytes = 0;
   int index = 0;
   for (const auto& cell_value : *cells) {
     const base::DictValue* cell = cell_value.GetIfDict();
@@ -413,11 +474,6 @@ FileTool::ReadResult ReadNotebookFile(const base::FilePath& path,
     }
     cell_text.append(source);
     cell_text.append(base::StrCat({"</cell id=\"", id, "\">"}));
-    text_bytes += cell_text.size();
-    if (text_bytes > kReadResponseByteCap) {
-      AppendTextPart(&parts, "[notebook content truncated]");
-      break;
-    }
     AppendTextPart(&parts, std::move(cell_text));
 
     if (type == "code") {
@@ -529,10 +585,13 @@ FileTool::ReadResult ReadImageFile(const base::FilePath& path,
 // it minimizes prompt drift even though it's a presentation choice.
 //
 // `start_line_number` is the 1-indexed number to print on the FIRST
-// emitted line (typically `offset` if specified, else 1). The function
-// stops appending when either:
-//   - `max_lines` lines have been emitted, OR
-//   - the running output would exceed `kReadResponseByteCap`.
+// emitted line (typically `offset` if specified, else 1). When
+// `max_lines` has a value, the function stops after that many lines
+// (the caller-supplied `limit`); when it is nullopt the whole file from
+// `start` is emitted. CC parity (2-1-9 / 2-1-10): there is NO default
+// line cap — `MAX_LINES_TO_READ=2000` is prompt-only — and NO byte cap;
+// overflow is enforced by the post-read token guard, which THROWS rather
+// than silently truncating.
 //
 // `content` is the same selected text without line-number prefixes, used for
 // CC-style output token validation.
@@ -549,7 +608,7 @@ struct ProjectionResult {
 
 ProjectionResult BuildLineNumberedProjection(std::string_view contents,
                                              int start_line_number,
-                                             int max_lines) {
+                                             std::optional<int> max_lines) {
   ProjectionResult out;
 
   // SplitStringPiece with KEEP_WHITESPACE preserves blank lines so the
@@ -577,23 +636,20 @@ ProjectionResult BuildLineNumberedProjection(std::string_view contents,
     return out;  // empty projection, lines_emitted=0
   }
 
-  // Emit `max_lines` from `start`, byte-capped.
-  out.projection.reserve(std::min<size_t>(kReadResponseByteCap,
-                                          contents.size() + 16 * lines.size()));
+  // Emit from `start`, honoring the caller's explicit `limit` when set
+  // (no default line cap, no byte cap — CC parity).
+  out.projection.reserve(contents.size() + 16 * lines.size());
   size_t emitted = 0;
-  for (size_t i = start;
-       i < lines.size() && emitted < static_cast<size_t>(max_lines);
-       ++i, ++emitted) {
+  for (size_t i = start; i < lines.size(); ++i) {
+    if (max_lines.has_value() &&
+        emitted >= static_cast<size_t>(*max_lines)) {
+      break;
+    }
     std::string line(lines[i]);
     if (!line.empty() && line.back() == '\r') {
       line.pop_back();
     }
     std::string prefix = base::NumberToString(static_cast<int>(i) + 1) + "\t";
-    if (out.projection.size() + prefix.size() + line.size() + 1 >
-        kReadResponseByteCap) {
-      out.truncated = true;
-      break;
-    }
     if (!out.content.empty()) {
       out.content.push_back('\n');
     }
@@ -601,12 +657,13 @@ ProjectionResult BuildLineNumberedProjection(std::string_view contents,
     out.projection.append(prefix);
     out.projection.append(line);
     out.projection.push_back('\n');
+    ++emitted;
   }
   out.lines_emitted = static_cast<int>(emitted);
 
-  // If we stopped because of the line cap (not the byte cap) but more
-  // lines remain in the file, mark truncated so the LLM knows to ask
-  // for a follow-up `read` with a larger offset.
+  // If we stopped because of the explicit line cap but more lines remain
+  // in the file, mark truncated so the LLM knows to ask for a follow-up
+  // `read` with a larger offset.
   if (!out.truncated && start + emitted < lines.size()) {
     out.truncated = true;
   }
@@ -628,6 +685,322 @@ size_t CountOccurrences(const std::string& haystack,
     pos += needle.size();
   }
   return count;
+}
+
+// =============================================================================
+// Edit helpers — CC FileEditTool/utils.ts parity
+// =============================================================================
+
+// CC's MAX_EDIT_FILE_SIZE: 1 GiB (stat bytes). Prevents OOM on multi-GB files.
+constexpr int64_t kMaxEditFileSize = 1024 * 1024 * 1024;
+
+// Detect whether content uses CRLF line endings.
+bool HasCRLF(const std::string& content) {
+  return content.find("\r\n") != std::string::npos;
+}
+
+// Normalize CRLF → LF (CC's readFileSyncWithMetadata does this before
+// matching). Standalone \r is left untouched (CC only strips \r\n pairs).
+std::string NormalizeCRLF(const std::string& content) {
+  std::string result;
+  result.reserve(content.size());
+  for (size_t i = 0; i < content.size(); ++i) {
+    if (content[i] == '\r' && i + 1 < content.size() &&
+        content[i + 1] == '\n') {
+      result.push_back('\n');
+      ++i;
+    } else {
+      result.push_back(content[i]);
+    }
+  }
+  return result;
+}
+
+// Restore LF → CRLF (write back with original line endings).
+std::string RestoreCRLF(const std::string& content) {
+  std::string result;
+  result.reserve(content.size() + content.size() / 16);
+  for (size_t i = 0; i < content.size(); ++i) {
+    if (content[i] == '\n' && (i == 0 || content[i - 1] != '\r')) {
+      result.push_back('\r');
+    }
+    result.push_back(content[i]);
+  }
+  return result;
+}
+
+// Detect BOM-based encoding from raw file bytes and re-encode UTF-8
+// content to match. Mirrors CC's detectEncodingForResolvedPath
+// (utils/fileRead.ts:20-49) + writeTextContent encoding passthrough.
+// Returns the bytes to write (may differ from |content| if transcoded).
+std::string PreserveOriginalEncoding(const std::string& original,
+                                     const std::string& content) {
+  // UTF-16LE BOM: FF FE
+  if (original.size() >= 2 &&
+      static_cast<unsigned char>(original[0]) == 0xFF &&
+      static_cast<unsigned char>(original[1]) == 0xFE) {
+    std::u16string utf16 = base::UTF8ToUTF16(content);
+    std::string result;
+    result.reserve(2 + utf16.size() * 2);
+    result.push_back('\xFF');
+    result.push_back('\xFE');
+    for (char16_t c : utf16) {
+      result.push_back(static_cast<char>(c & 0xFF));
+      result.push_back(static_cast<char>((c >> 8) & 0xFF));
+    }
+    return result;
+  }
+  // UTF-8 BOM: EF BB BF
+  if (original.size() >= 3 &&
+      static_cast<unsigned char>(original[0]) == 0xEF &&
+      static_cast<unsigned char>(original[1]) == 0xBB &&
+      static_cast<unsigned char>(original[2]) == 0xBF) {
+    return "\xEF\xBB\xBF" + content;
+  }
+  return content;
+}
+
+// Decode raw on-disk bytes to UTF-8 for text projection/matching. Mirrors CC's
+// readFileSyncWithMetadata encoding detection (utils/fileRead.ts:20-49): a
+// UTF-16LE BOM (FF FE) triggers a transcode to UTF-8; anything else is treated
+// as UTF-8 and returned unchanged. `is_utf16le` reports whether a transcode
+// happened so callers can (a) skip the binary heuristic for UTF-16LE (its null
+// bytes would otherwise trip LooksLikeBinary) and (b) re-encode on write via
+// PreserveOriginalEncoding. The read_state_ cache keeps the RAW bytes so the
+// Edit/Write staleness check (raw-vs-raw) stays symmetric with Read.
+std::string DecodeToUTF8(const std::string& raw, bool* is_utf16le) {
+  if (raw.size() >= 2 && static_cast<unsigned char>(raw[0]) == 0xFF &&
+      static_cast<unsigned char>(raw[1]) == 0xFE) {
+    *is_utf16le = true;
+    // Bytes after the 2-byte BOM are little-endian UTF-16 code units.
+    std::u16string utf16;
+    utf16.reserve((raw.size() - 2) / 2);
+    for (size_t i = 2; i + 1 < raw.size(); i += 2) {
+      utf16.push_back(static_cast<char16_t>(
+          static_cast<unsigned char>(raw[i]) |
+          (static_cast<unsigned char>(raw[i + 1]) << 8)));
+    }
+    return base::UTF16ToUTF8(utf16);
+  }
+  *is_utf16le = false;
+  return raw;
+}
+
+// CC utils.ts normalizeQuotes: convert curly quotes to straight.
+// UTF-8: U+2018 '=E2 80 98, U+2019 '=E2 80 99,
+//        U+201C "=E2 80 9C, U+201D "=E2 80 9D.
+std::string NormalizeQuotes(const std::string& str) {
+  std::string result;
+  result.reserve(str.size());
+  for (size_t i = 0; i < str.size();) {
+    if (i + 2 < str.size() &&
+        static_cast<unsigned char>(str[i]) == 0xE2 &&
+        static_cast<unsigned char>(str[i + 1]) == 0x80) {
+      const unsigned char c = static_cast<unsigned char>(str[i + 2]);
+      if (c == 0x98 || c == 0x99) {
+        result.push_back('\'');
+        i += 3;
+        continue;
+      }
+      if (c == 0x9C || c == 0x9D) {
+        result.push_back('"');
+        i += 3;
+        continue;
+      }
+    }
+    result.push_back(str[i]);
+    ++i;
+  }
+  return result;
+}
+
+// CC utils.ts findActualString: exact match first, then quote-normalized.
+// Returns the actual substring from file_content that matches search_string.
+std::string FindActualString(const std::string& file_content,
+                             const std::string& search_string,
+                             bool* found) {
+  if (file_content.find(search_string) != std::string::npos) {
+    *found = true;
+    return search_string;
+  }
+  const std::string normalized_search = NormalizeQuotes(search_string);
+  const std::string normalized_file = NormalizeQuotes(file_content);
+  const size_t pos = normalized_file.find(normalized_search);
+  if (pos != std::string::npos) {
+    *found = true;
+    return file_content.substr(pos, search_string.size());
+  }
+  *found = false;
+  return std::string();
+}
+
+// CC utils.ts isOpeningContext heuristic for curly quote direction.
+bool IsOpeningContext(const std::string& str, size_t byte_pos) {
+  if (byte_pos == 0) {
+    return true;
+  }
+  const char prev = str[byte_pos - 1];
+  return prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r' ||
+         prev == '(' || prev == '[' || prev == '{';
+}
+
+// CC utils.ts preserveQuoteStyle: when old_string matched via quote
+// normalization, apply the same curly quote style to new_string.
+std::string PreserveQuoteStyle(const std::string& old_string,
+                               const std::string& actual_old_string,
+                               const std::string& new_string) {
+  if (old_string == actual_old_string) {
+    return new_string;
+  }
+  const bool has_double =
+      actual_old_string.find("\xE2\x80\x9C") != std::string::npos ||
+      actual_old_string.find("\xE2\x80\x9D") != std::string::npos;
+  const bool has_single =
+      actual_old_string.find("\xE2\x80\x98") != std::string::npos ||
+      actual_old_string.find("\xE2\x80\x99") != std::string::npos;
+  if (!has_double && !has_single) {
+    return new_string;
+  }
+
+  std::string result;
+  result.reserve(new_string.size() + 16);
+  for (size_t i = 0; i < new_string.size(); ++i) {
+    if (new_string[i] == '"' && has_double) {
+      result.append(IsOpeningContext(new_string, i) ? "\xE2\x80\x9C"
+                                                    : "\xE2\x80\x9D");
+    } else if (new_string[i] == '\'' && has_single) {
+      const bool prev_is_letter =
+          i > 0 && (base::IsAsciiAlpha(new_string[i - 1]) ||
+                    static_cast<unsigned char>(new_string[i - 1]) > 0x7F);
+      const bool next_is_letter =
+          i + 1 < new_string.size() &&
+          (base::IsAsciiAlpha(new_string[i + 1]) ||
+           static_cast<unsigned char>(new_string[i + 1]) > 0x7F);
+      if (prev_is_letter && next_is_letter) {
+        result.append("\xE2\x80\x99");
+      } else {
+        result.append(IsOpeningContext(new_string, i) ? "\xE2\x80\x98"
+                                                      : "\xE2\x80\x99");
+      }
+    } else {
+      result.push_back(new_string[i]);
+    }
+  }
+  return result;
+}
+
+// CC utils.ts stripTrailingWhitespace: strip trailing whitespace per line.
+std::string StripTrailingWhitespace(const std::string& str) {
+  std::string result;
+  result.reserve(str.size());
+  size_t line_start = 0;
+  for (size_t i = 0; i <= str.size(); ++i) {
+    if (i == str.size() || str[i] == '\n') {
+      size_t end = i;
+      while (end > line_start &&
+             (str[end - 1] == ' ' || str[end - 1] == '\t' ||
+              str[end - 1] == '\r')) {
+        --end;
+      }
+      result.append(str, line_start, end - line_start);
+      if (i < str.size()) {
+        result.push_back('\n');
+      }
+      line_start = i + 1;
+    }
+  }
+  return result;
+}
+
+// CC utils.ts DESANITIZATIONS: the model can't see certain XML-like tokens
+// (they're sanitized in the API), so it outputs the sanitized versions.
+// Map sanitized → real so edits match the actual file content.
+struct DesanitizationEntry {
+  const char* from;
+  const char* to;
+};
+constexpr DesanitizationEntry kDesanitizations[] = {
+    {"<fnr>", "<function_results>"},
+    {"<n>", "<name>"},
+    {"</n>", "</name>"},
+    {"<o>", "<output>"},
+    {"</o>", "</output>"},
+    {"<e>", "<error>"},
+    {"</e>", "</error>"},
+    {"<s>", "<system>"},
+    {"</s>", "</system>"},
+    {"<r>", "<result>"},
+    {"</r>", "</result>"},
+    {"< META_START >", "<META_START>"},
+    {"< META_END >", "<META_END>"},
+    {"< EOT >", "<EOT>"},
+    {"< META >", "<META>"},
+    {"< SOS >", "<SOS>"},
+    {"\n\nH:", "\n\nHuman:"},
+    {"\n\nA:", "\n\nAssistant:"},
+};
+
+// Apply desanitization replacements to a string. Returns the result and
+// records which replacements were applied (for mirroring onto new_string).
+std::string DesanitizeString(
+    const std::string& input,
+    std::vector<std::pair<std::string, std::string>>* applied) {
+  std::string result = input;
+  for (const auto& entry : kDesanitizations) {
+    const std::string from(entry.from);
+    const std::string to(entry.to);
+    if (result.find(from) != std::string::npos) {
+      base::ReplaceSubstringsAfterOffset(&result, 0, from, to);
+      if (applied) {
+        applied->emplace_back(from, to);
+      }
+    }
+  }
+  return result;
+}
+
+// CC utils.ts applyEditToFile: replace with delete-strips-newline logic.
+// When new_string is empty (deletion) and old_string doesn't end with \n
+// but is followed by \n in the file, the trailing newline is also removed.
+std::string ApplyEditToFile(const std::string& content,
+                            const std::string& old_string,
+                            const std::string& new_string,
+                            bool replace_all) {
+  if (old_string.empty()) {
+    return new_string;  // file creation
+  }
+  if (!new_string.empty()) {
+    if (replace_all) {
+      std::string result = content;
+      base::ReplaceSubstringsAfterOffset(&result, 0, old_string, new_string);
+      return result;
+    }
+    std::string result = content;
+    const size_t pos = result.find(old_string);
+    if (pos == std::string::npos) {
+      return content;
+    }
+    result.replace(pos, old_string.size(), new_string);
+    return result;
+  }
+  // Deletion: strip trailing newline if old_string is followed by \n.
+  const bool strip_trailing_newline =
+      (old_string.back() != '\n') &&
+      content.find(old_string + "\n") != std::string::npos;
+  const std::string target =
+      strip_trailing_newline ? (old_string + "\n") : old_string;
+  if (replace_all) {
+    std::string result = content;
+    base::ReplaceSubstringsAfterOffset(&result, 0, target, "");
+    return result;
+  }
+  std::string result = content;
+  const size_t pos = result.find(target);
+  if (pos == std::string::npos) {
+    return content;
+  }
+  result.erase(pos, target.size());
+  return result;
 }
 
 // =============================================================================
@@ -807,6 +1180,48 @@ void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
     return;
   }
 
+  // CC parity (FileReadTool.validateInput, spec 2-1-5): validate the `pages`
+  // parameter BEFORE any I/O. Bad format → errorCode 7; a range wider than
+  // kPdfMaxPagesPerRead → errorCode 8. The message wording mirrors CC so the
+  // model's correction pattern is shared.
+  if (input.pages.has_value()) {
+    int first_page = 0;
+    int last_page = 0;
+    if (!ParsePdfPageRange(*input.pages, &first_page, &last_page)) {
+      std::move(done).Reject(
+          "invalid_pages",
+          base::StrCat({"Invalid pages parameter: \"", *input.pages,
+                        "\". Use formats like \"1-5\", \"3\", or \"10-20\". "
+                        "Pages are 1-indexed."}));
+      return;
+    }
+    const int range_size =
+        last_page == std::numeric_limits<int>::max()
+            ? kPdfMaxPagesPerRead + 1
+            : last_page - first_page + 1;
+    if (range_size > kPdfMaxPagesPerRead) {
+      std::move(done).Reject(
+          "too_many_pages",
+          base::StrCat({"Page range \"", *input.pages,
+                        "\" exceeds maximum of ",
+                        base::NumberToString(kPdfMaxPagesPerRead),
+                        " pages per request. Please use a smaller range."}));
+      return;
+    }
+  }
+
+  // CC parity (FileReadTool.validateInput `isBlockedDevicePath`, spec 2-1-5
+  // errorCode 9): a path-based check (no I/O) for device files that would hang
+  // the read. Safe devices like /dev/null are intentionally allowed.
+  if (IsBlockedDevicePath(input.file_path)) {
+    std::move(done).Reject(
+        "blocked_device_path",
+        base::StrCat({"Cannot read '", input.file_path,
+                      "': this device file would block or produce infinite "
+                      "output."}));
+    return;
+  }
+
   const std::string ext = LowercaseExtension(path);
   if (ext == "pdf" || ext == "ipynb" || ImageMimeFromPath(path).has_value()) {
     auto options = mojom::MediaReadOptions::New();
@@ -859,6 +1274,16 @@ void FileTool::RunWriteOnUI(::nexus::generated::WriteInput input,
     return;
   }
 
+  // CC parity (2-3-4 item 3): skip filesystem operations for UNC paths to
+  // prevent NTLM credential leaks on Windows. base::PathExists /
+  // base::ReadFileToString on UNC triggers SMB authentication.
+  if (base::StartsWith(input.file_path, "\\\\",
+                       base::CompareCase::SENSITIVE) ||
+      base::StartsWith(input.file_path, "//", base::CompareCase::SENSITIVE)) {
+    std::move(done).Reject("invalid_args", "UNC paths are not supported.");
+    return;
+  }
+
   std::optional<FileTool::ReadState> last_read;
   auto read_it = read_state_.find(path);
   if (read_it != read_state_.end()) {
@@ -884,11 +1309,14 @@ void FileTool::RunEditOnUI(::nexus::generated::EditInput input,
   }
   if (input.old_string == input.new_string) {
     std::move(done).Reject("invalid_args",
-                           "new_string must differ from old_string");
+                           "No changes to make: old_string and new_string are exactly the same.");
     return;
   }
-  if (input.old_string.empty()) {
-    std::move(done).Reject("invalid_args", "old_string must not be empty");
+  // CC parity (spec 2-2-4 code 5): .ipynb files must use NotebookEdit.
+  if (LowercaseExtension(path) == "ipynb") {
+    std::move(done).Reject(
+        "notebook_file",
+        "File is a Jupyter Notebook. Use the NotebookEdit tool to edit this file.");
     return;
   }
 
@@ -989,7 +1417,11 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     std::optional<int> context_window,
     std::optional<FileTool::ReadState> last_read) {
   ReadResult result;
-  const ReadBudget read_budget = GetReadBudget(context_window);
+  // CC parity (1-1-3 / 2-1-4): the token budget is a FIXED 25000 and does not
+  // scale with the model context window, so `context_window` is no longer
+  // consulted here (kept in the signature for the generated dispatcher).
+  (void)context_window;
+  const ReadBudget read_budget = GetReadBudget();
 
   base::File::Info file_info;
   base::Time last_modified;
@@ -1063,7 +1495,16 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
         base::StrCat({"failed to read file: ", path.AsUTF8Unsafe()});
     return result;
   }
-  if (net::LooksLikeBinary(contents)) {
+
+  // CC parity (utils/fileRead.ts:20-49): detect BOM-based encoding and transcode
+  // UTF-16LE → UTF-8 so the model sees readable text (and so the binary
+  // heuristic below doesn't trip on UTF-16LE's null bytes). `contents` keeps
+  // the RAW on-disk bytes for the read_state_ cache + dedup/staleness symmetry;
+  // `text` is the UTF-8 view used for projection + token estimation.
+  bool is_utf16le = false;
+  const std::string text = DecodeToUTF8(contents, &is_utf16le);
+
+  if (!is_utf16le && net::LooksLikeBinary(contents)) {
     result.error_code = "unsupported_binary_file";
     result.error_message =
         "File appears to be binary and is not a supported Read media type. "
@@ -1085,9 +1526,13 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   if (start_line < 1) {
     start_line = 1;
   }
-  int max_lines = limit.value_or(read_budget.default_line_limit);
-  if (max_lines < 1) {
-    max_lines = read_budget.default_line_limit;
+  // CC parity (2-1-9 / 2-1-10): `MAX_LINES_TO_READ=2000` is prompt-only and NOT
+  // enforced. The only line cap is the caller's explicit `limit`; with no limit
+  // the whole file from `start` is projected (overflow is caught by the
+  // post-read token guard, which throws rather than truncating).
+  std::optional<int> max_lines;
+  if (limit.has_value() && *limit >= 1) {
+    max_lines = *limit;
   }
 
   // CC parity (readFileInRange strips a leading U+FEFF before line-splitting):
@@ -1096,8 +1541,9 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   // model-facing projection + its token-estimate `content`; the cached
   // `full_content` and the dedup/staleness comparison keep the raw on-disk
   // bytes (the Write/Edit re-read is also raw), so that comparison stays
-  // symmetric.
-  std::string_view projection_source = contents;
+  // symmetric. For UTF-16LE, DecodeToUTF8 already consumed the BOM, so `text`
+  // is BOM-free; the UTF-8 BOM strip below handles the UTF-8 case.
+  std::string_view projection_source = text;
   if (projection_source.size() >= 3 &&
       projection_source.substr(0, 3) == "\xEF\xBB\xBF") {
     projection_source = projection_source.substr(3);
@@ -1123,7 +1569,9 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     result.last_modified = last_modified;
     result.offset = offset;
     result.limit = limit;
-    result.is_partial_view = offset.has_value() || limit.has_value();
+    // CC parity (2-1-8 / 2-1-10 inv.4): Read NEVER sets isPartialView — a
+    // partial read does not block a later Edit/Write (the staleness guard is
+    // the content comparison, not the read's range).
     result.cache_read_state = true;
     if (projection.total_lines == 0) {
       result.message =
@@ -1149,24 +1597,18 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   }
 
   // CC parity: Read returns the line-numbered content directly (CC's
-  // FileReadTool emits "cat -n" formatted text as the tool_result
-  // string). When the projection truncated the file, append a trailer
-  // line telling the model so it can choose to re-Read with offset.
+  // FileReadTool emits "cat -n" formatted text as the tool_result string).
+  // No truncation footer is appended — CC never silently truncates; overflow
+  // is enforced by the token guard above, which throws (2-1-4.5).
   result.ok = true;
   result.file_path = std::move(path);
   result.full_content = contents;
   result.last_modified = last_modified;
   result.offset = offset;
   result.limit = limit;
-  result.is_partial_view = offset.has_value() || limit.has_value();
+  // CC parity (2-1-8 / 2-1-10 inv.4): Read never sets isPartialView.
   result.cache_read_state = true;
   result.message = std::move(projection.projection);
-  if (projection.truncated) {
-    result.message.append(base::StrCat(
-        {"\n\n[file truncated after line ",
-         base::NumberToString(start_line + projection.lines_emitted - 1),
-         "; re-Read with offset to continue]"}));
-  }
   return result;
 }
 
@@ -1223,7 +1665,21 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
     }
   }
 
-  if (!base::WriteFile(path, content)) {
+  // CC parity (2-3-7): Write ALWAYS outputs LF. The model sends explicit
+  // line endings; do not preserve the old file's CRLF (contrast Edit which
+  // restores original line endings via RestoreCRLF).
+  content = NormalizeCRLF(content);
+
+  // CC parity (2-3-7.2): preserve the original file's BOM-based encoding.
+  // The write bytes may differ from |content| (e.g. UTF-16LE transcoding),
+  // but ReadState stores the raw on-disk bytes so the staleness check
+  // (raw-vs-raw) stays symmetric with Read.
+  std::string write_bytes = content;
+  if (have_original) {
+    write_bytes = PreserveOriginalEncoding(original_contents, content);
+  }
+
+  if (!base::WriteFile(path, write_bytes)) {
     result.error_code = "write_failed";
     result.error_message =
         base::StrCat({"failed to write file: ", path.AsUTF8Unsafe()});
@@ -1257,7 +1713,7 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
   //    (update-only variant; same ambiguity)
   // Both produced retry spirals. Do not revert to either.
   result.ok = true;
-  const std::string byte_str = base::NumberToString(content.size());
+  const std::string byte_str = base::NumberToString(write_bytes.size());
   result.message =
       was_create
           ? base::StrCat({"File created successfully at: ", path.AsUTF8Unsafe(),
@@ -1270,7 +1726,7 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
     result.original_file_set = true;
   }
   result.file_path = std::move(path);
-  result.updated_content = std::move(content);
+  result.updated_content = std::move(write_bytes);
   base::File::Info after_info;
   if (base::GetFileInfo(result.file_path, &after_info)) {
     result.last_modified = after_info.last_modified;
@@ -1287,12 +1743,109 @@ FileTool::EditResult FileTool::EditFileBlocking(
     std::optional<FileTool::ReadState> last_read) {
   EditResult result;
 
-  if (!last_read.has_value() || last_read->is_partial_view) {
-    result.error_code = "file_not_read";
-    result.error_message =
-        "File must be fully read before editing. A partial read (using offset/limit) does not count, read the entire file first, then retry the edit.";
+  // CC parity (spec 2-2-4 code 10): reject files > 1 GiB to prevent OOM.
+  base::File::Info pre_info;
+  if (base::GetFileInfo(path, &pre_info) &&
+      pre_info.size > kMaxEditFileSize) {
+    result.error_code = "file_too_large";
+    result.error_message = base::StrCat(
+        {"File is too large to edit (", FormatFileSize(pre_info.size),
+         "). Maximum editable file size is ",
+         FormatFileSize(kMaxEditFileSize), "."});
     return result;
   }
+
+  // CC parity (spec 2-2-4 codes 4/7): file creation path — old_string empty
+  // and file doesn't exist means new file creation. No prior read required.
+  const bool file_exists = base::PathExists(path);
+  if (!file_exists) {
+    if (old_string.empty()) {
+      // File creation: write new_string as the file content.
+      base::FilePath parent = path.DirName();
+      if (!parent.empty() && !base::DirectoryExists(parent)) {
+        base::CreateDirectory(parent);
+      }
+      if (!base::WriteFile(path, new_string)) {
+        result.error_code = "write_failed";
+        result.error_message = base::StrCat(
+            {"failed to write file: ", path.AsUTF8Unsafe()});
+        return result;
+      }
+      result.ok = true;
+      result.message = base::StrCat({"The file ", path.AsUTF8Unsafe(),
+                                     " has been updated successfully."});
+      result.file_path = std::move(path);
+      result.updated_content = std::move(new_string);
+      base::File::Info after_info;
+      if (base::GetFileInfo(result.file_path, &after_info)) {
+        result.last_modified = after_info.last_modified;
+      }
+      return result;
+    }
+    // File doesn't exist and old_string is non-empty.
+    result.error_code = "file_not_found";
+    result.error_message = base::StrCat(
+        {"File does not exist. Current working directory: ",
+         path.DirName().AsUTF8Unsafe(), "."});
+    return result;
+  }
+
+  // CC parity (spec 2-2-4 code 6): file must have been fully read first.
+  if (!last_read.has_value()) {
+    result.error_code = "file_not_read";
+    result.error_message =
+        "File has not been read yet. Read it first before writing to it.";
+    return result;
+  }
+  if (last_read->is_partial_view) {
+    const std::string offset_str =
+        last_read->offset.has_value()
+            ? base::NumberToString(*last_read->offset)
+            : "start";
+    const std::string limit_str =
+        last_read->limit.has_value()
+            ? base::NumberToString(*last_read->limit)
+            : "end";
+    result.error_code = "file_not_read";
+    result.error_message = base::StrCat(
+        {"File was only partially read (offset: ", offset_str,
+         ", limit: ", limit_str, "). "
+         "Read the full file without offset/limit before editing."});
+    return result;
+  }
+
+  // CC parity (spec 2-2-4 code 3): empty old_string on existing non-empty
+  // file is a create-over-existing error.
+  if (old_string.empty()) {
+    std::string existing;
+    base::ReadFileToString(path, &existing);
+    if (!existing.empty() &&
+        base::TrimWhitespaceASCII(existing, base::TRIM_ALL).size() > 0) {
+      result.error_code = "file_already_exists";
+      result.error_message = "Cannot create new file - file already exists.";
+      return result;
+    }
+    // Empty file with empty old_string: replace empty with new_string.
+    if (!base::WriteFile(path, new_string)) {
+      result.error_code = "write_failed";
+      result.error_message = base::StrCat(
+          {"failed to write file: ", path.AsUTF8Unsafe()});
+      return result;
+    }
+    result.ok = true;
+    result.message = base::StrCat({"The file ", path.AsUTF8Unsafe(),
+                                   " has been updated successfully."});
+    result.original_file = std::move(existing);
+    result.original_file_set = true;
+    result.file_path = std::move(path);
+    result.updated_content = std::move(new_string);
+    base::File::Info after_info;
+    if (base::GetFileInfo(result.file_path, &after_info)) {
+      result.last_modified = after_info.last_modified;
+    }
+    return result;
+  }
+
   // Single read serves both the staleness guard and the edit input — a
   // second read would open a TOCTOU window where the edit applies to content
   // the guard never validated.
@@ -1303,6 +1856,10 @@ FileTool::EditResult FileTool::EditFileBlocking(
         base::StrCat({"failed to read file for edit: ", path.AsUTF8Unsafe()});
     return result;
   }
+
+  // CC parity (spec 2-2-4 code 7): staleness check. Compare raw bytes first
+  // (symmetric with read_state_ which stores raw). If raw differs, the file
+  // was modified since read.
   if (contents != last_read->content) {
     result.error_code = "file_modified_since_read";
     result.error_message =
@@ -1311,58 +1868,111 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  size_t occurrences = CountOccurrences(contents, old_string);
-  if (occurrences == 0) {
+  // CC parity (utils/fileRead.ts:20-49): decode BOM-based encoding to UTF-8
+  // for matching. The model's old_string/new_string are UTF-8; a UTF-16LE file
+  // must be transcoded before substring matching can work. `contents` keeps the
+  // RAW bytes for the read_state_ cache + re-encode on write; `work_content`
+  // starts as the UTF-8 view.
+  bool is_utf16le = false;
+  std::string work_content = DecodeToUTF8(contents, &is_utf16le);
+
+  // CC parity (spec 2-2-8): normalize CRLF → LF for matching. The model sees
+  // LF-normalized content from Read (the projection strips \r), so old_string
+  // will be LF. The file on disk may be CRLF.
+  const bool is_crlf = HasCRLF(work_content);
+  if (is_crlf) {
+    work_content = NormalizeCRLF(work_content);
+  }
+
+  // CC parity (utils.ts normalizeFileEditInput): strip trailing whitespace
+  // from new_string for non-markdown files.
+  const std::string ext = LowercaseExtension(path);
+  const bool is_markdown = (ext == "md" || ext == "mdx");
+  std::string work_new_string =
+      is_markdown ? new_string : StripTrailingWhitespace(new_string);
+
+  // CC parity (utils.ts findActualString): exact match first, then
+  // quote-normalized fallback.
+  bool found = false;
+  std::string actual_old_string =
+      FindActualString(work_content, old_string, &found);
+
+  // CC parity (utils.ts normalizeFileEditInput / DESANITIZATIONS): if the
+  // exact/quote-normalized match fails, try desanitizing old_string (the model
+  // emits sanitized tokens it can't see) and mirror the same replacements onto
+  // new_string.
+  std::vector<std::pair<std::string, std::string>> applied_desanitizations;
+  if (!found) {
+    const std::string desanitized_old =
+        DesanitizeString(old_string, &applied_desanitizations);
+    if (!applied_desanitizations.empty()) {
+      actual_old_string =
+          FindActualString(work_content, desanitized_old, &found);
+      if (found) {
+        for (const auto& [from, to] : applied_desanitizations) {
+          base::ReplaceSubstringsAfterOffset(&work_new_string, 0, from, to);
+        }
+      }
+    }
+  }
+
+  if (!found) {
     result.error_code = "no_match";
-    result.error_message =
-        "old_string not found in file; cannot edit. Re-read the file "
-        "to verify the exact text/whitespace.";
+    result.error_message = base::StrCat(
+        {"String to replace not found in file.\nString: ", old_string});
     return result;
   }
+
+  // CC parity (utils.ts preserveQuoteStyle): when the file uses curly quotes
+  // and the model sent straight quotes, apply curly style to new_string.
+  work_new_string =
+      PreserveQuoteStyle(old_string, actual_old_string, work_new_string);
+
+  // CC parity (spec 2-2-4 code 9): uniqueness check.
+  const size_t occurrences =
+      CountOccurrences(work_content, actual_old_string);
   if (occurrences > 1 && !replace_all) {
     result.error_code = "ambiguous_match";
-    result.error_message =
-        base::StrCat({"old_string occurs ", base::NumberToString(occurrences),
-                      " times; provide a more specific old_string OR set "
-                      "replace_all=true to replace every occurrence."});
+    result.error_message = base::StrCat(
+        {"Found ", base::NumberToString(occurrences),
+         " matches of the string to replace, but replace_all is false. "
+         "To replace all occurrences, set replace_all to true. To replace "
+         "only one occurrence, please provide more context to uniquely "
+         "identify the instance.\nString: ",
+         old_string});
     return result;
   }
 
-  std::string updated;
-  if (replace_all) {
-    updated = contents;
-    base::ReplaceSubstringsAfterOffset(&updated, /*start_offset=*/0, old_string,
-                                       new_string);
-  } else {
-    // Single-occurrence path. We already checked occurrences == 1.
-    size_t pos = contents.find(old_string);
-    DCHECK(pos != std::string::npos);
-    updated.reserve(contents.size() - old_string.size() + new_string.size());
-    updated.append(contents, 0, pos);
-    updated.append(new_string);
-    updated.append(contents, pos + old_string.size(),
-                   contents.size() - pos - old_string.size());
+  // CC parity (utils.ts applyEditToFile): apply with delete-strips-newline.
+  // `updated` is the UTF-8, LF-normalized post-edit content. `work_content`
+  // still holds the decoded + LF-normalized PRE-edit content (what old_string
+  // matched against).
+  std::string updated = ApplyEditToFile(work_content, actual_old_string,
+                                        work_new_string, replace_all);
+  if (updated == work_content) {
+    result.error_code = "no_match";
+    result.error_message =
+        "String not found in file. Failed to apply edit.";
+    return result;
   }
 
-  if (!base::WriteFile(path, updated)) {
+  // CC parity (spec 2-2-8): restore original line endings, then re-encode to the
+  // original BOM-based encoding before writing. `write_bytes` is what lands on
+  // disk — for UTF-16LE this re-introduces the BOM + little-endian code units.
+  if (is_crlf) {
+    updated = RestoreCRLF(updated);
+  }
+  const std::string write_bytes =
+      is_utf16le ? PreserveOriginalEncoding(contents, updated) : updated;
+
+  if (!base::WriteFile(path, write_bytes)) {
     result.error_code = "write_failed";
     result.error_message = base::StrCat(
         {"failed to write back after edit: ", path.AsUTF8Unsafe()});
     return result;
   }
 
-  // CC parity: prose success string. Match FileEditTool.ts wording
-  // exactly so the model's recognition pattern is shared with the CC
-  // experience. The branches mirror CC's replace_all flag.
-  //
-  // NB: unlike Write (which appends ". Wrote N bytes." as an anti-retry
-  // signal), Edit deliberately carries NO byte-count. Two reasons: (1)
-  // CC-exact wording is the whole point here — diverging would break the
-  // shared recognition pattern; (2) post-D9 (the `tool_use.input` empty-
-  // dict fix) the byte-count is belt-and-suspenders, not load-bearing, so
-  // the retry-spiral hypothesis Edit would share with Write no longer
-  // applies. If a future regression resurfaces it for Edit, add a parallel
-  // signal here rather than reasoning from Write's presence.
+  // CC parity: prose success string. Match FileEditTool.ts wording exactly.
   result.ok = true;
   result.message =
       replace_all ? base::StrCat({"The file ", path.AsUTF8Unsafe(),
@@ -1370,21 +1980,21 @@ FileTool::EditResult FileTool::EditFileBlocking(
                                   "successfully replaced."})
                   : base::StrCat({"The file ", path.AsUTF8Unsafe(),
                                   " has been updated successfully."});
-  // Carry the pre-edit content on a UI-only side channel (see OnEditDone) so
-  // the browser can render a file-relative diff. `contents` is unused after the
-  // write above, so move it. It never reaches the model.
-  result.original_file = std::move(contents);
+  // Carry the pre-edit content on a UI-only side channel (see OnEditDone) so the
+  // browser can render a file-relative diff. It never reaches the model. This is
+  // the decoded + LF-normalized view (what old_string matched), so the JS diff
+  // works for UTF-16LE and CRLF alike — CC likewise diffs the LF-normalized
+  // content (readFileForEdit normalizes on read).
+  result.original_file = std::move(work_content);
   result.original_file_set = true;
   result.file_path = std::move(path);
-  result.updated_content = std::move(updated);
+  // read_state_ caches raw on-disk bytes (symmetric with Read), so store the
+  // re-encoded bytes actually written, not the UTF-8 `updated`.
+  result.updated_content = std::move(write_bytes);
   base::File::Info after_info;
   if (base::GetFileInfo(result.file_path, &after_info)) {
     result.last_modified = after_info.last_modified;
   }
-  // Replacement count and `bytes_after` are intentionally not exposed
-  // — CC's response carries no such structured fields, and the
-  // diagnostics are available via tool-call telemetry if a future UI
-  // wants them.
   return result;
 }
 
@@ -1553,7 +2163,11 @@ void FileTool::OnWriteDone(ToolCallback done, WriteResult result) {
     base::DictValue dict;
     dict.Set("message", std::move(result.message));
     if (result.original_file_set) {
-      dict.Set("original_file", std::move(result.original_file));
+      // original_file may be raw UTF-16LE bytes (not valid UTF-8) — decode
+      // for the JS diff renderer which expects a UTF-8 string.
+      bool ignored = false;
+      dict.Set("original_file",
+               DecodeToUTF8(result.original_file, &ignored));
     }
     std::move(done).Resolve(std::move(dict));
     return;
@@ -1582,7 +2196,11 @@ void FileTool::OnEditDone(ToolCallback done, EditResult result) {
     base::DictValue dict;
     dict.Set("message", std::move(result.message));
     if (result.original_file_set) {
-      dict.Set("original_file", std::move(result.original_file));
+      // original_file may be raw UTF-16LE bytes (not valid UTF-8) — decode
+      // for the JS diff renderer which expects a UTF-8 string.
+      bool ignored = false;
+      dict.Set("original_file",
+               DecodeToUTF8(result.original_file, &ignored));
     }
     std::move(done).Resolve(std::move(dict));
     return;

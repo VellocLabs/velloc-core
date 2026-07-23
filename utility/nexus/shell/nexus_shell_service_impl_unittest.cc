@@ -20,6 +20,7 @@
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -384,6 +385,84 @@ TEST(NexusShellServiceImplTest, SpawnReturnsPartialOutputWhileRunning) {
   const std::string final_str(final_span.begin(), final_span.end());
   EXPECT_NE(final_str.find("nexus-bg-final"), std::string::npos)
       << "Got stdout: " << final_str;
+}
+
+// Event-driven exit (polling→push refactor): `SpawnWithObserver` must fire the
+// supplied observer's `OnExit` exactly once when the backgrounded child
+// terminates, carrying the terminal `ShellExitInfo`. This is the utility half
+// of the contract that lets nexus_web finalize a `local_bash` task without
+// polling `ReadBackgroundOutput` to detect exit.
+TEST(NexusShellServiceImplTest, SpawnWithObserverFiresOnExitWhenChildTerminates) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+
+  const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+  const std::string shell_id_tool = FindAllowlistedShellId(caps);
+  if (shell_id_tool.empty()) {
+    GTEST_SKIP() << "No allowlisted shell on host; cannot exercise Spawn";
+  }
+
+  // Observer that records each OnExit and quits the loop.
+  struct ExitObserver : mojom::NexusBackgroundShellObserver {
+    void OnExit(const std::string& id, mojom::ShellExitInfoPtr info) override {
+      shell_id = id;
+      exit = std::move(info);
+      ++count;
+      loop.Quit();
+    }
+    std::string shell_id;
+    mojom::ShellExitInfoPtr exit;
+    int count = 0;
+    base::RunLoop loop;
+  } observer;
+  mojo::Receiver<mojom::NexusBackgroundShellObserver> observer_receiver(
+      &observer);
+
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+  options->args = {"/C", "echo nexus-observer-done"};
+#else
+  options->args = {"-c", "echo nexus-observer-done"};
+#endif
+  options->cwd = tmp.GetPath();
+  options->use_shell = false;
+  options->timeout_ms = 10000;
+  options->max_output_bytes = 4096;
+
+  std::string bg_id;
+  base::RunLoop spawn_loop;
+  remote->SpawnWithObserver(
+      std::move(options),
+      observer_receiver.BindNewPipeAndPassRemote(),
+      base::BindLambdaForTesting(
+          [&](bool ok, const std::optional<std::string>& shell_id,
+              const std::optional<std::string>& error_code,
+              const std::optional<std::string>& error_message,
+              const std::optional<std::string>& install_hint) {
+            ASSERT_TRUE(ok) << error_code.value_or("") << ": "
+                            << error_message.value_or("") << " "
+                            << install_hint.value_or("");
+            ASSERT_TRUE(shell_id.has_value());
+            bg_id = *shell_id;
+            spawn_loop.Quit();
+          }));
+  spawn_loop.Run();
+  ASSERT_FALSE(bg_id.empty());
+
+  // The observer fires once the child exits, with the matching shell_id and a
+  // successful (code 0) exit.
+  observer.loop.Run();
+  EXPECT_EQ(1, observer.count);
+  EXPECT_EQ(bg_id, observer.shell_id);
+  ASSERT_TRUE(observer.exit);
+  EXPECT_EQ(0, observer.exit->code.value_or(-1));
+  EXPECT_FALSE(observer.exit->timed_out);
+  EXPECT_FALSE(observer.exit->killed);
 }
 
 // Regression: the guest's Stop flow (SharedWorkerSessionManager

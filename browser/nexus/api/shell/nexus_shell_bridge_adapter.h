@@ -5,11 +5,14 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_SHELL_NEXUS_SHELL_BRIDGE_ADAPTER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_SHELL_NEXUS_SHELL_BRIDGE_ADAPTER_H_
 
+#include <cstdint>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/api/shell/shell_api.gen.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
+#include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 
 class Profile;
 
@@ -64,10 +67,28 @@ class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 
+  // Broadcast sink registered with the shared launcher for the lifetime of this
+  // adapter. The launcher calls it for EVERY background-shell terminal exit;
+  // this pushes a `shell.onExit` bridge event to the guest, which filters by
+  // shellId on the JS side. Registering at the bridge level (not per-shell)
+  // avoids a spawn/poll race — see the launcher's `AddShellEventSink` doc.
+  void PushShellExitEvent(const std::string& shell_id,
+                          const mojom::ShellExitInfo& exit);
+
   // The Profile owns the shared launcher (Profile user-data); it outlives this
   // adapter (which is owned by the port service, itself bound to a render frame
   // of the profile). Used only to fetch `GetSharedShellLauncher(profile_)`.
   raw_ptr<Profile> profile_;
+
+  // Subscription id returned by the launcher's `AddShellEventSink`; used to
+  // unregister in the destructor so a torn-down adapter stops receiving exits.
+  // 0 means "no profile / not registered".
+  uint64_t shell_event_sink_id_ = 0;
+
+  // Guards the event-sink callback handed to the shared launcher — the launcher
+  // is Profile-owned and outlives this adapter, so the callback must drop
+  // cleanly if the adapter is destroyed before a shell exits.
+  base::WeakPtrFactory<NexusShellBridgeAdapter> weak_factory_{this};
 };
 
 }  // namespace nexus

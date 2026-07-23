@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
@@ -735,8 +736,14 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   // runs it to completion (or timeout) on a worker, and buffers the
   // output for the completion notification and manual BashOutput recovery.
   // We resolve `done` immediately with the shell_id.
+  //
+  // Uses the launcher's observer-based spawn so the utility pushes the
+  // terminal exit back to the browser (→ `shell.onExit` bridge event →
+  // nexus_web) event-driven, instead of the guest polling `shell.status`
+  // on a timer just to learn the command finished. Output is still fetched
+  // on demand via ReadBackgroundOutput / the bridge shell.status.
   if (input.run_in_background.value_or(false)) {
-    remote->Spawn(
+    launcher_->SpawnBackgroundWithObserver(
         std::move(options),
         base::BindOnce(&ProcessTool::OnBashSpawnDone,
                        weak_ptr_factory_.GetWeakPtr(), std::move(done)));
@@ -1116,8 +1123,10 @@ void ProcessTool::LaunchPowerShellAttempt(std::string command,
   // Explicit background path (run_in_background=true): fire-and-return with a
   // shell_id, mirroring the Bash Spawn path. OnPowerShellSpawnDone keeps the
   // pwsh→powershell pre-launch fallback before handing off to OnBashSpawnDone.
+  // Uses the observer-based spawn (like the Bash background path) so the
+  // terminal exit is pushed event-driven instead of guest-polled.
   if (run_in_background) {
-    remote->Spawn(
+    launcher_->SpawnBackgroundWithObserver(
         std::move(options),
         base::BindOnce(&ProcessTool::OnPowerShellSpawnDone,
                        weak_ptr_factory_.GetWeakPtr(), std::move(done), command,
@@ -1457,20 +1466,9 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
     return;
   }
 
-  // CC parity (2-4-4): validate that the target path exists. Skip for
-  // UNC paths to avoid NTLM credential leaks (CC validateInput 207-210).
-  std::string target_utf8 = target.AsUTF8Unsafe();
-  bool is_unc = base::StartsWith(target_utf8, "\\\\", base::CompareCase::SENSITIVE) ||
-                base::StartsWith(target_utf8, "//", base::CompareCase::SENSITIVE);
-  if (!is_unc && !base::PathExists(target)) {
-    std::move(done).Reject(
-        "path_not_found",
-        base::StrCat({"Path does not exist: ", input.path.value_or("")}));
-    return;
-  }
-
   // Normalize output_mode; reject unknown values rather than silently
-  // falling back, since the model just hallucinated otherwise.
+  // falling back, since the model just hallucinated otherwise. Done before
+  // the (blocking) path check so invalid_args surfaces without a thread hop.
   std::string output_mode = input.output_mode.value_or("files_with_matches");
   if (output_mode != "content" && output_mode != "files_with_matches" &&
       output_mode != "count") {
@@ -1490,10 +1488,6 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   }
   int offset = std::max(0, input.offset.value_or(0));
 
-  std::vector<std::string> rg_args =
-      BuildRipgrepArgs(input, output_mode, show_line_numbers);
-  rg_args.push_back(target.AsUTF8Unsafe());
-
   RipgrepRunOptions options;
   // rg: cwd doesn't drive matching (the target is the trailing argv) but the
   // shell service requires an absolute, existing dir.
@@ -1501,12 +1495,67 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   options.timeout_ms = static_cast<uint32_t>(kDefaultBashTimeoutMs);
   options.max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
 
-  // The runner owns the exec + BINARY_NOT_FOUND → auto-install rg → retry
-  // flow (shared with FileTool::Glob); we only shape its parsed lines.
   if (!launcher_) {
     std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
     return;
   }
+
+  // CC parity (2-4-4): validate that the target path exists. Skip the check
+  // for UNC paths to avoid NTLM credential leaks (CC validateInput 207-210) —
+  // treat them as existing. base::PathExists is blocking I/O, so it must run
+  // on a ThreadPool worker, never on this UI thread (mirrors FileTool's
+  // PostTaskAndReplyWithResult idiom).
+  std::string target_utf8 = target.AsUTF8Unsafe();
+  bool is_unc =
+      base::StartsWith(target_utf8, "\\\\", base::CompareCase::SENSITIVE) ||
+      base::StartsWith(target_utf8, "//", base::CompareCase::SENSITIVE);
+  if (is_unc) {
+    OnGrepPathChecked(std::move(input), std::move(done),
+                      std::move(output_mode), show_line_numbers, head_limit,
+                      offset, target, default_root, std::move(options),
+                      /*path_exists=*/true);
+    return;
+  }
+
+  base::FilePath target_for_check = target;
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ProcessTool::RunGrepPathExistsOnBlocking,
+                     std::move(target_for_check)),
+      base::BindOnce(&ProcessTool::OnGrepPathChecked,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(input),
+                     std::move(done), std::move(output_mode), show_line_numbers,
+                     head_limit, offset, std::move(target),
+                     std::move(default_root), std::move(options)));
+}
+
+bool ProcessTool::RunGrepPathExistsOnBlocking(base::FilePath target) {
+  return base::PathExists(target);
+}
+
+void ProcessTool::OnGrepPathChecked(::nexus::generated::GrepInput input,
+                                    ToolCallback done,
+                                    std::string output_mode,
+                                    bool show_line_numbers,
+                                    int head_limit,
+                                    int offset,
+                                    base::FilePath target,
+                                    base::FilePath default_root,
+                                    RipgrepRunOptions options,
+                                    bool path_exists) {
+  if (!path_exists) {
+    std::move(done).Reject(
+        "path_not_found",
+        base::StrCat({"Path does not exist: ", input.path.value_or("")}));
+    return;
+  }
+
+  std::vector<std::string> rg_args =
+      BuildRipgrepArgs(input, output_mode, show_line_numbers);
+  rg_args.push_back(target.AsUTF8Unsafe());
+
+  // The runner owns the exec + BINARY_NOT_FOUND → auto-install rg → retry
+  // flow (shared with FileTool::Glob); we only shape its parsed lines.
   ripgrep_runner_.Run(
       launcher_.get(), GetProfile(), std::move(rg_args), std::move(options),
       base::BindOnce(&ProcessTool::OnGrepRgDone, weak_ptr_factory_.GetWeakPtr(),
@@ -1596,12 +1645,28 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
   }
 
   // files_with_matches: rg already returns one path per line.
-  // CC parity: sort by mtime descending before applying head_limit.
+  // CC parity: sort by mtime descending before applying head_limit. The sort
+  // stats every matched file (base::GetFileInfo — blocking I/O), so it must
+  // run on a ThreadPool worker, never on this UI thread. The worker shapes the
+  // full body; OnGrepFilesShaped just resolves `done` back on UI.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ProcessTool::ShapeGrepFilesWithMatchesBlocking,
+                     std::move(lines), head_limit, offset, std::move(cwd)),
+      base::BindOnce(&ProcessTool::OnGrepFilesShaped,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(done)));
+}
+
+// static
+std::string ProcessTool::ShapeGrepFilesWithMatchesBlocking(
+    std::vector<std::string> lines,
+    int head_limit,
+    int offset,
+    base::FilePath cwd) {
   SortByMtimeDesc(&lines);
   SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
   if (sliced.items.empty()) {
-    std::move(done).Resolve(base::Value("No files found"));
-    return;
+    return "No files found";
   }
   // Relativize all file paths.
   for (auto& path : sliced.items) {
@@ -1619,6 +1684,10 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
   }
   body.push_back('\n');
   body.append(base::JoinString(sliced.items, "\n"));
+  return body;
+}
+
+void ProcessTool::OnGrepFilesShaped(ToolCallback done, std::string body) {
   std::move(done).Resolve(base::Value(std::move(body)));
 }
 

@@ -120,6 +120,12 @@ namespace {
 // transient OAuth scratch + verification stamps stay settings-side.
 void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
                                    base::DictValue& out) {
+  // Capture the pref's CURRENT api_key BEFORE copy_string overwrites it —
+  // the verification-stamp logic below needs to know whether the incoming
+  // settings config is changing the key (see the last_verification block).
+  const std::string* existing_api_key = out.FindString("api_key");
+  const std::string existing_api_key_str =
+      existing_api_key ? *existing_api_key : std::string();
   auto copy_string = [&](const char* from, const char* to) {
     if (const std::string* v = settings.FindString(from)) {
       out.Set(to, *v);
@@ -153,14 +159,24 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   // empty after configuring a provider even though the key is saved and works
   // for LLM calls. The inner keys stay camelCase (providerId / verifiedAtMs):
   // IsProviderVerified reads them as-is; only the outer key is snake_case to
-  // match the legacy pref shape. settings.json is the source of truth for this
-  // user-editable field, so mirror its presence — drop a stale stamp when the
-  // incoming config has none (e.g. the key changed but couldn't be verified,
-  // where mergeProviderConfigForSave clears it JS-side).
+  // match the legacy pref shape.
+  //
+  // Drop a stale stamp ONLY when the api_key actually changed — mirroring
+  // mergeProviderConfigForSave (providerConfigMerge.ts), which clears
+  // lastVerification when `form.apiKey !== saved.apiKey`. The previous
+  // unconditional `Remove` wiped the pref's existing stamp whenever the
+  // incoming settings config omitted `lastVerification` — including the
+  // boot-time `publishProviderConfigsAtBoot` push, which carries only
+  // stream-guard overrides for providers whose apiKey lives in the pref
+  // (the e2e harness seeds apiKey + last_verification into the pref, NOT
+  // settings.json). That left `has_key=1 verified=0` and disabled every
+  // configured provider in the catalog. When the key is unchanged (or the
+  // settings config carries no key at all), keep the existing stamp.
   if (const base::DictValue* last_verification =
           settings.FindDict("lastVerification")) {
     out.Set("last_verification", last_verification->Clone());
-  } else {
+  } else if (const std::string* new_api_key = settings.FindString("apiKey");
+             new_api_key && *new_api_key != existing_api_key_str) {
     out.Remove("last_verification");
   }
 }

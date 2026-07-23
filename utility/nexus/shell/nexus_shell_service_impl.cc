@@ -282,6 +282,19 @@ NexusShellServiceImpl::PendingSpawn::PendingSpawn(PendingSpawn&&) = default;
 NexusShellServiceImpl::PendingSpawn&
 NexusShellServiceImpl::PendingSpawn::operator=(PendingSpawn&&) = default;
 
+NexusShellServiceImpl::PendingSpawnWithObserver::PendingSpawnWithObserver() =
+    default;
+
+NexusShellServiceImpl::PendingSpawnWithObserver::~PendingSpawnWithObserver() =
+    default;
+
+NexusShellServiceImpl::PendingSpawnWithObserver::PendingSpawnWithObserver(
+    PendingSpawnWithObserver&&) = default;
+
+NexusShellServiceImpl::PendingSpawnWithObserver&
+NexusShellServiceImpl::PendingSpawnWithObserver::operator=(
+    PendingSpawnWithObserver&&) = default;
+
 NexusShellServiceImpl::PendingStreamSpawn::PendingStreamSpawn() = default;
 
 NexusShellServiceImpl::PendingStreamSpawn::~PendingStreamSpawn() = default;
@@ -391,6 +404,13 @@ void NexusShellServiceImpl::OnResolved(ResolvedCapabilities capabilities) {
   drained_spawns.swap(pending_spawns_);
   for (auto& pending : drained_spawns) {
     RunSpawn(std::move(pending.options), std::move(pending.callback));
+  }
+
+  std::vector<PendingSpawnWithObserver> drained_spawns_with_observer;
+  drained_spawns_with_observer.swap(pending_spawns_with_observer_);
+  for (auto& pending : drained_spawns_with_observer) {
+    RunSpawnWithObserver(std::move(pending.options), std::move(pending.observer),
+                         std::move(pending.callback));
   }
 
   std::vector<PendingStreamSpawn> drained_stream_spawns;
@@ -521,6 +541,66 @@ void NexusShellServiceImpl::Spawn(mojom::ShellSpawnOptionsPtr options,
 
 void NexusShellServiceImpl::RunSpawn(mojom::ShellSpawnOptionsPtr options,
                                      SpawnCallback callback) {
+  RunSpawnInternal(std::move(options),
+                   mojo::PendingRemote<mojom::NexusBackgroundShellObserver>(),
+                   std::move(callback));
+}
+
+void NexusShellServiceImpl::SpawnWithObserver(
+    mojom::ShellSpawnOptionsPtr options,
+    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
+    SpawnWithObserverCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!options) {
+    std::move(callback).Run(/*ok=*/false, /*shell_id=*/std::nullopt,
+                            "INVALID_ARGS",
+                            "SpawnWithObserver requires a non-null "
+                            "ShellSpawnOptions",
+                            /*install_hint=*/std::nullopt);
+    return;
+  }
+
+  // Queue until the first capability probe finishes (mirrors Spawn).
+  if (!cached_capabilities_.has_value()) {
+    PendingSpawnWithObserver pending;
+    pending.options = std::move(options);
+    pending.observer = std::move(observer);
+    pending.callback = std::move(callback);
+    pending_spawns_with_observer_.push_back(std::move(pending));
+    EnsureResolveStarted();
+    return;
+  }
+
+  RunSpawnWithObserver(std::move(options), std::move(observer),
+                       std::move(callback));
+}
+
+void NexusShellServiceImpl::RunSpawnWithObserver(
+    mojom::ShellSpawnOptionsPtr options,
+    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
+    SpawnWithObserverCallback callback) {
+  // `SpawnCallback` and `SpawnWithObserverCallback` have identical signatures
+  // but are distinct mojo-generated types. Forward through a plain callback so
+  // the shared internal path (which speaks `SpawnCallback`) can run it.
+  RunSpawnInternal(
+      std::move(options), std::move(observer),
+      base::BindOnce(
+          [](SpawnWithObserverCallback cb, bool ok,
+             const std::optional<std::string>& shell_id,
+             const std::optional<std::string>& error_code,
+             const std::optional<std::string>& error_message,
+             const std::optional<std::string>& install_hint) {
+            std::move(cb).Run(ok, shell_id, error_code, error_message,
+                              install_hint);
+          },
+          std::move(callback)));
+}
+
+void NexusShellServiceImpl::RunSpawnInternal(
+    mojom::ShellSpawnOptionsPtr options,
+    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
+    SpawnCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(cached_capabilities_.has_value());
 
@@ -554,6 +634,12 @@ void NexusShellServiceImpl::RunSpawn(mojom::ShellSpawnOptionsPtr options,
   std::string shell_id =
       base::StrCat({"bg_", base::Uuid::GenerateRandomV4().AsLowercaseString()});
   background_[shell_id] = BackgroundEntry{};
+  // Bind the exit observer (if any) so OnBackgroundComplete can push the
+  // terminal ShellExitInfo to the browser event-driven. Invalid for the plain
+  // Spawn path — `is_valid()` guards the fire in OnBackgroundComplete.
+  if (observer.is_valid()) {
+    background_[shell_id].observer.Bind(std::move(observer));
+  }
 
   std::move(callback).Run(/*ok=*/true, shell_id, /*error_code=*/std::nullopt,
                           /*error_message=*/std::nullopt,
@@ -609,6 +695,22 @@ void NexusShellServiceImpl::OnBackgroundComplete(
   it->second.stderr_so_far = outcome.stderr_bytes;
   it->second.stdout_truncated_so_far = outcome.stdout_truncated;
   it->second.stderr_truncated_so_far = outcome.stderr_truncated;
+  // Push the terminal exit to the browser observer (if one was supplied via
+  // SpawnWithObserver) BEFORE moving `outcome` away. This is the event-driven
+  // signal that lets nexus_web finalize the `local_bash` task without polling
+  // ReadBackgroundOutput. TERMINAL: fired exactly once, then the remote is
+  // reset so a stray second completion can't double-notify.
+  if (it->second.observer.is_bound()) {
+    auto exit = mojom::ShellExitInfo::New();
+    exit->code = outcome.code;
+    exit->signal = outcome.signal;
+    exit->timed_out = outcome.timed_out;
+    exit->killed = outcome.killed;
+    exit->duration_ms =
+        static_cast<uint64_t>(it->second.duration.InMilliseconds());
+    it->second.observer->OnExit(shell_id, std::move(exit));
+    it->second.observer.reset();
+  }
   it->second.outcome = std::move(outcome);
   it->second.kill_handle = ChildProcessKillHandle();  // release tree-kill handle
 }

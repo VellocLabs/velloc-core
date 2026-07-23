@@ -602,6 +602,20 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
 
   for (const ProviderInfo& info : broker->GetRegisteredProviders()) {
     LlmProvider* provider = broker->GetProvider(info.id);
+    // Cold-boot race: the broker's LoadProviderConfigs() runs during
+    // LlmBroker construction, which can precede the profile's Preferences
+    // file being parsed into the PrefService. When that happens the
+    // in-memory provider never gets Configure()d, so IsConfigured() is
+    // false here even though a valid api_key sits in prefs — and the
+    // catalog lists the provider as disabled. Re-apply the stored config
+    // now (prefs is fully loaded by the time BuildCatalog runs) so a
+    // late-loading prefs file still yields a configured provider.
+    if (provider && !provider->IsConfigured() && prefs) {
+      if (const base::DictValue* stored_config =
+              GetStoredProviderConfig(prefs, info.id)) {
+        provider->Configure(*stored_config);
+      }
+    }
     // For OAuth providers, treat "signed in" (tokens present) as the source of
     // truth for configured/verified — the in-memory api_key or the prefs
     // last_verification stamp can lag (e.g. tokens stored before stamping
@@ -699,6 +713,31 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
             : std::string();
     if (default_model_id.empty() && provider) {
       default_model_id = provider->GetDefaultModelId();
+    }
+
+    // Ensure the configured default_model is always selectable. Two cases:
+    // 1. Cold boot with no online fetch and no curated graft → the catalog
+    //    has zero models; synthesize the default so the provider isn't
+    //    empty (the original cold-boot fallback).
+    // 2. Cold boot with curated models but no online fetch → the catalog
+    //    has curated models (e.g. claude-fable-5) but NOT the user's
+    //    configured default_model (e.g. claude-sonnet-4-6 from the fake
+    //    server's /v1/models). Without this, setModelSelection to the
+    //    configured default fails with worker_invalid_model_selection.
+    // Skip if the id is already present (from online fetch or curated
+    // graft) to avoid duplicates.
+    if (provider_verified && !default_model_id.empty() &&
+        seen_ids.find(default_model_id) == seen_ids.end()) {
+      auto model_ptr = mojom::NexusLlmModel::New();
+      model_ptr->id = default_model_id;
+      model_ptr->label = default_model_id;
+      model_ptr->enabled = true;
+      model_ptr->supports_streaming =
+          provider ? provider->SupportsStreaming() : false;
+      model_ptr->supports_tools =
+          provider ? provider->SupportsTools() : false;
+      has_enabled_model = true;
+      models.push_back(std::move(model_ptr));
     }
 
     auto provider_ptr = mojom::NexusLlmProvider::New();
@@ -801,7 +840,13 @@ std::string ResolveModelId(Profile* profile,
                            const mojom::NexusLlmRequestParams& request,
                            const std::string& provider_id,
                            LlmProvider* provider) {
-  if (request.model_id.has_value() && !request.model_id->empty()) {
+  // "inherit" is the guest's sentinel for "no explicit pick — use the
+  // provider's configured default". Treat it the same as an absent/empty
+  // model_id so the fall-through below resolves default_model → model →
+  // provider default. Without this, the literal string "inherit" would be
+  // sent to the upstream API as the model name.
+  if (request.model_id.has_value() && !request.model_id->empty() &&
+      *request.model_id != "inherit") {
     return *request.model_id;
   }
   const base::DictValue* stored_config =
@@ -1170,9 +1215,29 @@ void NexusLlmHost::Catalog(CatalogCallback callback) {
     return;
   }
 
+  // Cold-boot race: the broker's `LoadProviderConfigs` runs at broker
+  // construction, which can happen BEFORE the profile's Preferences file
+  // is loaded into the PrefService. Re-apply stored configs here so a
+  // late-loading prefs file still yields configured providers before we
+  // build the `configured_provider_ids` list below.
+  if (PrefService* prefs = profile_ ? profile_->GetPrefs() : nullptr) {
+    for (const ProviderInfo& info : broker->GetRegisteredProviders()) {
+      LlmProvider* provider = broker->GetProvider(info.id);
+      if (provider && !provider->IsConfigured()) {
+        if (const base::DictValue* stored_config =
+                GetStoredProviderConfig(prefs, info.id)) {
+          provider->Configure(*stored_config);
+        }
+      }
+    }
+  }
+
   std::vector<std::string> configured_provider_ids;
   for (const ProviderInfo& info : broker->GetRegisteredProviders()) {
-    if (info.is_configured) {
+    // Check the live provider, not the stale `info.is_configured` snapshot —
+    // the re-configure loop above may have just flipped it.
+    LlmProvider* provider = broker->GetProvider(info.id);
+    if (provider && provider->IsConfigured()) {
       configured_provider_ids.push_back(info.id);
     }
   }
@@ -1187,7 +1252,13 @@ void NexusLlmHost::Catalog(CatalogCallback callback) {
       last_catalog_refresh_provider_ids_ == configured_provider_ids &&
       (base::TimeTicks::Now() - last_catalog_refresh_time_) <
           kCatalogRefreshInterval;
-  if (can_use_cached_catalog) {
+  // On cold boot (first call), skip the model-discovery round-trip and
+  // return the prefs-backed catalog immediately. The TS-curated catalog
+  // graft in BuildCatalog already supplies every model id the picker needs;
+  // discovery only refreshes reasoning-tier metadata. This avoids a
+  // BarrierClosure that can stall if any provider's /models endpoint is
+  // slow or unreachable on first boot.
+  if (can_use_cached_catalog || last_catalog_refresh_time_.is_null()) {
     std::move(callback).Run(true, BuildCatalog(profile_), std::nullopt);
     return;
   }

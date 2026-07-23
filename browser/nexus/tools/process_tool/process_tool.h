@@ -230,6 +230,40 @@ class ProcessTool : public ToolBase,
                     base::FilePath cwd,
                     RipgrepRunResult result);
 
+  // Blocking half of the Grep path-existence pre-check. Runs on a
+  // `base::ThreadPool` worker (MayBlock) — NEVER on the UI thread, where
+  // `base::PathExists` would trip the blocking-disallowed DCHECK. Returns
+  // whether `target` exists.
+  static bool RunGrepPathExistsOnBlocking(base::FilePath target);
+
+  // UI-thread reply to `RunGrepPathExistsOnBlocking`. Rejects `done` with
+  // `path_not_found` when the target is missing; otherwise launches ripgrep
+  // through `ripgrep_runner_` (exec + auto-install + line shaping).
+  void OnGrepPathChecked(::nexus::generated::GrepInput input,
+                         ToolCallback done,
+                         std::string output_mode,
+                         bool show_line_numbers,
+                         int head_limit,
+                         int offset,
+                         base::FilePath target,
+                         base::FilePath default_root,
+                         RipgrepRunOptions options,
+                         bool path_exists);
+
+  // Blocking half of the Grep `files_with_matches` result shaping. Runs on a
+  // `base::ThreadPool` worker (MayBlock) — NEVER on the UI thread — because it
+  // stats every matched file (`base::GetFileInfo`) to sort by mtime descending
+  // (CC parity). Returns the fully-shaped result body (or "No files found").
+  static std::string ShapeGrepFilesWithMatchesBlocking(
+      std::vector<std::string> lines,
+      int head_limit,
+      int offset,
+      base::FilePath cwd);
+
+  // UI-thread reply to `ShapeGrepFilesWithMatchesBlocking`. Resolves `done`
+  // with the shaped body.
+  void OnGrepFilesShaped(ToolCallback done, std::string body);
+
   // Per-PROFILE shared launcher (Profile user-data via
   // `GetSharedShellLauncher`), NOT owned — so background shells this tool
   // spawns live in the SAME utility process the guest `shell.*` capability

@@ -24,6 +24,7 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 
 namespace nexus {
 
@@ -60,6 +61,10 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
             ExecCallback callback) override;
   void Spawn(mojom::ShellSpawnOptionsPtr options,
              SpawnCallback callback) override;
+  void SpawnWithObserver(
+      mojom::ShellSpawnOptionsPtr options,
+      mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
+      SpawnWithObserverCallback callback) override;
   void ReadBackgroundOutput(const std::string& shell_id,
                             ReadBackgroundOutputCallback callback) override;
   void Kill(const std::string& shell_id, KillCallback callback) override;
@@ -111,6 +116,23 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // binding sequence — so the registry is only ever touched there and
   // needs no lock.
   void RunSpawn(mojom::ShellSpawnOptionsPtr options, SpawnCallback callback);
+  // Background `SpawnWithObserver` helper. Thin wrapper over `RunSpawnInternal`
+  // that threads the caller's `observer` remote through so
+  // `OnBackgroundComplete` can fire `NexusBackgroundShellObserver.OnExit` when
+  // the child reaches a terminal state. Shares the exact validation / launch /
+  // reply path as the plain `Spawn`.
+  void RunSpawnWithObserver(
+      mojom::ShellSpawnOptionsPtr options,
+      mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
+      SpawnWithObserverCallback callback);
+  // Shared implementation for `RunSpawn` and `RunSpawnWithObserver`. When
+  // `observer` is valid it is stored on the `BackgroundEntry` for the terminal
+  // `OnExit` notification; an invalid (null) remote means "no observer" (the
+  // plain `Spawn` path).
+  void RunSpawnInternal(
+      mojom::ShellSpawnOptionsPtr options,
+      mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
+      SpawnCallback callback);
   void OnBackgroundComplete(std::string shell_id,
                             base::TimeTicks dispatch_start,
                             ChildProcessOutcome outcome);
@@ -170,6 +192,22 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
     SpawnCallback callback;
   };
 
+  // Pending SpawnWithObserver requests waiting for the first capability probe.
+  // Carries the move-only observer endpoint through to `RunSpawnWithObserver`.
+  // Drained by `OnResolved`, mirroring `PendingSpawn`.
+  struct PendingSpawnWithObserver {
+    PendingSpawnWithObserver();
+    ~PendingSpawnWithObserver();
+    PendingSpawnWithObserver(const PendingSpawnWithObserver&) = delete;
+    PendingSpawnWithObserver& operator=(const PendingSpawnWithObserver&) = delete;
+    PendingSpawnWithObserver(PendingSpawnWithObserver&&);
+    PendingSpawnWithObserver& operator=(PendingSpawnWithObserver&&);
+
+    mojom::ShellSpawnOptionsPtr options;
+    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer;
+    SpawnWithObserverCallback callback;
+  };
+
   // Pending StreamSpawn requests waiting for the first capability probe.
   // Carries the move-only mojo endpoints through to `RunStreamSpawn`.
   struct PendingStreamSpawn {
@@ -217,6 +255,11 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
     // reads it to force `exit.killed = true` (the runner may report a normal exit
     // because the child died from our out-of-band termination).
     bool kill_issued = false;
+    // Optional exit observer supplied by `SpawnWithObserver` (the browser's
+    // `NexusShellServiceLauncher`). Bound while the child runs; fired ONCE from
+    // `OnBackgroundComplete` with the terminal `ShellExitInfo`, then reset.
+    // Invalid (unbound) for shells started via the plain `Spawn`.
+    mojo::Remote<mojom::NexusBackgroundShellObserver> observer;
   };
 
   // One in-flight `background_on_timeout` Exec (see
@@ -245,6 +288,7 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   std::vector<GetCapabilitiesCallback> pending_callbacks_;
   std::vector<PendingExec> pending_execs_;
   std::vector<PendingSpawn> pending_spawns_;
+  std::vector<PendingSpawnWithObserver> pending_spawns_with_observer_;
   std::vector<PendingStreamSpawn> pending_stream_spawns_;
 
   // Background processes, keyed by the opaque `shell_id` returned from `Spawn`.

@@ -224,6 +224,25 @@ interface NexusStreamingProcessClient {
   OnExit(ShellExitInfo exit);
 };
 
+// Observer for a background process started by `SpawnWithObserver`.
+// Implemented by the BROWSER (the per-Profile `NexusShellServiceLauncher`);
+// the utility process pushes the terminal exit here ONCE, when the child
+// exits or is killed. This is the background-shell analogue of
+// `NexusStreamingProcessClient.OnExit` (slice 4): it lets the browser learn
+// a backgrounded command finished WITHOUT polling `ReadBackgroundOutput`
+// on a timer. The browser then fans the exit out to the guest (nexus_web)
+// as a `shell.onExit` bridge event so the SharedWorker can finalize the
+// `local_bash` task event-driven instead of via its 150ms→1500ms poll loop.
+//
+// Lifetime: the utility holds the matching `Remote` on the background entry
+// and fires `OnExit` from `OnBackgroundComplete`; the entry (and thus the
+// remote) survives until eviction, so a late browser subscriber can still be
+// served from the launcher's terminal-exit cache. TERMINAL: exactly one
+// `OnExit` per spawned shell; nothing is sent after it.
+interface NexusBackgroundShellObserver {
+  OnExit(string shell_id, ShellExitInfo exit);
+};
+
 // Sandboxed-utility-process service exposing host-shell capabilities to
 // nexus_web. See `web-ui/test/docs/agents/nexus-process.md` for the full
 // design.
@@ -283,6 +302,22 @@ interface NexusShellService {
   // exactly mirroring `Exec`. Once launched, the process outcome flows
   // through `ReadBackgroundOutput`, never here.
   Spawn(ShellSpawnOptions options)
+      => (bool ok,
+          string? shell_id,
+          string? error_code,
+          string? error_message,
+          string? install_hint);
+
+  // Identical to `Spawn` (same validation / allowlist / cwd / sandbox / reply
+  // contract), but the caller additionally supplies an `observer` remote that
+  // the utility will call ONCE via `NexusBackgroundShellObserver.OnExit` when
+  // the backgrounded child reaches a terminal state (exit or kill). Lets the
+  // browser detect completion event-driven instead of polling
+  // `ReadBackgroundOutput`. `ReadBackgroundOutput(shell_id)` still works for
+  // fetching the accumulated output on demand. Pre-launch rejections reply
+  // here exactly like `Spawn` (the observer is simply never called).
+  SpawnWithObserver(ShellSpawnOptions options,
+                    pending_remote<NexusBackgroundShellObserver> observer)
       => (bool ok,
           string? shell_id,
           string? error_code,

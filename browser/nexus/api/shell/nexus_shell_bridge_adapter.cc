@@ -185,9 +185,51 @@ void RespondKill(BridgeResponseCallback done, bool found, bool was_running) {
 NexusShellBridgeAdapter::NexusShellBridgeAdapter(
     NexusBridgeResponseDelegate* delegate,
     Profile* profile)
-    : ::nexus::generated::ShellApiBase(delegate), profile_(profile) {}
+    : ::nexus::generated::ShellApiBase(delegate), profile_(profile) {
+  // Register for background-shell terminal exits for the lifetime of this
+  // adapter. The launcher broadcasts every shell's exit here; we push a
+  // `shell.onExit` bridge event so nexus_web finalizes the `local_bash` task
+  // event-driven instead of polling shell.status. Weak-guarded so a teardown
+  // racing an in-flight exit drops cleanly.
+  if (profile_) {
+    shell_event_sink_id_ = GetSharedShellLauncher(profile_).AddShellEventSink(
+        base::BindRepeating(&NexusShellBridgeAdapter::PushShellExitEvent,
+                            weak_factory_.GetWeakPtr()));
+  }
+}
 
-NexusShellBridgeAdapter::~NexusShellBridgeAdapter() = default;
+NexusShellBridgeAdapter::~NexusShellBridgeAdapter() {
+  if (profile_ && shell_event_sink_id_ != 0) {
+    GetSharedShellLauncher(profile_).RemoveShellEventSink(shell_event_sink_id_);
+  }
+}
+
+void NexusShellBridgeAdapter::PushShellExitEvent(
+    const std::string& shell_id,
+    const mojom::ShellExitInfo& exit) {
+  // Mirror the TS-side `shell.onExit` event envelope; the transport wraps this
+  // as {claudeBridge:true, direction:"event", ...}. Payload mirrors the
+  // shell.status terminal fields so the guest reuses its existing exit
+  // classification (classifyShellExit) verbatim.
+  Dict route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "shell");
+  route.Set("action", "onExit");
+
+  Dict payload;
+  payload.Set("shellId", shell_id);
+  payload.Set("exitCode", exit.code.value_or(-1));
+  if (exit.signal.has_value()) {
+    payload.Set("signal", *exit.signal);
+  }
+  payload.Set("timedOut", exit.timed_out);
+  payload.Set("killed", exit.killed);
+  // duration_ms is uint64; base::Value has no 64-bit int — use double (a
+  // millisecond duration is well within double's exact-integer range), matching
+  // the shell.status reply shaper.
+  payload.Set("durationMs", static_cast<double>(exit.duration_ms));
+  SendEvent(route, base::Value(std::move(payload)));
+}
 
 void NexusShellBridgeAdapter::HandleStatusOnUI(
     ::nexus::generated::StatusInput input,

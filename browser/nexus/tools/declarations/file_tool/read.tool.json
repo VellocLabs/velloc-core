@@ -61,7 +61,10 @@
       }
     },
     "required": [
-      "file_path"
+      "file_path",
+      "offset",
+      "limit",
+      "pages"
     ],
     "additionalProperties": false
   }

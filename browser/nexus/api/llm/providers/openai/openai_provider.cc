@@ -17,6 +17,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
+#include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_usage.h"
@@ -111,34 +112,6 @@ std::string ResolveRequestId(const base::DictValue& call_options) {
     return *request_id;
   }
   return base::Uuid::GenerateRandomV4().AsLowercaseString();
-}
-
-// Extracts a human-readable error message from a JSON error body. Handles the
-// public OpenAI shape (`{"error":{"message":…}}` / `{"error":"…"}`) and the
-// ChatGPT subscription (Codex) backend shape (`{"detail":"…"}` /
-// `{"message":"…"}`). Returns empty when the body isn't a recognizable JSON
-// error object (e.g. a normal SSE stream or a successful response).
-std::string ExtractApiErrorMessage(const std::string& body) {
-  std::optional<base::DictValue> parsed =
-      base::JSONReader::ReadDict(body, base::JSON_PARSE_RFC);
-  if (!parsed) {
-    return std::string();
-  }
-  if (const base::DictValue* err = parsed->FindDict("error")) {
-    if (const std::string* msg = err->FindString("message")) {
-      return *msg;
-    }
-  }
-  if (const std::string* err = parsed->FindString("error")) {
-    return *err;
-  }
-  if (const std::string* detail = parsed->FindString("detail")) {
-    return *detail;
-  }
-  if (const std::string* message = parsed->FindString("message")) {
-    return *message;
-  }
-  return std::string();
 }
 
 }  // namespace
@@ -360,6 +333,18 @@ bool OpenAiProvider::Configure(const base::DictValue& config) {
       max_concurrent.has_value() && *max_concurrent >= 0) {
     stream_guard_.set_max_concurrent_streams(*max_concurrent);
   }
+
+  // [streamguard] configure diagnostic — confirm which guard knobs actually
+  // reached the provider (the settings -> pref -> Configure() plumbing silently
+  // dropping them was the original confusion in the concurrency-pool
+  // investigation). Reuses BuildDebugString() so the format matches the
+  // idle-timeout error and the /debug pipeline (provider / active-vs-cap /
+  // queued / idle timeout). The e2e harness greps browser stderr for the
+  // `[streamguard]` tag when the idle-timeout assertion fails
+  // (nexus-stream-guard.spec.ts). LOG(ERROR) — deliberately, NOT a real error —
+  // so it always lands in the stderr the harness captures; the provider is
+  // otherwise quiet on a successful configure.
+  LOG(ERROR) << "[streamguard] configure " << stream_guard_.BuildDebugString();
 
   return IsConfigured();
 }
@@ -2036,6 +2021,18 @@ void OpenAiProvider::CancelRequest(const std::string& request_id) {
       std::move(ctx->done_callback).Run("Cancelled");
     PumpQueuedStreams();
   }
+
+  // A request that is still QUEUED (over the concurrency cap, never started)
+  // owns no loader and no active slot — it lives only in the guard's FIFO
+  // queue, so neither branch above touches it. Purge it there; otherwise the
+  // next PumpQueuedStreams would start it as an orphan: a real connection whose
+  // chunk/done callbacks route to a stream_id the host has already abandoned
+  // (NexusLlmHost erases the StreamState on cancel / streamRead native-timeout),
+  // so NexusLlmHost::OnStreamChunk discards every event and the call is wasted
+  // while a live retried stream starves behind the stale entry. A queued entry
+  // was never tracked, so no slot frees and no pump is needed here. No-op when
+  // the id was blocking / active / unknown (the three states are exclusive).
+  stream_guard_.RemoveQueued(request_id);
 }
 
 void OpenAiProvider::OnStreamIdleTimeout(const std::string& request_id) {

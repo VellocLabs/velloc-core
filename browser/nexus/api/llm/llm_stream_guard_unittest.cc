@@ -196,5 +196,43 @@ TEST_F(LlmStreamGuardTest, TrackBlockingCountsSlotWithoutArmingWatchdog) {
   EXPECT_TRUE(guard.CanStartStream());
 }
 
+// Regression for the abandoned-queued-stream orphan: a request cancelled while
+// still queued (over the cap, never started) must be PURGED from the FIFO queue
+// so a later slot-free + pump never starts it. Before RemoveQueued there was no
+// way to drop a queued entry, so the provider's CancelRequest left it in the
+// queue and PumpQueuedStreams would start it as an orphan — a live connection
+// whose events the host discards because it already abandoned the stream_id.
+TEST_F(LlmStreamGuardTest, RemoveQueuedPurgesCancelledRequestBeforeStart) {
+  LlmStreamGuard guard("openai");
+  guard.set_max_concurrent_streams(1);
+
+  // "a" holds the only slot; "b" and "c" queue behind it FIFO.
+  guard.TrackStream("a");
+  LlmStreamGuard::QueuedStream q1;
+  q1.request_id = "b";
+  LlmStreamGuard::QueuedStream q2;
+  q2.request_id = "c";
+  guard.EnqueueStream(std::move(q1));
+  guard.EnqueueStream(std::move(q2));
+  EXPECT_EQ(guard.queued_stream_count(), 2u);
+
+  // Cancel "b" while it is still queued (never started).
+  EXPECT_TRUE(guard.RemoveQueued("b"));
+  EXPECT_EQ(guard.queued_stream_count(), 1u);
+  // A queued entry holds no slot, so the active count is unchanged.
+  EXPECT_EQ(guard.active_stream_count(), 1u);
+
+  // Free the slot: the cancelled "b" must NOT come back — "c" is next.
+  guard.OnStreamFinished("a");
+  auto next = guard.DequeueStream();
+  ASSERT_TRUE(next.has_value());
+  EXPECT_EQ(next->request_id, "c");
+  EXPECT_EQ(guard.queued_stream_count(), 0u);
+
+  // Removing an unknown / already-dequeued id is a no-op.
+  EXPECT_FALSE(guard.RemoveQueued("b"));
+  EXPECT_FALSE(guard.RemoveQueued("does-not-exist"));
+}
+
 }  // namespace
 }  // namespace nexus

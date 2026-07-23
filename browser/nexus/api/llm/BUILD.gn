@@ -218,6 +218,23 @@ source_set("openai_usage") {
   public_deps = [ "//base" ]
 }
 
+# Extracts a human-readable error message from a provider error body —
+# raw JSON OR an SSE `data:` frame (some gateways — DashScope/token-plan,
+# Anthropic-compatible proxies — return HTTP 4xx as a single
+# `data: {"error":{...}}` event; without unwrapping it the provider would
+# surface a bare "HTTP <status>"). Shared by every provider's HTTP-error
+# path. Tiny base-only source_set (same pattern as :openai_tool_call_stream)
+# so the lite unit-test binary can cover the SSE-frame unwrap without
+# linking any provider.
+source_set("error_extract") {
+  sources = [
+    "llm_error_extract.cc",
+    "llm_error_extract.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 source_set("openai_provider") {
   sources = [
     "providers/openai/openai_provider.cc",
@@ -225,6 +242,7 @@ source_set("openai_provider") {
   ]
 
   deps = [
+    ":error_extract",
     ":line_splitter",
     ":openai_tool_call_stream",
     ":openai_usage",
@@ -258,6 +276,7 @@ source_set("anthropic_provider") {
 
   deps = [
     ":anthropic_schema_sanitizer",
+    ":error_extract",
     ":provider",
     ":types",
     "//base",
@@ -273,6 +292,7 @@ source_set("google_provider") {
   ]
 
   deps = [
+    ":error_extract",
     ":provider",
     ":types",
     "//base",
@@ -288,6 +308,7 @@ source_set("ollama_provider") {
   ]
 
   deps = [
+    ":error_extract",
     ":line_splitter",
     ":provider",
     ":types",

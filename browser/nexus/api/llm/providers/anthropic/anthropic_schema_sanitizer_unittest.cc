@@ -139,6 +139,61 @@ TEST(AnthropicSchemaSanitizerTest, RecursesNestedObjectsItemsAndCombinators) {
   EXPECT_EQ((*required)[0].GetString(), "todos");
 }
 
+TEST(AnthropicSchemaSanitizerTest, StripsNumericRangeKeywords) {
+  // Regression: claude_code's zod reference emits numeric bounds (Read:
+  // offset >= 0, limit >= 1) and they landed in read.tool.json's
+  // parametersStrict. OpenAI's structured-outputs dialect accepts them, but
+  // Anthropic's strict tool schema rejects `minimum` on an integer with a
+  // 400 (`tools.N.custom: For 'integer' type, property 'minimum' is not
+  // supported`). The sanitizer must drop every numeric-range keyword while
+  // still collapsing the nullable type and preserving the rest of the node.
+  base::DictValue schema = Parse(R"({
+    "type": "object",
+    "properties": {
+      "file_path": {"type": "string", "description": "path"},
+      "offset": {"type": ["integer", "null"], "minimum": 0},
+      "limit": {"type": ["integer", "null"], "minimum": 1},
+      "max_results": {
+        "type": ["integer", "null"],
+        "maximum": 100,
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 101,
+        "multipleOf": 2
+      }
+    },
+    "required": ["file_path", "offset", "limit", "max_results"],
+    "additionalProperties": false
+  })");
+
+  base::DictValue out = SanitizeStrictSchemaForAnthropic(schema);
+
+  // Nullable integer types still collapse to their base type...
+  EXPECT_EQ(*out.FindStringByDottedPath("properties.offset.type"), "integer");
+  EXPECT_EQ(*out.FindStringByDottedPath("properties.limit.type"), "integer");
+  EXPECT_EQ(*out.FindStringByDottedPath("properties.max_results.type"),
+            "integer");
+
+  // ...and every numeric-range keyword is gone.
+  EXPECT_EQ(out.FindByDottedPath("properties.offset.minimum"), nullptr);
+  EXPECT_EQ(out.FindByDottedPath("properties.limit.minimum"), nullptr);
+  EXPECT_EQ(out.FindByDottedPath("properties.max_results.maximum"), nullptr);
+  EXPECT_EQ(out.FindByDottedPath("properties.max_results.exclusiveMinimum"),
+            nullptr);
+  EXPECT_EQ(out.FindByDottedPath("properties.max_results.exclusiveMaximum"),
+            nullptr);
+  EXPECT_EQ(out.FindByDottedPath("properties.max_results.multipleOf"),
+            nullptr);
+
+  // Sibling keys on the same node survive.
+  EXPECT_EQ(*out.FindStringByDottedPath("properties.file_path.description"),
+            "path");
+  // The nullable range-constrained fields drop out of `required`.
+  const base::ListValue* required = out.FindList("required");
+  ASSERT_TRUE(required);
+  ASSERT_EQ(required->size(), 1u);
+  EXPECT_EQ((*required)[0].GetString(), "file_path");
+}
+
 TEST(AnthropicSchemaSanitizerTest, PlainOptionalSchemaPassesThroughUnchanged) {
   // A permissive (non-strict-dialect) schema has nothing to sanitize.
   base::DictValue schema = Parse(R"({

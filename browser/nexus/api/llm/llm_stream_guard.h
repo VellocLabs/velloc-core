@@ -101,6 +101,15 @@ class LlmStreamGuard {
   // Pops the next queued stream, or nullopt when empty. Call after a slot
   // frees (i.e. from the provider's stream-finished path).
   std::optional<QueuedStream> DequeueStream();
+  // Removes a still-queued request by id — used when its owner cancels or
+  // abandons it BEFORE it ever started (the provider's CancelRequest). Returns
+  // true if an entry was removed. A queued entry holds no concurrency slot, so
+  // this does NOT change active_stream_count() and needs no follow-up pump; it
+  // only keeps a cancelled request from being started later as an orphan (a
+  // live connection whose chunk/done callbacks route to a stream_id the host
+  // has already torn down). No-op for an id that is active, blocking, unknown,
+  // or already dequeued.
+  bool RemoveQueued(const std::string& request_id);
 
   // Registers a newly-started stream: begins its idle watchdog and counts it
   // as active.

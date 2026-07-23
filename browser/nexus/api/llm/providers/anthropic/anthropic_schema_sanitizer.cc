@@ -70,6 +70,19 @@ bool SanitizeNode(base::DictValue& schema) {
   bool nullable = CollapseNullableType(schema);
   nullable |= StripNullFromEnum(schema);
 
+  // Numeric-range constraints. The strict schema is authored in OpenAI's
+  // structured-outputs dialect, which accepts these (and claude_code's zod
+  // reference emits them — e.g. Read's `offset >= 0`, `limit >= 1`).
+  // Anthropic's strict tool schema rejects them with a 400
+  // (`For 'integer' type, property 'minimum' is not supported`), so strip
+  // them wherever they appear. They only tighten grammar-constrained
+  // sampling; dropping them changes no structure and leaves the constraint
+  // intact in the OpenAI-dialect schema other providers consume.
+  for (const char* range_key : {"minimum", "maximum", "exclusiveMinimum",
+                                "exclusiveMaximum", "multipleOf"}) {
+    schema.Remove(range_key);
+  }
+
   // Object properties: sanitize each, collecting which became optional, then
   // rewrite this object's `required` without them.
   if (base::DictValue* properties = schema.FindDict("properties")) {

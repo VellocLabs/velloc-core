@@ -53,6 +53,16 @@ std::optional<LlmStreamGuard::QueuedStream> LlmStreamGuard::DequeueStream() {
   return stream;
 }
 
+bool LlmStreamGuard::RemoveQueued(const std::string& request_id) {
+  for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+    if (it->request_id == request_id) {
+      queue_.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
 void LlmStreamGuard::TrackStream(const std::string& request_id) {
   auto state = std::make_unique<StreamState>();
   state->last_activity = base::TimeTicks::Now();

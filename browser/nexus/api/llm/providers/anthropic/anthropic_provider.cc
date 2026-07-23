@@ -1,5 +1,6 @@
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_provider.h"
 
+#include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_schema_sanitizer.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
@@ -202,18 +203,14 @@ class AnthropicProvider::StreamSession
       ProcessBuffer();
 
     if (response_code_ != 200) {
-      std::string error =
-          "HTTP " + base::NumberToString(response_code_);
-      auto parsed =
-          base::JSONReader::ReadDict(buffer_, base::JSON_PARSE_RFC);
-      if (parsed) {
-        if (const auto* err = parsed->FindDict("error")) {
-          if (const auto* msg = err->FindString("message"))
-            error = *msg;
-        }
-      } else {
+      // Shared extractor: raw JSON error bodies AND SSE-framed errors
+      // (proxy gateways can wrap Anthropic errors as `data: {...}`
+      // events — falling straight to "HTTP <code>" hides the message).
+      std::string error = ExtractApiErrorMessage(buffer_);
+      if (error.empty()) {
+        error = "HTTP " + base::NumberToString(response_code_);
         LOG(ERROR) << "Anthropic API returned HTTP " << response_code_
-                   << " with non-JSON body: " << buffer_;
+                   << " with unrecognized body: " << buffer_;
       }
       Complete(std::move(error));
       return;

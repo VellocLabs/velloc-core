@@ -18,6 +18,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
+#include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -923,7 +924,14 @@ void OllamaProvider::OnGenerateComplete(
     DLOG(ERROR) << "Failed to parse Ollama response as JSON";
     GenerateResult result;
     result.finish_reason = FinishReason::kError;
-    std::move(callback).Run(std::move(result), "Invalid JSON response");
+    // Recover a message from gateway/proxy error bodies (e.g. an
+    // SSE-framed or wrapped error from a reverse proxy in front of
+    // ollama) before falling back to the generic message.
+    std::string error = ExtractApiErrorMessage(*response_body);
+    if (error.empty()) {
+      error = "Invalid JSON response";
+    }
+    std::move(callback).Run(std::move(result), std::move(error));
     return;
   }
 

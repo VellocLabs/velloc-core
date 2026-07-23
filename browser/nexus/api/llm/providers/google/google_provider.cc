@@ -1,5 +1,6 @@
 #include "custom_browser/browser/nexus/api/llm/providers/google/google_provider.h"
 
+#include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
 #include <optional>
@@ -970,8 +971,15 @@ void GoogleProvider::OnGenerateComplete(
     GenerateResult result;
     result.finish_reason = FinishReason::kError;
     result.raw_call = std::move(raw_call);
-    std::move(callback).Run(std::move(result),
-                            "Failed to parse Google AI response JSON");
+    // The shared extractor still recovers a message from SSE-framed or
+    // gateway-wrapped error bodies that don't parse as a single JSON
+    // object; only fall back to the generic message when nothing
+    // recognizable is there.
+    std::string error = ExtractApiErrorMessage(*response_body);
+    if (error.empty()) {
+      error = "Failed to parse Google AI response JSON";
+    }
+    std::move(callback).Run(std::move(result), std::move(error));
     return;
   }
 

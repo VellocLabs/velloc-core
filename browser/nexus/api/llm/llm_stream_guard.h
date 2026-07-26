@@ -101,6 +101,15 @@ class LlmStreamGuard {
   // Pops the next queued stream, or nullopt when empty. Call after a slot
   // frees (i.e. from the provider's stream-finished path).
   std::optional<QueuedStream> DequeueStream();
+  // True when `request_id` is still sitting in the FIFO — admitted by the
+  // host but never dispatched upstream, so it owns no socket and has produced
+  // no bytes. The host asks this before treating an expired stream-read hold
+  // as an idle timeout: queue time is NOT provider silence, and failing the
+  // read there made the guest cancel + retry, which re-enqueued the request at
+  // the BACK of the FIFO. Under a long head-of-line turn a background stream
+  // could walk its entire retry ladder without ever reaching the provider.
+  bool IsQueued(const std::string& request_id) const;
+
   // Removes a still-queued request by id — used when its owner cancels or
   // abandons it BEFORE it ever started (the provider's CancelRequest). Returns
   // true if an entry was removed. A queued entry holds no concurrency slot, so

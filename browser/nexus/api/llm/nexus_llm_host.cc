@@ -1652,9 +1652,15 @@ void NexusLlmHost::StreamRead(const std::string& stream_id,
   // supplied and has already elapsed; otherwise 'ok'.
   auto result = mojom::NexusLlmStreamReadResult::New();
   result->done = false;
+  LlmBroker* broker = GetBroker(profile_);
+  // Queue time is not provider silence — see OnStreamReadHoldTimeout. A
+  // request still in the provider's FIFO reports `queued` and keeps both its
+  // FIFO position and its host-side StreamState.
+  const bool still_queued = broker && broker->IsRequestQueued(stream_id);
   const bool deadline_elapsed =
-      deadline_ms.has_value() && NowEpochMs() >= *deadline_ms;
-  result->status = deadline_elapsed ? "timeout" : "ok";
+      !still_queued && deadline_ms.has_value() && NowEpochMs() >= *deadline_ms;
+  result->status =
+      still_queued ? "queued" : (deadline_elapsed ? "timeout" : "ok");
   timeline.Set("t_resolve", NowEpochMs());
   result->timeline = std::move(timeline);
 
@@ -1663,7 +1669,7 @@ void NexusLlmHost::StreamRead(const std::string& stream_id,
   // the upstream loader and drop the entry, or both leak per abandoned
   // stream.
   if (deadline_elapsed) {
-    if (LlmBroker* broker = GetBroker(profile_)) {
+    if (broker) {
       broker->CancelRequest(stream_id);
     }
     streams_.erase(it);
@@ -1726,7 +1732,33 @@ void NexusLlmHost::OnStreamReadHoldTimeout(const std::string& stream_id) {
     pending.hold_timer->Stop();
   }
 
-  if (LlmBroker* broker = GetBroker(profile_)) {
+  LlmBroker* broker = GetBroker(profile_);
+
+  // ...UNLESS the request never left the building. Under a provider
+  // concurrency cap (chatgpt-pro's max_concurrent_streams: 1) the request can
+  // still be sitting in the FIFO with no socket open, so the silence is OUR
+  // queue, not the provider. Failing the read here made the guest throw,
+  // cancel, and retry — which re-enqueued it at the BACK of the same FIFO, so
+  // a background stream could burn its whole retry ladder behind one long
+  // foreground turn and never reach the provider at all.
+  //
+  // Resolve `status:'queued'` instead: no cancel (the entry keeps its FIFO
+  // position) and no erase (the guest re-issues a read against the same
+  // stream id). Guests that predate the value see an unknown non-'timeout'
+  // status, treat the host as hold-capable, and re-issue the read too — the
+  // same behaviour, one 90s window at a time.
+  if (broker && broker->IsRequestQueued(stream_id)) {
+    auto queued_result = mojom::NexusLlmStreamReadResult::New();
+    queued_result->done = false;
+    queued_result->status = "queued";
+    pending.timeline.Set("t_resolve", NowEpochMs());
+    queued_result->timeline = std::move(pending.timeline);
+    std::move(pending.callback).Run(true, std::move(queued_result),
+                                    std::nullopt);
+    return;
+  }
+
+  if (broker) {
     broker->CancelRequest(stream_id);
   }
 
@@ -1802,8 +1834,19 @@ void NexusLlmHost::OnCallDeadlineTimeout(const std::string& request_id) {
   PendingCall pending = std::move(it->second);
   pending_calls_.erase(it);
 
+  // Same queue-vs-silence distinction as OnStreamReadHoldTimeout: a blocking
+  // call that is still in the provider's FIFO never opened a socket, so the
+  // deadline measured OUR queue rather than the provider. Report it as
+  // `queued` so the guest can re-issue instead of counting a provider
+  // timeout. Unlike the stream path this DOES cancel — dropping the queue
+  // entry is required, since the guest re-issues as a brand-new request id
+  // and a surviving entry would later start an orphan whose completion
+  // callback has nowhere to go.
+  LlmBroker* broker = GetBroker(profile_);
+  const bool was_queued = broker && broker->IsRequestQueued(request_id);
+
   // Cancel the upstream loader so the provider socket closes server-side.
-  if (LlmBroker* broker = GetBroker(profile_)) {
+  if (broker) {
     broker->CancelRequest(request_id);
   }
 
@@ -1814,7 +1857,7 @@ void NexusLlmHost::OnCallDeadlineTimeout(const std::string& request_id) {
   // adapter hop is same-process so a null message is tolerated, but a remote
   // pipe would CHECK-fail validation on the unset non-nullable struct field.
   response->message = mojom::NexusLlmAssistantMessage::New();
-  response->status = "timeout";
+  response->status = was_queued ? "queued" : "timeout";
   response->timeline = std::move(pending.timeline);
   std::move(pending.callback).Run(true, std::move(response), std::nullopt);
 }

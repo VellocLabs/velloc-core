@@ -1600,6 +1600,7 @@ void OpenAiProvider::OnGenerateComplete(
 
   int net_error = 0;
   int http_status = -1;
+  std::string retry_after;
 
   auto it = pending_loaders_.find(request_id);
   if (it != pending_loaders_.end()) {
@@ -1607,6 +1608,10 @@ void OpenAiProvider::OnGenerateComplete(
     if (const auto* info = it->second->ResponseInfo();
         info && info->headers) {
       http_status = info->headers->response_code();
+      // Captured here because the loader (and its headers) is erased below,
+      // before the error branches that need it.
+      retry_after =
+          info->headers->GetNormalizedHeader("Retry-After").value_or("");
     }
     pending_loaders_.erase(it);
   }
@@ -1640,7 +1645,11 @@ void OpenAiProvider::OnGenerateComplete(
       !api_error.empty()) {
     DLOG(ERROR) << display_name_ << " API error (HTTP " << http_status
                 << "): " << api_error;
-    std::move(callback).Run(GenerateResult(), std::move(api_error));
+    // Keep the status and Retry-After in the string — it is the only channel
+    // the guest's retry classifier has (see BuildProviderErrorMessage).
+    std::move(callback).Run(
+        GenerateResult(),
+        BuildProviderErrorMessage(http_status, retry_after, api_error));
     return;
   }
 
@@ -1978,17 +1987,19 @@ void OpenAiProvider::OnStreamComplete(std::string request_id, bool success) {
   // isn't a `data:`/`event:` line), so detect the error body here and surface
   // it through the existing done-error path.
   int http_status = -1;
+  std::string retry_after;
   if (ctx->loader) {
     if (const auto* info = ctx->loader->ResponseInfo();
         info && info->headers) {
       http_status = info->headers->response_code();
+      retry_after =
+          info->headers->GetNormalizedHeader("Retry-After").value_or("");
     }
   }
   const std::string api_error = ExtractApiErrorMessage(ctx->raw_response);
   if (http_status >= 400 || (!ctx->finish_emitted && !api_error.empty())) {
-    std::string error = !api_error.empty()
-                            ? api_error
-                            : ("HTTP " + base::NumberToString(http_status));
+    std::string error =
+        BuildProviderErrorMessage(http_status, retry_after, api_error);
     DLOG(ERROR) << display_name_ << " stream error: " << error;
     std::move(ctx->done_callback).Run(std::move(error));
     return;
@@ -2033,6 +2044,11 @@ void OpenAiProvider::CancelRequest(const std::string& request_id) {
   // was never tracked, so no slot frees and no pump is needed here. No-op when
   // the id was blocking / active / unknown (the three states are exclusive).
   stream_guard_.RemoveQueued(request_id);
+}
+
+bool OpenAiProvider::IsRequestQueued(const std::string& request_id) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return stream_guard_.IsQueued(request_id);
 }
 
 void OpenAiProvider::OnStreamIdleTimeout(const std::string& request_id) {

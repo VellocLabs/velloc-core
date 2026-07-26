@@ -94,4 +94,38 @@ TEST(LlmErrorExtractTest, IgnoresSuccessfulAndNonJsonBodies) {
   EXPECT_EQ(ExtractApiErrorMessage(""), "");
 }
 
+// BuildProviderErrorMessage is the only channel the guest has for classifying
+// a provider failure: the host->guest LLM contract carries errors as a plain
+// string, so a status code or Retry-After that isn't in the text is lost. The
+// guest's classifier (nexus_web/src/utils/providerConnectivity.ts) reads
+// "HTTP <status>" and "retry-after: <n>" out of exactly this format.
+TEST(LlmErrorExtractTest, BuildsStatusPrefixedErrorMessage) {
+  EXPECT_EQ(BuildProviderErrorMessage(429, "", "Too many requests"),
+            "HTTP 429: Too many requests");
+  // No body message: status alone (the pre-existing "HTTP <code>" shape).
+  EXPECT_EQ(BuildProviderErrorMessage(500, "", ""), "HTTP 500");
+  // No status (net error / no headers): the message passes through unchanged,
+  // so a provider that cannot supply a status is no worse off than before.
+  EXPECT_EQ(BuildProviderErrorMessage(-1, "", "Connection reset"),
+            "Connection reset");
+  EXPECT_EQ(BuildProviderErrorMessage(0, "", "Connection reset"),
+            "Connection reset");
+}
+
+TEST(LlmErrorExtractTest, ForwardsDeltaSecondsRetryAfter) {
+  EXPECT_EQ(BuildProviderErrorMessage(429, "30", "Rate limit exceeded"),
+            "HTTP 429: Rate limit exceeded (retry-after: 30s)");
+  EXPECT_EQ(BuildProviderErrorMessage(503, "5", ""),
+            "HTTP 503 (retry-after: 5s)");
+  // HTTP-date and garbage forms are dropped rather than forwarded as text the
+  // guest would mis-parse.
+  EXPECT_EQ(BuildProviderErrorMessage(429, "Wed, 21 Oct 2026 07:28:00 GMT",
+                                      "Rate limit exceeded"),
+            "HTTP 429: Rate limit exceeded");
+  EXPECT_EQ(BuildProviderErrorMessage(429, "-5", "Rate limit exceeded"),
+            "HTTP 429: Rate limit exceeded");
+  EXPECT_EQ(BuildProviderErrorMessage(429, "soon", "Rate limit exceeded"),
+            "HTTP 429: Rate limit exceeded");
+}
+
 }  // namespace nexus

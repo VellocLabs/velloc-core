@@ -577,6 +577,19 @@ void LlmBroker::CancelRequest(const std::string& request_id) {
   }
 }
 
+bool LlmBroker::IsRequestQueued(const std::string& request_id) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Same broadcast rationale as CancelRequest: request ids are unique
+  // (host-generated UUIDs), so at most one provider can claim it.
+  for (const auto& [id, provider] : providers_) {
+    if (provider->IsRequestQueued(request_id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void LlmBroker::Shutdown() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   providers_.clear();

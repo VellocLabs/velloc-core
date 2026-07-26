@@ -79,6 +79,7 @@ class OpenAiProvider : public LlmProvider {
                 StreamChunkCallback chunk_callback,
                 StreamDoneCallback done_callback) override;
   void CancelRequest(const std::string& request_id) override;
+  bool IsRequestQueued(const std::string& request_id) const override;
   void FetchAvailableModels(FetchModelsCallback callback) override;
   void LoadCachedCatalogJson(const std::string& raw_json) override;
   std::string GetLastFetchedRawCatalogJson() const override;

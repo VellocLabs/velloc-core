@@ -233,6 +233,53 @@ TEST_F(LlmStreamGuardTest, RemoveQueuedPurgesCancelledRequestBeforeStart) {
   EXPECT_FALSE(guard.RemoveQueued("b"));
   EXPECT_FALSE(guard.RemoveQueued("does-not-exist"));
 }
+// IsQueued is what lets NexusLlmHost tell "waiting for a concurrency slot"
+// apart from "the provider went silent". Before it, an expired stream-read
+// hold was always reported as an idle timeout, so a request that had never
+// opened a socket was cancelled and re-enqueued at the BACK of this FIFO on
+// every guest retry — under a long head-of-line turn a background stream
+// could burn its whole retry ladder without ever reaching the provider.
+TEST_F(LlmStreamGuardTest, IsQueuedDistinguishesWaitingFromActive) {
+  LlmStreamGuard guard("openai");
+  guard.set_max_concurrent_streams(1);
+
+  // "a" holds the only slot and is ACTIVE, not queued.
+  guard.TrackStream("a");
+  EXPECT_FALSE(guard.IsQueued("a"));
+
+  LlmStreamGuard::QueuedStream q;
+  q.request_id = "b";
+  guard.EnqueueStream(std::move(q));
+  EXPECT_TRUE(guard.IsQueued("b"));
+  // Unknown ids are never queued.
+  EXPECT_FALSE(guard.IsQueued("nope"));
+
+  // Once it starts it is active, no longer queued.
+  guard.OnStreamFinished("a");
+  auto next = guard.DequeueStream();
+  ASSERT_TRUE(next.has_value());
+  guard.TrackStream(next->request_id);
+  EXPECT_FALSE(guard.IsQueued("b"));
+}
+
+// A BLOCKING request shares the same FIFO, so the host's call-deadline path
+// needs the same signal.
+TEST_F(LlmStreamGuardTest, IsQueuedCoversBlockingRequests) {
+  LlmStreamGuard guard("openai");
+  guard.set_max_concurrent_streams(1);
+  guard.TrackStream("stream-a");
+
+  LlmStreamGuard::QueuedStream blocking;
+  blocking.request_id = "call-b";
+  blocking.generate_callback =
+      base::BindOnce([](GenerateResult, std::optional<std::string>) {});
+  ASSERT_TRUE(blocking.is_blocking());
+  guard.EnqueueStream(std::move(blocking));
+
+  EXPECT_TRUE(guard.IsQueued("call-b"));
+  EXPECT_TRUE(guard.RemoveQueued("call-b"));
+  EXPECT_FALSE(guard.IsQueued("call-b"));
+}
 
 }  // namespace
 }  // namespace nexus

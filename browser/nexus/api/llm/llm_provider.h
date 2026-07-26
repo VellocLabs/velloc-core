@@ -86,6 +86,14 @@ class LlmProvider {
 
   virtual void CancelRequest(const std::string& request_id) = 0;
 
+  // True when `request_id` has been accepted but is still waiting for a
+  // concurrency slot — no upstream socket was ever opened, so it cannot have
+  // produced bytes and MUST NOT be judged by an idle/silence deadline. Only
+  // providers that implement a concurrency pool (today: OpenAI, via
+  // LlmStreamGuard) can answer yes; the default is "not queued", which
+  // preserves the previous behaviour for every other provider.
+  virtual bool IsRequestQueued(const std::string& request_id) const;
+
  protected:
   LlmProvider() = default;
 };

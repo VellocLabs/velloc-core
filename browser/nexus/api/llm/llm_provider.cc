@@ -18,4 +18,10 @@ std::string LlmProvider::GetLastFetchedRawCatalogJson() const {
   return std::string();
 }
 
+bool LlmProvider::IsRequestQueued(const std::string& /*request_id*/) const {
+  // Providers without a concurrency pool dispatch every request immediately,
+  // so nothing is ever "waiting for a slot".
+  return false;
+}
+
 }  // namespace nexus

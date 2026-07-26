@@ -154,12 +154,19 @@ class AnthropicProvider::StreamSession
       std::optional<mojo_base::BigBuffer> cached_metadata) override {
     response_code_ =
         head->headers ? head->headers->response_code() : 0;
+    // Retained for the error paths below: the guest classifies retries off the
+    // error STRING (see BuildProviderErrorMessage), so a dropped Retry-After
+    // means the backoff ignores the server's own directive.
+    retry_after_ =
+        head->headers
+            ? head->headers->GetNormalizedHeader("Retry-After").value_or("")
+            : "";
 
     if (!body.is_valid()) {
       Complete(response_code_ == 200
                    ? std::nullopt
-                   : std::make_optional("HTTP " +
-                                        base::NumberToString(response_code_)));
+                   : std::make_optional(BuildProviderErrorMessage(
+                         response_code_, retry_after_, std::string_view())));
       return;
     }
 
@@ -206,13 +213,13 @@ class AnthropicProvider::StreamSession
       // Shared extractor: raw JSON error bodies AND SSE-framed errors
       // (proxy gateways can wrap Anthropic errors as `data: {...}`
       // events — falling straight to "HTTP <code>" hides the message).
-      std::string error = ExtractApiErrorMessage(buffer_);
-      if (error.empty()) {
-        error = "HTTP " + base::NumberToString(response_code_);
+      std::string extracted = ExtractApiErrorMessage(buffer_);
+      if (extracted.empty()) {
         LOG(ERROR) << "Anthropic API returned HTTP " << response_code_
                    << " with unrecognized body: " << buffer_;
       }
-      Complete(std::move(error));
+      Complete(BuildProviderErrorMessage(response_code_, retry_after_,
+                                         extracted));
       return;
     }
 
@@ -489,6 +496,9 @@ class AnthropicProvider::StreamSession
   std::string buffer_;
   std::map<int, ContentBlock> blocks_;
   int response_code_ = 0;
+  // Raw `Retry-After` from the response head, captured in OnReceiveResponse
+  // and folded into the error string the guest classifies on.
+  std::string retry_after_;
   int prompt_tokens_ = 0;
   int completion_tokens_ = 0;
   // Cache fields reported on `message_start.message.usage`; Anthropic does
@@ -1458,9 +1468,21 @@ void AnthropicProvider::OnGenerateComplete(
     err_result.finish_reason = FinishReason::kError;
     err_result.raw_response = response_dict.Clone();
     const auto* message = api_error->FindString("message");
+    // Same reason as the streaming path: status + Retry-After only reach the
+    // guest's retry classifier if they are in the error string.
+    int http_status = -1;
+    std::string retry_after;
+    if (const auto* info = pending->loader->ResponseInfo();
+        info && info->headers) {
+      http_status = info->headers->response_code();
+      retry_after =
+          info->headers->GetNormalizedHeader("Retry-After").value_or("");
+    }
     std::move(pending->callback)
         .Run(std::move(err_result),
-             message ? *message : std::string("Unknown API error"));
+             BuildProviderErrorMessage(
+                 http_status, retry_after,
+                 message ? *message : std::string("Unknown API error")));
     return;
   }
 

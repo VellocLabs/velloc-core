@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "base/json/json_reader.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 
 namespace nexus {
@@ -33,7 +34,47 @@ std::string ExtractFromDict(const base::DictValue& parsed) {
   return std::string();
 }
 
+// Parses the delta-seconds form of Retry-After. Returns nullopt for the
+// HTTP-date form, garbage, or a negative value.
+std::optional<int> ParseRetryAfterSeconds(std::string_view raw) {
+  if (raw.empty()) {
+    return std::nullopt;
+  }
+  int seconds = 0;
+  if (!base::StringToInt(raw, &seconds) || seconds < 0) {
+    return std::nullopt;
+  }
+  return seconds;
+}
+
 }  // namespace
+
+std::string BuildProviderErrorMessage(int http_status,
+                                      std::string_view retry_after_header,
+                                      std::string_view message) {
+  std::string out;
+  // Only real HTTP status codes; providers pass -1 / 0 when the request never
+  // got a response (net error, no headers).
+  const bool has_status = http_status >= 100 && http_status <= 599;
+  if (has_status) {
+    out = "HTTP " + base::NumberToString(http_status);
+    if (!message.empty()) {
+      out += ": ";
+      out.append(message);
+    }
+  } else {
+    out.assign(message);
+  }
+
+  if (std::optional<int> retry_after =
+          ParseRetryAfterSeconds(retry_after_header)) {
+    if (!out.empty()) {
+      out += " ";
+    }
+    out += "(retry-after: " + base::NumberToString(*retry_after) + "s)";
+  }
+  return out;
+}
 
 std::string ExtractApiErrorMessage(const std::string& body) {
   // Fast path: the whole body is a JSON error object (the non-stream

@@ -216,6 +216,13 @@ class LlmBroker : public KeyedService {
 
   void CancelRequest(const std::string& request_id);
 
+  // True when any provider still holds `request_id` in its concurrency FIFO
+  // (accepted, never dispatched upstream). Mirrors CancelRequest's broadcast:
+  // the owning provider is not tracked here. Used by NexusLlmHost to tell
+  // "waiting for a slot" apart from "the provider went silent" before it
+  // fails a read on its idle deadline.
+  bool IsRequestQueued(const std::string& request_id) const;
+
   // KeyedService:
   void Shutdown() override;
 

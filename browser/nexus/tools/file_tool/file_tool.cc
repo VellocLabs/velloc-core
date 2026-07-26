@@ -789,10 +789,24 @@ std::string DecodeToUTF8(const std::string& raw, bool* is_utf16le) {
 // CC utils.ts normalizeQuotes: convert curly quotes to straight.
 // UTF-8: U+2018 '=E2 80 98, U+2019 '=E2 80 99,
 //        U+201C "=E2 80 9C, U+201D "=E2 80 9D.
-std::string NormalizeQuotes(const std::string& str) {
+// When `orig_offsets` is non-null, records for each normalized byte the byte
+// offset of the original character it came from, plus one end sentinel
+// (str.size()). Needed because in UTF-8 this normalization is NOT
+// length-preserving (a 3-byte curly quote becomes 1 ASCII byte) — unlike CC's
+// JS strings, where curly and straight quotes are one UTF-16 unit each and
+// normalized indices can be reused against the original directly.
+std::string NormalizeQuotes(const std::string& str,
+                            std::vector<size_t>* orig_offsets = nullptr) {
   std::string result;
   result.reserve(str.size());
+  if (orig_offsets) {
+    orig_offsets->clear();
+    orig_offsets->reserve(str.size() + 1);
+  }
   for (size_t i = 0; i < str.size();) {
+    if (orig_offsets) {
+      orig_offsets->push_back(i);
+    }
     if (i + 2 < str.size() &&
         static_cast<unsigned char>(str[i]) == 0xE2 &&
         static_cast<unsigned char>(str[i + 1]) == 0x80) {
@@ -811,11 +825,19 @@ std::string NormalizeQuotes(const std::string& str) {
     result.push_back(str[i]);
     ++i;
   }
+  if (orig_offsets) {
+    orig_offsets->push_back(str.size());  // end sentinel
+  }
   return result;
 }
 
 // CC utils.ts findActualString: exact match first, then quote-normalized.
 // Returns the actual substring from file_content that matches search_string.
+// The quote-normalized fallback must map the match BACK through the offset
+// map: a curly quote before the match shifts every later normalized position,
+// and a curly quote inside the match makes the original slice longer than the
+// search string — indexing file_content with normalized positions (the old
+// code) replaced the wrong bytes or split a quote mid-sequence.
 std::string FindActualString(const std::string& file_content,
                              const std::string& search_string,
                              bool* found) {
@@ -824,11 +846,15 @@ std::string FindActualString(const std::string& file_content,
     return search_string;
   }
   const std::string normalized_search = NormalizeQuotes(search_string);
-  const std::string normalized_file = NormalizeQuotes(file_content);
+  std::vector<size_t> orig_offsets;
+  const std::string normalized_file =
+      NormalizeQuotes(file_content, &orig_offsets);
   const size_t pos = normalized_file.find(normalized_search);
   if (pos != std::string::npos) {
     *found = true;
-    return file_content.substr(pos, search_string.size());
+    const size_t begin = orig_offsets[pos];
+    const size_t end = orig_offsets[pos + normalized_search.size()];
+    return file_content.substr(begin, end - begin);
   }
   *found = false;
   return std::string();

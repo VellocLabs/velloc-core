@@ -1454,6 +1454,47 @@ TEST(FileToolTest, EditNormalizesCurlyQuotesAndPreservesStyle) {
   EXPECT_EQ("\xE2\x80\x9Cgoodbye\xE2\x80\x9D world\n", written);
 }
 
+// FindActualString regression: curly quotes BEFORE the match. In UTF-8 the
+// quote normalization shrinks 3-byte curly quotes to 1 byte, so a normalized
+// match position does not line up with the original bytes once any curly
+// quote precedes it. The old code indexed file_content with the normalized
+// position and replaced a shifted region (corrupting the file); the offset
+// map in FindActualString must translate both ends of the match back to the
+// original byte range.
+TEST(FileToolTest, EditQuoteNormalizedMatchAfterEarlierCurlyQuotes) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("curly2.txt");
+  // “intro” says “target” end — curly quotes both before and inside the match.
+  ASSERT_TRUE(base::WriteFile(
+      file,
+      "\xE2\x80\x9Cintro\xE2\x80\x9D says \xE2\x80\x9Ctarget\xE2\x80\x9D "
+      "end\n"));
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  SeedReadState(session, task_environment, file);
+
+  CallResult result;
+  ::nexus::generated::EditInput input;
+  input.file_path = file.AsUTF8Unsafe();
+  input.old_string = "says \"target\"";  // straight quotes from model
+  input.new_string = "says \"done\"";
+  session.file_tool().RunEditOnUI(std::move(input),
+                                  MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.resolved) << result.error_message;
+  std::string written;
+  ASSERT_TRUE(base::ReadFileToString(file, &written));
+  // The untouched “intro” prefix must survive and the replacement must carry
+  // the file's curly style.
+  EXPECT_EQ(
+      "\xE2\x80\x9Cintro\xE2\x80\x9D says \xE2\x80\x9C"
+      "done\xE2\x80\x9D end\n",
+      written);
+}
+
 // Spec 2-2-6: trailing whitespace stripped from new_string for non-.md files.
 TEST(FileToolTest, EditStripsTrailingWhitespaceForNonMarkdown) {
   base::test::TaskEnvironment task_environment;

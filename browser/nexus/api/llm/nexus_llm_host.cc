@@ -23,6 +23,7 @@
 #include "custom_browser/browser/nexus/api/catalog/prompt_section_renderer.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
+#include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
 #include "custom_browser/browser/nexus/api/llm/llm_text_helpers.h"
@@ -1167,6 +1168,19 @@ void QueueErrorEvent(NexusLlmHost::StreamState* state,
   auto event = mojom::NexusLlmStreamEvent::New();
   event->type = mojom::NexusLlmStreamEventType::kError;
   event->error_message = message;
+  // Recover the typed fields from the canonical BuildProviderErrorMessage
+  // shape so the guest classifies retries off structure, not display text.
+  // Every stream error funnels through here (provider done_callback, error
+  // chunks, backpressure), so this is the single string→typed conversion
+  // point. Internal messages carry no canonical prefix/suffix → both fields
+  // stay unset and the guest falls back to its string classifier.
+  const ParsedProviderError parsed = ParseProviderErrorMessage(message);
+  if (parsed.http_status.has_value()) {
+    event->error_http_status = *parsed.http_status;
+  }
+  if (parsed.retry_after_seconds.has_value()) {
+    event->error_retry_after_seconds = *parsed.retry_after_seconds;
+  }
   EnqueueEvent(state, std::move(event));
   state->terminal_event_queued = true;
 }

@@ -1176,6 +1176,16 @@ base::DictValue StreamReadResultToBridge(
         error.Set("type", "provider_error");
         error.Set("message", event->error_message.value_or(
                                  std::string("Unknown LLM stream error")));
+        // Typed fields recovered by QueueErrorEvent from the canonical error
+        // string. Additive: old guests ignore unknown keys; new guests
+        // classify retries off these instead of regexing `message`, and fall
+        // back to the string when a field is absent (old host / no status).
+        if (event->error_http_status.has_value()) {
+          error.Set("httpStatus", *event->error_http_status);
+        }
+        if (event->error_retry_after_seconds.has_value()) {
+          error.Set("retryAfterSeconds", *event->error_retry_after_seconds);
+        }
 
         Dict chunk;
         chunk.Set("type", "error");

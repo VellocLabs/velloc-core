@@ -2,6 +2,7 @@
 
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 
+#include "base/strings/string_number_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
@@ -126,6 +127,68 @@ TEST(LlmErrorExtractTest, ForwardsDeltaSecondsRetryAfter) {
             "HTTP 429: Rate limit exceeded");
   EXPECT_EQ(BuildProviderErrorMessage(429, "soon", "Rate limit exceeded"),
             "HTTP 429: Rate limit exceeded");
+}
+
+// ParseProviderErrorMessage is the formatter's inverse: it is how the host
+// recovers typed fields (NexusLlmStreamEvent.error_http_status /
+// error_retry_after_seconds) from the provider->host string hop before the
+// wire. The round-trip MUST be exact — a drift between the two functions
+// silently downgrades the guest back to string classification.
+TEST(LlmErrorExtractTest, ParseRoundTripsEveryBuildShape) {
+  struct Case {
+    int status;
+    const char* retry_after;
+    const char* message;
+  };
+  const Case cases[] = {
+      {429, "30", "Rate limit exceeded"},
+      {500, "", ""},
+      {503, "5", ""},
+      {-1, "", "Connection reset"},
+      {-1, "7", "Connection reset"},
+      {200, "0", "odd but legal"},
+  };
+  for (const Case& c : cases) {
+    const std::string built =
+        BuildProviderErrorMessage(c.status, c.retry_after, c.message);
+    const ParsedProviderError parsed = ParseProviderErrorMessage(built);
+    const bool has_status = c.status >= 100 && c.status <= 599;
+    EXPECT_EQ(parsed.http_status.has_value(), has_status) << built;
+    if (has_status) {
+      EXPECT_EQ(*parsed.http_status, c.status) << built;
+    }
+    const bool has_retry = c.retry_after[0] != '\0';
+    EXPECT_EQ(parsed.retry_after_seconds.has_value(), has_retry) << built;
+    if (has_retry) {
+      int expected = 0;
+      ASSERT_TRUE(base::StringToInt(c.retry_after, &expected));
+      EXPECT_EQ(*parsed.retry_after_seconds, expected) << built;
+    }
+  }
+}
+
+TEST(LlmErrorExtractTest, ParseRejectsNonCanonicalShapes) {
+  // A 3-digit number anywhere but the anchored prefix is NOT a status.
+  EXPECT_FALSE(ParseProviderErrorMessage("no chunks for 190s").http_status);
+  EXPECT_FALSE(
+      ParseProviderErrorMessage("model needs 512 MiB more").http_status);
+  EXPECT_FALSE(ParseProviderErrorMessage("HTTP 99: too short").http_status);
+  EXPECT_FALSE(ParseProviderErrorMessage("HTTP 6000 nope").http_status);
+  // "HTTP 429x" — 4th char neither ':' / ' ' / end.
+  EXPECT_FALSE(ParseProviderErrorMessage("HTTP 429x").http_status);
+  // retry-after must be the terminal suffix with numeric seconds.
+  EXPECT_FALSE(ParseProviderErrorMessage(
+                   "(retry-after: 5s) but then more text")
+                   .retry_after_seconds);
+  EXPECT_FALSE(
+      ParseProviderErrorMessage("(retry-after: soons)").retry_after_seconds);
+  // Mid-string decoy + real terminal suffix: the terminal one wins.
+  const ParsedProviderError decoy = ParseProviderErrorMessage(
+      "HTTP 429: body quoted \"(retry-after: 99s)\" here (retry-after: 3s)");
+  ASSERT_TRUE(decoy.retry_after_seconds.has_value());
+  EXPECT_EQ(*decoy.retry_after_seconds, 3);
+  ASSERT_TRUE(decoy.http_status.has_value());
+  EXPECT_EQ(*decoy.http_status, 429);
 }
 
 }  // namespace nexus

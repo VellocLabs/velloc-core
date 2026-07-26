@@ -159,6 +159,15 @@ struct NexusLlmStreamEvent {
   NexusLlmFinishReason? finish_reason;
   NexusLlmUsage? usage;
   string? error_message;
+  // kError only: structured mirror of the canonical
+  // "HTTP <status>: <message> (retry-after: <n>s)" prefix/suffix that
+  // BuildProviderErrorMessage (llm_error_extract.cc) puts into
+  // error_message. Stamped by QueueErrorEvent via ParseProviderErrorMessage
+  // (the formatter's tested inverse) so the guest's retry classifier reads
+  // TYPED fields instead of regexing the display string. Absent when the
+  // message carries no status / directive (net errors, internal messages).
+  int32? error_http_status;
+  int32? error_retry_after_seconds;
 };
 
 struct NexusLlmStreamReadResult {

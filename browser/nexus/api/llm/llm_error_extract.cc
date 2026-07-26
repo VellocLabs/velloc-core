@@ -76,6 +76,49 @@ std::string BuildProviderErrorMessage(int http_status,
   return out;
 }
 
+ParsedProviderError ParseProviderErrorMessage(std::string_view message) {
+  ParsedProviderError out;
+
+  // Suffix: "(retry-after: <n>s)" at the very END of the string — the only
+  // place BuildProviderErrorMessage puts it. An occurrence elsewhere (e.g.
+  // quoted inside a provider body) is not the canonical suffix and is
+  // ignored; digits containing anything non-numeric fail StringToInt.
+  constexpr std::string_view kRetrySuffixOpen = "(retry-after: ";
+  if (message.ends_with("s)")) {
+    const size_t open = message.rfind(kRetrySuffixOpen);
+    if (open != std::string_view::npos) {
+      std::string_view digits =
+          message.substr(open + kRetrySuffixOpen.size(),
+                         message.size() - (open + kRetrySuffixOpen.size()) - 2);
+      int seconds = 0;
+      if (!digits.empty() && base::StringToInt(digits, &seconds) &&
+          seconds >= 0) {
+        out.retry_after_seconds = seconds;
+      }
+    }
+  }
+
+  // Prefix: "HTTP <3 digits>" at the very START, followed by ':', ' ' or
+  // end-of-string — exactly the shapes the formatter emits ("HTTP 500",
+  // "HTTP 429: msg", "HTTP 503 (retry-after: 5s)").
+  constexpr std::string_view kHttpPrefix = "HTTP ";
+  if (message.starts_with(kHttpPrefix)) {
+    const std::string_view rest = message.substr(kHttpPrefix.size());
+    if (rest.size() >= 3) {
+      const char next = rest.size() > 3 ? rest[3] : '\0';
+      if (next == '\0' || next == ':' || next == ' ') {
+        int status = 0;
+        if (base::StringToInt(rest.substr(0, 3), &status) && status >= 100 &&
+            status <= 599) {
+          out.http_status = status;
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
 std::string ExtractApiErrorMessage(const std::string& body) {
   // Fast path: the whole body is a JSON error object (the non-stream
   // error shape every major backend uses).

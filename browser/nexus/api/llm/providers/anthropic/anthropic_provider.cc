@@ -159,7 +159,8 @@ class AnthropicProvider::StreamSession
     // means the backoff ignores the server's own directive.
     retry_after_ =
         head->headers
-            ? head->headers->GetNormalizedHeader("Retry-After").value_or("")
+            ? std::string(head->headers->EnumerateHeader(nullptr, "Retry-After")
+                             .value_or(""))
             : "";
 
     if (!body.is_valid()) {
@@ -1476,7 +1477,9 @@ void AnthropicProvider::OnGenerateComplete(
         info && info->headers) {
       http_status = info->headers->response_code();
       retry_after =
-          info->headers->GetNormalizedHeader("Retry-After").value_or("");
+          std::string(
+              info->headers->EnumerateHeader(nullptr, "Retry-After")
+                  .value_or(""));
     }
     std::move(pending->callback)
         .Run(std::move(err_result),

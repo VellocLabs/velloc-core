@@ -1611,7 +1611,9 @@ void OpenAiProvider::OnGenerateComplete(
       // Captured here because the loader (and its headers) is erased below,
       // before the error branches that need it.
       retry_after =
-          info->headers->GetNormalizedHeader("Retry-After").value_or("");
+          std::string(
+              info->headers->EnumerateHeader(nullptr, "Retry-After")
+                  .value_or(""));
     }
     pending_loaders_.erase(it);
   }
@@ -1993,7 +1995,9 @@ void OpenAiProvider::OnStreamComplete(std::string request_id, bool success) {
         info && info->headers) {
       http_status = info->headers->response_code();
       retry_after =
-          info->headers->GetNormalizedHeader("Retry-After").value_or("");
+          std::string(
+              info->headers->EnumerateHeader(nullptr, "Retry-After")
+                  .value_or(""));
     }
   }
   const std::string api_error = ExtractApiErrorMessage(ctx->raw_response);

@@ -1,5 +1,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -147,6 +149,16 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   };
   copy_int("streamIdleTimeoutSeconds", "stream_idle_timeout_s");
   copy_int("maxConcurrentStreams", "max_concurrent_streams");
+  // User-created custom providers: the identity bits the broker needs to
+  // REBUILD the provider on a cold boot, when only the pref survives (see
+  // LoadProviderConfigs → EnsureCustomProvider). Without carrying these
+  // through, a custom provider would work for the session that created it and
+  // then vanish on the next browser start.
+  copy_string("displayName", "display_name");
+  copy_string("apiCompatibility", "api_compatibility");
+  if (std::optional<bool> is_custom = settings.FindBool("isCustomProvider")) {
+    out.Set("is_custom_provider", *is_custom);
+  }
   if (const base::ListValue* models = settings.FindList("enabledModels")) {
     out.Set("enabled_models", models->Clone());
   }
@@ -199,6 +211,10 @@ void LlmBroker::SetProviderConfigs(base::DictValue configs,
       merged = existing->Clone();
     }
     ApplySettingsConfigToPrefDict(config_val.GetDict(), merged);
+    // A user-created custom provider has no compiled-in id, so it must be
+    // materialised before it can be configured — otherwise every request
+    // addressed to it dies at `GetProvider() == nullptr`.
+    EnsureCustomProvider(provider_id, merged);
     if (LlmProvider* provider = GetProvider(provider_id)) {
       provider->Configure(merged);
     }
@@ -376,12 +392,12 @@ std::vector<ProviderInfo> LlmBroker::GetRegisteredProviders() const {
   // source of truth for display order.
   std::vector<ProviderInfo> infos;
   const auto registered_ids = LlmProviderFactory::GetRegisteredProviderIds();
-  infos.reserve(registered_ids.size());
+  infos.reserve(registered_ids.size() + dynamic_provider_ids_.size());
 
-  for (const std::string& id : registered_ids) {
+  auto append = [&](const std::string& id) {
     auto it = providers_.find(id);
     if (it == providers_.end()) {
-      continue;
+      return;
     }
     const LlmProvider& provider = *it->second;
 
@@ -392,6 +408,18 @@ std::vector<ProviderInfo> LlmBroker::GetRegisteredProviders() const {
     info.is_configured = provider.IsConfigured();
     info.models = provider.GetSupportedModels();
     infos.push_back(std::move(info));
+  };
+
+  for (const std::string& id : registered_ids) {
+    append(id);
+  }
+  // User-created custom providers last, in creation order. They MUST appear
+  // here: this list is what BuildCatalog walks, so leaving them out would hide
+  // them from the guest catalog — and the guest reads exactly that to decide
+  // whether it can address a custom provider directly or has to re-point a
+  // compiled-in slot at it first.
+  for (const std::string& id : dynamic_provider_ids_) {
+    append(id);
   }
 
   return infos;
@@ -524,6 +552,12 @@ void LlmBroker::ReloadProvidersFromPrefs() {
 
   providers_.clear();
   active_provider_id_.clear();
+  // Dropped alongside `providers_` so a DELETED custom provider actually goes
+  // away: the reset path removes its `kNexusProviderConfigs` entry and then
+  // calls here, and LoadProviderConfigs only rebuilds what the pref still
+  // carries. Keeping these would leave a phantom provider in the catalog.
+  dynamic_provider_ids_.clear();
+  dynamic_provider_dialects_.clear();
   InitializeProviders();
   LoadProviderConfigs();
 }
@@ -626,11 +660,68 @@ void LlmBroker::LoadProviderConfigs() {
       continue;
     }
 
+    // Rebuild user-created custom providers before configuring them — on a
+    // cold boot this pref replay is the ONLY thing that knows they exist.
+    EnsureCustomProvider(provider_id, config_val.GetDict());
+
     LlmProvider* provider = GetProvider(provider_id);
     if (provider) {
       provider->Configure(config_val.GetDict());
     }
   }
+}
+
+bool LlmBroker::EnsureCustomProvider(const std::string& provider_id,
+                                     const base::DictValue& config) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Only configs the settings page marked as user-created qualify. Everything
+  // else — built-in providers, and the two compiled-in custom endpoints —
+  // already has an instance from InitializeProviders().
+  if (!config.FindBool("is_custom_provider").value_or(false)) {
+    return false;
+  }
+  const std::string* dialect = config.FindString("api_compatibility");
+  if (!dialect || dialect->empty()) {
+    // A custom provider without a dialect cannot be built. Leave it absent
+    // rather than guessing: the guest falls back to routing through the
+    // compiled-in slot for its dialect, which still works.
+    DLOG(WARNING) << "Custom provider " << provider_id
+                  << " has no api_compatibility; not instantiating.";
+    return false;
+  }
+
+  auto existing = dynamic_provider_dialects_.find(provider_id);
+  const bool already_built = existing != dynamic_provider_dialects_.end();
+  if (already_built && existing->second == *dialect) {
+    return true;  // Same provider, same wire format — nothing to do.
+  }
+  if (!already_built && providers_.find(provider_id) != providers_.end()) {
+    // The id collides with a compiled-in provider. Never shadow one: the
+    // settings page reserves those ids when generating custom ids, so this
+    // only happens with a hand-edited settings.json.
+    DLOG(ERROR) << "Custom provider id " << provider_id
+                << " collides with a built-in provider; ignoring.";
+    return false;
+  }
+
+  const std::string* display_name = config.FindString("display_name");
+  auto provider = LlmProviderFactory::CreateCustomProvider(
+      provider_id, display_name ? *display_name : std::string(), *dialect,
+      url_loader_factory_);
+  if (!provider) {
+    return false;
+  }
+
+  // A dialect flip replaces the instance — the wire format is bound at
+  // construction. The caller re-applies Configure() right after, so the base
+  // URL / key survive the swap.
+  providers_[provider_id] = std::move(provider);
+  dynamic_provider_dialects_[provider_id] = *dialect;
+  if (!already_built) {
+    dynamic_provider_ids_.push_back(provider_id);
+  }
+  return true;
 }
 
 void LlmBroker::OnCatalogRefreshed(const std::string& provider_id,

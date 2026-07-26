@@ -179,6 +179,14 @@ class LlmBroker : public KeyedService {
   // Returns a raw pointer to the provider with |provider_id|, or nullptr.
   LlmProvider* GetProvider(const std::string& provider_id) const;
 
+  // Ids of the providers created from USER-CREATED custom-provider configs
+  // (see EnsureCustomProvider), in creation order. Empty on a profile with no
+  // custom providers, which is why nothing else in the browser needs to know
+  // they exist.
+  const std::vector<std::string>& dynamic_provider_ids() const {
+    return dynamic_provider_ids_;
+  }
+
   // OAuth lifecycle for subscription-backed providers (ChatGPT Plus/Pro, …).
   // Owned by the broker so it shares the profile's prefs + URL loader factory.
   NexusOAuthManager* oauth_manager() const { return oauth_manager_.get(); }
@@ -230,6 +238,27 @@ class LlmBroker : public KeyedService {
   void InitializeProviders();
   void LoadProviderConfigs();
 
+  // Materialise the provider a USER-CREATED custom endpoint needs.
+  //
+  // The factory can only build compiled-in ids, so a provider the user added
+  // in Settings would be unroutable (`GetProvider` → nullptr → the request
+  // dies). Its config carries everything needed to build one — the dialect
+  // (`api_compatibility`) and the user's name — so we instantiate it on
+  // demand, from BOTH config paths: the guest's `publishProviderConfigs`
+  // (SetProviderConfigs) and the cold-boot pref replay (LoadProviderConfigs).
+  //
+  // No-op (returns false) when `config` is not a custom provider, so passing
+  // every config through this is safe. Idempotent for an unchanged provider;
+  // a config whose DIALECT changed replaces the instance, because the wire
+  // format is bound at construction — without that, flipping a saved provider
+  // from OpenAI to Anthropic would keep speaking the old format.
+  //
+  // Removal needs nothing here: deleting a provider clears its
+  // `kNexusProviderConfigs` entry and calls ReloadProvidersFromPrefs(), which
+  // rebuilds this map from what survived.
+  bool EnsureCustomProvider(const std::string& provider_id,
+                            const base::DictValue& config);
+
   // Invoked by the OAuth manager after tokens are persisted; reconfigures the
   // matching in-memory provider from prefs so IsConfigured() reflects the new
   // credentials immediately.
@@ -259,6 +288,15 @@ class LlmBroker : public KeyedService {
   // Keyed by provider ID.
   std::map<std::string, std::unique_ptr<LlmProvider>> providers_;
   std::string active_provider_id_;
+
+  // The subset of `providers_` built by EnsureCustomProvider, in creation
+  // order — `providers_` is a std::map, so it cannot answer "which of these
+  // are user-created, and in what order do I show them". GetRegisteredProviders
+  // appends these AFTER the factory's fixed display order.
+  std::vector<std::string> dynamic_provider_ids_;
+  // Dialect each dynamic provider was built with, so a config whose
+  // `api_compatibility` changed can be detected and rebuilt.
+  std::map<std::string, std::string> dynamic_provider_dialects_;
 
   std::unique_ptr<NexusOAuthManager> oauth_manager_;
 

@@ -127,22 +127,22 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
     return std::make_unique<OllamaProvider>(url_loader_factory);
 
   // User-configurable custom endpoints. No default base URL (the user supplies
-  // it in Settings → Models) and no required API key — many compatible
-  // endpoints run keyless (e.g. cursor-api-proxy, LM Studio, local gateways).
-  // The wire dialect is chosen by which class we instantiate: custom-openai
-  // speaks OpenAI /chat/completions, custom-anthropic speaks the Anthropic
-  // /v1/messages API.
+  // it in Settings → Provider connection) and no required API key — many
+  // compatible endpoints run keyless (e.g. cursor-api-proxy, LM Studio, local
+  // gateways). The wire dialect is chosen by which class we instantiate:
+  // custom-openai speaks OpenAI /chat/completions, custom-anthropic speaks the
+  // Anthropic /v1/messages API.
+  //
+  // These two are the only custom endpoints with a compiled-in id. A provider
+  // the user CREATES gets its own instance through CreateCustomProvider(),
+  // built the same way with the user's id and name.
   if (provider_id == "custom-openai") {
-    return std::make_unique<OpenAiProvider>(
-        url_loader_factory, "custom-openai", "Custom (OpenAI-compatible)",
-        /*default_base_url=*/std::string(), /*uses_responses_api=*/false,
-        /*extra_headers=*/std::map<std::string, std::string>{},
-        /*requires_api_key=*/false);
+    return CreateCustomProvider(provider_id, "Custom (OpenAI-compatible)",
+                                "openai", url_loader_factory);
   }
   if (provider_id == "custom-anthropic") {
-    return std::make_unique<AnthropicProvider>(
-        url_loader_factory, "custom-anthropic", "Custom (Anthropic-compatible)",
-        /*default_base_url=*/std::string(), /*requires_api_key=*/false);
+    return CreateCustomProvider(provider_id, "Custom (Anthropic-compatible)",
+                                "anthropic", url_loader_factory);
   }
 
   for (const auto& config : kOpenAiCompatConfigs) {
@@ -154,6 +154,35 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
   }
 
   DLOG(ERROR) << "Unknown LLM provider ID: " << provider_id;
+  return nullptr;
+}
+
+// static
+std::unique_ptr<LlmProvider> LlmProviderFactory::CreateCustomProvider(
+    const std::string& provider_id,
+    const std::string& display_name,
+    const std::string& api_compatibility,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) {
+  if (provider_id.empty()) {
+    return nullptr;
+  }
+  const std::string& name = display_name.empty() ? provider_id : display_name;
+
+  if (api_compatibility == "openai") {
+    return std::make_unique<OpenAiProvider>(
+        url_loader_factory, provider_id, name,
+        /*default_base_url=*/std::string(), /*uses_responses_api=*/false,
+        /*extra_headers=*/std::map<std::string, std::string>{},
+        /*requires_api_key=*/false);
+  }
+  if (api_compatibility == "anthropic") {
+    return std::make_unique<AnthropicProvider>(
+        url_loader_factory, provider_id, name,
+        /*default_base_url=*/std::string(), /*requires_api_key=*/false);
+  }
+
+  DLOG(ERROR) << "Unknown API compatibility '" << api_compatibility
+              << "' for custom provider " << provider_id;
   return nullptr;
 }
 

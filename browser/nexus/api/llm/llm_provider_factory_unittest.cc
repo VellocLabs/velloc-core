@@ -140,5 +140,74 @@ TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveDistinctBaseUrls) {
   EXPECT_EQ(deepseek->GetDisplayName(), "DeepSeek");
 }
 
+// --- User-created custom providers -----------------------------------------
+// A provider the user adds in Settings has no compiled-in id, so the factory
+// must be able to build one from (id, name, dialect) alone. Without this the
+// broker cannot materialise it, `GetProvider()` returns null, and every
+// request addressed to it dies.
+
+TEST(LlmProviderFactoryTest, CreateCustomProviderBuildsPerDialectInstances) {
+  auto openai = LlmProviderFactory::CreateCustomProvider(
+      "custom-abc-provider", "ABC Provider", "openai", NullLoaderFactory());
+  ASSERT_TRUE(openai);
+  EXPECT_EQ(openai->GetId(), "custom-abc-provider");
+  EXPECT_EQ(openai->GetDisplayName(), "ABC Provider");
+  // Same shape as the compiled-in custom endpoints: no default URL, no key.
+  EXPECT_TRUE(openai->GetDefaultBaseUrl().empty());
+  EXPECT_FALSE(openai->IsConfigured());
+
+  auto anthropic = LlmProviderFactory::CreateCustomProvider(
+      "custom-gateway", "Internal Gateway", "anthropic", NullLoaderFactory());
+  ASSERT_TRUE(anthropic);
+  EXPECT_EQ(anthropic->GetId(), "custom-gateway");
+  EXPECT_EQ(anthropic->GetDisplayName(), "Internal Gateway");
+  EXPECT_TRUE(anthropic->GetDefaultBaseUrl().empty());
+}
+
+// Two custom providers on the SAME dialect must be independent instances —
+// that independence is the whole point of building them per-provider instead
+// of re-pointing one shared endpoint slot at each in turn.
+TEST(LlmProviderFactoryTest, CustomProvidersOnOneDialectDoNotShareConfig) {
+  auto first = LlmProviderFactory::CreateCustomProvider(
+      "custom-abc-provider", "ABC Provider", "openai", NullLoaderFactory());
+  auto second = LlmProviderFactory::CreateCustomProvider(
+      "custom-gateway", "Internal Gateway", "openai", NullLoaderFactory());
+  ASSERT_TRUE(first && second);
+
+  base::DictValue first_cfg;
+  first_cfg.Set("base_url", "https://api.abc.example/v1");
+  first_cfg.Set("api_key", "sk-abc");
+  ASSERT_TRUE(first->Configure(first_cfg));
+
+  base::DictValue second_cfg;
+  second_cfg.Set("base_url", "http://gateway.internal/v1");
+  ASSERT_TRUE(second->Configure(second_cfg));
+
+  EXPECT_EQ(first->GetBaseUrl(), "https://api.abc.example/v1");
+  EXPECT_EQ(second->GetBaseUrl(), "http://gateway.internal/v1");
+}
+
+TEST(LlmProviderFactoryTest, CreateCustomProviderRejectsBadInput) {
+  // Unknown dialect: refuse rather than guess a wire format.
+  EXPECT_EQ(LlmProviderFactory::CreateCustomProvider(
+                "custom-x", "X", "grpc", NullLoaderFactory()),
+            nullptr);
+  EXPECT_EQ(LlmProviderFactory::CreateCustomProvider(
+                "custom-x", "X", "", NullLoaderFactory()),
+            nullptr);
+  EXPECT_EQ(LlmProviderFactory::CreateCustomProvider(
+                "", "X", "openai", NullLoaderFactory()),
+            nullptr);
+}
+
+// A provider whose name the user left blank still needs SOME display name;
+// falling back to the id keeps the settings list and error messages readable.
+TEST(LlmProviderFactoryTest, CustomProviderFallsBackToIdForDisplayName) {
+  auto provider = LlmProviderFactory::CreateCustomProvider(
+      "custom-unnamed", "", "openai", NullLoaderFactory());
+  ASSERT_TRUE(provider);
+  EXPECT_EQ(provider->GetDisplayName(), "custom-unnamed");
+}
+
 }  // namespace
 }  // namespace nexus

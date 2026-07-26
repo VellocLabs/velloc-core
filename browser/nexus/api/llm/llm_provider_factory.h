@@ -33,6 +33,23 @@ class LlmProviderFactory {
       const std::string& provider_id,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
 
+  // Creates a provider for a USER-CREATED custom endpoint — one the user
+  // added in Settings -> Provider connection, which by definition has no
+  // compiled-in ID. |provider_id| is the settings-generated `custom-<slug>`,
+  // |display_name| the user's name for it, and |api_compatibility| the wire
+  // dialect it speaks ("openai" or "anthropic"). Like the two built-in custom
+  // endpoints, the instance ships with NO default base URL (the user supplies
+  // one via Configure()) and does not require an API key — many compatible
+  // gateways run keyless.
+  //
+  // Returns nullptr for an unrecognised dialect. The broker calls this from
+  // the published provider configs; see LlmBroker::EnsureCustomProvider.
+  static std::unique_ptr<LlmProvider> CreateCustomProvider(
+      const std::string& provider_id,
+      const std::string& display_name,
+      const std::string& api_compatibility,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+
   // Returns the IDs of every registered provider, in display order.
   static std::vector<std::string> GetRegisteredProviderIds();
 

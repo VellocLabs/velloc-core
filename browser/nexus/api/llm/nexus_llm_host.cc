@@ -499,10 +499,11 @@ std::string ResolveProviderIconSvg(const std::string& provider_id) {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_GLM_SVG;
   } else if (provider_id == "deepseek") {
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_DEEPSEEK_SVG;
-  } else if (provider_id == "custom-openai" ||
-             provider_id == "custom-anthropic") {
-    // Both user-configured custom-endpoint dialects share one neutral cube
-    // mark (no vendor brand applies to an arbitrary endpoint).
+  } else if (provider_id.starts_with("custom-")) {
+    // Every custom endpoint — the two compiled-in dialects and any provider
+    // the user created — shares one neutral cube mark; no vendor brand applies
+    // to an arbitrary endpoint. (The guest overrides this with the icon the
+    // user picked; this is what the browser-side settings UI shows.)
     resource_id = IDR_CUSTOM_BROWSER_COMPONENTS_NEXUS_CUSTOM_SVG;
   }
 
@@ -1836,18 +1837,37 @@ void NexusLlmHost::OnCallDeadlineTimeout(const std::string& request_id) {
 
   // Same queue-vs-silence distinction as OnStreamReadHoldTimeout: a blocking
   // call that is still in the provider's FIFO never opened a socket, so the
-  // deadline measured OUR queue rather than the provider. Report it as
-  // `queued` so the guest can re-issue instead of counting a provider
-  // timeout. Unlike the stream path this DOES cancel — dropping the queue
-  // entry is required, since the guest re-issues as a brand-new request id
-  // and a surviving entry would later start an orphan whose completion
+  // deadline measured OUR queue rather than the provider. Unlike the stream
+  // path this DOES cancel — the guest re-issues as a brand-new request id, so
+  // a surviving queue entry would later start an orphan whose completion
   // callback has nowhere to go.
+  //
+  // Deliberately resolved as an ERROR, not `status:'queued'`: a guest that
+  // predates the queued verdict only special-cases `'timeout'` — on any other
+  // status it would read `result.message`, which is the default-constructed
+  // EMPTY assistant message below, and render a silent empty turn (the
+  // "silent stop" bug class). An error string degrades safely on every guest
+  // vintage: all of them throw it into the provider-retry classifier. The
+  // wording is classifier-facing — "timed out"/"upstream" are the keywords
+  // `classifyProviderConnectivityIssue` (nexus_web providerConnectivity.ts)
+  // maps to a RETRYABLE verdict, so the retry ladder (with backoff) owns the
+  // re-issue on both old and new guests.
   LlmBroker* broker = GetBroker(profile_);
   const bool was_queued = broker && broker->IsRequestQueued(request_id);
 
   // Cancel the upstream loader so the provider socket closes server-side.
   if (broker) {
     broker->CancelRequest(request_id);
+  }
+
+  if (was_queued) {
+    std::move(pending.callback)
+        .Run(false, nullptr,
+             std::make_optional<std::string>(
+                 "queue_timeout: request timed out waiting for a provider "
+                 "concurrency slot and was cancelled before dispatch (the "
+                 "upstream provider never received it)"));
+    return;
   }
 
   pending.timeline.Set("t_resolve", NowEpochMs());
@@ -1857,7 +1877,7 @@ void NexusLlmHost::OnCallDeadlineTimeout(const std::string& request_id) {
   // adapter hop is same-process so a null message is tolerated, but a remote
   // pipe would CHECK-fail validation on the unset non-nullable struct field.
   response->message = mojom::NexusLlmAssistantMessage::New();
-  response->status = was_queued ? "queued" : "timeout";
+  response->status = "timeout";
   response->timeline = std::move(pending.timeline);
   std::move(pending.callback).Run(true, std::move(response), std::nullopt);
 }

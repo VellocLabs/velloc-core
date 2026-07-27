@@ -2,3 +2,7 @@
 # helper modules under resources/grit/. Not part of the source tree.
 __pycache__/
 *.pyc
+
+# Runtime working dir (agent worktrees, handoffs). Untracked content here
+# would block custom_browser_tag.py's release clean check.
+/.velloc/

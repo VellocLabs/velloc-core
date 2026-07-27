@@ -25,7 +25,9 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
+#include "net/http/http_response_headers.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "url/gurl.h"
 #include "url/gurl.h"
 
 namespace nexus {
@@ -183,6 +185,12 @@ struct OpenAiProvider::StreamContext {
   std::optional<std::string> pending_finish_reason;
   std::optional<base::DictValue> pending_usage;
   bool finish_emitted = false;
+
+  // Opt-in wire observation, seeded in DoStream with the request-body digest
+  // when the guest asked for it and completed in OnStreamResponseStarted.
+  // nullopt for every request that did not opt in.
+  std::optional<LlmObservation> observation;
+  base::TimeTicks started_at;
 
   // -------- Responses API state --------
   // Set at DoStream() time when the call is routed to /v1/responses; selects
@@ -1574,6 +1582,16 @@ void OpenAiProvider::StartGenerate(const std::string& request_id,
   auto* loader_ptr = loader.get();
   pending_loaders_.emplace(request_id, std::move(loader));
 
+  // Opt-in wire observation. Nothing is hashed or recorded unless the guest
+  // flagged this request.
+  if (ShouldCaptureObservations(call_options)) {
+    LlmObservation observation;
+    CaptureRequestBody(body_json, &observation);
+    pending_observations_.emplace(
+        request_id,
+        PendingObservation{std::move(observation), base::TimeTicks::Now()});
+  }
+
   // Count the slot BEFORE starting the loader. TrackBlocking (not TrackStream)
   // deliberately does NOT arm the idle watchdog: a blocking DownloadToString
   // delivers the whole body at once (no per-chunk idle signal), so the
@@ -1602,6 +1620,16 @@ void OpenAiProvider::OnGenerateComplete(
   int http_status = -1;
   std::string retry_after;
 
+  // Opt-in wire observation for this request; absent unless the guest asked.
+  std::optional<LlmObservation> observation;
+  if (auto obs_it = pending_observations_.find(request_id);
+      obs_it != pending_observations_.end()) {
+    observation = std::move(obs_it->second.observation);
+    observation->ttfb_ms = static_cast<int>(
+        (base::TimeTicks::Now() - obs_it->second.started_at).InMilliseconds());
+    pending_observations_.erase(obs_it);
+  }
+
   auto it = pending_loaders_.find(request_id);
   if (it != pending_loaders_.end()) {
     net_error = it->second->NetError();
@@ -1614,6 +1642,10 @@ void OpenAiProvider::OnGenerateComplete(
           std::string(
               info->headers->EnumerateHeader(nullptr, "Retry-After")
                   .value_or(""));
+      // Same reason, same last chance: the head is gone after the erase.
+      if (observation.has_value()) {
+        CaptureResponseHeaders(info->headers.get(), &*observation);
+      }
     }
     pending_loaders_.erase(it);
   }
@@ -1658,6 +1690,10 @@ void OpenAiProvider::OnGenerateComplete(
   GenerateResult result = use_responses_api
                               ? ParseResponsesApiResponse(dict)
                               : ParseResponse(dict);
+  if (observation.has_value()) {
+    CaptureResponseBodyMarkers(dict, &*observation);
+    result.observation = std::move(observation);
+  }
   std::move(callback).Run(std::move(result), std::nullopt);
 }
 
@@ -1756,10 +1792,44 @@ void OpenAiProvider::StartStream(const std::string& request_id,
 
   active_streams_.emplace(request_id, std::move(ctx));
 
+  // Opt-in wire observation: the response head is only reachable through this
+  // callback, and only while the stream is alive. Both the seeding and the
+  // callback registration are skipped entirely when the guest did not ask.
+  if (ShouldCaptureObservations(call_options)) {
+    auto stream_it = active_streams_.find(request_id);
+    CHECK(stream_it != active_streams_.end());
+    LlmObservation observation;
+    CaptureRequestBody(body_json, &observation);
+    stream_it->second->observation = std::move(observation);
+    stream_it->second->started_at = base::TimeTicks::Now();
+    loader_ptr->SetOnResponseStartedCallback(
+        base::BindOnce(&OpenAiProvider::OnStreamResponseStarted,
+                       weak_factory_.GetWeakPtr(), request_id));
+  }
+
   // Begin the idle watchdog + count the slot BEFORE starting the loader.
   stream_guard_.TrackStream(request_id);
 
   loader_ptr->DownloadAsStream(url_loader_factory_.get(), consumer_ptr);
+}
+
+void OpenAiProvider::OnStreamResponseStarted(
+    std::string request_id,
+    const GURL& final_url,
+    const network::mojom::URLResponseHead& head) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  auto it = active_streams_.find(request_id);
+  if (it == active_streams_.end() || !it->second->observation.has_value()) {
+    return;
+  }
+  StreamContext& ctx = *it->second;
+  CaptureResponseHeaders(head.headers.get(), &*ctx.observation);
+  ctx.observation->ttfb_ms = static_cast<int>(
+      (base::TimeTicks::Now() - ctx.started_at).InMilliseconds());
+  // Not a model event — the host parks it on the stream and hands it to the
+  // guest's next streamRead; it never enters the transcript.
+  ctx.chunk_callback.Run(BuildObservationChunk(*ctx.observation));
 }
 
 void OpenAiProvider::OnStreamDataReceived(std::string request_id,

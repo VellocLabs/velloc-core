@@ -927,8 +927,46 @@ mojom::NexusLlmRequestParamsPtr BuildMojoLlmRequest(
   if (const Dict* ext = payload.FindDict("providerBodyExtension")) {
     request->provider_body_extension = ext->Clone();
   }
+  // Opt-in wire observation. Absent (old guest, or integrity inactive) leaves
+  // the mojom default false, so nothing is collected and no observation is
+  // returned — see llm_observation.h.
+  request->capture_observations =
+      payload.FindBool("captureObservations").value_or(false);
 
   return request;
+}
+
+base::DictValue ObservationToBridge(const mojom::NexusLlmObservation& obs) {
+  Dict result;
+  if (obs.http_status.has_value()) {
+    result.Set("httpStatus", *obs.http_status);
+  }
+  if (!obs.headers.empty()) {
+    Dict headers;
+    for (const auto& [name, value] : obs.headers) {
+      headers.Set(name, value);
+    }
+    result.Set("headers", std::move(headers));
+  }
+  if (obs.response_id.has_value()) {
+    result.Set("responseId", *obs.response_id);
+  }
+  if (obs.service_tier.has_value()) {
+    result.Set("serviceTier", *obs.service_tier);
+  }
+  if (obs.raw_model_id.has_value()) {
+    result.Set("rawModelId", *obs.raw_model_id);
+  }
+  if (obs.request_body_digest.has_value()) {
+    result.Set("requestBodyDigest", *obs.request_body_digest);
+  }
+  if (obs.request_body_bytes.has_value()) {
+    result.Set("requestBodyBytes", *obs.request_body_bytes);
+  }
+  if (obs.ttfb_ms.has_value()) {
+    result.Set("ttfbMs", *obs.ttfb_ms);
+  }
+  return result;
 }
 
 base::DictValue CatalogToBridge(const mojom::NexusLlmCatalog& catalog) {
@@ -1040,6 +1078,10 @@ base::DictValue CallResultToBridge(const mojom::NexusLlmCallResult& result) {
   }
   if (result.timeline.has_value() && !result.timeline->empty()) {
     response.Set("timeline", result.timeline->Clone());
+  }
+  // Non-null only when this request set `captureObservations`.
+  if (result.observation) {
+    response.Set("observation", ObservationToBridge(*result.observation));
   }
   return response;
 }
@@ -1216,6 +1258,11 @@ base::DictValue StreamReadResultToBridge(
   }
   if (result.timeline.has_value() && !result.timeline->empty()) {
     response.Set("timeline", result.timeline->Clone());
+  }
+  // Non-null only when the stream's request opted in; the host stamps it on
+  // the read that carried the response head.
+  if (result.observation) {
+    response.Set("observation", ObservationToBridge(*result.observation));
   }
   return response;
 }

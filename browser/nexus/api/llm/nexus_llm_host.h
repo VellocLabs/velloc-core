@@ -149,6 +149,11 @@ class NexusLlmHost {
     bool done = false;
     // Held streamRead waiting for data; nullopt when no read is pending.
     std::optional<PendingStreamRead> pending_read;
+    // Opt-in wire observation (llm_observation.h) parsed off the provider's
+    // `{"type":"observation"}` chunk. Set at most once per stream and MOVED
+    // out onto the first streamRead result that follows, so the guest sees it
+    // exactly once. Stays empty for every request that did not opt in.
+    std::optional<LlmObservation> observation;
   };
 
  private:

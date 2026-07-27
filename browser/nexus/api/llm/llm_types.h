@@ -8,6 +8,7 @@
 
 #include "base/functional/callback.h"
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/llm/llm_observation.h"
 
 namespace nexus {
 
@@ -267,6 +268,10 @@ struct GenerateResult {
   std::optional<base::DictValue> raw_response;
   std::optional<std::vector<base::DictValue>> warnings;
   std::optional<base::DictValue> provider_metadata;
+  // Opt-in wire observation (llm_observation.h). Set ONLY when the request's
+  // call options carried `captureObservations`; the guest's endpoint-integrity
+  // checks consume it. Absent means "not requested", never "nothing to see".
+  std::optional<LlmObservation> observation;
 };
 
 // =============================================================================

@@ -116,6 +116,24 @@ struct NexusLlmMessage {
   array<NexusLlmContentPart> content;
 };
 
+// Host-captured wire evidence for one request. Filled ONLY when the request
+// set |capture_observations|; otherwise nothing is collected and the field
+// stays null all the way back to the guest. See llm_observation.h for the
+// header allowlist and the privacy contract.
+struct NexusLlmObservation {
+  int32? http_status;
+  // Lowercased header name -> value. Allowlist only (no credentials, no
+  // cookies, no response content).
+  map<string, string> headers;
+  string? response_id;
+  string? service_tier;
+  // Model id exactly as the provider body reported it, pre-normalization.
+  string? raw_model_id;
+  string? request_body_digest;
+  int32? request_body_bytes;
+  int32? ttfb_ms;
+};
+
 struct NexusLlmRequestParams {
   array<NexusLlmMessage> messages;
   mojo_base.mojom.Value? system_prompt;
@@ -127,6 +145,10 @@ struct NexusLlmRequestParams {
   mojo_base.mojom.DictionaryValue? provider_body_extension;
   array<NexusLlmTool> tools;
   mojo_base.mojom.DictionaryValue? tool_use_context;
+  // Opt in to host-side wire observation for THIS request. Default false =
+  // collect nothing, return nothing. The guest sets it only while endpoint
+  // integrity is actively inspecting the request.
+  bool capture_observations = false;
 };
 
 struct NexusLlmAssistantMessage {
@@ -146,6 +168,8 @@ struct NexusLlmCallResult {
   // (t_recv_native / t_host_read / t_resolve) so the JS guest can log
   // end-to-end latency without an extra round-trip.
   mojo_base.mojom.DictionaryValue? timeline;
+  // Non-null only when the request set |capture_observations|.
+  NexusLlmObservation? observation;
 };
 
 struct NexusLlmStreamEvent {
@@ -180,6 +204,10 @@ struct NexusLlmStreamReadResult {
   // Optional host-captured epoch-ms stamps (t_recv_native / t_host_read /
   // t_resolve) so the JS guest can log end-to-end latency.
   mojo_base.mojom.DictionaryValue? timeline;
+  // Non-null only when the stream's request set |capture_observations|, and
+  // only on the read that carries the response head (the first non-empty one
+  // in practice). Later reads leave it null.
+  NexusLlmObservation? observation;
 };
 
 // NOTE: This file is "data types only" — the LLM bridge is dispatched via

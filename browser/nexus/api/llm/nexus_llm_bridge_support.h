@@ -56,6 +56,9 @@ mojom::NexusLlmRequestParamsPtr BuildMojoLlmRequest(
 
 base::DictValue CatalogToBridge(const mojom::NexusLlmCatalog& catalog);
 base::DictValue CallResultToBridge(const mojom::NexusLlmCallResult& result);
+// Opt-in wire observation -> guest dict. Only ever called for requests that
+// set `captureObservations`; see llm_observation.h for the privacy contract.
+base::DictValue ObservationToBridge(const mojom::NexusLlmObservation& obs);
 base::DictValue StreamReadResultToBridge(
     NexusLlmBridgeStreamState* state,
     const mojom::NexusLlmStreamReadResult& result,

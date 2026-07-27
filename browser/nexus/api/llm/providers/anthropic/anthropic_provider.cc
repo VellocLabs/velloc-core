@@ -1,6 +1,7 @@
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_provider.h"
 
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
+#include "custom_browser/browser/nexus/api/llm/llm_observation.h"
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_schema_sanitizer.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
@@ -17,12 +18,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_request_body.h"
@@ -162,6 +165,17 @@ class AnthropicProvider::StreamSession
             ? std::string(head->headers->EnumerateHeader(nullptr, "Retry-After")
                              .value_or(""))
             : "";
+
+    // Opt-in wire observation: the response head is the ONLY place these
+    // markers exist, and it is discarded right after this function. Emitted
+    // as its own chunk (never a model event) so the host can park it on the
+    // stream. `observation_` is nullopt unless the request opted in.
+    if (observation_.has_value()) {
+      CaptureResponseHeaders(head->headers.get(), &*observation_);
+      observation_->ttfb_ms = static_cast<int>(
+          (base::TimeTicks::Now() - started_at_).InMilliseconds());
+      chunk_callback_.Run(BuildObservationChunk(*observation_));
+    }
 
     if (!body.is_valid()) {
       Complete(response_code_ == 200
@@ -508,6 +522,12 @@ class AnthropicProvider::StreamSession
   int cache_read_input_tokens_ = 0;
   int cache_creation_input_tokens_ = 0;
   bool completed_ = false;
+
+ public:
+  // Opt-in wire observation, seeded by DoStream with the request-body digest
+  // when (and only when) the guest asked for it. nullopt = collect nothing.
+  std::optional<LlmObservation> observation_;
+  base::TimeTicks started_at_;
 };
 
 // ---------------------------------------------------------------------------
@@ -518,6 +538,10 @@ struct AnthropicProvider::PendingGenerate {
   std::unique_ptr<network::SimpleURLLoader> loader;
   GenerateCallback callback;
   base::DictValue request_body;
+  // Set only when the request opted into wire observation; nullopt means the
+  // guest did not ask and nothing is collected for this request.
+  std::optional<LlmObservation> observation;
+  base::TimeTicks started_at;
 };
 
 // ---------------------------------------------------------------------------
@@ -642,6 +666,15 @@ void AnthropicProvider::DoGenerate(const base::DictValue& call_options,
   pending->loader = std::move(loader);
   pending->callback = std::move(callback);
   pending->request_body = std::move(body);
+  // Opt-in wire observation. With the flag clear we do not even hash the
+  // body — the whole feature is inert for every request the guest did not
+  // explicitly flag.
+  if (ShouldCaptureObservations(call_options)) {
+    pending->started_at = base::TimeTicks::Now();
+    LlmObservation observation;
+    CaptureRequestBody(body_json, &observation);
+    pending->observation = std::move(observation);
+  }
   pending_generates_[request_id] = std::move(pending);
 
   loader_ptr->DownloadToString(
@@ -696,6 +729,16 @@ void AnthropicProvider::DoStream(const base::DictValue& call_options,
           task_runner,
           base::BindOnce(&AnthropicProvider::OnStreamComplete,
                          weak_ptr_factory_.GetWeakPtr(), request_id)));
+
+  // Opt-in wire observation: seed the session with the request-body digest so
+  // OnReceiveResponse can complete it with the response head. Untouched (and
+  // therefore inert) for every request that did not opt in.
+  if (ShouldCaptureObservations(call_options)) {
+    session->started_at_ = base::TimeTicks::Now();
+    LlmObservation observation;
+    CaptureRequestBody(body_json, &observation);
+    session->observation_ = std::move(observation);
+  }
 
   auto resource_request = CreateResourceRequest();
   session->Start(url_loader_factory_, std::move(resource_request), body_json);
@@ -1443,6 +1486,17 @@ void AnthropicProvider::OnGenerateComplete(
   auto pending = std::move(it->second);
   pending_generates_.erase(it);
 
+  // Response head is available for every outcome, including HTTP errors
+  // (SetAllowHttpErrorResults) — capture before any early return so a failed
+  // turn still contributes its markers.
+  if (pending->observation.has_value()) {
+    if (const auto* info = pending->loader->ResponseInfo()) {
+      CaptureResponseHeaders(info->headers.get(), &*pending->observation);
+    }
+    pending->observation->ttfb_ms = static_cast<int>(
+        (base::TimeTicks::Now() - pending->started_at).InMilliseconds());
+  }
+
   if (!response_body) {
     int net_error = pending->loader->NetError();
     GenerateResult err_result;
@@ -1491,6 +1545,10 @@ void AnthropicProvider::OnGenerateComplete(
 
   auto result = ParseResponse(response_dict);
   result.raw_call = std::move(pending->request_body);
+  if (pending->observation.has_value()) {
+    CaptureResponseBodyMarkers(response_dict, &*pending->observation);
+    result.observation = std::move(pending->observation);
+  }
   std::move(pending->callback).Run(std::move(result), std::nullopt);
 }
 

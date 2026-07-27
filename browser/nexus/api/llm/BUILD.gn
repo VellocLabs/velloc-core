@@ -13,7 +13,12 @@ source_set("types") {
     "llm_types.h",
   ]
 
-  public_deps = [ "//base" ]
+  # LlmObservation is a field of GenerateResult, so it is part of this
+  # target's public surface.
+  public_deps = [
+    ":observation",
+    "//base",
+  ]
 }
 
 # LLM pref name constants (header-only).
@@ -54,6 +59,23 @@ source_set("line_splitter") {
   sources = [
     "llm_line_splitter.cc",
     "llm_line_splitter.h",
+  ]
+}
+
+# Opt-in wire observation: response-header allowlist + request-body digest,
+# collected ONLY for requests that set `capture_observations`. Feeds the
+# guest's endpoint-integrity checks (relay misrepresentation detection).
+source_set("observation") {
+  sources = [
+    "llm_observation.cc",
+    "llm_observation.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [
+    "//crypto",
+    "//net",
   ]
 }
 

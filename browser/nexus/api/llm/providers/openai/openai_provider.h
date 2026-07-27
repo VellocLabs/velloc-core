@@ -11,15 +11,22 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
+#include "base/time/time.h"
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/llm/llm_observation.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
 #include "custom_browser/browser/nexus/api/llm/llm_stream_guard.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
+class GURL;
+
 namespace network {
 class SimpleURLLoader;
 struct ResourceRequest;
+namespace mojom {
+class URLResponseHead;
+}  // namespace mojom
 }  // namespace network
 
 namespace nexus {
@@ -143,6 +150,13 @@ class OpenAiProvider : public LlmProvider {
   // memcmp under active_streams_.find(request_id).
   void OnStreamDataReceived(std::string request_id, std::string_view data);
   void OnStreamComplete(std::string request_id, bool success);
+
+  // SimpleURLLoader response-started hook, registered ONLY for requests that
+  // opted into wire observation. Completes the observation with the response
+  // head and emits it as an `{"type":"observation"}` chunk.
+  void OnStreamResponseStarted(std::string request_id,
+                               const GURL& final_url,
+                               const network::mojom::URLResponseHead& head);
   void ProcessSseLine(StreamContext& ctx, std::string_view line);
 
   // Actually builds + starts the SSE loader for a stream. Called directly
@@ -198,6 +212,15 @@ class OpenAiProvider : public LlmProvider {
   std::map<std::string, std::unique_ptr<network::SimpleURLLoader>>
       pending_loaders_;
   std::map<std::string, std::unique_ptr<StreamContext>> active_streams_;
+
+  // Opt-in wire observation (llm_observation.h), keyed by request id. An entry
+  // exists ONLY for requests whose call options carried `captureObservations`;
+  // for every other request this map stays empty and no capture work runs.
+  struct PendingObservation {
+    LlmObservation observation;
+    base::TimeTicks started_at;
+  };
+  std::map<std::string, PendingObservation> pending_observations_;
 
   // Shared idle-timeout + concurrency guard (per-provider instance). See
   // llm_stream_guard.h. Defaults preserve prior behaviour (180s idle, 0 =

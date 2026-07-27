@@ -874,6 +874,12 @@ base::DictValue BuildCallOptions(
                                  const std::string& request_id) {
   base::DictValue call_options;
   call_options.Set("requestId", request_id);
+  // Opt-in wire observation (llm_observation.h). Providers check this key and
+  // collect NOTHING when it is absent or false, which is the default for every
+  // request the guest did not explicitly flag.
+  if (request.capture_observations) {
+    call_options.Set("captureObservations", true);
+  }
 
   const std::string model_id =
       ResolveModelId(profile, request, provider_id, provider);
@@ -1020,6 +1026,66 @@ mojom::NexusLlmContentPartPtr BuildReasoningPart(const base::DictValue& reasonin
     part->signature = *signature;
   }
   return part;
+}
+
+// LlmObservation -> mojom. Only reached when the request opted in, so an
+// all-empty observation still round-trips (it means "we looked and the
+// endpoint sent none of these markers", which is itself the signal).
+mojom::NexusLlmObservationPtr BuildObservation(
+    const LlmObservation& observation) {
+  auto result = mojom::NexusLlmObservation::New();
+  result->http_status = observation.http_status;
+  for (const auto& [name, value] : observation.headers) {
+    result->headers[name] = value;
+  }
+  result->response_id = observation.response_id;
+  result->service_tier = observation.service_tier;
+  result->raw_model_id = observation.raw_model_id;
+  result->request_body_digest = observation.request_body_digest;
+  result->request_body_bytes = observation.request_body_bytes;
+  result->ttfb_ms = observation.ttfb_ms;
+  return result;
+}
+
+// Reads an `{"type":"observation", …}` stream chunk back into an
+// LlmObservation. Providers emit this instead of a signature change, mirroring
+// how every other stream part rides the free-form chunk dict.
+std::optional<LlmObservation> ParseObservationChunk(
+    const base::DictValue& chunk) {
+  const std::string* type = chunk.FindString("type");
+  if (!type || *type != "observation") {
+    return std::nullopt;
+  }
+  LlmObservation observation;
+  if (std::optional<int> status = chunk.FindInt("httpStatus")) {
+    observation.http_status = *status;
+  }
+  if (const base::DictValue* headers = chunk.FindDict("headers")) {
+    for (const auto [name, value] : *headers) {
+      if (const std::string* text = value.GetIfString()) {
+        observation.headers[name] = *text;
+      }
+    }
+  }
+  if (const std::string* id = chunk.FindString("responseId")) {
+    observation.response_id = *id;
+  }
+  if (const std::string* tier = chunk.FindString("serviceTier")) {
+    observation.service_tier = *tier;
+  }
+  if (const std::string* model = chunk.FindString("rawModelId")) {
+    observation.raw_model_id = *model;
+  }
+  if (const std::string* digest = chunk.FindString("requestBodyDigest")) {
+    observation.request_body_digest = *digest;
+  }
+  if (std::optional<int> bytes = chunk.FindInt("requestBodyBytes")) {
+    observation.request_body_bytes = *bytes;
+  }
+  if (std::optional<int> ttfb = chunk.FindInt("ttfbMs")) {
+    observation.ttfb_ms = *ttfb;
+  }
+  return observation;
 }
 
 mojom::NexusLlmAssistantMessagePtr BuildAssistantMessage(
@@ -1611,6 +1677,12 @@ void NexusLlmHost::StreamRead(const std::string& stream_id,
     result->done = state.done;
     state.queued_events.clear();
     result->status = state.done ? "done" : "ok";
+    // Opt-in wire observation rides the first read after the response head
+    // arrived, then is cleared so the guest is handed it exactly once.
+    if (state.observation.has_value()) {
+      result->observation = BuildObservation(*state.observation);
+      state.observation.reset();
+    }
     timeline.Set("t_resolve", NowEpochMs());
     result->timeline = std::move(timeline);
 
@@ -1709,6 +1781,11 @@ bool NexusLlmHost::ResolveHeldRead(StreamState& state, const char* status) {
   result->done = state.done;
   state.queued_events.clear();
   result->status = status;
+  // Same one-shot hand-off as the fast path above.
+  if (state.observation.has_value()) {
+    result->observation = BuildObservation(*state.observation);
+    state.observation.reset();
+  }
   pending.timeline.Set("t_resolve", NowEpochMs());
   result->timeline = std::move(pending.timeline);
   // POST the callback instead of running it synchronously. The callback is
@@ -1837,6 +1914,11 @@ void NexusLlmHost::OnGenerateComplete(const std::string& request_id,
   response->message = BuildAssistantMessage(pending.resolved_model_id, result);
   response->status = "ok";
   response->timeline = std::move(pending.timeline);
+  // Present only when the request opted in — the provider leaves it unset
+  // otherwise, so nothing is collected and nothing rides back.
+  if (result.observation.has_value()) {
+    response->observation = BuildObservation(*result.observation);
+  }
   std::move(pending.callback).Run(true, std::move(response), std::nullopt);
 }
 
@@ -1931,6 +2013,21 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
   // queued event. `wake` is called at each branch's tail; branches that
   // early-return without queueing anything skip it.
   auto wake = [this, &state]() { ResolveHeldRead(state, "ok"); };
+
+  // Opt-in wire observation: not a model event, so it never becomes a queued
+  // stream event and never reaches the transcript. It is parked on the stream
+  // and attached to the next streamRead result. Providers only emit this chunk
+  // when the request carried `captureObservations`.
+  if (*type == "observation") {
+    if (std::optional<LlmObservation> observation =
+            ParseObservationChunk(chunk)) {
+      state.observation = std::move(observation);
+      // Wake a held read so the guest gets the markers promptly rather than
+      // waiting for the next token.
+      wake();
+    }
+    return;
+  }
 
   if (*type == "text-delta") {
     const std::string* text_delta = chunk.FindString("textDelta");

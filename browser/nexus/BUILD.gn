@@ -776,6 +776,9 @@ source_set("bridge") {
     "//content/public/browser",
     "//crypto",
     "//custom_browser/browser/nexus/api/llm:broker",
+
+    # ObservationToBridge in nexus_llm_bridge_support.cc.
+    "//custom_browser/browser/nexus/api/llm:observation",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:webui_host",
 
@@ -1024,6 +1027,7 @@ source_set("unit_tests_lite") {
   sources = [
     "api/llm/llm_error_extract_unittest.cc",
     "api/llm/llm_line_splitter_unittest.cc",
+    "api/llm/llm_observation_unittest.cc",
     "api/llm/llm_provider_factory_unittest.cc",
     "api/llm/llm_stream_guard_unittest.cc",
     "api/llm/llm_text_helpers_unittest.cc",
@@ -1068,6 +1072,9 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:anthropic_schema_sanitizer",
     "//custom_browser/browser/nexus/api/llm:error_extract",
     "//custom_browser/browser/nexus/api/llm:line_splitter",
+
+    # llm_observation_unittest.cc — header allowlist + request-body digest.
+    "//custom_browser/browser/nexus/api/llm:observation",
     "//custom_browser/browser/nexus/api/llm:oauth",
     "//custom_browser/browser/nexus/api/llm:openai_tool_call_stream",
     "//custom_browser/browser/nexus/api/llm:openai_usage",

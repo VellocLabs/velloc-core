@@ -22,9 +22,15 @@ namespace custom_browser {
 // Stored as std::string_view (not char[]) so call sites can pass the
 // constants directly to base::ASCIIToUTF16(), which has a static_assert
 // blocking the char[N] literal overload (it wants u"..." literals there).
-inline constexpr std::string_view kCustomBrowserProductName = "Velloc";
+// Stable brand identifier for filesystem paths (runtime dir, install dir).
+// Must remain a single token without spaces — mirrors the gn
+// `branding_path_component` build arg. Do NOT change this when rebranding
+// the user-visible display name below.
+inline constexpr std::string_view kCustomBrowserBrandPathComponent = "Velloc";
+
+inline constexpr std::string_view kCustomBrowserProductName = "Velloc Code";
 inline constexpr std::string_view kCustomBrowserProductLongName =
-    "Velloc in Chrome";
+    "Velloc Code in Chrome";
 
 }  // namespace custom_browser
 

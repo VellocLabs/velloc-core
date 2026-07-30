@@ -16,7 +16,7 @@ namespace custom_browser {
 // the sandboxed utility-process shell policy/resolver compute the SAME
 // paths without round-tripping through the WebUI guest.
 //
-// The runtime dir name is derived from `kCustomBrowserProductName`
+// The runtime dir name is derived from `kCustomBrowserBrandPathComponent`
 // ("Velloc" -> ".velloc"), mirroring the guest's
 // `RUNTIME_DIR_NAME = '.' + brand.toLowerCase()` so the C++ and TS sides
 // agree on a single layout.

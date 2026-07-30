@@ -21,10 +21,12 @@ namespace custom_browser {
 namespace {
 
 // "Velloc" -> ".velloc". Lowercased dotfile, matching the guest's
-// `RUNTIME_DIR_NAME` (branding/runtimeDir.ts).
+// `RUNTIME_DIR_NAME` (branding/runtimeDir.ts). Uses the stable path
+// component (not the display name) so rebranding the UI never moves
+// the on-disk directory.
 std::string RuntimeDirName() {
   return base::StrCat(
-      {".", base::ToLowerASCII(std::string(kCustomBrowserProductName))});
+      {".", base::ToLowerASCII(std::string(kCustomBrowserBrandPathComponent))});
 }
 
 }  // namespace

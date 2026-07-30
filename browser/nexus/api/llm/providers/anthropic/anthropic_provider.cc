@@ -53,7 +53,7 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
         sender: "Velloc AI Agent Platform"
         description:
           "Sends prompts to the Anthropic Messages API for AI text "
-          "generation as part of the Velloc agent platform."
+          "generation as part of the Velloc Code platform."
         trigger:
           "User interacts with the Velloc AI agent panel, which "
           "triggers LLM inference through the configured Anthropic "

@@ -5,9 +5,11 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/values.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
 namespace nexus {
@@ -80,6 +82,70 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
     ~ReadRangeResult();
   };
 
+  // ---- Batched results ---------------------------------------------------
+  //
+  // These three carry `base::ListValue` rather than a JSON string. The
+  // single-path methods above hand back a string that the adapter
+  // immediately re-parses (RespondJson) — free at one row, wasteful at the
+  // ~2000 rows a session-store scan produces. base::Value is move-only, so
+  // each struct needs the same out-of-line ctor/move/dtor treatment as
+  // ReadResult.
+
+  struct StatBatchResult {
+    // `success` is whole-call only; a path that cannot be stat'd is a row
+    // with a null `stat`, not a failure.
+    bool success = false;
+    base::ListValue rows;  // [{path, stat: {...}|null}, ...]
+    std::string error;
+
+    StatBatchResult();
+    StatBatchResult(StatBatchResult&&) noexcept;
+    StatBatchResult& operator=(StatBatchResult&&) noexcept;
+    StatBatchResult(const StatBatchResult&) = delete;
+    StatBatchResult& operator=(const StatBatchResult&) = delete;
+    ~StatBatchResult();
+  };
+
+  struct ReaddirTreeResult {
+    bool success = false;
+    base::ListValue entries;  // [{path, isDirectory, size, mtimeMs?}, ...]
+    bool truncated = false;
+    std::string root;
+    std::string error;
+
+    ReaddirTreeResult();
+    ReaddirTreeResult(ReaddirTreeResult&&) noexcept;
+    ReaddirTreeResult& operator=(ReaddirTreeResult&&) noexcept;
+    ReaddirTreeResult(const ReaddirTreeResult&) = delete;
+    ReaddirTreeResult& operator=(const ReaddirTreeResult&) = delete;
+    ~ReaddirTreeResult();
+  };
+
+  // One requested read. `length == 0` means "to end of file" from `offset`.
+  struct ReadBatchItem {
+    std::string path;
+    uint64_t offset = 0;
+    uint32_t length = 0;
+  };
+
+  struct ReadBatchResult {
+    bool success = false;
+    // One entry per requested item, in request order, each echoing its
+    // `path` and indexing into `data`:
+    //   {path, ok, byteOffset, byteLength, error?}
+    base::ListValue entries;
+    std::optional<mojo_base::BigBuffer> data;  // all items concatenated
+    bool truncated = false;                    // byte budget stopped the loop
+    std::string error;
+
+    ReadBatchResult();
+    ReadBatchResult(ReadBatchResult&&) noexcept;
+    ReadBatchResult& operator=(ReadBatchResult&&) noexcept;
+    ReadBatchResult(const ReadBatchResult&) = delete;
+    ReadBatchResult& operator=(const ReadBatchResult&) = delete;
+    ~ReadBatchResult();
+  };
+
   struct SimpleResult {
     bool success = false;
     std::string error;
@@ -142,6 +208,32 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   // allows base::MayBlock().
   StatResult Stat(const std::string& path) const;
   ReaddirResult Readdir(const std::string& path) const;
+
+  // Stat every path in one pass. Rows are 1:1 with `paths` and in the
+  // same order (duplicates preserved), each echoing the REQUEST string —
+  // not the resolved path — so callers can key results by what they asked
+  // for. An unreadable path yields `stat: null` rather than aborting.
+  StatBatchResult StatBatch(const std::vector<std::string>& paths) const;
+
+  // Breadth-first listing of `path`, descending at most `max_depth` levels
+  // and emitting at most `max_entries` rows. Directories AT the depth cap
+  // are LISTED but not descended — that cap is what keeps a session-store
+  // scan from walking every per-session tool-details/ file. Row paths are
+  // root-relative and '/'-separated on every platform (a wire contract the
+  // guest splits on). Callers are expected to have clamped both bounds.
+  ReaddirTreeResult ReaddirTree(const std::string& path,
+                                int32_t max_depth,
+                                int32_t max_entries) const;
+
+  // Read every item into ONE concatenated buffer, with an index describing
+  // each item's slice. A response can carry only a single buffer, so this
+  // is how a batched read is expressible at all. Items that fail are
+  // marked `ok:false` and skipped; they do not abort the batch. When the
+  // byte budget is exhausted the remaining items are marked failed and
+  // `truncated` is set — a partial answer beats none for a sidebar.
+  ReadBatchResult ReadBatch(const std::vector<ReadBatchItem>& items,
+                            size_t max_total_bytes,
+                            size_t max_item_bytes) const;
   ReadResult ReadFile(const std::string& path) const;
   ReadRangeResult ReadRange(const std::string& path,
                             uint64_t offset,

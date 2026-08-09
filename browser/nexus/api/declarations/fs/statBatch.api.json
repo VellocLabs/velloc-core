@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "statBatch",
+  "description": "Stat many paths in one round-trip. Returns one row per requested path, in request order, with a null stat for anything that cannot be read.",
+  "inputs": [
+    {
+      "name": "paths",
+      "type": "array<string>",
+      "required": true,
+      "description": "Paths to stat. Capped at 2000 per call; a longer list is rejected rather than truncated, because a silently short answer would mislabel real files as missing."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

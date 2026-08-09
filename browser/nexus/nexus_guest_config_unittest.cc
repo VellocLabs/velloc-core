@@ -67,8 +67,8 @@ TEST_F(NexusGuestConfigTest, InterfaceVersionStringMatchesInt) {
 
 TEST_F(NexusGuestConfigTest, AppendInterfaceVersionPinsHttpsBases) {
   // Trailing-slash base.
-  EXPECT_EQ(GURL("https://nexus.velloc.app/" + VersionSegment()),
-            AppendNexusInterfaceVersionToBase(GURL("https://nexus.velloc.app/")));
+  EXPECT_EQ(GURL("https://app.velloc.app/" + VersionSegment()),
+            AppendNexusInterfaceVersionToBase(GURL("https://app.velloc.app/")));
   // Subpath base without a trailing slash (self-hosted mirror).
   EXPECT_EQ(GURL("https://mirror.example/nexus/" + VersionSegment()),
             AppendNexusInterfaceVersionToBase(GURL("https://mirror.example/nexus")));
@@ -82,8 +82,8 @@ TEST_F(NexusGuestConfigTest, AppendInterfaceVersionPassesThroughDevAndPinnedBase
                 GURL("http://localhost:5173/index.html")));
   // A hand-pasted already-pinned base must not get a second segment; the
   // guest still validates the pinned number against its own constant.
-  EXPECT_EQ(GURL("https://nexus.velloc.app/v7/"),
-            AppendNexusInterfaceVersionToBase(GURL("https://nexus.velloc.app/v7/")));
+  EXPECT_EQ(GURL("https://app.velloc.app/v7/"),
+            AppendNexusInterfaceVersionToBase(GURL("https://app.velloc.app/v7/")));
   // Version-like but malformed trailing segments still get pinned.
   EXPECT_EQ(GURL("https://host.example/version2/" + VersionSegment()),
             AppendNexusInterfaceVersionToBase(GURL("https://host.example/version2/")));
@@ -100,12 +100,27 @@ TEST_F(NexusGuestConfigTest, GetResolvedNexusGuestURLFallsBackWithoutProfile) {
             GetResolvedNexusGuestURL(nullptr));
 }
 
+// Pins the SHIPPED origin literally, in every build config.
+//
+// This is deliberately not gated on NDEBUG. Everything else about the release
+// default is only observable in a release build — but developers build Debug,
+// so an NDEBUG-only assertion is compiled out of every run they ever see. The
+// production origin is the one string that, if wrong, leaves every release
+// binary with no resolvable guest at all: the old origin was retired the
+// moment this value changed, so there is no fallback to degrade to. That
+// deserves a check the daily build actually executes.
+TEST_F(NexusGuestConfigTest, ReleaseGuestOriginLiteral) {
+  EXPECT_EQ("https://app.velloc.app/", std::string(kReleaseNexusGuestURL));
+}
+
 #if defined(NDEBUG)
-// Release builds only: the default guest URL must resolve to the pinned
-// production path. (The debug default is localhost and unversioned; the
-// consistency is covered by the append tests above.)
+// Release builds only: the compiled-in default IS the production origin, and
+// it resolves to the pinned production path. The literal itself is covered
+// above in every config; this pins the wiring, which only exists here.
 TEST_F(NexusGuestConfigTest, ReleaseDefaultGuestURLIsVersionPinned) {
-  EXPECT_EQ(GURL("https://nexus.velloc.app/" + VersionSegment()),
+  EXPECT_EQ(std::string(kReleaseNexusGuestURL),
+            std::string(kDefaultNexusGuestURL));
+  EXPECT_EQ(GURL(std::string(kReleaseNexusGuestURL) + VersionSegment()),
             GetResolvedNexusGuestURL(nullptr));
 }
 #endif

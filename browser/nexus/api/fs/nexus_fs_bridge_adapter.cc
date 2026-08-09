@@ -16,6 +16,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
+#include "base/values.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_host.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
@@ -25,6 +26,49 @@ namespace {
 
 using base::Value;
 using Dict = base::DictValue;
+
+// ---- Wire-contract limits for the batched routes --------------------------
+//
+// These bound memory and keep the thread-pool task short (a longer task
+// widens the adapter-teardown window). They are NOT sized to fit the guest's
+// 30 s fs timeout — at these numbers that has an order of magnitude of
+// headroom.
+
+// Over-cap is an InvalidArgs, never a silent truncation: a short answer to an
+// existence check would mislabel real files as missing. Calibrated against
+// the network capability's 2000-char URL cap; the biggest real caller
+// (file-path affordances in a transcript) sees tens.
+constexpr size_t kMaxStatBatchPaths = 2000;
+
+// Depth 1 == readdir parity, so a caller who omits the arg gets the cheap
+// thing rather than a surprise tree walk. The session-store scan asks for 3.
+constexpr int32_t kDefaultTreeDepth = 1;
+constexpr int32_t kMaxTreeDepth = 8;
+
+// ~10x the real profile's ~2000 rows at depth 3. 20000 rows is ~1.8 MB of
+// JSON; 50000 is where a caller should be using a different tool.
+constexpr int32_t kDefaultTreeEntries = 20000;
+constexpr int32_t kMaxTreeEntries = 50000;
+
+constexpr size_t kMaxReadBatchItems = 512;
+
+// One pathological transcript must not eat the whole batch budget. The
+// sidebar never asks for more than 64 KiB per item.
+constexpr size_t kMaxReadBatchItemBytes = 8u * 1024 * 1024;
+
+// Worst realistic case is 226 legacy sessions x 64 KiB = 14.5 MiB; this is
+// 2x headroom and far under NexusFsHost's 256 MiB single-range guard.
+constexpr size_t kMaxReadBatchTotalBytes = 32u * 1024 * 1024;
+
+int32_t ClampTreeBound(std::optional<int32_t> requested,
+                       int32_t fallback,
+                       int32_t ceiling) {
+  const int32_t value = requested.value_or(0);
+  if (value <= 0) {
+    return fallback;
+  }
+  return value > ceiling ? ceiling : value;
+}
 
 // ---------------------------------------------------------------------------
 // Reply shapers — run on UI after the thread-pool work completes.
@@ -87,6 +131,58 @@ void RespondReadRange(BridgeResponseCallback done,
       Value(std::move(envelope)),
       result.data.has_value() ? std::move(*result.data) : mojo_base::BigBuffer(),
       "data");
+}
+
+// ---- Batched shapers ------------------------------------------------------
+//
+// These three take base::ListValue straight from the host rather than a JSON
+// string. RespondJson's write-then-reparse is free for one stat row and
+// wasteful for the ~2000 a session-store scan returns.
+
+void RespondStatBatch(BridgeResponseCallback done,
+                      NexusFsHost::StatBatchResult result) {
+  if (!result.success) {
+    std::move(done).Error(
+        "FS_ERROR", !result.error.empty() ? result.error : "StatBatch failed");
+    return;
+  }
+  std::move(done).Success(Value(std::move(result.rows)));
+}
+
+void RespondReaddirTree(BridgeResponseCallback done,
+                        NexusFsHost::ReaddirTreeResult result) {
+  if (!result.success) {
+    std::move(done).Error(
+        "FS_ERROR", !result.error.empty() ? result.error : "ReaddirTree failed");
+    return;
+  }
+  Dict envelope;
+  envelope.Set("root", std::move(result.root));
+  envelope.Set("truncated", result.truncated);
+  envelope.Set("entries", Value(std::move(result.entries)));
+  std::move(done).Success(Value(std::move(envelope)));
+}
+
+// The index rides the JSON envelope, every item's bytes ride ONE buffer on
+// the response data port — a response can carry only a single buffer, so a
+// list of per-item buffers is not expressible. Same shape as
+// RespondReadRange, with a list instead of a scalar.
+void RespondReadBatch(BridgeResponseCallback done,
+                      NexusFsHost::ReadBatchResult result) {
+  if (!result.success) {
+    std::move(done).Error(
+        "FS_ERROR", !result.error.empty() ? result.error : "ReadBatch failed");
+    return;
+  }
+  const size_t total = result.data.has_value() ? result.data->size() : 0;
+  Dict envelope;
+  envelope.Set("entries", Value(std::move(result.entries)));
+  envelope.Set("totalBytes", static_cast<double>(total));
+  envelope.Set("truncated", result.truncated);
+  std::move(done).Binary(
+      Value(std::move(envelope)),
+      result.data.has_value() ? std::move(*result.data) : mojo_base::BigBuffer(),
+      "blob");
 }
 
 void RespondSimple(BridgeResponseCallback done,
@@ -198,6 +294,73 @@ void NexusFsBridgeAdapter::HandleReaddirOnUI(
       base::BindOnce(&NexusFsHost::Readdir, fs_host_, std::move(input.path)),
       base::BindOnce(&RespondJson<NexusFsHost::ReaddirResult>, std::move(done),
                      "Readdir failed", "Failed to decode readdir response"));
+}
+
+void NexusFsBridgeAdapter::HandleStatBatchOnUI(
+    ::nexus::generated::StatBatchInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.paths.size() > kMaxStatBatchPaths) {
+    std::move(done).InvalidArgs("statBatch: too many paths");
+    return;
+  }
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::StatBatch, fs_host_, std::move(input.paths)),
+      base::BindOnce(&RespondStatBatch, std::move(done)));
+}
+
+void NexusFsBridgeAdapter::HandleReaddirTreeOnUI(
+    ::nexus::generated::ReaddirTreeInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Clamp on UI, where we can still answer InvalidArgs; the host takes the
+  // bounds as given.
+  const int32_t depth =
+      ClampTreeBound(input.maxDepth, kDefaultTreeDepth, kMaxTreeDepth);
+  const int32_t entries =
+      ClampTreeBound(input.maxEntries, kDefaultTreeEntries, kMaxTreeEntries);
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::ReaddirTree, fs_host_,
+                     std::move(input.path), depth, entries),
+      base::BindOnce(&RespondReaddirTree, std::move(done)));
+}
+
+void NexusFsBridgeAdapter::HandleReadBatchOnUI(
+    ::nexus::generated::ReadBatchInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.items.size() > kMaxReadBatchItems) {
+    std::move(done).InvalidArgs("readBatch: too many items");
+    return;
+  }
+
+  // Convert base::Value -> typed items HERE, on UI, so the worker task never
+  // touches base::Value. A malformed entry is rejected rather than skipped:
+  // the codegen array<object> extractor already drops non-dicts, and a
+  // silently shorter list would shift every later index and attribute bytes
+  // to the wrong file.
+  std::vector<NexusFsHost::ReadBatchItem> items;
+  items.reserve(input.items.size());
+  for (const base::DictValue& raw : input.items) {
+    const std::string* path = raw.FindString("path");
+    if (!path || path->empty()) {
+      std::move(done).InvalidArgs("readBatch: item is missing \"path\"");
+      return;
+    }
+    NexusFsHost::ReadBatchItem item;
+    item.path = *path;
+    item.offset = static_cast<uint64_t>(std::max(0, raw.FindInt("offset").value_or(0)));
+    item.length = static_cast<uint32_t>(std::max(0, raw.FindInt("length").value_or(0)));
+    items.push_back(std::move(item));
+  }
+
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::ReadBatch, fs_host_, std::move(items),
+                     kMaxReadBatchTotalBytes, kMaxReadBatchItemBytes),
+      base::BindOnce(&RespondReadBatch, std::move(done)));
 }
 
 void NexusFsBridgeAdapter::HandleReadFileOnUI(

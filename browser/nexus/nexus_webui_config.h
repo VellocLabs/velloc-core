@@ -34,7 +34,15 @@ void RegisterNexusWebUI();
 bool IsNexusWebUIRegistered();
 
 // The default guest URL served when no custom webapp URL is configured.
+// Release builds get the production origin; Debug builds get the local Vite
+// dev server.
 extern const char kDefaultNexusGuestURL[];
+
+// The production origin, defined in EVERY build config so tests can pin the
+// shipped domain from a Debug build. `kDefaultNexusGuestURL` only carries it
+// under NDEBUG, which would leave it unverified in the config developers
+// build. Nothing reads this at runtime.
+extern const char kReleaseNexusGuestURL[];
 
 // The chrome://nexus host string.
 extern const char kNexusHost[];

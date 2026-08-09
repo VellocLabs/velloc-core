@@ -21,7 +21,6 @@
 #include "custom_browser/ui/mojom/browser_constants.mojom.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
-#include "custom_browser/ui/view/nexus_mode_button.h"
 #include "custom_browser/ui/view/native_ui/create_toolbar_button_native_ui.h"
 #include "custom_browser/ui/view/native_ui/main_contents_native_ui.h"
 #include "custom_browser/ui/view/native_ui/native_ui_factory_registry.h"
@@ -68,7 +67,6 @@ NativeUIContainerView::~NativeUIContainerView() {
 
 void NativeUIContainerView::Init(views::View* webui_view) {
   webui_view_ = webui_view;
-  EnsureNexusModeButton();
 }
 
 void NativeUIContainerView::RestoreChromiumHierarchy() {
@@ -83,7 +81,6 @@ void NativeUIContainerView::SaveChromiumHierarchy() {
 }
 
 void NativeUIContainerView::Layout(PassKey) {
-  EnsureNexusModeButton();
   for (auto& native_ui : native_ui_views_) {
     native_ui->CalculateBounds();
     native_ui->Layout();
@@ -146,10 +143,6 @@ T* NativeUIContainerView::FindNativeUI(
 
 void NativeUIContainerView::OnUIModeChanged(
     custom_browser::mojom::UIMode ui_mode) {
-  EnsureNexusModeButton();
-  if (nexus_mode_button_) {
-    nexus_mode_button_->OnUIModeChanged(ui_mode);
-  }
   custom_browser::native_ui::utils::PrintViewHierarchyLog(custom_browser_view_);
 }
 
@@ -183,8 +176,6 @@ void NativeUIContainerView::OnLayoutAdded(
     native_ui->Layout();
     native_ui_views_.push_back(std::move(native_ui));
   }
-
-  EnsureNexusModeButton();
 }
 
 void NativeUIContainerView::OnLayoutRemoved(const NativeViewParams* layout) {
@@ -234,17 +225,6 @@ NativeUIContainerView::CreateNativeUI(
     return nullptr;
   }
   return native_ui;
-}
-
-void NativeUIContainerView::EnsureNexusModeButton() {
-  if (!nexus_mode_button_) {
-    nexus_mode_button_ = AddChildView(
-        std::make_unique<custom_browser::NexusModeButton>(custom_browser_view_));
-  }
-
-  if (nexus_mode_button_) {
-    nexus_mode_button_->EnsureAttached();
-  }
 }
 
 BEGIN_METADATA(NativeUIContainerView)

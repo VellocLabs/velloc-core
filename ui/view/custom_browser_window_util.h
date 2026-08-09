@@ -1,10 +1,9 @@
 // Shared helpers for locating and opening Custom Browser windows by UI mode.
 //
 // Centralizes the "find / open / focus a nexus vs. normal browser window"
-// logic that is needed from several modules (the native NexusModeButton, the
-// WebUI UIViewHandler, and CustomBrowserView initialization) so the behavior
-// stays consistent and the at-most-one-kNexus-window invariant lives in one
-// place.
+// logic that is needed from several modules (the WebUI UIViewHandler,
+// BrowserTool, and CustomBrowserView initialization) so the behavior stays
+// consistent and the at-most-one-kNexus-window invariant lives in one place.
 #ifndef CUSTOM_BROWSER_UI_VIEW_CUSTOM_BROWSER_WINDOW_UTIL_H_
 #define CUSTOM_BROWSER_UI_VIEW_CUSTOM_BROWSER_WINDOW_UTIL_H_
 

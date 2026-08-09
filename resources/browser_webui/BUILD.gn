@@ -66,6 +66,7 @@ build_webui("build") {
     "pages/nexus/nexus_bg_tabs_strip.ts",
     "pages/nexus/nexus_view.ts",
     "pages/nexus/nexus_welcome.ts",
+    "pages/nexus/nexus_guest_recovery.ts",
     "pages/nexus/nexus_page.ts",
     "pages/nexus/nexus_runtime_bootstrap.ts",
     "pages/nexus/nexus_session_list.ts",

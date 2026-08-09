@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readdirTree",
+  "description": "Bounded-depth recursive directory listing. Rows carry a root-relative '/'-separated path, kind, size and mtime, so one call can index a whole tree without a stat per entry. Depth-capped: directories AT the cap are listed but not descended.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Root directory to scan (relative paths resolve against cwd)."
+    },
+    {
+      "name": "maxDepth",
+      "type": "integer",
+      "required": false,
+      "description": "Levels below `path` to descend. 1 = the root's own children (readdir parity). Absent or <= 0 means 1; clamped to 8."
+    },
+    {
+      "name": "maxEntries",
+      "type": "integer",
+      "required": false,
+      "description": "Hard cap on returned rows; the scan stops when reached and sets truncated=true. Absent or <= 0 means 20000; clamped to 50000."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -16,7 +16,7 @@ GURL GetResolvedNexusGuestURL(Profile* profile);
 
 // Appends the compiled-in bridge interface version segment ("v<N>/",
 // nexus_interface_version.h) to an https base URL:
-//   https://nexus.velloc.app/      -> https://nexus.velloc.app/v1/
+//   https://app.velloc.app/        -> https://app.velloc.app/v1/
 //   https://mirror.example/nexus   -> https://mirror.example/nexus/v1/
 // Pass-through cases:
 //   - http bases (localhost dev server: unversioned path, the guest skips

@@ -25,9 +25,6 @@ using custom_browser::mojom::NativeViewParamsPtr;
 
 class CustomBrowserView;
 class CustomBrowserUiPrefs;
-namespace custom_browser {
-class NexusModeButton;
-}  // namespace custom_browser
 namespace custom_browser::native_ui {
 class CaptionContainerNativeUI;
 }  // namespace custom_browser::native_ui
@@ -60,7 +57,6 @@ class NativeUIContainerView : public views::View,
  private:
   std::unique_ptr<custom_browser::native_ui::NativeUI> CreateNativeUI(
       const NativeViewParams* layout_ptr);
-  void EnsureNexusModeButton();
 
   template <typename T>
   T* FindNativeUI(const NativeViewParams* layout_ptr) const;
@@ -73,7 +69,6 @@ class NativeUIContainerView : public views::View,
   raw_ptr<views::View> webui_view_;
   raw_ptr<CustomBrowserView> custom_browser_view_;
   raw_ptr<CustomBrowserUiPrefs> browser_ui_prefs_;
-  raw_ptr<custom_browser::NexusModeButton> nexus_mode_button_ = nullptr;
 
   std::vector<views::View*> view_cache_list_;
   std::vector<std::unique_ptr<custom_browser::native_ui::NativeUI>>

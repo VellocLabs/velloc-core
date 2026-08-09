@@ -413,6 +413,47 @@ TEST(CodegenSmokeTest, ReadExtractTreatsStrictNullOptionalsAsUnset) {
   EXPECT_EQ(*input.context_window, 262144);
 }
 
+// LLMs sometimes emit integers as strings (e.g. "25" instead of 25).
+// The extractor must coerce these so partial reads don't silently fall
+// back to full-file reads (which then trip the token budget guard).
+TEST(CodegenSmokeTest, ReadExtractCoercesStringEncodedIntegers) {
+  base::DictValue args;
+  args.Set("file_path", "/abs/large.ts");
+  args.Set("offset", "100");
+  args.Set("limit", "50");
+  ReadInput input;
+  ASSERT_FALSE(Extract(args, input).has_value());
+  ASSERT_TRUE(input.offset.has_value());
+  EXPECT_EQ(*input.offset, 100);
+  ASSERT_TRUE(input.limit.has_value());
+  EXPECT_EQ(*input.limit, 50);
+}
+
+TEST(CodegenSmokeTest, ReadExtractCoercesMixedStringAndIntArgs) {
+  base::DictValue args;
+  args.Set("file_path", "/abs/large.ts");
+  args.Set("offset", 200);
+  args.Set("limit", "30");
+  ReadInput input;
+  ASSERT_FALSE(Extract(args, input).has_value());
+  ASSERT_TRUE(input.offset.has_value());
+  EXPECT_EQ(*input.offset, 200);
+  ASSERT_TRUE(input.limit.has_value());
+  EXPECT_EQ(*input.limit, 30);
+}
+
+TEST(CodegenSmokeTest, ReadExtractRejectsNonNumericString) {
+  base::DictValue args;
+  args.Set("file_path", "/abs/large.ts");
+  args.Set("offset", "abc");
+  ReadInput input;
+  std::optional<std::string> err = Extract(args, input);
+  // Non-numeric string for a required-or-optional int is silently ignored
+  // for optional fields (treated as unset), so no error — offset stays unset.
+  ASSERT_FALSE(err.has_value());
+  EXPECT_FALSE(input.offset.has_value());
+}
+
 TEST(CodegenSmokeTest, EditExtractTreatsStrictNullReplaceAllAsUnset) {
   base::DictValue args;
   args.Set("file_path", "/abs/component.tsx");

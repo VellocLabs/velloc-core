@@ -8,8 +8,21 @@ namespace nexus {
 // Base guest URL only — diagnostic/feature query params (log, trace,
 // toolDeferral) are layered on at resolve time by GetResolvedNexusGuestURL()
 // based on the user's About-page toggles, rather than baked into the URL here.
+//
+// The release literal goes through a macro so it can ALSO be exported
+// unconditionally as kReleaseNexusGuestURL. Without that, the one string whose
+// corruption breaks every shipped binary is invisible to the build config
+// developers actually use: a Debug binary does not contain it at all, so a
+// test asserting on kDefaultNexusGuestURL there only ever sees the localhost
+// value. The macro keeps the two definitions from drifting apart.
+#define NEXUS_RELEASE_GUEST_URL "https://app.velloc.app/"
+
+// Always defined, in every build config — see above. Not a fallback and not
+// used at runtime; GetResolvedNexusGuestURL() reads kDefaultNexusGuestURL.
+const char kReleaseNexusGuestURL[] = NEXUS_RELEASE_GUEST_URL;
+
 #if defined(NDEBUG)
-const char kDefaultNexusGuestURL[] = "https://nexus.velloc.app/";
+const char kDefaultNexusGuestURL[] = NEXUS_RELEASE_GUEST_URL;
 #else
 const char kDefaultNexusGuestURL[] = "http://localhost:5173/index.html";
 #endif

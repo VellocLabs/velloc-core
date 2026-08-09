@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <utility>
@@ -19,6 +20,7 @@
 #include "base/path_service.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -36,6 +38,40 @@ base::FilePath ResolvePath(const base::FilePath& cwd,
     return requested;
   }
   return cwd.Append(requested);
+}
+
+// The stat payload the guest sees, as a dict. Shared by `Stat` (which
+// JSON-writes it) and `StatBatch` (which nests it in a row) so the two can
+// never drift into reporting different fields for the same file.
+// nullopt = the path could not be stat'd.
+std::optional<base::DictValue> BuildStatDict(const base::FilePath& resolved) {
+  base::File::Info info;
+  if (!base::GetFileInfo(resolved, &info)) {
+    return std::nullopt;
+  }
+
+  base::DictValue dict;
+  dict.Set("size", static_cast<double>(info.size));
+  dict.Set("isFile", !info.is_directory);
+  dict.Set("isDirectory", info.is_directory);
+  dict.Set("isSymbolicLink", info.is_symbolic_link);
+  dict.Set("isFIFO", false);
+  dict.Set("isSocket", false);
+  dict.Set("isCharacterDevice", false);
+  dict.Set("isBlockDevice", false);
+
+  if (!info.last_modified.is_null()) {
+    dict.Set("mtimeMs",
+             static_cast<double>(
+                 info.last_modified.InMillisecondsFSinceUnixEpoch()));
+  }
+  if (!info.creation_time.is_null()) {
+    const double creation_time =
+        static_cast<double>(info.creation_time.InMillisecondsFSinceUnixEpoch());
+    dict.Set("ctimeMs", creation_time);
+    dict.Set("birthtimeMs", creation_time);
+  }
+  return dict;
 }
 
 // BigBuffer is move-only; the helpers below consume it once.
@@ -92,6 +128,27 @@ NexusFsHost::ReadRangeResult::ReadRangeResult(ReadRangeResult&&) noexcept =
 NexusFsHost::ReadRangeResult&
 NexusFsHost::ReadRangeResult::operator=(ReadRangeResult&&) noexcept = default;
 NexusFsHost::ReadRangeResult::~ReadRangeResult() = default;
+
+NexusFsHost::StatBatchResult::StatBatchResult() = default;
+NexusFsHost::StatBatchResult::StatBatchResult(StatBatchResult&&) noexcept =
+    default;
+NexusFsHost::StatBatchResult& NexusFsHost::StatBatchResult::operator=(
+    StatBatchResult&&) noexcept = default;
+NexusFsHost::StatBatchResult::~StatBatchResult() = default;
+
+NexusFsHost::ReaddirTreeResult::ReaddirTreeResult() = default;
+NexusFsHost::ReaddirTreeResult::ReaddirTreeResult(
+    ReaddirTreeResult&&) noexcept = default;
+NexusFsHost::ReaddirTreeResult& NexusFsHost::ReaddirTreeResult::operator=(
+    ReaddirTreeResult&&) noexcept = default;
+NexusFsHost::ReaddirTreeResult::~ReaddirTreeResult() = default;
+
+NexusFsHost::ReadBatchResult::ReadBatchResult() = default;
+NexusFsHost::ReadBatchResult::ReadBatchResult(ReadBatchResult&&) noexcept =
+    default;
+NexusFsHost::ReadBatchResult& NexusFsHost::ReadBatchResult::operator=(
+    ReadBatchResult&&) noexcept = default;
+NexusFsHost::ReadBatchResult::~ReadBatchResult() = default;
 
 // ---------------------------------------------------------------------------
 
@@ -209,49 +266,36 @@ NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
 
 NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
   StatResult result;
-  const base::FilePath resolved = ResolvePath(cwd_, path);
-
-  base::File::Info info;
-  bool ok = false;
-#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
-  // Always Lstat — match the previous follow_symlinks=true case via
-  // GetFileInfo when symlink resolution is desired; the bridge protocol
-  // currently never asks for lstat-only behavior, so keep parity with
-  // the pre-refactor code (which called PopulateStatResult with
-  // follow_symlinks=true).
-  ok = base::GetFileInfo(resolved, &info);
-#else
-  ok = base::GetFileInfo(resolved, &info);
-#endif
-  if (!ok) {
+  std::optional<base::DictValue> dict = BuildStatDict(ResolvePath(cwd_, path));
+  if (!dict.has_value()) {
     result.error = "File not found or permission denied";
     return result;
   }
 
-  base::DictValue dict;
-  dict.Set("size", static_cast<double>(info.size));
-  dict.Set("isFile", !info.is_directory);
-  dict.Set("isDirectory", info.is_directory);
-  dict.Set("isSymbolicLink", info.is_symbolic_link);
-  dict.Set("isFIFO", false);
-  dict.Set("isSocket", false);
-  dict.Set("isCharacterDevice", false);
-  dict.Set("isBlockDevice", false);
-
-  if (!info.last_modified.is_null()) {
-    dict.Set("mtimeMs",
-             static_cast<double>(
-                 info.last_modified.InMillisecondsFSinceUnixEpoch()));
-  }
-  if (!info.creation_time.is_null()) {
-    const double creation_time =
-        static_cast<double>(info.creation_time.InMillisecondsFSinceUnixEpoch());
-    dict.Set("ctimeMs", creation_time);
-    dict.Set("birthtimeMs", creation_time);
-  }
-
   result.success = true;
-  base::JSONWriter::Write(base::Value(std::move(dict)), &result.json);
+  base::JSONWriter::Write(base::Value(std::move(*dict)), &result.json);
+  return result;
+}
+
+NexusFsHost::StatBatchResult NexusFsHost::StatBatch(
+    const std::vector<std::string>& paths) const {
+  StatBatchResult result;
+  for (const std::string& path : paths) {
+    base::DictValue row;
+    // Echo the REQUEST string, not the resolved path: callers key their
+    // results by what they asked for.
+    row.Set("path", path);
+    std::optional<base::DictValue> stat = BuildStatDict(ResolvePath(cwd_, path));
+    if (stat.has_value()) {
+      row.Set("stat", base::Value(std::move(*stat)));
+    } else {
+      // Absent/unreadable is an ordinary answer here, not an error — the
+      // callers are existence checks.
+      row.Set("stat", base::Value());
+    }
+    result.rows.Append(std::move(row));
+  }
+  result.success = true;
   return result;
 }
 
@@ -281,6 +325,167 @@ NexusFsHost::ReaddirResult NexusFsHost::Readdir(const std::string& path) const {
 
   result.success = true;
   base::JSONWriter::Write(base::Value(std::move(list)), &result.json);
+  return result;
+}
+
+NexusFsHost::ReaddirTreeResult NexusFsHost::ReaddirTree(
+    const std::string& path,
+    int32_t max_depth,
+    int32_t max_entries) const {
+  ReaddirTreeResult result;
+  const base::FilePath root = ResolvePath(cwd_, path);
+  result.root = root.AsUTF8Unsafe();
+
+  if (!base::DirectoryExists(root)) {
+    result.error = "Path is not a directory";
+    return result;
+  }
+
+  // Breadth-first with an explicit queue rather than
+  // FileEnumerator(recursive=true): recursion would descend into every
+  // per-session tool-details/ directory, which on a real profile is tens of
+  // thousands of files nobody asked for. BFS (not DFS) also means a
+  // truncated scan loses the deepest rows rather than whole subtrees.
+  struct Pending {
+    base::FilePath dir;
+    std::string prefix;  // root-relative, '/'-separated, "" at the root
+    int32_t depth;       // levels below the root; the root's children are 1
+  };
+  std::vector<Pending> queue;
+  queue.push_back({root, std::string(), 1});
+
+  for (size_t head = 0; head < queue.size(); ++head) {
+    // Copy the fields we need: `queue` reallocates as we push children.
+    const base::FilePath dir = queue[head].dir;
+    const std::string prefix = queue[head].prefix;
+    const int32_t depth = queue[head].depth;
+
+    base::FileEnumerator enumerator(
+        dir, false,
+        base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
+    for (base::FilePath name = enumerator.Next(); !name.empty();
+         name = enumerator.Next()) {
+      if (static_cast<int32_t>(result.entries.size()) >= max_entries) {
+        result.truncated = true;
+        result.success = true;
+        return result;
+      }
+
+      const base::FileEnumerator::FileInfo info = enumerator.GetInfo();
+      const bool is_directory = info.IsDirectory();
+      // '/' is a WIRE CONTRACT — the guest splits row paths on it and
+      // rebuilds absolutes with its own path joiner. Never emit the
+      // platform separator here.
+      const std::string relative =
+          prefix.empty() ? name.BaseName().AsUTF8Unsafe()
+                         : prefix + "/" + name.BaseName().AsUTF8Unsafe();
+
+      base::DictValue entry;
+      entry.Set("path", relative);
+      entry.Set("isDirectory", is_directory);
+      entry.Set("size", is_directory ? 0.0 : static_cast<double>(info.GetSize()));
+      const base::Time modified = info.GetLastModifiedTime();
+      if (!modified.is_null()) {
+        entry.Set("mtimeMs", static_cast<double>(
+                                 modified.InMillisecondsFSinceUnixEpoch()));
+      }
+      result.entries.Append(std::move(entry));
+
+      // Listed at the cap, but not descended.
+      if (is_directory && depth < max_depth) {
+        queue.push_back({name, relative, depth + 1});
+      }
+    }
+  }
+
+  result.success = true;
+  return result;
+}
+
+NexusFsHost::ReadBatchResult NexusFsHost::ReadBatch(
+    const std::vector<ReadBatchItem>& items,
+    size_t max_total_bytes,
+    size_t max_item_bytes) const {
+  ReadBatchResult result;
+  std::vector<uint8_t> blob;
+
+  for (const ReadBatchItem& item : items) {
+    base::DictValue entry;
+    entry.Set("path", item.path);
+
+    const size_t remaining =
+        max_total_bytes > blob.size() ? max_total_bytes - blob.size() : 0;
+    if (remaining == 0) {
+      result.truncated = true;
+      entry.Set("ok", false);
+      entry.Set("byteOffset", 0);
+      entry.Set("byteLength", 0);
+      entry.Set("error", "Batch byte budget exhausted");
+      result.entries.Append(std::move(entry));
+      continue;
+    }
+
+    // Delegate to the single-path readers rather than reimplementing them:
+    // that keeps the ENOENT-vs-unreadable wording byte-identical to
+    // fs.readFile (the guest regexes for ENOENT), and keeps the 256 MiB
+    // range guard in one place. The cost is one extra memcpy per item.
+    std::optional<mojo_base::BigBuffer> data;
+    std::string error;
+    if (item.offset == 0 && item.length == 0) {
+      ReadResult read = ReadFile(item.path);
+      data = std::move(read.data);
+      error = std::move(read.error);
+    } else {
+      const uint32_t capped = item.length == 0
+                                  ? static_cast<uint32_t>(std::min(
+                                        max_item_bytes,
+                                        static_cast<size_t>(UINT32_MAX)))
+                                  : item.length;
+      ReadRangeResult read = ReadRange(item.path, item.offset, capped);
+      data = std::move(read.data);
+      error = std::move(read.error);
+    }
+
+    if (!data.has_value()) {
+      entry.Set("ok", false);
+      entry.Set("byteOffset", 0);
+      entry.Set("byteLength", 0);
+      entry.Set("error", error.empty() ? "Failed to read file" : error);
+      result.entries.Append(std::move(entry));
+      continue;
+    }
+
+    if (data->size() > max_item_bytes) {
+      entry.Set("ok", false);
+      entry.Set("byteOffset", 0);
+      entry.Set("byteLength", 0);
+      entry.Set("error", "Item exceeds the per-item byte limit");
+      result.entries.Append(std::move(entry));
+      continue;
+    }
+
+    if (data->size() > remaining) {
+      result.truncated = true;
+      entry.Set("ok", false);
+      entry.Set("byteOffset", 0);
+      entry.Set("byteLength", 0);
+      entry.Set("error", "Batch byte budget exhausted");
+      result.entries.Append(std::move(entry));
+      continue;
+    }
+
+    const size_t offset = blob.size();
+    const std::vector<uint8_t> bytes = CopyBigBufferBytes(*data);
+    blob.insert(blob.end(), bytes.begin(), bytes.end());
+
+    entry.Set("ok", true);
+    entry.Set("byteOffset", static_cast<double>(offset));
+    entry.Set("byteLength", static_cast<double>(bytes.size()));
+    result.entries.Append(std::move(entry));
+  }
+
+  result.success = true;
+  result.data.emplace(base::span(blob));
   return result;
 }
 

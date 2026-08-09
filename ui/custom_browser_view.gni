@@ -7,8 +7,6 @@ browser_view_sources = [
   "//custom_browser/ui/view/custom_browser_view_layout.cc",
   "//custom_browser/ui/view/mouse_event_handler.h",
   "//custom_browser/ui/view/mouse_event_handler.cc",
-  "//custom_browser/ui/view/nexus_mode_button.h",
-  "//custom_browser/ui/view/nexus_mode_button.cc",
   "//custom_browser/ui/view/custom_browser_window_util.h",
   "//custom_browser/ui/view/custom_browser_window_util.cc",
   "//custom_browser/ui/view/nexus_native_menus.h",

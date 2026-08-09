@@ -21,7 +21,7 @@ const WINDOWS_CAPTION_BUTTON_AREA_WIDTH = 144;
 // TabStripActionContainer defaults to the startup GLIC button plus separator.
 // On Windows this is ~100 DIP in the default "Gemini" labeled state:
 // ~47 DIP text + 40 DIP button chrome + 12 DIP separator and margins.
-const TAB_STRIP_ACTION_CONTAINER_WIDTH = 158;
+const TAB_STRIP_ACTION_CONTAINER_WIDTH = 100;
 
 function toCssLength(value: LengthValue): string {
   return typeof value === 'number' ? `${value}px` : value;

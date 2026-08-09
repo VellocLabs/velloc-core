@@ -74,6 +74,18 @@ class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
       ::nexus::generated::ReaddirInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  void HandleStatBatchOnUI(
+      ::nexus::generated::StatBatchInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleReaddirTreeOnUI(
+      ::nexus::generated::ReaddirTreeInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleReadBatchOnUI(
+      ::nexus::generated::ReadBatchInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   void HandleReadFileOnUI(
       ::nexus::generated::ReadFileInput input,
       std::vector<blink::MessagePortDescriptor> ports,

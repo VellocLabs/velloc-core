@@ -12,6 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
@@ -177,6 +178,161 @@ TEST(NexusFsBridgeAdapterTest,
   // read completes against a live host; the reply drops on the dead adapter.
   adapter.reset();
 
+  task_environment.RunUntilIdle();  // must not crash
+
+  EXPECT_EQ(delegate.binary_count, 0);
+  EXPECT_EQ(delegate.success_count, 0);
+  EXPECT_EQ(delegate.error_count, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Batched routes.
+// ---------------------------------------------------------------------------
+
+// readBatch settles over the binary path with the index on the envelope and
+// every item's bytes in the single concatenated buffer.
+TEST(NexusFsBridgeAdapterTest, ReadBatchResolvesBinaryAfterPoolHop) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaa"));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("b.txt"), "bb"));
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  task_environment.RunUntilIdle();
+
+  base::ListValue items;
+  for (const char* name : {"a.txt", "b.txt"}) {
+    base::DictValue item;
+    item.Set("path", name);
+    items.Append(std::move(item));
+  }
+  base::DictValue payload;
+  payload.Set("items", std::move(items));
+
+  EXPECT_TRUE(adapter->Dispatch("readBatch", "req-1", FsRoute("readBatch"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+
+  EXPECT_EQ(delegate.binary_count, 1);
+  EXPECT_EQ(delegate.error_count, 0);
+}
+
+TEST(NexusFsBridgeAdapterTest, ReaddirTreeResolvesAsJson) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaa"));
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  task_environment.RunUntilIdle();
+
+  base::DictValue payload;
+  payload.Set("path", ".");
+  payload.Set("maxDepth", 2);
+  EXPECT_TRUE(adapter->Dispatch("readdirTree", "req-1", FsRoute("readdirTree"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+
+  ASSERT_EQ(delegate.success_count, 1);
+  EXPECT_EQ(delegate.error_count, 0);
+  const base::DictValue* result = delegate.last_success.GetIfDict();
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(result->FindBool("truncated").value_or(true));
+  ASSERT_TRUE(result->FindList("entries"));
+  EXPECT_EQ(1u, result->FindList("entries")->size());
+}
+
+// Over-cap is rejected, never silently truncated: a short answer to an
+// existence check would mislabel real files as missing.
+TEST(NexusFsBridgeAdapterTest, StatBatchOverLimitRejectsWithInvalidArgs) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  task_environment.RunUntilIdle();
+
+  base::ListValue paths;
+  for (int i = 0; i < 2001; ++i) {
+    paths.Append("f.txt");
+  }
+  base::DictValue payload;
+  payload.Set("paths", std::move(paths));
+
+  EXPECT_TRUE(adapter->Dispatch("statBatch", "req-1", FsRoute("statBatch"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+
+  EXPECT_EQ(delegate.error_count, 1);
+  EXPECT_EQ(delegate.success_count, 0);
+}
+
+// An item with no "path" is rejected outright rather than skipped. The
+// codegen array<object> extractor already drops non-dicts, and a silently
+// shorter list would shift every later index in the response — attributing
+// one session's bytes to another.
+TEST(NexusFsBridgeAdapterTest, ReadBatchRejectsAnItemWithoutAPath) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  task_environment.RunUntilIdle();
+
+  base::ListValue items;
+  items.Append(base::DictValue());  // no "path"
+  base::DictValue payload;
+  payload.Set("items", std::move(items));
+
+  EXPECT_TRUE(adapter->Dispatch("readBatch", "req-1", FsRoute("readBatch"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+
+  EXPECT_EQ(delegate.error_count, 1);
+  EXPECT_EQ(delegate.binary_count, 0);
+}
+
+// The teardown race again, but over a BATCH. It matters more than its two
+// predecessors: a batch performs O(N) opens on the worker, so the window
+// between "adapter destroyed" and "reply runs" is far wider than a single
+// read's. Its real value is failing loudly if someone ever binds `this`
+// instead of `fs_host_` in the new handler.
+TEST(NexusFsBridgeAdapterTest,
+     DestroyingAdapterMidReadBatchDropsReplyWithoutUseAfterFree) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  base::ListValue items;
+  for (int i = 0; i < 32; ++i) {
+    const std::string name = "f" + base::NumberToString(i) + ".txt";
+    ASSERT_TRUE(
+        base::WriteFile(temp_dir.GetPath().AppendASCII(name), "payload"));
+    base::DictValue item;
+    item.Set("path", name);
+    items.Append(std::move(item));
+  }
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  task_environment.RunUntilIdle();
+
+  base::DictValue payload;
+  payload.Set("items", std::move(items));
+  EXPECT_TRUE(adapter->Dispatch("readBatch", "req-1", FsRoute("readBatch"),
+                                payload, {}));
+
+  adapter.reset();
   task_environment.RunUntilIdle();  // must not crash
 
   EXPECT_EQ(delegate.binary_count, 0);

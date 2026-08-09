@@ -15,7 +15,10 @@ import {
   type MainContentsLayoutPayload,
 } from './nexus_ui_event_client.js';
 
+import {sendWithPromise} from 'chrome://resources/js/cr.js';
+
 import './nexus_welcome.js';
+import './nexus_guest_recovery.js';
 import {LOADING_STAGE_ORDER, type LoadingStage} from './nexus_welcome.js';
 import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 
@@ -100,6 +103,17 @@ export class NexusViewElement extends CrLitElement {
       height: 100%;
       z-index: 10;
     }
+
+    /* Same geometry as the welcome overlay, one layer above it: the two are
+     * mutually exclusive in render(), but the guest <webview> underneath may
+     * be showing a 404 body and must stay covered. */
+    nexus-guest-recovery.recovery-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 11;
+    }
   `;
 
   // Latches once: controls the <nexus-welcome> overlay AND the
@@ -131,6 +145,14 @@ export class NexusViewElement extends CrLitElement {
   // (MultiSessionShell's webview_area splitter).
   private mainContentsLayout_: MainContentsLayoutPayload|null = null;
   private mainContentsEl_: HTMLElement|null = null;
+  // Set when the guest is known not to be coming up: either the `nexus-init`
+  // handshake never got an ack (bootstrapNexusGuest's onFailure — the case
+  // that matters, because a wrong-but-valid URL yields a 404 the <webview>
+  // loads SUCCESSFULLY) or the load failed at the network layer (loadabort).
+  // Non-null renders <nexus-guest-recovery>, which is the only in-product way
+  // back from a bad `nexus.webapp_url` — the pref's other editor lives in the
+  // guest's own Settings · About page, i.e. inside the app that just failed.
+  private guestFailureUrl_: string|null = null;
   private dismissBootWelcomeUnsubscribe_: (() => void)|null = null;
   private mainContentsLayoutUnsubscribe_: (() => void)|null = null;
   private buildInfoUnsubscribe_: (() => void)|null = null;
@@ -168,13 +190,71 @@ export class NexusViewElement extends CrLitElement {
     // — no chrome://glic intermediate.
     const webview = this.shadowRoot?.getElementById('nexusPane');
     if (webview) {
-      void bootstrapNexusGuest(webview, stage => this.onLoadingStage_(stage))
+      // `loadabort` only covers network-layer failures (DNS, refused
+      // connection). It is a latency optimisation, not the primary trigger:
+      // an HTTP 404 — the interface-skew case, where the origin is reachable
+      // but does not serve this binary's /v<N>/ — is a SUCCESSFUL load that
+      // never fires it. The handshake timeout below is what catches that.
+      webview.addEventListener('loadabort', (e: Event) => {
+        const detail = e as Event & {isTopLevel?: boolean, reason?: string};
+        // Subframe aborts are the guest's business, and ERR_ABORTED is what
+        // our own re-navigation produces — neither means the guest is dead.
+        if (detail.isTopLevel === false || detail.reason === 'ERR_ABORTED') {
+          return;
+        }
+        this.onGuestFailure_(null, `loadabort ${detail.reason ?? ''}`.trim());
+      });
+      void bootstrapNexusGuest(
+          webview,
+          stage => this.onLoadingStage_(stage),
+          detail => this.onGuestFailure_(detail.guestUrl, detail.message))
           .catch((error: unknown) => {
             console.error('[NexusView] bootstrapNexusGuest failed', error);
           });
     } else {
       console.error('[NexusView] missing #nexusPane <webview> element');
     }
+  }
+
+  // Reveal the recovery overlay. Latches on the FIRST failure: the handshake
+  // and loadabort can both fire for one dead load, and the first has the more
+  // useful URL. Also dismisses the boot welcome — otherwise the splash would
+  // sit there until its 25 s fallback while the recovery UI waits underneath.
+  private onGuestFailure_(guestUrl: string|null, reason: string) {
+    if (this.guestFailureUrl_ !== null) {
+      return;
+    }
+    console.error('[NexusView] guest failed to start', {guestUrl, reason});
+    this.guestFailureUrl_ = guestUrl ?? '';
+    this.bootWelcomeDismissed_ = true;
+    this.clearDismissBootWelcomeFallbackTimer_();
+    this.requestUpdate();
+  }
+
+  // Clear the `nexus.webapp_url` override and reload the panel. The reset goes
+  // through the legacy `setWebappUrl` chrome.send route
+  // (NexusSettingsHandler, registered on this WebUI by custom_browser_webui.cc)
+  // — empty string means "use the built-in default" (nexus_guest_config.cc).
+  //
+  // The reload is required, not cosmetic: the resolved guest URL is injected
+  // into loadTimeData when the WebUI controller is constructed, so the new
+  // pref only takes effect on a fresh page. It also cannot be computed here —
+  // the default in loadTimeData is the RAW base, without the /v<N>/ segment
+  // that GetResolvedNexusGuestURL() appends on the C++ side.
+  private async onRecoveryReset_() {
+    try {
+      await sendWithPromise('setWebappUrl', '');
+    } catch (e) {
+      // Fall through to the reload anyway: if the pref write failed the page
+      // comes back to this same overlay, which is a better outcome than a
+      // dead button. The restart hint in the overlay covers the rest.
+      console.error('[NexusView] setWebappUrl reset failed', e);
+    }
+    location.reload();
+  }
+
+  private onRecoveryRetry_() {
+    location.reload();
   }
 
   // Host-handshake stage source (bootstrapNexusGuest's onStatus callback):
@@ -351,6 +431,13 @@ export class NexusViewElement extends CrLitElement {
         <nexus-welcome class="welcome-overlay"
             .buildTime=${this.buildTime_}
             .loadingStage=${this.loadingStage_}></nexus-welcome>
+      `}
+      ${this.guestFailureUrl_ === null ? nothing : html`
+        <nexus-guest-recovery class="recovery-overlay"
+            .guestUrl=${this.guestFailureUrl_}
+            @nexus-guest-recovery-reset=${this.onRecoveryReset_}
+            @nexus-guest-recovery-retry=${this.onRecoveryRetry_}>
+        </nexus-guest-recovery>
       `}
     `;
   }

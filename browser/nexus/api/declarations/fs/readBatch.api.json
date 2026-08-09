@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readBatch",
+  "description": "Read many files, or byte ranges of them, in one round-trip. The JSON envelope is an index (one entry per request, echoing its path); the bytes travel as ONE concatenated buffer on a transferred binary port, because a response can carry only a single buffer.",
+  "inputs": [
+    {
+      "name": "items",
+      "type": "array<object>",
+      "required": true,
+      "description": "One entry per read: { path: string, offset?: integer, length?: integer }. Omitted or zero length means 'to end of file' from offset. Capped at 512 items per call."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

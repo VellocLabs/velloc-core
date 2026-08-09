@@ -5,6 +5,7 @@
 
 #include "base/containers/span.h"
 #include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 
 namespace nexus::bridge_support {
@@ -93,6 +94,13 @@ std::optional<int64_t> FindIntegralValue(const base::DictValue& dict,
   if (std::optional<double> value = dict.FindDouble(key);
       value && std::isfinite(*value) && std::floor(*value) == *value) {
     return static_cast<int64_t>(*value);
+  }
+  // LLMs sometimes emit integers as strings (e.g. "25" instead of 25).
+  if (const std::string* str = dict.FindString(key)) {
+    int parsed = 0;
+    if (base::StringToInt(*str, &parsed)) {
+      return static_cast<int64_t>(parsed);
+    }
   }
   return std::nullopt;
 }

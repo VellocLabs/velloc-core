@@ -7,11 +7,14 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/task_environment.h"
+#include "base/values.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -87,6 +90,351 @@ TEST(NexusFsHostTest, ReadFileReturnsContentsForExistingFile) {
   const std::string read(reinterpret_cast<const char*>(result.data->data()),
                          result.data->size());
   EXPECT_EQ(payload, read);
+}
+
+// ---------------------------------------------------------------------------
+// Batched routes. These exist to collapse the session-list scan from ~550
+// bridge round-trips to ~5; the tests below pin the properties that make that
+// safe rather than just fast.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// `root/p1/s1/{transcript.jsonl, meta.jsonl, tool-details/{a,b}.json}` — the
+// shape of a real session store, including the directory that must NOT be
+// descended into.
+void BuildSessionStoreFixture(const base::FilePath& root) {
+  const base::FilePath session =
+      root.AppendASCII("p1").AppendASCII("s1");
+  ASSERT_TRUE(base::CreateDirectory(session.AppendASCII("tool-details")));
+  ASSERT_TRUE(base::WriteFile(session.AppendASCII("transcript.jsonl"),
+                              "{\"type\":\"user\"}\n"));
+  ASSERT_TRUE(base::WriteFile(session.AppendASCII("meta.jsonl"),
+                              "{\"type\":\"__session_meta\"}\n"));
+  ASSERT_TRUE(base::WriteFile(
+      session.AppendASCII("tool-details").AppendASCII("a.json"), "{}"));
+  ASSERT_TRUE(base::WriteFile(
+      session.AppendASCII("tool-details").AppendASCII("b.json"), "{}"));
+}
+
+bool HasRowWithPath(const base::ListValue& entries, const std::string& path) {
+  for (const base::Value& row : entries) {
+    const std::string* value = row.GetDict().FindString("path");
+    if (value && *value == path) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool AnyRowPathStartsWith(const base::ListValue& entries,
+                          const std::string& prefix) {
+  for (const base::Value& row : entries) {
+    const std::string* value = row.GetDict().FindString("path");
+    if (value && value->rfind(prefix, 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
+// THE depth-cap test. Without it a naive FileEnumerator(recursive=true)
+// implementation passes every other test here while returning every
+// tool-details file on a real profile — 24k rows on the author's.
+TEST(NexusFsHostTest, ReaddirTreeStopsAtDepthCap) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  BuildSessionStoreFixture(temp_dir.GetPath());
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReaddirTreeResult result = host->ReaddirTree(".", 3, 20000);
+  ASSERT_TRUE(result.success) << result.error;
+  EXPECT_FALSE(result.truncated);
+
+  // The session's own files are reached at depth 3 …
+  EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/transcript.jsonl"));
+  EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/meta.jsonl"));
+  // … and tool-details is LISTED as a directory …
+  EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/tool-details"));
+  // … but never descended into.
+  EXPECT_FALSE(AnyRowPathStartsWith(result.entries, "p1/s1/tool-details/"));
+}
+
+// Row paths are a WIRE CONTRACT: root-relative and '/'-separated on every
+// platform. On Windows a backslash here would make the guest's split yield a
+// single segment, and the sidebar would go silently empty.
+TEST(NexusFsHostTest, ReaddirTreeRelativePathsUseForwardSlash) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  BuildSessionStoreFixture(temp_dir.GetPath());
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReaddirTreeResult result = host->ReaddirTree(".", 3, 20000);
+  ASSERT_TRUE(result.success) << result.error;
+  for (const base::Value& row : result.entries) {
+    const std::string* path = row.GetDict().FindString("path");
+    ASSERT_TRUE(path);
+    EXPECT_EQ(std::string::npos, path->find('\\')) << *path;
+  }
+}
+
+// The size on a tree row is what licenses dropping the per-session fs.stat —
+// it supplies both the summary-cache key and the tail-read offset.
+TEST(NexusFsHostTest, ReaddirTreeReportsSizeForFilesAndZeroForDirs) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("nine.txt"),
+                              "123456789"));
+  ASSERT_TRUE(base::CreateDirectory(temp_dir.GetPath().AppendASCII("sub")));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReaddirTreeResult result = host->ReaddirTree(".", 1, 20000);
+  ASSERT_TRUE(result.success) << result.error;
+
+  for (const base::Value& row : result.entries) {
+    const base::DictValue& dict = row.GetDict();
+    const std::string* path = dict.FindString("path");
+    ASSERT_TRUE(path);
+    if (*path == "nine.txt") {
+      EXPECT_FALSE(dict.FindBool("isDirectory").value_or(true));
+      EXPECT_EQ(9.0, dict.FindDouble("size").value_or(-1));
+      EXPECT_TRUE(dict.FindDouble("mtimeMs").has_value());
+    } else if (*path == "sub") {
+      EXPECT_TRUE(dict.FindBool("isDirectory").value_or(false));
+      EXPECT_EQ(0.0, dict.FindDouble("size").value_or(-1));
+    }
+  }
+}
+
+TEST(NexusFsHostTest, ReaddirTreeTruncatesAtMaxEntries) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_TRUE(base::WriteFile(
+        temp_dir.GetPath().AppendASCII(base::NumberToString(i) + ".txt"), "x"));
+  }
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReaddirTreeResult result = host->ReaddirTree(".", 1, 2);
+  ASSERT_TRUE(result.success) << result.error;
+  EXPECT_TRUE(result.truncated);
+  EXPECT_EQ(2u, result.entries.size());
+}
+
+TEST(NexusFsHostTest, ReaddirTreeMissingRootIsAnError) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  // Distinct from "empty profile": the guest must be able to tell a failed
+  // scan from a real zero-session answer, because the two lead to different
+  // boot behaviour.
+  NexusFsHost::ReaddirTreeResult result = host->ReaddirTree("nope", 3, 20000);
+  EXPECT_FALSE(result.success);
+  EXPECT_FALSE(result.error.empty());
+}
+
+TEST(NexusFsHostTest, StatBatchReturnsRowPerPathInOrderWithNullForMissing) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "abc"));
+  ASSERT_TRUE(base::CreateDirectory(temp_dir.GetPath().AppendASCII("d")));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  // A duplicate is preserved, not deduped — callers index by position.
+  const std::vector<std::string> paths = {"a.txt", "d", "missing.txt", "a.txt"};
+  NexusFsHost::StatBatchResult result = host->StatBatch(paths);
+  ASSERT_TRUE(result.success) << result.error;
+  ASSERT_EQ(4u, result.rows.size());
+
+  for (size_t i = 0; i < paths.size(); ++i) {
+    const base::DictValue& row = result.rows[i].GetDict();
+    const std::string* echoed = row.FindString("path");
+    ASSERT_TRUE(echoed);
+    // The REQUEST string, not the resolved absolute path.
+    EXPECT_EQ(paths[i], *echoed);
+  }
+
+  EXPECT_TRUE(result.rows[0].GetDict().FindDict("stat"));
+  EXPECT_TRUE(result.rows[1]
+                  .GetDict()
+                  .FindDict("stat")
+                  ->FindBool("isDirectory")
+                  .value_or(false));
+  // Absent is an ordinary answer, not a failure.
+  EXPECT_TRUE(result.rows[2].GetDict().Find("stat")->is_none());
+}
+
+TEST(NexusFsHostTest, ReadBatchConcatenatesAndIndexesEachItem) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaa"));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("b.txt"), "bbbb"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReadBatchResult result = host->ReadBatch(
+      {{"a.txt", 0, 0}, {"b.txt", 0, 0}}, 1024 * 1024, 1024 * 1024);
+  ASSERT_TRUE(result.success) << result.error;
+  ASSERT_TRUE(result.data.has_value());
+  ASSERT_EQ(2u, result.entries.size());
+
+  const std::string blob(reinterpret_cast<const char*>(result.data->data()),
+                         result.data->size());
+  EXPECT_EQ("aaabbbb", blob);
+
+  const base::DictValue& first = result.entries[0].GetDict();
+  EXPECT_TRUE(first.FindBool("ok").value_or(false));
+  EXPECT_EQ(0.0, first.FindDouble("byteOffset").value_or(-1));
+  EXPECT_EQ(3.0, first.FindDouble("byteLength").value_or(-1));
+
+  const base::DictValue& second = result.entries[1].GetDict();
+  EXPECT_EQ(3.0, second.FindDouble("byteOffset").value_or(-1));
+  EXPECT_EQ(4.0, second.FindDouble("byteLength").value_or(-1));
+}
+
+// The legacy-session path: sessions with no meta.jsonl sidecar are served by
+// a 64KB tail range in the SAME batch as the sidecar reads.
+TEST(NexusFsHostTest, ReadBatchHonorsPerItemRange) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(
+      base::WriteFile(temp_dir.GetPath().AppendASCII("t.jsonl"), "0123456789"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReadBatchResult result =
+      host->ReadBatch({{"t.jsonl", 7, 3}}, 1024 * 1024, 1024 * 1024);
+  ASSERT_TRUE(result.success) << result.error;
+  ASSERT_TRUE(result.data.has_value());
+  const std::string blob(reinterpret_cast<const char*>(result.data->data()),
+                         result.data->size());
+  EXPECT_EQ("789", blob);
+}
+
+// One bad path must not cost the other 225 sessions their summaries.
+TEST(NexusFsHostTest, ReadBatchMarksMissingItemFailedAndKeepsTheRest) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaa"));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("c.txt"), "cc"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReadBatchResult result = host->ReadBatch(
+      {{"a.txt", 0, 0}, {"gone.txt", 0, 0}, {"c.txt", 0, 0}}, 1024 * 1024,
+      1024 * 1024);
+  ASSERT_TRUE(result.success) << result.error;
+  ASSERT_EQ(3u, result.entries.size());
+
+  EXPECT_TRUE(result.entries[0].GetDict().FindBool("ok").value_or(false));
+  EXPECT_FALSE(result.entries[1].GetDict().FindBool("ok").value_or(true));
+  // The ENOENT wording survives the batch, same as fs.readFile.
+  const std::string* error = result.entries[1].GetDict().FindString("error");
+  ASSERT_TRUE(error);
+  EXPECT_NE(std::string::npos, error->find("ENOENT")) << *error;
+  EXPECT_TRUE(result.entries[2].GetDict().FindBool("ok").value_or(false));
+
+  // The failed item contributes no bytes, and the survivor's offset accounts
+  // for that — an off-by-one here would attribute bytes to the wrong session.
+  const std::string blob(reinterpret_cast<const char*>(result.data->data()),
+                         result.data->size());
+  EXPECT_EQ("aaacc", blob);
+  EXPECT_EQ(3.0, result.entries[2].GetDict().FindDouble("byteOffset").value_or(-1));
+}
+
+// TOCTOU: the index scan reports a size, and by the time the batch reads, the
+// file has shrunk / been emptied / been deleted. None of those may fail the
+// batch — the affected item comes back empty or ok:false and the guest simply
+// skips that session. Rare in practice, but a whole sidebar must never be lost
+// to one file changing underneath the scan.
+TEST(NexusFsHostTest, ReadBatchToleratesFilesChangingAfterTheScan) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  // Scan saw 10 bytes; the file is 4 by the time we read a "tail" at offset 6.
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("shrunk.jsonl"),
+                              "abcd"));
+  ASSERT_TRUE(
+      base::WriteFile(temp_dir.GetPath().AppendASCII("empty.jsonl"), ""));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("ok.jsonl"), "ok"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReadBatchResult result = host->ReadBatch(
+      {
+          {"shrunk.jsonl", /*offset=*/6, /*length=*/64},  // offset past EOF now
+          {"empty.jsonl", 0, 0},
+          {"vanished.jsonl", /*offset=*/6, /*length=*/64},  // deleted
+          {"ok.jsonl", 0, 0},
+      },
+      1024 * 1024, 1024 * 1024);
+
+  // The CALL succeeds regardless.
+  ASSERT_TRUE(result.success) << result.error;
+  ASSERT_EQ(4u, result.entries.size());
+
+  // Past-EOF and empty are ordinary empty reads, not errors.
+  EXPECT_TRUE(result.entries[0].GetDict().FindBool("ok").value_or(false));
+  EXPECT_EQ(0.0, result.entries[0].GetDict().FindDouble("byteLength").value_or(-1));
+  EXPECT_TRUE(result.entries[1].GetDict().FindBool("ok").value_or(false));
+  EXPECT_EQ(0.0, result.entries[1].GetDict().FindDouble("byteLength").value_or(-1));
+  // A vanished file is a per-item failure.
+  EXPECT_FALSE(result.entries[2].GetDict().FindBool("ok").value_or(true));
+
+  // …and the healthy item that follows them is unaffected, at the right offset.
+  EXPECT_TRUE(result.entries[3].GetDict().FindBool("ok").value_or(false));
+  EXPECT_EQ(0.0, result.entries[3].GetDict().FindDouble("byteOffset").value_or(-1));
+  const std::string blob(reinterpret_cast<const char*>(result.data->data()),
+                         result.data->size());
+  EXPECT_EQ("ok", blob);
+}
+
+// A partial answer beats none for a sidebar; the guest re-requests the rest.
+TEST(NexusFsHostTest, ReadBatchStopsAtByteBudgetWithoutFailingTheCall) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaaa"));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("b.txt"), "bbbb"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::ReadBatchResult result =
+      host->ReadBatch({{"a.txt", 0, 0}, {"b.txt", 0, 0}}, /*max_total=*/4,
+                      /*max_item=*/1024);
+  ASSERT_TRUE(result.success) << result.error;
+  EXPECT_TRUE(result.truncated);
+  EXPECT_TRUE(result.entries[0].GetDict().FindBool("ok").value_or(false));
+  EXPECT_FALSE(result.entries[1].GetDict().FindBool("ok").value_or(true));
 }
 
 }  // namespace

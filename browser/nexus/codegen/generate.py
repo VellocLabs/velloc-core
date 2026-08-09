@@ -580,6 +580,7 @@ HEADER_TEMPLATE = """\
 #include <utility>
 #include <vector>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
@@ -935,6 +936,13 @@ def _extract_int(inp: InputDecl) -> str:
             f"  // {inp.name}: required integer\n"
             f"  if (auto v = args.FindInt(\"{key}\")) {{\n"
             f"    out.{inp.name} = *v;\n"
+            f"  }} else if (const std::string* s = args.FindString(\"{key}\")) {{\n"
+            f"    int parsed;\n"
+            f"    if (base::StringToInt(*s, &parsed)) {{\n"
+            f"      out.{inp.name} = parsed;\n"
+            f"    }} else {{\n"
+            f"      return std::string(\"invalid integer \'{key}\': \" + *s);\n"
+            f"    }}\n"
             f"  }} else {{\n"
             f"    return std::string(\"missing required integer '{key}'\");\n"
             f"  }}\n"
@@ -943,6 +951,11 @@ def _extract_int(inp: InputDecl) -> str:
         f"  // {inp.name}: optional integer\n"
         f"  if (auto v = args.FindInt(\"{key}\")) {{\n"
         f"    out.{inp.name} = *v;\n"
+        f"  }} else if (const std::string* s = args.FindString(\"{key}\")) {{\n"
+        f"    int parsed;\n"
+        f"    if (base::StringToInt(*s, &parsed)) {{\n"
+        f"      out.{inp.name} = parsed;\n"
+        f"    }}\n"
         f"  }}\n"
     )
 

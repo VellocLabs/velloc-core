@@ -1,219 +1,221 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="de">
-<translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">Layout</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">Seitenleisten-Tabs</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">Vertikale Tabs in der Seitenleiste.</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">Seitenleisten-Tabs · Kompakt</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">Vertikale Tabs nur mit Symbolen in der Seitenleiste.</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">Tabs oben</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">Horizontale Tabs in der oberen Leiste.</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">Tabs oben · Kompakt</translation>
-<translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">Horizontale Tabs, die beim Überfahren erscheinen.</translation>
-<translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">Neuer Tab</translation>
-<translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">Suchfeld anzeigen</translation>
-<translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">Logo des Suchanbieters anzeigen</translation>
-<translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">Suchmaschine</translation>
-<translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">Leg los mit deinem neuen Tab. Tipps und Verknüpfungen, um ihn zu personalisieren.</translation>
-<translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">Einstiegsleitfaden öffnen</translation>
-<translation id="IDS_CUSTOM_BROWSER_LOADING">Wird geladen…</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">Erste Schritte</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">Leg hier los</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Erste Schritte mit Chromium</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">Richte Chromium in einer Minute ein: importiere deine Daten, wähle ein Layout und passe deinen neuen Tab an.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">Schritt 1. Bring deine Sachen mit</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">Importiere Lesezeichen, Passwörter und Einstellungen aus einem anderen Browser – kein Konto erforderlich.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">Importieren</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">Schritt 2. Wähle dein Layout</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">Wähle den Tab-Stil, der zu deiner Arbeitsweise passt. Du kannst jederzeit wechseln.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">Seitenleisten-Tabs</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">Deine Tabs, Adressleiste und Werkzeuge in einer vertikalen Seitenleiste.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">Kompakte Seitenleiste</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">Symbolorientierte Seitenleiste, die sich beim Überfahren erweitert – ideal für kleinere Bildschirme.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">Tabs oben</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">Klassische Tabs am oberen Rand für ein vertrautes Chrome-Layout.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">Kompakte Tabs oben</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">Ein schlankeres oberes Layout, das mehr Platz für das Wesentliche lässt: die Seite.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">Layout-Änderungen werden sofort übernommen.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">Layout anwenden</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">Schritt 3. Passe deinen neuen Tab an</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">Halte ihn aufgeräumt oder behalte die Suche im Vordergrund.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">Suchfeld auf neuem Tab anzeigen</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">Suchfeld ist sichtbar</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">Neuer Tab bleibt ablenkungsfrei</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">Deine Suche, dein Look</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Wenn du eine andere Standardsuche als Google wählst, aktualisiert Chromium das Branding des neuen Tabs automatisch.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Schritt 4. Integrierte Power-Tools</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium enthält optionale integrierte Erweiterungen. Du behältst die Kontrolle.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Standardmäßig aktiviert</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Effizientes Blockieren von Inhalten für ein schnelleres, saubereres Web.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Standardmäßig deaktiviert</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">Erweiterter Userscript-Manager für tiefgreifende Seitenanpassungen.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">Erweiterungen verwalten</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">Einige integrierte Tools können von der Verfügbarkeit im Chrome Web Store abweichen.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Schritt 5. Du bist startklar</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">Gut gemacht. Willst du noch weiter gehen? Entdecke als Nächstes weitere Funktionen.</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">Neuen Tab öffnen</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">Zu den Einstellungen</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">Erweiterungen →</translation>
-<translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">Empfohlen</translation>
-<translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">Minimal</translation>
-<translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Demnächst</translation>
-<translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automatisch</translation>
-<translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Erweitert</translation>
-<translation id="IDS_CUSTOM_BROWSER_CLOSE">Schließen</translation>
-<translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Erste Schritte mit Chromium</translation>
-<translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium-Logo</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">Integrierte Erweiterung</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">Name</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">Beschreibung</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">Version</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">Aktiviert</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">Standard</translation>
-<translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">Hintergrundseite</translation>
-<translation id="IDS_CUSTOM_BROWSER_VALUE_ON">An</translation>
-<translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">Aus</translation>
-<translation id="IDS_CUSTOM_BROWSER_VALUE_YES">Ja</translation>
-<translation id="IDS_CUSTOM_BROWSER_VALUE_NO">Nein</translation>
-<translation id="IDS_CUSTOM_BROWSER_VALUE_NA">Nicht verfügbar</translation>
-<translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">Version <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
-<translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Basiert auf Chromium <ph name="CHROMIUM_VERSION"/></translation>
-<translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">Modellanbieter</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">KI-Anbieter</translation>
-<translation id="IDS_NEXUS_SETTINGS_API_KEY_LABEL">API-Schlüssel</translation>
-<translation id="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER">Gib deinen API-Schlüssel ein</translation>
-<translation id="IDS_NEXUS_SETTINGS_TEST_CONNECTION">Verbindung testen</translation>
-<translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">Verbindung erfolgreich</translation>
-<translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">Verbindung fehlgeschlagen</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">Benutzerdefinierte <ph name="PRODUCT_NAME"/>-Web-App-URL</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">Auf Standard zurücksetzen</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">Web-App-URL des Agenten</translation>
-<translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
-<translation id="IDS_NEXUS_PROVIDER_ANTHROPIC">Anthropic</translation>
-<translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google AI</translation>
-<translation id="IDS_NEXUS_PROVIDER_OLLAMA">Ollama (Lokal)</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_LABEL">Modell</translation>
-<translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">Basis-URL</translation>
-<translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>
-<translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0">Diese Funktionen nutzen KI, befinden sich in einer frühen Entwicklungsphase und liegen nicht immer richtig.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">Diese Funktion führt <ph name="PRODUCT_NAME"/> direkt im Browser aus und verbindet Apps wie WhatsApp, Telegram, Discord und iMessage mit KI-Programmierassistenten.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2">Sie macht deinen Browser zu einem zentralen Ort, an dem du chatten und KI nutzen kannst, um bei allem zu helfen, was du normalerweise online tust.</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> kann viele LLM-Anbieter nutzen. Wähle einen Anbieter, authentifiziere dich und lege dann das Standardmodell fest.</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> kann viele LLM-Anbieter nutzen. Wähle einen Anbieter, authentifiziere dich und lege dann das Standardmodell fest.</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION">Wähle den Dienst, mit dem sich <ph name="PRODUCT_NAME"/> verbinden soll, und überprüfe die Verbindung.</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL">Konfiguriere die Web-App-URL, die von <ph name="PRODUCT_LONG_NAME"/> verwendet wird.</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">Lege eine benutzerdefinierte <ph name="PRODUCT_NAME"/>-Web-App-URL fest. Lass das Feld leer, um die Standardumgebung zu verwenden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">Es ist kein API-Schlüssel erforderlich. <ph name="PRODUCT_LONG_NAME"/> lädt Modelle vom konfigurierten Ollama-Server.</translation>
-<translation id="IDS_NEXUS_SETTINGS_API_KEY_HINT">Lass den API-Schlüssel leer, um den aktuell gespeicherten Schlüssel beizubehalten.</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL">Anbieterstatus</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED">Konfiguriert</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED">Nicht konfiguriert</translation>
-<translation id="IDS_NEXUS_SETTINGS_NO_PROVIDERS">Keine Anbieter verfügbar</translation>
-<translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">Anbieterinformationen für <ph name="PRODUCT_LONG_NAME"/> sind für dieses Profil nicht verfügbar.</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_LOADING">Verfügbare Modelle werden geladen...</translation>
-<translation id="IDS_NEXUS_SETTINGS_TESTING_CONNECTION">Verbindung wird getestet...</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX">Standard:</translation>
-<translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL">Die URL muss https:// oder http://localhost verwenden</translation>
-<translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL_FORMAT">Ungültiges URL-Format</translation>
-<translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL">Die Basis-URL muss http:// oder https:// verwenden</translation>
-<translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL_FORMAT">Ungültiges Basis-URL-Format</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_LOAD_FAILED">Modelle konnten nicht geladen werden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_NO_MODELS">Keine Modelle verfügbar.</translation>
-<translation id="IDS_NEXUS_SETTINGS_OLLAMA_MODEL_HINT">Speichere die Basis-URL, um Modelle von deiner Ollama-Instanz zu laden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_AUTOMATIC_MODEL_HINT">Modelle werden automatisch aus den aktuellen Anbietereinstellungen geladen.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SAVE_PROVIDER_MODEL_HINT">Speichere die Anbietereinstellungen, um verfügbare Modelle zu laden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_CONNECTION_LABEL">Verbindung</translation>
-<translation id="IDS_NEXUS_SETTINGS_CONNECTION_TEST_LABEL">Verbindungstest</translation>
-<translation id="IDS_NEXUS_SETTINGS_VALIDATE_TITLE">Aktuelle Konfiguration überprüfen</translation>
-<translation id="IDS_NEXUS_SETTINGS_VALIDATE_DESCRIPTION">Speichere die aktuellen Anbietereinstellungen und teste das ausgewählte Modell.</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_READY">Die aktuellen Einstellungen sind einsatzbereit.</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED">Vor der Verbindung dieses Anbieters ist eine zusätzliche Einrichtung erforderlich.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">Anbietereinstellungen werden gespeichert...</translation>
-<translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">Anbietereinstellungen konnten nicht aktualisiert werden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">Anbieter auswählen</translation>
-<translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">Anbieter</translation>
-<translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">Wähle einen Anbieter, gib die Verbindungsdetails ein und überprüfe sie dann, um Modelle zu laden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">Überprüfen &amp; Modelle laden</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">Anbieter zurücksetzen</translation>
-<translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">Sicher gespeichert</translation>
-<translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">Lass das Feld leer, um den gespeicherten Schlüssel beizubehalten.</translation>
-<translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">Gib den API-Schlüssel für diesen Anbieter ein.</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">Kein Anbieter konfiguriert</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">Wähle einen Anbieter, um zu beginnen.</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">Gespeicherte Konfiguration wird überprüft...</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">Verfügbare Modelle werden abgerufen...</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">Überprüfung erforderlich</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">Konfiguration geändert. Überprüfe sie, um Modelle zu laden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">Verbindung wird hergestellt...</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">Erfolgreich verbunden</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">Verbindung fehlgeschlagen</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">Nicht konfiguriert</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">Wird überprüft</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">Änderungen ausstehend</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">Verbindung wird hergestellt</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">Verbunden</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">Fehlgeschlagen</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR"><ph name="COUNT"/> Modell gefunden</translation>
-<translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL"><ph name="COUNT"/> Modelle gefunden</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">Nicht autorisiert – überprüfe deinen API-Schlüssel</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">Verboten – dieser Schlüssel kann nicht auf den Endpunkt zugreifen</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">Ungültige Basis-URL – gib einen gültigen API-Endpunkt ein</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">Endpunkt nicht erreichbar – überprüfe die URL oder dein Netzwerk</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">Zeitüberschreitung der Verbindung – versuche es erneut</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">Verbunden, aber es wurden keine Modelle zurückgegeben</translation>
-<translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">Unerwartete Serverantwort</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS"><ph name="COUNT"/>k Kontext</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT"><ph name="COUNT"/> Kontext</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">Tools</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">Vision</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">Aktiviere mindestens ein Modell, um fortzufahren.</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">Wähle ein Standardmodell aus den aktivierten Modellen.</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">Wähle ein Standardmodell, um fortzufahren.</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">Das Standardmodell muss eines der aktivierten Modelle sein.</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">Das ausgewählte Standardmodell ist nicht mehr verfügbar.</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">Modelle</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">Wähle aus, welche Modelle verfügbar sind und welches das Standardmodell ist.</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">Wähle das Standardmodell für diesen Anbieter. Öffne die Liste und tippe, um die verfügbaren Modelle zu filtern.</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">Standardmodell</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">Modell auswählen</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">Durchsuchen</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">Öffne die Liste und tippe dann, um die verfügbaren Modelle zu filtern.</translation>
-<translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">Modellauswahl schließen</translation>
-<translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">Modelle filtern</translation>
-<translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">Tippe, um Modelle zu filtern</translation>
-<translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">Keine Modelle entsprechen diesem Filter.</translation>
-<translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">Aktivierte Modelle</translation>
-<translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA"><ph name="MODEL_NAME"/> aktivieren</translation>
-<translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA"><ph name="MODEL_NAME"/> als Standardmodell festlegen</translation>
-<translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">Ausgewählt</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">Zusammenfassung</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">Anbieter</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">Gefundene Modelle</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">Aktivierte Modelle</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">Standard</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">Keine</translation>
-<translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">Nicht ausgewählt</translation>
-<translation id="IDS_NEXUS_SETTINGS_SAVE">Speichern</translation>
-<translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">Die Basis-URL ist erforderlich.</translation>
-<translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">Der API-Schlüssel ist erforderlich.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">Anbieter wechseln und die aktuellen nicht gespeicherten Verbindungs- und Modelländerungen verwerfen?</translation>
-<translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">Anbietereinstellungen konnten nicht gespeichert werden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">Anbietereinstellungen gespeichert.</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">Verbindung zurücksetzen</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE"><ph name="PROVIDER_NAME"/>-Verbindung zurücksetzen?</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">Dadurch werden die gespeicherten Verbindungsdetails für <ph name="PROVIDER_NAME"/> gelöscht, der überprüfte Status entfernt und die Standardwerte für diesen Anbieter wiederhergestellt.</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED"><ph name="PROVIDER_NAME"/>-Verbindung zurückgesetzt.</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM"><ph name="PROVIDER_NAME"/> zurücksetzen? Dadurch werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespeicherte Modellauswahl entfernt.</translation>
-<translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">Anbietereinstellungen konnten nicht zurückgesetzt werden.</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">Standardverhalten</translation>
-<translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">Lösche die benutzerdefinierte URL und verwende die integrierte <ph name="PRODUCT_NAME"/>-Web-App.</translation>
-<translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">Browserfenster öffnen</translation>
-<translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Task-Manager</translation>
-<translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Fenster schließen</translation>
-<translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Neues Browserfenster</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">Layout</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">Tabs in der Seitenleiste</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">Senkrechte Tabs in der Seitenleiste.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">Tabs in der Seitenleiste · Kompakt</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">Senkrechte Tabs in der Seitenleiste, nur mit Symbolen.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">Tabs oben</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">Waagerechte Tabs in der oberen Leiste.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">Tabs oben · Kompakt</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">Waagerechte Tabs, die beim Daraufzeigen erscheinen.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">Neuer Tab</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">Suchfeld anzeigen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">Logo der Suchmaschine anzeigen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">Suchmaschine</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">Leg mit deinem neuen Tab los. Tipps und Verknüpfungen, um ihn einzurichten.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">Einstiegsleitfaden öffnen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">Wird geladen …</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">Erste Schritte</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">Hier geht es los</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Erste Schritte mit Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">Richte Chromium in einer Minute ein: Daten importieren, Layout wählen und den neuen Tab anpassen.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">Schritt 1. Bring deine Sachen mit</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">Importiere Lesezeichen, Passwörter und Einstellungen aus einem anderen Browser – ganz ohne Konto.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">Importieren</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">Schritt 2. Wähle dein Layout</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">Nimm den Tab-Stil, der zu deiner Arbeitsweise passt. Du kannst jederzeit wechseln.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">Tabs in der Seitenleiste</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">Deine Tabs, die Adressleiste und die Werkzeuge in einer senkrechten Seitenleiste.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">Kompakte Seitenleiste</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">Symbolbasierte Seitenleiste, die sich beim Daraufzeigen aufklappt – ideal für kleinere Bildschirme.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">Tabs oben</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">Klassische Tabs am oberen Rand – das vertraute Chrome-Layout.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">Kompakte Tabs oben</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">Ein schlankeres Layout oben, das mehr Platz für das Wesentliche lässt: die Seite.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">Layout-Änderungen wirken sofort.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">Layout übernehmen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">Schritt 3. Passe deinen neuen Tab an</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">Halt ihn aufgeräumt – oder die Suche im Vordergrund.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">Suchfeld auf dem neuen Tab anzeigen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">Suchfeld ist sichtbar</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">Neuer Tab bleibt ablenkungsfrei</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">Deine Suche, dein Look</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Wenn du eine andere Standardsuche als Google wählst, passt Chromium das Branding auf dem neuen Tab automatisch an.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Schritt 4. Integrierte Power-Tools</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium bringt optionale integrierte Erweiterungen mit. Du behältst die Kontrolle.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Standardmäßig aktiviert</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Effizientes Blockieren von Inhalten für ein schnelleres, aufgeräumteres Web.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Standardmäßig aus</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">Fortgeschrittene Userscript-Verwaltung für tiefgreifende Anpassungen an Websites.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">Erweiterungen verwalten</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">Manche integrierten Tools können von dem abweichen, was im Chrome Web Store verfügbar ist.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Schritt 5. Du bist startklar</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">Gut gemacht. Lust auf mehr? Entdecke als Nächstes weitere Funktionen.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">Neuen Tab öffnen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">Zu den Einstellungen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">Erweiterungen →</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">Empfohlen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">Minimal</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Demnächst</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automatisch</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Erweitert</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">Schließen</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Erste Schritte mit Chromium</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium-Logo</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">Integrierte Erweiterung</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">Name</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">Beschreibung</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">Version</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">Aktiviert</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">Standard</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">Hintergrundseite</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">An</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">Aus</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">Ja</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">Nein</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">Nicht zutreffend</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">Version <ph name="PRODUCT_VERSION"/> (<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Basiert auf Chromium <ph name="CHROMIUM_VERSION"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">Modellanbieter</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">KI-Anbieter</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_LABEL">API-Schlüssel</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER">Gib deinen API-Schlüssel ein</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TEST_CONNECTION">Verbindung testen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">Verbindung erfolgreich</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">Verbindung fehlgeschlagen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">Eigene <ph name="PRODUCT_NAME"/>-Web-App-URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">Auf Standard zurücksetzen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">URL der Agent-Web-App</translation>
+  <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_ANTHROPIC">Anthropic</translation>
+  <translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google AI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_OLLAMA">Ollama (lokal)</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LABEL">Modell</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">Base-URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0">Diese Funktionen nutzen KI, stecken noch in einer frühen Entwicklungsphase und liegen nicht immer richtig.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">Diese Funktion führt <ph name="PRODUCT_NAME"/> direkt im Browser aus und verbindet Apps wie WhatsApp, Telegram, Discord und iMessage mit KI-Programmierassistenten.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2">Dein Browser wird damit zum zentralen Ort, an dem du chatten und dir von KI bei allem helfen lassen kannst, was du sonst online erledigst.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> kann viele LLM-Anbieter nutzen. Wähle einen Anbieter, melde dich an und lege dann das Standardmodell fest.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> kann viele LLM-Anbieter nutzen. Wähle einen Anbieter, melde dich an und lege dann das Standardmodell fest.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION">Wähle den Dienst aus, mit dem sich <ph name="PRODUCT_NAME"/> verbinden soll, und überprüfe die Verbindung.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL">Lege die Web-App-URL fest, die <ph name="PRODUCT_LONG_NAME"/> verwendet.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">Lege eine eigene <ph name="PRODUCT_NAME"/>-Web-App-URL fest. Lass das Feld leer, um die Standardvariante zu nutzen.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">Es wird kein API-Schlüssel benötigt. <ph name="PRODUCT_LONG_NAME"/> lädt die Modelle vom konfigurierten Ollama-Server.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HINT">Lass den API-Schlüssel leer, um den aktuell gespeicherten Schlüssel zu behalten.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL">Anbieterstatus</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED">Konfiguriert</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED">Nicht konfiguriert</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDERS">Keine Anbieter verfügbar</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">Für dieses Profil liegen keine Anbieterinformationen von <ph name="PRODUCT_LONG_NAME"/> vor.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LOADING">Verfügbare Modelle werden geladen ...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TESTING_CONNECTION">Verbindung wird getestet ...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX">Standard:</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL">Die URL muss https:// oder http://localhost verwenden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL_FORMAT">Ungültiges URL-Format</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL">Die Base-URL muss http:// oder https:// verwenden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL_FORMAT">Ungültiges Format der Base-URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LOAD_FAILED">Die Modelle konnten nicht geladen werden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MODELS">Keine Modelle verfügbar.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_MODEL_HINT">Speichere die Base-URL, um Modelle von deiner Ollama-Instanz zu laden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_AUTOMATIC_MODEL_HINT">Die Modelle werden automatisch aus den aktuellen Anbietereinstellungen geladen.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_PROVIDER_MODEL_HINT">Speichere die Anbietereinstellungen, um die verfügbaren Modelle zu laden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_LABEL">Verbindung</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_TEST_LABEL">Verbindungstest</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VALIDATE_TITLE">Die aktuelle Konfiguration prüfen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VALIDATE_DESCRIPTION">Speichert die aktuellen Anbietereinstellungen und testet das ausgewählte Modell.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_READY">Die aktuellen Einstellungen sind einsatzbereit.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED">Vor dem Verbinden ist für diesen Anbieter noch etwas einzurichten.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">Anbietereinstellungen werden gespeichert ...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">Die Anbietereinstellungen konnten nicht aktualisiert werden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">Anbieter auswählen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">Anbieter</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">Wähle einen Anbieter, gib die Verbindungsdaten ein und überprüfe sie dann, um Modelle zu laden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">Überprüfen &amp; Modelle laden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">Anbieter zurücksetzen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">Sicher gespeichert</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">Leer lassen, um den gespeicherten Schlüssel zu behalten.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">Gib den API-Schlüssel für diesen Anbieter ein.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">Kein Anbieter konfiguriert</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">Wähle zunächst einen Anbieter aus.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">Gespeicherte Konfiguration wird überprüft ...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">Verfügbare Modelle werden abgerufen ...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">Überprüfung erforderlich</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">Konfiguration geändert. Überprüfe sie, um Modelle zu laden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">Verbindung wird hergestellt ...</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">Erfolgreich verbunden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">Verbindung fehlgeschlagen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">Nicht konfiguriert</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">Wird überprüft</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">Änderungen ausstehend</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">Verbindet</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">Verbunden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">Fehlgeschlagen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR"><ph name="COUNT"/> Modell gefunden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL"><ph name="COUNT"/> Modelle gefunden</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">Nicht autorisiert – prüfe deinen API-Schlüssel</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">Verboten – dieser Schlüssel hat keinen Zugriff auf den Endpunkt</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">Ungültige Base-URL – gib einen gültigen API-Endpunkt an</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">Endpunkt nicht erreichbar – prüfe die URL oder dein Netzwerk</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">Zeitüberschreitung bei der Verbindung – versuche es erneut</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">Verbunden, aber es kamen keine Modelle zurück</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">Unerwartete Serverantwort</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS"><ph name="COUNT"/>k Kontext</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT"><ph name="COUNT"/> Kontext</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">Tools</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">Bilder</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">Aktiviere mindestens ein Modell, um fortzufahren.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">Wähle ein Standardmodell aus den aktivierten Modellen aus.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">Wähle ein Standardmodell aus, um fortzufahren.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">Das Standardmodell muss eines der aktivierten Modelle sein.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">Das gewählte Standardmodell ist nicht mehr verfügbar.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">Modelle</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">Lege fest, welche Modelle verfügbar sind und welches das Standardmodell ist.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">Wähle das Standardmodell für diesen Anbieter. Öffne die Liste und tippe, um die verfügbaren Modelle zu filtern.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">Standardmodell</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">Wähle ein Modell</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">Durchsuchen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">Öffne die Liste und tippe dann, um die verfügbaren Modelle zu filtern.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">Modellauswahl schließen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">Modelle filtern</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">Tippen, um Modelle zu filtern</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">Keine Modelle passen zu diesem Filter.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">Aktivierte Modelle</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA"><ph name="MODEL_NAME"/> aktivieren</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA"><ph name="MODEL_NAME"/> als Standardmodell festlegen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">Ausgewählt</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">Zusammenfassung</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">Anbieter</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">Gefundene Modelle</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">Aktivierte Modelle</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">Standard</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">Keiner</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">Nicht ausgewählt</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE">Speichern</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">Die Base-URL ist erforderlich.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">Der API-Schlüssel ist erforderlich.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">Anbieter wechseln und die aktuellen, nicht gespeicherten Verbindungs- und Modelländerungen verwerfen?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">Die Anbietereinstellungen konnten nicht gespeichert werden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">Anbietereinstellungen gespeichert.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">Verbindung zurücksetzen</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE">Verbindung zu <ph name="PROVIDER_NAME"/> zurücksetzen?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">Das löscht die gespeicherten Verbindungsdaten für <ph name="PROVIDER_NAME"/>, hebt den überprüften Status auf und stellt die Standardwerte dieses Anbieters wieder her.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED">Verbindung zu <ph name="PROVIDER_NAME"/> zurückgesetzt.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM"><ph name="PROVIDER_NAME"/> zurücksetzen?
+
+Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespeicherte Modellauswahl entfernt.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">Die Anbietereinstellungen konnten nicht zurückgesetzt werden.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">Standardverhalten</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">Löscht die eigene URL und nutzt die integrierte <ph name="PRODUCT_NAME"/>-Web-App.</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">Browserfenster öffnen</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Task-Manager</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Fenster schließen</translation>
+  <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Neues Browserfenster</translation>
 </translationbundle>

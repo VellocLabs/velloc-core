@@ -33,6 +33,28 @@ import type {LoadingStage} from './nexus_welcome.js';
 // Same page/process as the overlay, so this is a direct callback — no bridge.
 export type BootStatusReporter = (stage: LoadingStage) => void;
 
+// Reports a terminal PRE-ACK handshake failure to the host, which surfaces the
+// <nexus-guest-recovery> overlay.
+//
+// Scope is deliberately narrow, because the overlay blames the guest URL and
+// offers to reset the pref: this fires only when the document at guestUrl never
+// answered `nexus-init`. It does NOT fire once the guest has acked — a
+// post-ack bridge-bootstrap failure is host-side and says nothing about the
+// URL (see runHandshake). Nor does it fire for the aborted case (a newer guest
+// load superseded this handshake), so a normal guest reload never triggers
+// recovery.
+//
+// This exists because the failure is otherwise invisible. `runHandshake` is a
+// detached async IIFE with its own try/catch, and `bootstrapNexusGuest`
+// resolves as soon as it assigns `guest.src` — so the promise its caller
+// awaits CANNOT reject on a handshake failure, and the failure used to end its
+// life as a single debugTrace line while the panel sat blank.
+export type BootFailureReporter = (detail: {
+  reason: string,
+  message: string,
+  guestUrl: string,
+}) => void;
+
 const NEXUS_INIT_PING_INTERVAL_MS = 100;
 const NEXUS_INIT_TIMEOUT_MS = 30_000;
 const BRIDGE_BOOTSTRAP_TIMEOUT_MS = 30_000;
@@ -239,7 +261,8 @@ function waitForBootstrapAndForward(
 
 export async function bootstrapNexusGuest(
     webview: HTMLElement | null,
-    onStatus?: BootStatusReporter): Promise<void> {
+    onStatus?: BootStatusReporter,
+    onFailure?: BootFailureReporter): Promise<void> {
   if (!isBootstrapWebView(webview)) {
     throw new Error(
         'bootstrapNexusGuest requires a <webview> element; got ' +
@@ -260,6 +283,15 @@ export async function bootstrapNexusGuest(
 
   const guestUrl = buildGuestUrl();
   const guestOrigin = originOf(guestUrl);
+
+  const reportFailure = (detail: {reason: string, message: string}) => {
+    try {
+      onFailure?.({...detail, guestUrl: guestUrl.toString()});
+    } catch {
+      // Recovery UI is best-effort; never let a reporter throw escape into
+      // the handshake's catch block and mask the original failure.
+    }
+  };
   debugTrace('bootstrapping nexus guest', {
     src: guestUrl.toString(),
     origin: guestOrigin,
@@ -295,8 +327,39 @@ export async function bootstrapNexusGuest(
     debugTrace('starting nexus handshake', {reason});
 
     void (async () => {
+      // PRE-ACK. Deliberately its own try/catch, NOT merged with the post-ack
+      // block below: only a failure here says anything about the guest URL.
+      // waitForGuestAck pings every 100 ms for 30 s, so reaching its catch
+      // means the document at guestUrl never answered `nexus-init` — a 404
+      // body, a non-Nexus page, or a guest too broken to run its entry. That,
+      // and only that, is what the recovery overlay is allowed to blame the
+      // URL for and offer to reset the pref over.
       try {
         await waitForGuestAck(guest, guestOrigin, signal);
+      } catch (e) {
+        if (signal.aborted) {
+          // Expected: a newer guest load superseded this handshake.
+          return;
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        debugTrace('nexus-init handshake failed', {reason, message});
+        // Terminal for THIS load. Nothing clears the overlay afterwards —
+        // both of its buttons go through location.reload(), which restarts
+        // the page and this whole controller from scratch.
+        reportFailure({reason, message});
+        return;
+      }
+
+      // POST-ACK. The guest loaded and answered `nexus-init`, so the guest URL
+      // is proven good. Everything from here is host-side — the Mojo
+      // guestReady() call and the browser's port-forwarding postMessage — and
+      // a failure is the "Boot Failed / real bridge host not attached" class
+      // (see docs/workflow/run-e2e.md), NOT a bad runtime source. Reporting it
+      // as one would show copy blaming the URL and, worse, offer a primary
+      // button that wipes a `nexus.webapp_url` the user may have pinned on
+      // purpose — while leaving the panel just as dead, because the URL was
+      // never the problem. So this path stays diagnostic-only.
+      try {
         // Guest acked the handshake; mint + forward the bridge ports next.
         reportStatus('linking');
         NexusBridgeBootstrap.getRemote().guestReady();
@@ -309,13 +372,10 @@ export async function bootstrapNexusGuest(
         });
       } catch (e) {
         if (signal.aborted) {
-          // Expected: a newer guest load superseded this handshake.
           return;
         }
-        debugTrace('nexus handshake failed', {
-          reason,
-          message: e instanceof Error ? e.message : String(e),
-        });
+        const message = e instanceof Error ? e.message : String(e);
+        debugTrace('nexus bridge bootstrap failed', {reason, message});
       }
     })();
   };

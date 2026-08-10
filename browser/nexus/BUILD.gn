@@ -1156,6 +1156,11 @@ test("custom_browser_nexus_unittests") {
   deps = [
     ":unit_tests_lite",
     "//base/test:run_all_unittests",
+
+    # Not nexus-owned, but ui/view's only pure-logic test (the window
+    # resize-gutter geometry) belongs in a lite binary and doesn't warrant one
+    # of its own.
+    "//custom_browser/ui/view:unit_tests",
     "//services/network/public/mojom",
     "//testing/gtest",
   ]

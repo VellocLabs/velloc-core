@@ -1,0 +1,17 @@
+# Copyright 2026 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# The view sources themselves are compiled into //chrome/browser/ui via
+# browser_view_sources (see //custom_browser/ui/custom_browser_view.gni) —
+# CustomBrowserView derives from BrowserView, so it cannot live in a leaf
+# target. window_hit_test.h is the exception: header-only and dependency free,
+# precisely so its geometry can be tested without standing up a BrowserView.
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [ "window_hit_test_unittest.cc" ]
+
+  deps = [ "//testing/gtest" ]
+}

@@ -31,6 +31,7 @@
 #include "custom_browser/ui/startup/nexus_startup_prompts.h"
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
+#include "custom_browser/ui/view/window_hit_test.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui.h"
 
@@ -494,6 +495,35 @@ int CustomBrowserView::NonClientHitTest(const gfx::Point& point) {
     // NonClientView that it should figure out what the correct hit-test
     // code is given the mouse position...
     return HTNOWHERE;
+  }
+  // Claim a thin gutter along our own edges as a resize border, so the visible
+  // window edge answers a resize component instead of HTCLIENT. Without this
+  // the answer flips as the pointer crosses from our bounds into the OS frame,
+  // and since WM_SETCURSOR is driven entirely by the WM_NCHITTEST result (see
+  // window_hit_test.h), the size cursor flashes and reverts to the arrow even
+  // though a click landing outside our bounds still resizes.
+  //
+  // BrowserFrameViewWin returns the client view's component verbatim, so a
+  // resize code here reaches Windows and drives both the cursor and the drag.
+  const views::Widget* widget = GetWidget();
+  if (widget && parent() && widget->widget_delegate() &&
+      widget->widget_delegate()->CanResize() && !IsMaximized() &&
+      !IsFullscreen()) {
+    gfx::Point point_in_this(point);
+    views::View::ConvertPointToTarget(parent(), this, &point_in_this);
+    switch (custom_browser::ResizeEdgeForPoint(point_in_this.x(),
+                                               point_in_this.y(), width(),
+                                               height())) {
+      case custom_browser::ResizeEdge::kLeft: return HTLEFT;
+      case custom_browser::ResizeEdge::kRight: return HTRIGHT;
+      case custom_browser::ResizeEdge::kTop: return HTTOP;
+      case custom_browser::ResizeEdge::kBottom: return HTBOTTOM;
+      case custom_browser::ResizeEdge::kTopLeft: return HTTOPLEFT;
+      case custom_browser::ResizeEdge::kTopRight: return HTTOPRIGHT;
+      case custom_browser::ResizeEdge::kBottomLeft: return HTBOTTOMLEFT;
+      case custom_browser::ResizeEdge::kBottomRight: return HTBOTTOMRIGHT;
+      case custom_browser::ResizeEdge::kNone: break;
+    }
   }
   return HTCLIENT;
 }

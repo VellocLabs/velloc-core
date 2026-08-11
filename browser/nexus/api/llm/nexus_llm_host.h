@@ -107,6 +107,17 @@ class NexusLlmHost {
                            const std::string& model_id,
                            std::string* error_message);
 
+  // Observes every upstream cancel the host issues through
+  // CancelUpstreamRequest (currently the OnStreamChunk error/backpressure
+  // branches). Runs even when no broker exists (null profile), so unit tests
+  // can pin the cancel without a Profile/KeyedService harness — and can
+  // simulate the providers' synchronous done-callback re-entry from inside
+  // the hook.
+  void SetUpstreamCancelHookForTesting(
+      base::RepeatingCallback<void(const std::string&)> hook) {
+    upstream_cancel_hook_for_testing_ = std::move(hook);
+  }
+
   struct PendingToolCall {
     std::string tool_call_id;
     std::string tool_name;
@@ -159,10 +170,14 @@ class NexusLlmHost {
  private:
   FRIEND_TEST_ALL_PREFIXES(NexusLlmHostTest,
                            StreamErrorChunkAcceptsStringErrorPayload);
+  FRIEND_TEST_ALL_PREFIXES(NexusLlmHostTest,
+                           StreamErrorChunkCancelsUpstreamRequest);
   FRIEND_TEST_ALL_PREFIXES(NexusLlmHostHoldReadTest,
                            OnStreamDoneErasesEntryAfterResolvingHeldRead);
   FRIEND_TEST_ALL_PREFIXES(NexusLlmHostHoldReadTest,
                            HoldTimeoutErasesEntryAndCancelsUpstream);
+  FRIEND_TEST_ALL_PREFIXES(NexusLlmHostHoldReadTest,
+                           StreamErrorCancelsUpstreamAndResolvesHeldRead);
 
   // One held Call waiting on its provider result. Keyed by request_id so
   // OnGenerateComplete can find and cancel the deadline timer before
@@ -213,10 +228,20 @@ class NexusLlmHost {
   bool ResolveHeldRead(StreamState& state, const char* status);
   void OnStreamReadHoldTimeout(const std::string& stream_id);
 
+  // Cancels the upstream provider request (broker->CancelRequest) and
+  // notifies the test hook. Provider CancelRequest implementations run the
+  // stream's done callback SYNCHRONOUSLY with "Cancelled" (e.g.
+  // OpenAiProvider::CancelRequest), re-entering OnStreamDone — so callers
+  // must queue their own terminal event first and must not touch StreamState
+  // references (or `streams_` iterators) after this returns.
+  void CancelUpstreamRequest(const std::string& request_id);
+
   // Call deadline machinery.
   void OnCallDeadlineTimeout(const std::string& request_id);
 
   raw_ptr<Profile> profile_;
+  base::RepeatingCallback<void(const std::string&)>
+      upstream_cancel_hook_for_testing_;
   std::map<std::string, StreamState> streams_;
   std::map<std::string, PendingCall> pending_calls_;
   base::TimeTicks last_catalog_refresh_time_;

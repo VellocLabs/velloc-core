@@ -1803,6 +1803,18 @@ bool NexusLlmHost::ResolveHeldRead(StreamState& state, const char* status) {
   return true;
 }
 
+void NexusLlmHost::CancelUpstreamRequest(const std::string& request_id) {
+  // The hook fires even with no broker (null profile) so unit tests can
+  // observe the cancel — and simulate the providers' synchronous
+  // done-callback re-entry — without a Profile/KeyedService harness.
+  if (upstream_cancel_hook_for_testing_) {
+    upstream_cancel_hook_for_testing_.Run(request_id);
+  }
+  if (LlmBroker* broker = GetBroker(profile_)) {
+    broker->CancelRequest(request_id);
+  }
+}
+
 void NexusLlmHost::OnStreamReadHoldTimeout(const std::string& stream_id) {
   auto it = streams_.find(stream_id);
   if (it == streams_.end()) {
@@ -1999,13 +2011,16 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
   constexpr size_t kMaxQueuedStreamEvents = 8192;
   if (state.queued_events.size() >= kMaxQueuedStreamEvents &&
       !state.terminal_event_queued) {
-    if (LlmBroker* broker = GetBroker(profile_)) {
-      broker->CancelRequest(stream_id);
-    }
+    // Queue the terminal event BEFORE cancelling: CancelUpstreamRequest can
+    // synchronously re-enter OnStreamDone("Cancelled") (see the helper's
+    // header comment), and with the terminal event already queued that
+    // re-entry is a no-op instead of replacing this message with
+    // "Cancelled". `state` must not be touched after the cancel.
     QueueErrorEvent(&state,
                     "Nexus LLM stream buffered too many unread events; "
                     "cancelled upstream request");
     state.done = true;
+    CancelUpstreamRequest(stream_id);
     return;
   }
 
@@ -2205,6 +2220,18 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     if (ResolveHeldRead(state, "done")) {
       streams_.erase(it);
     }
+    // A provider that reports a terminal error as an in-stream event (e.g.
+    // the Codex Responses backend, which errors on an HTTP 200 stream) does
+    // not necessarily close its request: without this cancel the SSE loader
+    // stays alive holding its concurrency slot until the provider closes the
+    // body or the idle guard fires — and where max_concurrent_streams is 1
+    // (chatgpt-pro) the guest's retry then queues behind the corpse of the
+    // attempt it replaces. Ordering is load-bearing: the cancel can
+    // synchronously re-enter OnStreamDone("Cancelled") (see
+    // CancelUpstreamRequest), so it must run after the real error event is
+    // queued (or that re-entry replaces the provider's message) and after
+    // the last use of `state`/`it` (a consumed held read just erased them).
+    CancelUpstreamRequest(stream_id);
   }
 }
 

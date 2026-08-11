@@ -6,7 +6,9 @@
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
 
 #include <string>
+#include <vector>
 
+#include "base/test/bind.h"
 #include "base/test/gtest_util.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
@@ -59,6 +61,65 @@ TEST(NexusLlmHostTest, StreamErrorChunkAcceptsStringErrorPayload) {
             std::optional<std::string>("upstream overloaded"));
 }
 
+// A terminal in-stream error must cancel the upstream provider request. The
+// provider can report the error on a still-open HTTP 200 stream (the Codex
+// Responses backend does); without the cancel the SSE loader keeps its
+// concurrency slot until the provider closes the body or the idle guard
+// fires, and under max_concurrent_streams:1 (chatgpt-pro) the guest's retry
+// queues behind that corpse. The hook mirrors the real providers' hazard:
+// OpenAiProvider::CancelRequest runs the stream's done callback SYNCHRONOUSLY
+// with "Cancelled", so the re-entry into OnStreamDone must neither replace
+// the provider's own error message nor touch erased state.
+TEST(NexusLlmHostTest, StreamErrorChunkCancelsUpstreamRequest) {
+  NexusLlmHost host(nullptr);
+  NexusLlmHost::StreamState state;
+  state.stream_id = "stream-1";
+  host.streams_.emplace("stream-1", std::move(state));
+
+  std::vector<std::string> cancelled;
+  host.SetUpstreamCancelHookForTesting(
+      base::BindLambdaForTesting([&](const std::string& request_id) {
+        cancelled.push_back(request_id);
+        host.OnStreamDone(request_id, "Cancelled");
+      }));
+
+  base::DictValue chunk;
+  chunk.Set("type", "error");
+  base::DictValue error;
+  error.Set("message", "HTTP 503: provider fell over");
+  chunk.Set("error", std::move(error));
+  host.OnStreamChunk("stream-1", std::move(chunk));
+
+  // The error branch cancelled upstream, exactly once, for this stream.
+  ASSERT_EQ(cancelled.size(), 1u);
+  EXPECT_EQ(cancelled[0], "stream-1");
+
+  // A late (polling-guest) read still drains the PROVIDER's error message —
+  // the synchronous "Cancelled" re-entry did not replace it.
+  bool callback_called = false;
+  mojom::NexusLlmStreamReadResultPtr result;
+  host.StreamRead(
+      "stream-1", /*deadline_ms=*/std::nullopt, /*wait_ms=*/std::nullopt,
+      base::DictValue(),
+      base::BindOnce(
+          [](bool* called, mojom::NexusLlmStreamReadResultPtr* out, bool,
+             mojom::NexusLlmStreamReadResultPtr res,
+             std::optional<std::string>) {
+            *called = true;
+            *out = std::move(res);
+          },
+          &callback_called, &result));
+
+  EXPECT_TRUE(callback_called);
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(result->done);
+  ASSERT_EQ(result->events.size(), 1u);
+  ASSERT_TRUE(result->events[0]);
+  EXPECT_EQ(result->events[0]->type, mojom::NexusLlmStreamEventType::kError);
+  EXPECT_EQ(result->events[0]->error_message,
+            std::optional<std::string>("HTTP 503: provider fell over"));
+}
+
 // Hold-read leak regressions. These drive the real StreamRead hold path (which
 // arms a one-shot hold timer, hence MOCK_TIME) and assert the stream entry is
 // erased once the guest can no longer reach it. Before the fix, OnStreamDone
@@ -102,6 +163,11 @@ TEST_F(NexusLlmHostHoldReadTest,
   // Stream finishes while the read is held.
   host.OnStreamDone("stream-1", std::nullopt);
 
+  // ResolveHeldRead POSTS the callback rather than running it inline (it
+  // breaks the adapter-read → Cancel → erase-my-own-state re-entrancy loop),
+  // so the resolution lands on the next task-runner drain, not synchronously.
+  task_environment_.RunUntilIdle();
+
   EXPECT_TRUE(callback_called);
   ASSERT_TRUE(result);
   EXPECT_TRUE(result->done);
@@ -143,6 +209,69 @@ TEST_F(NexusLlmHostHoldReadTest, HoldTimeoutErasesEntryAndCancelsUpstream) {
   ASSERT_TRUE(result->status.has_value());
   EXPECT_EQ(*result->status, "timeout");
   // Regression: the abandoned stream must be erased, not leaked.
+  EXPECT_EQ(host.streams_.count("stream-1"), 0u);
+}
+
+TEST_F(NexusLlmHostHoldReadTest,
+       StreamErrorCancelsUpstreamAndResolvesHeldRead) {
+  // The held-read variant of StreamErrorChunkCancelsUpstreamRequest: the
+  // error chunk resolves the held read (which ERASES the stream entry), and
+  // only then cancels upstream. With the cancel ordered before the erase,
+  // the hook's synchronous OnStreamDone("Cancelled") re-entry would operate
+  // on — and this function would then use — a dangling StreamState.
+  NexusLlmHost host(nullptr);
+  NexusLlmHost::StreamState state;
+  state.stream_id = "stream-1";
+  host.streams_.emplace("stream-1", std::move(state));
+
+  int cancels = 0;
+  host.SetUpstreamCancelHookForTesting(
+      base::BindLambdaForTesting([&](const std::string& request_id) {
+        ++cancels;
+        // By the time the host cancels, the entry is already erased — the
+        // re-entry must find nothing and change nothing.
+        EXPECT_EQ(host.streams_.count(request_id), 0u);
+        host.OnStreamDone(request_id, "Cancelled");
+      }));
+
+  bool callback_called = false;
+  mojom::NexusLlmStreamReadResultPtr result;
+  host.StreamRead(
+      "stream-1", /*deadline_ms=*/1e15, /*wait_ms=*/60000.0, base::DictValue(),
+      base::BindOnce(
+          [](bool* called, mojom::NexusLlmStreamReadResultPtr* out, bool,
+             mojom::NexusLlmStreamReadResultPtr res,
+             std::optional<std::string>) {
+            *called = true;
+            *out = std::move(res);
+          },
+          &callback_called, &result));
+  EXPECT_FALSE(callback_called);
+
+  base::DictValue chunk;
+  chunk.Set("type", "error");
+  base::DictValue error;
+  error.Set("message", "HTTP 503: provider fell over");
+  chunk.Set("error", std::move(error));
+  host.OnStreamChunk("stream-1", std::move(chunk));
+
+  // The cancel is synchronous with the error branch — it must not wait on a
+  // task drain, or the upstream request outlives the failed attempt exactly
+  // as it did before this fix.
+  EXPECT_EQ(cancels, 1);
+
+  // The held read's resolution is POSTED (see ResolveHeldRead), so drain.
+  task_environment_.RunUntilIdle();
+
+  // The held read resolved with the provider's error, and the entry is gone.
+  EXPECT_TRUE(callback_called);
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(result->done);
+  ASSERT_EQ(result->events.size(), 1u);
+  ASSERT_TRUE(result->events[0]);
+  EXPECT_EQ(result->events[0]->type, mojom::NexusLlmStreamEventType::kError);
+  EXPECT_EQ(result->events[0]->error_message,
+            std::optional<std::string>("HTTP 503: provider fell over"));
   EXPECT_EQ(host.streams_.count("stream-1"), 0u);
 }
 

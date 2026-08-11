@@ -74,6 +74,14 @@ TEST(ShellResolverTest, FindOnPathHonorsExplicitBashPathEnvOverride) {
   base::FilePath bash = tmp.GetPath().AppendASCII("custom-bash.exe");
   ASSERT_TRUE(base::WriteFile(bash, "fake bash"));
 
+  // Only NEXUS_BASH_PATH is under test here; clear the other override vars
+  // FindOnPath also consults so the test is hermetic regardless of the
+  // shell (e.g. git-bash, which sets SHELL) it happens to be invoked from.
+  base::ScopedEnvironmentVariableOverride velloc_bash_path_env(
+      "VELLOC_BASH_PATH");
+  base::ScopedEnvironmentVariableOverride claude_code_shell_env(
+      "CLAUDE_CODE_SHELL");
+  base::ScopedEnvironmentVariableOverride shell_env("SHELL");
   base::ScopedEnvironmentVariableOverride override_env(
       "NEXUS_BASH_PATH", bash.AsUTF8Unsafe());
   base::ScopedEnvironmentVariableOverride path_env("PATH", "");
@@ -94,6 +102,16 @@ TEST(ShellResolverTest, FindOnPathFindsGitBashFromCommonProgramFilesLocation) {
   ASSERT_TRUE(base::CreateDirectory(bash.DirName()));
   ASSERT_TRUE(base::WriteFile(bash, "fake bash"));
 
+  // None of the explicit override vars are under test here; clear all four
+  // so the ProgramFiles fallback is what actually gets exercised regardless
+  // of the shell (e.g. git-bash, which sets SHELL) invoking the test binary.
+  base::ScopedEnvironmentVariableOverride nexus_bash_path_env(
+      "NEXUS_BASH_PATH");
+  base::ScopedEnvironmentVariableOverride velloc_bash_path_env(
+      "VELLOC_BASH_PATH");
+  base::ScopedEnvironmentVariableOverride claude_code_shell_env(
+      "CLAUDE_CODE_SHELL");
+  base::ScopedEnvironmentVariableOverride shell_env("SHELL");
   base::ScopedEnvironmentVariableOverride program_files_env(
       "ProgramFiles", program_files.AsUTF8Unsafe());
   base::ScopedEnvironmentVariableOverride path_env("PATH", "");

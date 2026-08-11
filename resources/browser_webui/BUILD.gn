@@ -118,6 +118,12 @@ build_webui("build") {
     "//tools/typescript/definitions/metrics_private.d.ts",
     "//tools/typescript/definitions/chrome_event.d.ts",
     "//tools/typescript/definitions/settings_private.d.ts",
+
+    # `chrome.send` — nexus_view.ts calls it directly for `restartBrowser`,
+    # the one route here that deliberately never answers (sendWithPromise
+    # would wait forever). A dep's ts_definitions are not visible to us, so
+    # this is listed even though //ui/webui/resources/js:build_ts also has it.
+    "//tools/typescript/definitions/chrome_send.d.ts",
   ]
   ts_deps = [
     "//third_party/lit/v3_0:build_ts",

@@ -139,6 +139,16 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // JS: cr.sendWithPromise('setWebappUrl', url)
   void HandleSetWebappUrl(const base::ListValue& args);
 
+  // Restarts the client, restoring the open session (nexus::RestartClient).
+  // Backs the guest-recovery overlay's "Restart client" button: the overlay
+  // paints in the HOST page exactly when the guest never completed its
+  // handshake, so the guest bridge's `appInfo.relaunch` — which the About
+  // page uses for the same job — is unreachable from there by construction.
+  // Fire-and-forget: there is no reply to wait for, since the browser is on
+  // its way out.
+  // JS: chrome.send('restartBrowser')
+  void HandleRestartBrowser(const base::ListValue& args);
+
   // HandleGet/SetBrowserToolsSeparateWindow declarations removed:
   // migrated to `browserTools.snapshot` / `browserTools.setField` on the
   // panel WebUI bridge port (A5 Tier 2). See

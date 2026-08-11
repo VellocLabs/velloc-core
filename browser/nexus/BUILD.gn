@@ -329,6 +329,21 @@ action("nexus_tools_codegen") {
     # purely a dict extension.
     "api/declarations/browser_tools/setField.api.json",
     "api/declarations/browser_tools/snapshot.api.json",
+
+    # app_info + system_prefs categories — the React Settings · About and
+    # Settings · System pages. Both were missing from this list even though
+    # their per-category `*_api.gen.{h,cc}` are declared under `outputs`;
+    # generate.py rglobs `api/declarations/`, so the actions were emitted
+    # anyway, but ninja had no edge from the declarations to the codegen and
+    # would not re-run it when one changed. Listed now so an edit to a
+    # declaration regenerates.
+    "api/declarations/app_info/getVersionInfo.api.json",
+    "api/declarations/app_info/getWebappUrl.api.json",
+    "api/declarations/app_info/relaunch.api.json",
+    "api/declarations/app_info/setWebappUrl.api.json",
+    "api/declarations/system_prefs/get.api.json",
+    "api/declarations/system_prefs/setBackgroundMode.api.json",
+    "api/declarations/system_prefs/setLauncher.api.json",
   ]
 
   outputs = [
@@ -747,6 +762,10 @@ source_set("bridge") {
     "//chrome/app/theme:chrome_unscaled_resources",
     "//chrome/browser/actor",
 
+    # NexusAppInfoBridgeAdapter::HandleRelaunchOnUI restarts the client so a
+    # new runtime source / update channel takes effect.
+    ":client_restart",
+
     # NexusUiBridgeAdapter::HandleShowNotificationOnUI surfaces turn-end
     # notifications via NotificationDisplayService.
     "//chrome/browser/notifications",
@@ -887,6 +906,29 @@ source_set("browser_tools_config") {
   ]
 }
 
+# The one home for "how Velloc restarts". Two surfaces need it — the guest
+# bridge's `appInfo.relaunch` (About page) and the panel WebUI's
+# `restartBrowser` (guest-recovery overlay) — and they cannot share a
+# transport, so they share this instead. Deliberately a LEAF: it must be
+# dependable from `:nexus_settings_handler` without dragging
+# //chrome/browser/ui back in and re-opening the dependency cycle noted on
+# `:mcp_host`.
+source_set("client_restart") {
+  sources = [
+    "nexus_client_restart.cc",
+    "nexus_client_restart.h",
+  ]
+
+  deps = [
+    "//base",
+
+    # chrome::AttemptRestart. Header-only target; the symbol comes from
+    # `lifetime:impl`, already linked into chrome via //chrome/browser.
+    "//chrome/browser/lifetime",
+    "//content/public/browser",
+  ]
+}
+
 # Registers chrome://nexus as a WebUI host (T011a).
 source_set("nexus_webui_config") {
   sources = [
@@ -990,6 +1032,12 @@ source_set("nexus_settings_handler") {
 
   deps = [
     ":browser_tools_config",
+
+    # `restartBrowser` — the guest-recovery overlay's "Restart client" button.
+    # A leaf that (unlike `:bridge`) does not pull //chrome/browser/ui, so it
+    # cannot re-open the ui -> nexus_settings_handler -> bridge -> ui cycle
+    # documented on `:mcp_host` below.
+    ":client_restart",
 
     # MCP connection test (`testMcpServer`): builds a transient NexusMcpHost
     # (+ NexusShellServiceLauncher for stdio) to run the handshake before a

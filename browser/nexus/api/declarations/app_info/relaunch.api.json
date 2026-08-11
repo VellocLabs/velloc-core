@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "relaunch",
+  "description": "Restart the client so a pending app-level change takes effect — today the runtime source / update channel written by setWebappUrl, which is only read at boot. Maps onto chrome::AttemptRestart(), the same call chrome://settings makes for its Relaunch button, so the open session is restored afterwards. Takes no inputs; the {ok:true} reply is dispatched before the restart task runs, but the guest is torn down immediately after and will not normally observe it.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

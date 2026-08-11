@@ -8,6 +8,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/version_info/version_info.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/nexus_client_restart.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "custom_browser/common/product_version.h"
 
@@ -65,6 +66,19 @@ void NexusAppInfoBridgeAdapter::HandleSetWebappUrlOnUI(
   base::DictValue result;
   result.Set("ok", true);
   std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusAppInfoBridgeAdapter::HandleRelaunchOnUI(
+    ::nexus::generated::RelaunchInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Reply BEFORE restarting, and rely on `RestartClient` posting rather than
+  // running inline. Every BridgeResponseCallback terminal PostTasks its
+  // dispatch to UI, so firing `done` here only *queues* the response; the
+  // restart queued after it on the same runner therefore lands second, and the
+  // guest's promise is answered instead of being dropped by teardown.
+  std::move(done).SuccessVoid();
+  RestartClient();
 }
 
 }  // namespace nexus

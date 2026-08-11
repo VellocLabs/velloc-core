@@ -38,6 +38,7 @@
 #include "custom_browser/browser/nexus/api/mcp/nexus_mcp_server_store.h"
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_prefs.h"
 #include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
+#include "custom_browser/browser/nexus/nexus_client_restart.h"
 #include "custom_browser/browser/nexus/tools/process_tool/nexus_shell_service_launcher.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
@@ -255,6 +256,10 @@ void NexusSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "setWebappUrl",
       base::BindRepeating(&NexusSettingsHandler::HandleSetWebappUrl,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "restartBrowser",
+      base::BindRepeating(&NexusSettingsHandler::HandleRestartBrowser,
                           base::Unretained(this)));
   // `getBrowserToolsSeparateWindow` / `setBrowserToolsSeparateWindow`
   // routes removed: migrated to `browserTools.snapshot` /
@@ -824,6 +829,14 @@ void NexusSettingsHandler::HandleSetWebappUrl(const base::ListValue& args) {
   ResolveJavascriptCallback(
       base::Value(callback_id),
       base::Value(prefs->GetString(nexus::prefs::kNexusWebappUrl)));
+}
+
+void NexusSettingsHandler::HandleRestartBrowser(
+    const base::ListValue& /*args*/) {
+  // No AllowJavascript() and no callback: this route never answers. The
+  // restart is posted (nexus::RestartClient), so this handler returns first
+  // and WebUI teardown happens on the next task.
+  nexus::RestartClient();
 }
 
 // HandleGetBrowserToolsSeparateWindow / HandleSetBrowserToolsSeparateWindow

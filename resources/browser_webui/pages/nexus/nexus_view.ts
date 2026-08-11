@@ -257,6 +257,22 @@ export class NexusViewElement extends CrLitElement {
     location.reload();
   }
 
+  // Restart the client, restoring the open session
+  // (NexusSettingsHandler::HandleRestartBrowser → nexus::RestartClient).
+  //
+  // Plain `chrome.send`, not `sendWithPromise`: the route deliberately never
+  // answers — the browser is on its way out — so awaiting it would hang, and
+  // there is nothing to do on this page afterwards anyway.
+  //
+  // Why this surface does not use the guest bridge's `appInfo.relaunch`, which
+  // the About page's "Restart now" button calls for the same job: this overlay
+  // exists precisely because the guest never completed its handshake, so that
+  // bridge is unreachable from here by construction. Both routes land on the
+  // same nexus::RestartClient.
+  private onRecoveryRestart_() {
+    chrome.send('restartBrowser');
+  }
+
   // Host-handshake stage source (bootstrapNexusGuest's onStatus callback):
   // starting → connecting → linking → loading.
   private onLoadingStage_(stage: LoadingStage) {
@@ -436,7 +452,8 @@ export class NexusViewElement extends CrLitElement {
         <nexus-guest-recovery class="recovery-overlay"
             .guestUrl=${this.guestFailureUrl_}
             @nexus-guest-recovery-reset=${this.onRecoveryReset_}
-            @nexus-guest-recovery-retry=${this.onRecoveryRetry_}>
+            @nexus-guest-recovery-retry=${this.onRecoveryRetry_}
+            @nexus-guest-recovery-restart=${this.onRecoveryRestart_}>
         </nexus-guest-recovery>
       `}
     `;

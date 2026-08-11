@@ -19,13 +19,15 @@ class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `AppInfoApiBase` virtuals.
 //
-// Read-mostly application metadata for the React Settings · About page: version
-// strings + the optional custom webapp URL (`nexus.webapp_url` profile pref).
-// C++-served on the guest direct bridge. The webapp-URL bootstrap *read* (which
-// decides where the React app loads from) stays panel-side; this route only
-// powers the About editor (writes apply after restart).
+// Application metadata and lifetime for the React Settings · About page:
+// version strings, the optional custom webapp URL (`nexus.webapp_url` profile
+// pref), and the restart that applies it. C++-served on the guest direct
+// bridge. The webapp-URL bootstrap *read* (which decides where the React app
+// loads from) stays panel-side; this route only powers the About editor (writes
+// apply after restart, which `relaunch` performs).
 //
-// Threading: all actions run on UI (PrefService is UI-thread-bound).
+// Threading: all actions run on UI (PrefService and browser lifetime are both
+// UI-thread-bound).
 class NexusAppInfoBridgeAdapter
     : public ::nexus::generated::AppInfoApiBase {
  public:
@@ -53,6 +55,13 @@ class NexusAppInfoBridgeAdapter
   // Writes the `nexus.webapp_url` profile pref. Returns `{ok:true}`.
   void HandleSetWebappUrlOnUI(
       ::nexus::generated::SetWebappUrlInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+
+  // Restarts the client via `chrome::AttemptRestart()`. Replies `{ok:true}`
+  // first, then posts the restart — see the .cc for why the order matters.
+  void HandleRelaunchOnUI(
+      ::nexus::generated::RelaunchInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 

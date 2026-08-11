@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="ko">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">레이아웃</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">사이드바 탭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">사이드바에 세로 탭을 표시합니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">사이드바 탭 · 간결하게</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">사이드바에 아이콘만 있는 세로 탭을 표시합니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">상단 탭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">상단 바에 가로 탭을 표시합니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">상단 탭 · 간결하게</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">포인터를 올리면 나타나는 가로 탭입니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">새 탭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">검색창 표시</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">검색 제공업체 로고 표시</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">검색엔진</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">새 탭을 시작해 보세요. 나만의 화면으로 꾸미는 팁과 바로가기를 알려 드립니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">시작 가이드 열기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">불러오는 중…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">시작하기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">여기서 시작하세요</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Chromium 시작하기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">1분이면 Chromium 설정이 끝납니다. 데이터를 가져오고, 레이아웃을 고르고, 새 탭을 다듬어 보세요.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">1단계. 쓰던 자료 가져오기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">북마크, 비밀번호, 설정을 다른 브라우저에서 가져옵니다. 계정은 필요 없습니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">가져오기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">2단계. 레이아웃 고르기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">일하는 방식에 맞는 탭 스타일을 고르세요. 언제든 바꿀 수 있습니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">사이드바 탭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">탭, 주소창, 도구를 하나의 세로 사이드바에 모읍니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">간결한 사이드바</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">아이콘 위주로 두었다가 포인터를 올리면 펼쳐지는 사이드바입니다. 화면이 작을 때 좋습니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">상단 탭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">위쪽에 늘어선 익숙한 탭. Chrome과 비슷한 레이아웃입니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">간결한 상단 탭</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">상단을 얇게 만들어 정작 중요한 페이지에 더 많은 공간을 남기는 레이아웃입니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">레이아웃 변경은 즉시 적용됩니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">레이아웃 적용</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">3단계. 새 탭 꾸미기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">깔끔하게 두거나, 검색을 앞에 둘 수 있습니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">새 탭에 검색창 표시</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">검색창이 보입니다</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">새 탭이 산만하지 않게 유지됩니다</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">검색도, 모양도 내 취향대로</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Google이 아닌 검색엔진을 기본값으로 고르면, Chromium이 새 탭의 브랜드 표시를 자동으로 바꿉니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">4단계. 기본 제공되는 강력한 도구</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium에는 선택해서 쓸 수 있는 기본 제공 확장 프로그램이 들어 있습니다. 결정권은 당신에게 있습니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">기본값으로 사용</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">효율적인 콘텐츠 차단으로 더 빠르고 깔끔한 웹을 만듭니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey(레거시)</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">기본값은 꺼짐</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">사이트를 깊이 있게 바꿀 수 있는 고급 사용자 스크립트 관리 도구입니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">확장 프로그램 관리</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">일부 기본 제공 도구는 Chrome 웹 스토어에서 제공되는 것과 다를 수 있습니다.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">5단계. 준비 완료</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">수고하셨습니다. 더 알아볼까요? 다음으로 다른 기능들을 살펴보세요.</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">새 탭 열기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">설정으로 이동</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">확장 프로그램 →</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">권장</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">최소</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">곧 제공</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">자동</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">고급</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">닫기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium 시작하기</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium 로고</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">기본 제공 확장 프로그램</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">이름</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">설명</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">버전</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">사용</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">기본값</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">백그라운드 페이지</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">켬</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">끔</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">예</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">아니요</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">해당 없음</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">버전 <ph name="PRODUCT_VERSION"/>(<ph name="OFFICIAL_LABEL"/>)<ph name="VERSION_MODIFIER"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Chromium <ph name="CHROMIUM_VERSION"/> 기반</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">모델 제공업체</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">AI 제공업체</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_LABEL">API 키</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER">API 키를 입력하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TEST_CONNECTION">연결 테스트</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">연결에 성공했습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">연결에 실패했습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">사용자 지정 <ph name="PRODUCT_NAME"/> 웹 앱 URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">기본값으로 되돌리기</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">에이전트 웹 앱 URL</translation>
+  <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_ANTHROPIC">Anthropic</translation>
+  <translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google AI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_OLLAMA">Ollama(로컬)</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LABEL">모델</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">Base URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0">이 기능들은 AI를 사용하며 아직 초기 개발 단계라 항상 정확하지는 않습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">이 기능은 <ph name="PRODUCT_NAME"/>을(를) 브라우저에서 바로 실행해, WhatsApp, Telegram, Discord, iMessage 같은 앱을 AI 코딩 어시스턴트와 연결합니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2">브라우저가 채팅을 하면서 평소 온라인에서 하던 일을 AI의 도움으로 처리하는 중심 공간이 됩니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/>은(는) 여러 LLM 제공업체를 쓸 수 있습니다. 제공업체를 고르고 인증한 다음, 기본 모델을 설정하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/>은(는) 여러 LLM 제공업체를 쓸 수 있습니다. 제공업체를 고르고 인증한 다음, 기본 모델을 설정하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION"><ph name="PRODUCT_NAME"/>이(가) 연결할 서비스를 선택하고 연결을 확인하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL"><ph name="PRODUCT_LONG_NAME"/>이(가) 사용하는 웹 앱 URL을 설정합니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">사용자 지정 <ph name="PRODUCT_NAME"/> 웹 앱 URL을 설정합니다. 비워 두면 기본 환경을 사용합니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">API 키가 필요하지 않습니다. <ph name="PRODUCT_LONG_NAME"/>은(는) 설정된 Ollama 서버에서 모델을 불러옵니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HINT">저장된 키를 그대로 두려면 API 키를 비워 두세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL">제공업체 상태</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED">설정됨</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED">설정되지 않음</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDERS">사용할 수 있는 제공업체가 없습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">이 프로필에서는 <ph name="PRODUCT_LONG_NAME"/> 제공업체 정보를 사용할 수 없습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LOADING">사용할 수 있는 모델을 불러오는 중…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TESTING_CONNECTION">연결을 테스트하는 중…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX">기본값:</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL">URL은 https:// 또는 http://localhost로 시작해야 합니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL_FORMAT">URL 형식이 잘못되었습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL">Base URL은 http:// 또는 https://로 시작해야 합니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL_FORMAT">Base URL 형식이 잘못되었습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LOAD_FAILED">모델을 불러오지 못했습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MODELS">사용할 수 있는 모델이 없습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_MODEL_HINT">Base URL을 저장하면 사용 중인 Ollama 인스턴스에서 모델을 불러옵니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_AUTOMATIC_MODEL_HINT">모델은 현재 제공업체 설정에서 자동으로 불러옵니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_PROVIDER_MODEL_HINT">제공업체 설정을 저장하면 사용할 수 있는 모델을 불러옵니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_LABEL">연결</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_TEST_LABEL">연결 테스트</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VALIDATE_TITLE">현재 설정 검증</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VALIDATE_DESCRIPTION">현재 제공업체 설정을 저장하고 선택한 모델을 테스트합니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_READY">현재 설정을 그대로 사용할 수 있습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED">이 제공업체가 연결하려면 추가 설정이 필요합니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">제공업체 설정을 저장하는 중…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">제공업체 설정을 업데이트하지 못했습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">제공업체를 선택하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">제공업체</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">제공업체를 고르고 연결 정보를 입력한 뒤 확인하면 모델을 불러올 수 있습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">확인하고 모델 불러오기</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">제공업체 재설정</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">안전하게 저장됨</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">저장된 키를 그대로 두려면 비워 두세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">이 제공업체의 API 키를 입력하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">설정된 제공업체 없음</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">먼저 제공업체를 선택하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">저장된 설정을 확인하는 중…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">사용할 수 있는 모델을 가져오는 중…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">확인이 필요합니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">설정이 바뀌었습니다. 확인하면 모델을 불러옵니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">연결하는 중…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">연결에 성공했습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">연결에 실패했습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">설정되지 않음</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">확인 중</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">적용되지 않은 변경사항</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">연결 중</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">연결됨</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">실패</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR">모델 <ph name="COUNT"/>개를 찾았습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL">모델 <ph name="COUNT"/>개를 찾았습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">인증되지 않음 - API 키를 확인하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">거부됨 - 이 키로는 엔드포인트에 접근할 수 없습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">Base URL이 잘못됨 - 올바른 API 엔드포인트를 입력하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">엔드포인트에 접근할 수 없음 - URL이나 네트워크를 확인하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">연결 시간이 초과됨 - 다시 시도하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">연결되었지만 모델이 반환되지 않았습니다</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">예기치 않은 서버 응답</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS">컨텍스트 <ph name="COUNT"/>k</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT">컨텍스트 <ph name="COUNT"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">도구</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">이미지</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">계속하려면 모델을 하나 이상 사용 설정하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">사용 설정된 모델 중에서 기본 모델을 선택하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">계속하려면 기본 모델을 선택하세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">기본 모델은 사용 설정된 모델 중 하나여야 합니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">선택한 기본 모델을 더 이상 사용할 수 없습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">모델</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">어떤 모델을 쓸 수 있게 할지, 그중 무엇을 기본값으로 할지 고르세요.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">이 제공업체에서 쓸 기본 모델을 고릅니다. 목록을 열고 입력하면 사용할 수 있는 모델을 걸러 볼 수 있습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">기본 모델</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">모델을 선택하세요</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">찾아보기</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">목록을 열고 입력하면 사용할 수 있는 모델을 걸러 볼 수 있습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">모델 선택기 닫기</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">모델 거르기</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">입력해서 모델 거르기</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">이 조건에 맞는 모델이 없습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">사용 설정된 모델</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA"><ph name="MODEL_NAME"/> 사용</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA"><ph name="MODEL_NAME"/>을(를) 기본 모델로 설정</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">선택됨</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">요약</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">제공업체</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">찾은 모델</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">사용 설정된 모델</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">기본값</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">없음</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">선택 안 함</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE">저장</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">Base URL은 필수입니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">API 키는 필수입니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">제공업체를 바꾸고 저장하지 않은 연결과 모델 변경사항을 버릴까요?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">제공업체 설정을 저장하지 못했습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">제공업체 설정을 저장했습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">연결 재설정</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE"><ph name="PROVIDER_NAME"/> 연결을 재설정할까요?</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">저장된 <ph name="PROVIDER_NAME"/> 연결 정보를 지우고 확인된 상태를 해제하며, 이 제공업체를 기본값으로 되돌립니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED"><ph name="PROVIDER_NAME"/> 연결을 재설정했습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM"><ph name="PROVIDER_NAME"/>을(를) 재설정할까요? 저장된 제공업체, 엔드포인트, 모델 선택이 삭제됩니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">제공업체 설정을 재설정하지 못했습니다.</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">기본 동작</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">사용자 지정 URL을 지우고 기본 제공되는 <ph name="PRODUCT_NAME"/> 웹 앱을 사용합니다.</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">브라우저 창 열기</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">작업 관리자</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">창 닫기</translation>
+  <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">새 브라우저 창</translation>
+</translationbundle>

@@ -16,6 +16,8 @@ translated for each locale.
     <output filename="custom_browser_strings_es.pak" type="data_package" lang="es" />
     <output filename="custom_browser_strings_fr.pak" type="data_package" lang="fr" />
     <output filename="custom_browser_strings_hi.pak" type="data_package" lang="hi" />
+    <output filename="custom_browser_strings_ja.pak" type="data_package" lang="ja" />
+    <output filename="custom_browser_strings_ko.pak" type="data_package" lang="ko" />
     <output filename="custom_browser_strings_pt.pak" type="data_package" lang="pt" />
     <output filename="custom_browser_strings_ru.pak" type="data_package" lang="ru" />
     <output filename="custom_browser_strings_zh-CN.pak" type="data_package" lang="zh-CN" />
@@ -26,6 +28,8 @@ translated for each locale.
     <file path="custom_browser_strings_es.xtb" lang="es" />
     <file path="custom_browser_strings_fr.xtb" lang="fr" />
     <file path="custom_browser_strings_hi.xtb" lang="hi" />
+    <file path="custom_browser_strings_ja.xtb" lang="ja" />
+    <file path="custom_browser_strings_ko.xtb" lang="ko" />
     <file path="custom_browser_strings_pt.xtb" lang="pt" />
     <file path="custom_browser_strings_ru.xtb" lang="ru" />
     <file path="custom_browser_strings_zh-CN.xtb" lang="zh-CN" />

@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translationbundle>
+<translationbundle lang="ja">
+  <translation id="IDS_CUSTOM_BROWSER_MODES_HEADER">レイアウト</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR">サイドバータブ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_SIDEBAR_DESCRIPTION">サイドバーに縦向きのタブを表示します。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR">サイドバータブ · コンパクト</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_SIDEBAR_DESCRIPTION">サイドバーにアイコンだけの縦向きタブを表示します。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD">上部タブ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_STANDARD_DESCRIPTION">上部のバーに横向きのタブを表示します。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD">上部タブ · コンパクト</translation>
+  <translation id="IDS_CUSTOM_BROWSER_MODE_COMPACT_STANDARD_DESCRIPTION">ポインタを合わせたときに現れる横向きのタブです。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_NTP_SECTION_TITLE">新しいタブ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_SEARCH">検索ボックスを表示</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SHOW_LOGO">検索プロバイダのロゴを表示</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CUSTOMIZE_CHROME_SEARCH_ENGINE">検索エンジン</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_BODY">新しいタブを使ってみましょう。カスタマイズのヒントとショートカットを紹介します。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_NTP_SETUP_LIST_GET_STARTED_ACTION">スタートガイドを開く</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOADING">読み込み中…</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TITLE">はじめに</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BODY">ここから始めましょう</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_HERO_TITLE">Chromium をはじめよう</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SUBTITLE">1 分で Chromium を設定しましょう。データをインポートし、レイアウトを選び、新しいタブを整えます。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_TITLE">ステップ 1. データを引き継ぐ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_BRING_DESCRIPTION">ブックマーク、パスワード、設定を別のブラウザからインポートします。アカウントは不要です。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_IMPORT_BUTTON">インポート</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TITLE">ステップ 2. レイアウトを選ぶ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_DESCRIPTION">自分の使い方に合うタブのスタイルを選びましょう。いつでも変更できます。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_TITLE">サイドバータブ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_SIDEBAR_DESCRIPTION">タブ、アドレスバー、ツールを 1 つの縦型サイドバーにまとめます。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_TITLE">コンパクトサイドバー</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_SIDEBAR_DESCRIPTION">アイコン中心で、ポインタを合わせると広がるサイドバーです。画面の狭い環境に向いています。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_TITLE">上部タブ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_TOP_TABS_DESCRIPTION">上部に並ぶ従来型のタブ。Chrome に近い使い心地のレイアウトです。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_TITLE">コンパクト上部タブ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_COMPACT_TOP_TABS_DESCRIPTION">上部を細くして、大事なもの（ページ）により多くの余白を残すレイアウトです。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_HINT">レイアウトの変更はすぐに反映されます。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_LAYOUT_ACTION">レイアウトを適用</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TITLE">ステップ 3. 新しいタブをカスタマイズ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_DESCRIPTION">すっきり保つか、検索を前面に出すかを選べます。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_LABEL">新しいタブに検索ボックスを表示</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_ON">検索ボックスを表示中</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">新しいタブは気が散らないまま</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">検索も、見た目も自分好みに</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Google 以外を既定の検索に選ぶと、Chromium は新しいタブのブランド表示を自動で切り替えます。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">ステップ 4. 組み込みの強力なツール</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium には任意で使える組み込みの拡張機能が含まれています。主導権はあなたにあります。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">デフォルトで有効</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">効率的なコンテンツブロックで、ウェブをより速く、すっきりと。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey（レガシー）</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">デフォルトでオフ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">サイトを深くカスタマイズできる、上級者向けのユーザースクリプト管理ツールです。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">拡張機能を管理</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">組み込みツールの一部は、Chrome ウェブストアで提供されるものと異なる場合があります。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">ステップ 5. 準備完了</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">お疲れさまでした。さらに使いこなしますか？次は他の機能を見てみましょう。</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">新しいタブを開く</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">設定に移動</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TERTIARY">拡張機能 →</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_RECOMMENDED">推奨</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">ミニマル</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">近日公開</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">自動</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">詳細設定</translation>
+  <translation id="IDS_CUSTOM_BROWSER_CLOSE">閉じる</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium をはじめよう</translation>
+  <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium のロゴ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_EXTENSION_TITLE">組み込みの拡張機能</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_NAME">名前</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DESCRIPTION">説明</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_VERSION">バージョン</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ID">ID</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_ENABLED">有効</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_DEFAULT">デフォルト</translation>
+  <translation id="IDS_CUSTOM_BROWSER_BUILTIN_DETAILS_BACKGROUND_PAGE">バックグラウンドページ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_ON">オン</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_OFF">オフ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_YES">はい</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NO">いいえ</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VALUE_NA">該当なし</translation>
+  <translation id="IDS_CUSTOM_BROWSER_VERSION_LINE">バージョン <ph name="PRODUCT_VERSION"/>（<ph name="OFFICIAL_LABEL"/>）<ph name="VERSION_MODIFIER"/></translation>
+  <translation id="IDS_CUSTOM_BROWSER_BASED_ON_CHROMIUM_LINE">Chromium <ph name="CHROMIUM_VERSION"/> ベース</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TITLE"><ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_PAGE_TITLE">モデルプロバイダ</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_LABEL">AI プロバイダ</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_LABEL">API キー</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_PLACEHOLDER">API キーを入力</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TEST_CONNECTION">接続をテスト</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SUCCESS">接続に成功しました</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_FAILED">接続に失敗しました</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_LABEL">カスタムの <ph name="PRODUCT_NAME"/> ウェブアプリ URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_PLACEHOLDER">https://your-app.example.com</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_URL_RESET">デフォルトに戻す</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">エージェントのウェブアプリ URL</translation>
+  <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_ANTHROPIC">Anthropic</translation>
+  <translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google AI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_OLLAMA">Ollama（ローカル）</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LABEL">モデル</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">Base URL</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_PLACEHOLDER">http://localhost:11434</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_0">これらの機能は AI を使っており、まだ開発の初期段階のため、常に正しいとは限りません。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_1">この機能は <ph name="PRODUCT_NAME"/> をブラウザ内で直接実行し、WhatsApp、Telegram、Discord、iMessage などのアプリを AI コーディングアシスタントにつなぎます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SECTION_DESCRIPTION_LINE_2">ブラウザが、チャットをしながら普段のオンライン作業を AI に手伝ってもらえる中心的な場所になります。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_DESCRIPTION"><ph name="PRODUCT_NAME"/> は多くの LLM プロバイダを利用できます。プロバイダを選んで認証し、デフォルトのモデルを設定してください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_ROW_SUBLABEL"><ph name="PRODUCT_NAME"/> は多くの LLM プロバイダを利用できます。プロバイダを選んで認証し、デフォルトのモデルを設定してください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONNECTION_DESCRIPTION"><ph name="PRODUCT_NAME"/> が接続するサービスを選び、接続を検証してください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_ROW_SUBLABEL"><ph name="PRODUCT_LONG_NAME"/> が使うウェブアプリ URL を設定します。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DESCRIPTION">カスタムの <ph name="PRODUCT_NAME"/> ウェブアプリ URL を設定します。空欄のままにすると、デフォルトの体験を使います。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_NOTE">API キーは不要です。<ph name="PRODUCT_LONG_NAME"/> は設定済みの Ollama サーバーからモデルを読み込みます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HINT">保存済みのキーをそのまま使う場合は、API キーを空欄のままにしてください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_STATUS_LABEL">プロバイダの状態</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_CONFIGURED">設定済み</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_NOT_CONFIGURED">未設定</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDERS">利用できるプロバイダがありません</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_PROVIDER_STATE">このプロファイルでは <ph name="PRODUCT_LONG_NAME"/> のプロバイダ情報を利用できません。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LOADING">利用可能なモデルを読み込み中…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_TESTING_CONNECTION">接続をテスト中…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_URL_PREFIX">デフォルト：</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL">URL は https:// または http://localhost で始まる必要があります</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_WEBAPP_URL_FORMAT">URL の形式が正しくありません</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL">Base URL は http:// または https:// で始まる必要があります</translation>
+  <translation id="IDS_NEXUS_SETTINGS_INVALID_BASE_URL_FORMAT">Base URL の形式が正しくありません</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_LOAD_FAILED">モデルを読み込めませんでした。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MODELS">利用できるモデルがありません。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_OLLAMA_MODEL_HINT">Base URL を保存すると、お使いの Ollama インスタンスからモデルを読み込みます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_AUTOMATIC_MODEL_HINT">モデルは現在のプロバイダ設定から自動で読み込まれます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_PROVIDER_MODEL_HINT">プロバイダ設定を保存すると、利用可能なモデルを読み込みます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_LABEL">接続</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_TEST_LABEL">接続テスト</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VALIDATE_TITLE">現在の設定を検証する</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VALIDATE_DESCRIPTION">現在のプロバイダ設定を保存し、選択したモデルをテストします。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_READY">現在の設定はそのまま使えます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_SETUP_REQUIRED">このプロバイダが接続するには、追加の設定が必要です。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVING_PROVIDER">プロバイダ設定を保存中…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_UPDATE_FAILED">プロバイダ設定を更新できませんでした。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SELECT_PROVIDER">プロバイダを選択</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CONNECTION_SECTION_TITLE">プロバイダ</translation>
+  <translation id="IDS_NEXUS_SETTINGS_PROVIDER_EMPTY_STATE">プロバイダを選び、接続情報を入力してから検証すると、モデルを読み込めます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_VERIFY_LOAD_MODELS">検証してモデルを読み込む</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_PROVIDER">プロバイダをリセット</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STORED_SECURELY">安全に保存されます</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_KEEP_STORED">保存済みのキーをそのまま使う場合は空欄にしてください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_HELPER">このプロバイダの API キーを入力してください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_NOT_CONFIGURED">プロバイダが未設定</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_SELECT_PROVIDER">まずプロバイダを選んでください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFYING">保存済みの設定を検証中…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_FETCHING_MODELS">利用可能なモデルを取得中…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_VERIFICATION_REQUIRED">検証が必要です</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONFIG_CHANGED">設定が変更されました。検証してモデルを読み込みます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTING">接続中…</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTED">接続に成功しました</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CONNECTION_FAILED">接続に失敗しました</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_NOT_CONFIGURED">未設定</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_VERIFYING">検証中</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CHANGES_PENDING">未反映の変更あり</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTING">接続中</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_CONNECTED">接続済み</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_CHIP_FAILED">失敗</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_SINGULAR">モデルが <ph name="COUNT"/> 件見つかりました</translation>
+  <translation id="IDS_NEXUS_SETTINGS_STATUS_MODELS_FOUND_PLURAL">モデルが <ph name="COUNT"/> 件見つかりました</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNAUTHORIZED">認証エラー - API キーを確認してください</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_FORBIDDEN">アクセス拒否 - このキーではエンドポイントにアクセスできません</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_INVALID_BASE_URL">Base URL が不正 - 有効な API エンドポイントを入力してください</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_ENDPOINT_UNREACHABLE">エンドポイントに到達できません - URL かネットワークを確認してください</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_TIMEOUT">接続がタイムアウトしました - 再試行してください</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_NO_MODELS">接続できましたが、モデルが返されませんでした</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE">想定外のサーバー応答</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT_THOUSANDS">コンテキスト <ph name="COUNT"/>k</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_CONTEXT">コンテキスト <ph name="COUNT"/></translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_TOOLS">ツール</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_METADATA_VISION">画像</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_ENABLE_ONE">続けるには、モデルを 1 つ以上有効にしてください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT">有効なモデルの中から、デフォルトのモデルを選んでください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_SELECT_DEFAULT_ONLY">続けるには、デフォルトのモデルを選んでください。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_ENABLED">デフォルトのモデルは、有効なモデルの中から選ぶ必要があります。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_VALIDATION_DEFAULT_UNAVAILABLE">選択中のデフォルトのモデルは、現在利用できません。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_TITLE">モデル</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODELS_SECTION_DESCRIPTION">どのモデルを使えるようにするか、どれをデフォルトにするかを選びます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_DESCRIPTION">このプロバイダで使うデフォルトのモデルを選びます。一覧を開いて入力すると、利用可能なモデルを絞り込めます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_SECTION_LABEL">デフォルトのモデル</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_PLACEHOLDER">モデルを選択</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_ACTION">参照</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_PICKER_HELPER">一覧を開いて入力すると、利用可能なモデルを絞り込めます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_CLOSE_MODEL_PICKER">モデルピッカーを閉じる</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_LABEL">モデルを絞り込む</translation>
+  <translation id="IDS_NEXUS_SETTINGS_FILTER_MODELS_PLACEHOLDER">入力してモデルを絞り込む</translation>
+  <translation id="IDS_NEXUS_SETTINGS_NO_MATCHING_MODELS">この条件に一致するモデルはありません。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLED_MODELS_SECTION_LABEL">有効なモデル</translation>
+  <translation id="IDS_NEXUS_SETTINGS_ENABLE_MODEL_ARIA"><ph name="MODEL_NAME"/> を有効にする</translation>
+  <translation id="IDS_NEXUS_SETTINGS_DEFAULT_MODEL_ARIA"><ph name="MODEL_NAME"/> をデフォルトのモデルに設定</translation>
+  <translation id="IDS_NEXUS_SETTINGS_MODEL_SELECTED_BADGE">選択中</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_SECTION_TITLE">概要</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_PROVIDER_LABEL">プロバイダ</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DISCOVERED_LABEL">検出されたモデル</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_ENABLED_LABEL">有効なモデル</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_DEFAULT_LABEL">デフォルト</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NONE">なし</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SUMMARY_NOT_SELECTED">未選択</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE">保存</translation>
+  <translation id="IDS_NEXUS_SETTINGS_BASE_URL_REQUIRED">Base URL は必須です。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_API_KEY_REQUIRED">API キーは必須です。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SWITCH_PROVIDER_CONFIRM">プロバイダを切り替えて、保存していない接続とモデルの変更を破棄しますか？</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_FAILED">プロバイダ設定を保存できませんでした。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_SAVE_SUCCESS">プロバイダ設定を保存しました。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONNECTION">接続をリセット</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_TITLE"><ph name="PROVIDER_NAME"/> の接続をリセットしますか？</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_DIALOG_BODY">保存されている <ph name="PROVIDER_NAME"/> の接続情報を消去し、検証済みの状態を解除して、このプロバイダをデフォルト値に戻します。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_COMPLETED"><ph name="PROVIDER_NAME"/> の接続をリセットしました。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_CONFIRM"><ph name="PROVIDER_NAME"/> をリセットしますか？保存されているプロバイダ、エンドポイント、モデルの選択が削除されます。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_RESET_FAILED">プロバイダ設定をリセットできませんでした。</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_TITLE">デフォルトの動作</translation>
+  <translation id="IDS_NEXUS_SETTINGS_WEBAPP_DEFAULT_DESCRIPTION">カスタム URL を消去して、組み込みの <ph name="PRODUCT_NAME"/> ウェブアプリを使います。</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_OPEN_BROWSER">ブラウザウィンドウを開く</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">タスク マネージャ</translation>
+  <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">ウィンドウを閉じる</translation>
+  <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">新しいブラウザウィンドウ</translation>
+</translationbundle>

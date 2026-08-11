@@ -1039,6 +1039,7 @@ source_set("unit_tests_lite") {
     "api/llm/oauth/oauth_token_store_unittest.cc",
     "api/llm/provider_config_unittest.cc",
     "api/llm/providers/anthropic/anthropic_schema_sanitizer_unittest.cc",
+    "api/llm/providers/openai/openai_responses_error_unittest.cc",
     "api/llm/providers/openai/openai_tool_call_stream_unittest.cc",
     "api/llm/providers/openai/openai_usage_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
@@ -1079,6 +1080,7 @@ source_set("unit_tests_lite") {
     # llm_observation_unittest.cc — header allowlist + request-body digest.
     "//custom_browser/browser/nexus/api/llm:observation",
     "//custom_browser/browser/nexus/api/llm:oauth",
+    "//custom_browser/browser/nexus/api/llm:openai_responses_error",
     "//custom_browser/browser/nexus/api/llm:openai_tool_call_stream",
     "//custom_browser/browser/nexus/api/llm:openai_usage",
     "//custom_browser/browser/nexus/api/llm:pref_names",

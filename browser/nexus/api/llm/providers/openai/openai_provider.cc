@@ -19,6 +19,7 @@
 #include "base/uuid.h"
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_responses_error.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_usage.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -1346,6 +1347,13 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
   // boundaries, search/code-interpreter/image events — is currently silently
   // dropped. Add support here if/when the WebUI starts surfacing them.
 
+  // Event-name-only trace of the whole stream. Off by default; enable with
+  //   --enable-logging=stderr --vmodule=openai_provider=1
+  // when you need the sequence that led to a terminal event (which events a
+  // failing turn got through before it died). Names only, never payloads —
+  // the deltas carry the user's conversation.
+  VLOG(1) << "[responses] event: " << event_type;
+
   if (event_type == "response.output_text.delta") {
     if (const std::string* delta = data.FindString("delta")) {
       if (!delta->empty()) {
@@ -1493,18 +1501,17 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
   if (event_type == "response.failed" || event_type == "error") {
     // Surface a terminal error chunk so the bridge can drop the stream.
     // OnStreamComplete will still fire afterwards.
-    std::string message = "Responses API stream error";
-    if (event_type == "response.failed") {
-      if (const base::DictValue* response_obj = data.FindDict("response")) {
-        if (const base::DictValue* err = response_obj->FindDict("error")) {
-          if (const std::string* m = err->FindString("message"))
-            message = *m;
-        }
-      }
-    } else {
-      if (const std::string* m = data.FindString("message"))
-        message = *m;
-    }
+    bool recognized = false;
+    std::string message = BuildResponsesApiErrorMessage(data, &recognized);
+
+    // Rare, and load-bearing for diagnosis: this event is the one place a
+    // backend's own error vocabulary reaches us, and its shape varies per
+    // backend. LOG(ERROR) deliberately — NOT a real error, same convention as
+    // the [streamguard] line above — so the raw event survives in a release
+    // log too. At most one per stream.
+    LOG(ERROR) << "[responses] terminal error event (recognized=" << recognized
+               << "): " << SerializeEventForDiagnosis(data);
+
     base::DictValue chunk;
     chunk.Set("type", "error");
     chunk.Set("error", std::move(message));

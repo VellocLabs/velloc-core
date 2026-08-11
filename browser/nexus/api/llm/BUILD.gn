@@ -240,6 +240,22 @@ source_set("openai_usage") {
   public_deps = [ "//base" ]
 }
 
+# Pulls the message + code out of a Responses-API terminal error event. The
+# public /v1/responses API and the ChatGPT (Codex) backend disagree about
+# where they live, and an unrecognized shape used to collapse to a
+# placeholder the guest could not classify — so a retryable capacity outage
+# surfaced as a dead "Issue: unknown" turn (see openai_responses_error.h).
+# Tiny base-only source_set (same pattern as :openai_usage) so the lite
+# unit-test binary can cover every envelope without linking the provider.
+source_set("openai_responses_error") {
+  sources = [
+    "providers/openai/openai_responses_error.cc",
+    "providers/openai/openai_responses_error.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 # Extracts a human-readable error message from a provider error body —
 # raw JSON OR an SSE `data:` frame (some gateways — DashScope/token-plan,
 # Anthropic-compatible proxies — return HTTP 4xx as a single
@@ -266,6 +282,7 @@ source_set("openai_provider") {
   deps = [
     ":error_extract",
     ":line_splitter",
+    ":openai_responses_error",
     ":openai_tool_call_stream",
     ":openai_usage",
     ":provider",

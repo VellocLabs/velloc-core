@@ -5,6 +5,7 @@
 #include <string>
 
 #include "base/json/json_reader.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -155,6 +156,26 @@ TEST(OpenAiResponsesErrorTest, BoundsAnEnormousUnrecognizedEvent) {
   const std::string built = BuildResponsesApiErrorMessage(event, nullptr);
   EXPECT_LT(built.size(), kMaxSerializedErrorEventChars + 128);
   EXPECT_NE(built.find("...(truncated)"), std::string::npos);
+}
+
+// Truncation must land on a codepoint boundary. The string ends up in
+// `NexusLlmStreamEvent.error_message`, a mojo `string?`, and mojo requires
+// valid UTF-8 — while base::JSONWriter emits non-ASCII as raw UTF-8 and a
+// provider error message can be localized. A plain resize() at the byte cap
+// would split a multi-byte sequence here.
+TEST(OpenAiResponsesErrorTest, TruncatesUnrecognizedEventOnACodepointBoundary) {
+  base::DictValue event;
+  event.Set("type", "error");
+  // 3 bytes per character, so a byte cap lands mid-sequence for most caps.
+  std::string wide;
+  for (int i = 0; i < 2000; ++i)
+    wide += "\xE4\xB8\xAD";  // U+4E2D
+  event.Set("junk", wide);
+
+  const std::string built = BuildResponsesApiErrorMessage(event, nullptr);
+  EXPECT_LT(built.size(), kMaxSerializedErrorEventChars + 128);
+  EXPECT_NE(built.find("...(truncated)"), std::string::npos);
+  EXPECT_TRUE(base::IsStringUTF8(built)) << "truncation split a codepoint";
 }
 
 // An empty message field must not count as recognized — otherwise the guest

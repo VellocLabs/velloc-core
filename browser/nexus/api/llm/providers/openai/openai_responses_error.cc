@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "base/json/json_writer.h"
+#include "base/strings/string_util.h"
 
 namespace nexus {
 
@@ -30,7 +31,14 @@ std::string SerializeEventForDiagnosis(const base::DictValue& data) {
   if (!base::JSONWriter::Write(data, &serialized) || serialized.empty())
     return "<unserializable event>";
   if (serialized.size() > kMaxSerializedErrorEventChars) {
-    serialized.resize(kMaxSerializedErrorEventChars);
+    // Truncate on a CODEPOINT boundary, not a byte offset. base::JSONWriter
+    // emits non-ASCII as raw UTF-8 (it only escapes with
+    // OPTIONS_ESCAPE_NON_ASCII), and a provider error message can be
+    // localized — so a plain resize() can split a multi-byte sequence. This
+    // string travels to the guest as `NexusLlmStreamEvent.error_message`,
+    // a mojo `string?`, and mojo requires valid UTF-8.
+    serialized = std::string(base::TruncateUTF8ToByteSize(
+        serialized, kMaxSerializedErrorEventChars));
     serialized += "...(truncated)";
   }
   return serialized;

@@ -158,6 +158,35 @@ TEST(OpenAiResponsesErrorTest, BoundsAnEnormousUnrecognizedEvent) {
   EXPECT_NE(built.find("...(truncated)"), std::string::npos);
 }
 
+// A `response.failed` event echoes the whole Response back, including
+// `instructions` — which this provider sets to the SYSTEM PROMPT (project
+// paths, memory/CLAUDE.md excerpts) — and `input`/`output`, the conversation.
+// The diagnostic string is written to chrome_debug.log on every failed stream
+// and, for an unrecognized shape, reaches the visible transcript, so the
+// payload must be pruned away while the error itself is kept.
+TEST(OpenAiResponsesErrorTest, PrunesRequestPayloadFromTheDiagnosticEvent) {
+  const base::DictValue event = ParseDict(R"({
+    "type": "response.failed",
+    "response": {
+      "id": "resp_abc",
+      "status": "failed",
+      "instructions": "SYSTEM PROMPT WITH D:/private/path AND MEMORY",
+      "input": [{"role": "user", "content": "the user's secret question"}],
+      "output": [{"text": "a partial answer"}],
+      "error": {"code": "server_is_overloaded", "message": "overloaded"}
+    }
+  })");
+
+  const std::string diag = SerializeEventForDiagnosis(event);
+
+  EXPECT_EQ(diag.find("SYSTEM PROMPT"), std::string::npos) << diag;
+  EXPECT_EQ(diag.find("secret question"), std::string::npos) << diag;
+  EXPECT_EQ(diag.find("partial answer"), std::string::npos) << diag;
+  // The diagnostic value survives.
+  EXPECT_NE(diag.find("server_is_overloaded"), std::string::npos) << diag;
+  EXPECT_NE(diag.find("resp_abc"), std::string::npos) << diag;
+}
+
 // Truncation must land on a codepoint boundary. The string ends up in
 // `NexusLlmStreamEvent.error_message`, a mojo `string?`, and mojo requires
 // valid UTF-8 — while base::JSONWriter emits non-ASCII as raw UTF-8 and a

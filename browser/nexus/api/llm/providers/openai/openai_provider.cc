@@ -1507,8 +1507,12 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
     // Rare, and load-bearing for diagnosis: this event is the one place a
     // backend's own error vocabulary reaches us, and its shape varies per
     // backend. LOG(ERROR) deliberately — NOT a real error, same convention as
-    // the [streamguard] line above — so the raw event survives in a release
-    // log too. At most one per stream.
+    // the [streamguard] line above — so the event survives in a release log
+    // too. Twice per failure on the Codex backend, which emits `error` and
+    // then `response.failed` for the same failure; both are logged on purpose
+    // (only the FIRST becomes the guest's terminal chunk, so seeing both is
+    // how you tell which one won). The payload is pruned before serializing —
+    // see SerializeEventForDiagnosis.
     LOG(ERROR) << "[responses] terminal error event (recognized=" << recognized
                << "): " << SerializeEventForDiagnosis(data);
 

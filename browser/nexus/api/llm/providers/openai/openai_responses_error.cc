@@ -24,19 +24,46 @@ const std::string* FindNestedNonEmptyString(const base::DictValue& dict,
   return sub ? FindNonEmptyString(*sub, inner) : nullptr;
 }
 
+// The only keys worth keeping from a `response.failed` event's `response`
+// object. Everything else echoes the REQUEST back: `instructions` is the
+// system prompt this provider sends (BuildResponsesApiRequestBody), and
+// `input` / `output` carry the conversation itself. That payload must not be
+// serialized — this string is written to chrome_debug.log on every failed
+// stream, and for an unrecognized shape it also becomes visible transcript
+// text. `base::Value::Dict` is key-sorted, so `instructions` sorts early and
+// would otherwise spend the whole byte budget printing the user's prompt.
+constexpr std::string_view kResponseDiagnosticKeys[] = {
+    "error", "id", "incomplete_details", "status"};
+
 }  // namespace
 
 std::string SerializeEventForDiagnosis(const base::DictValue& data) {
+  // Prune before serializing — see kResponseDiagnosticKeys. A bare `error`
+  // event carries only error fields and is kept whole.
+  base::DictValue pruned = data.Clone();
+  if (const base::DictValue* response_obj = data.FindDict("response")) {
+    base::DictValue kept;
+    for (std::string_view key : kResponseDiagnosticKeys) {
+      if (const base::Value* value = response_obj->Find(key))
+        kept.Set(key, value->Clone());
+    }
+    pruned.Set("response", std::move(kept));
+  }
+
   std::string serialized;
-  if (!base::JSONWriter::Write(data, &serialized) || serialized.empty())
+  if (!base::JSONWriter::Write(pruned, &serialized) || serialized.empty())
     return "<unserializable event>";
   if (serialized.size() > kMaxSerializedErrorEventChars) {
     // Truncate on a CODEPOINT boundary, not a byte offset. base::JSONWriter
-    // emits non-ASCII as raw UTF-8 (it only escapes with
-    // OPTIONS_ESCAPE_NON_ASCII), and a provider error message can be
-    // localized — so a plain resize() can split a multi-byte sequence. This
-    // string travels to the guest as `NexusLlmStreamEvent.error_message`,
-    // a mojo `string?`, and mojo requires valid UTF-8.
+    // never escapes non-ASCII — EscapeJSONStringImpl escapes only control
+    // characters and a few specials, everything else is written as raw UTF-8
+    // — and a provider error message can be localized, so a plain resize()
+    // can split a multi-byte sequence. On the unrecognized path this string
+    // becomes a base::Value (`chunk.Set("error", …)`), whose std::string
+    // constructor DCHECKs `IsStringUTF8AllowingNoncharacters`: in this
+    // is_debug tree a split sequence aborts the browser process. It then
+    // travels to the guest as `NexusLlmStreamEvent.error_message`, a mojo
+    // `string?`, which also requires valid UTF-8.
     serialized = std::string(base::TruncateUTF8ToByteSize(
         serialized, kMaxSerializedErrorEventChars));
     serialized += "...(truncated)";

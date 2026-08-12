@@ -468,11 +468,55 @@ void CustomBrowserView::ObserveFullscreenController() {
   fullscreen_observation_.Observe(fullscreen_controller);
 }
 
+custom_browser::ResizeEdge CustomBrowserView::ResizeEdgeAtLocalPoint(
+    const gfx::Point& point_in_this) const {
+  const views::Widget* widget = GetWidget();
+  if (!widget || !widget->widget_delegate() ||
+      !widget->widget_delegate()->CanResize() || IsMaximized() ||
+      IsFullscreen()) {
+    return custom_browser::ResizeEdge::kNone;
+  }
+  return custom_browser::ResizeEdgeForPoint(point_in_this.x(),
+                                            point_in_this.y(), width(),
+                                            height());
+}
+
 bool CustomBrowserView::ShouldDescendIntoChildForEventHandling(
     gfx::NativeView child,
     const gfx::Point& location) {
   if (IsChromiumLayout()) {
     return BrowserView::ShouldDescendIntoChildForEventHandling(child, location);
+  }
+  // A point in the window's resize gutter belongs to the frame, never to a
+  // web contents — and this function is the only gate that keeps it so. The
+  // gutter makes NonClientHitTest answer HTRIGHT/HTBOTTOM there, so Windows
+  // sends WM_NCMOUSEMOVE, which is still dispatched into aura flagged
+  // EF_IS_NON_CLIENT (hwnd_message_handler.cc). If aura targeting descends
+  // into the web contents' window for that event, wm::CompoundEventFilter
+  // recomputes the cursor from THAT window's GetNonClientComponent() — which
+  // is hard-coded HTCLIENT (web_contents_view_aura.cc) — mapping to the
+  // default arrow and stomping the resize cursor WM_SETCURSOR just set. The
+  // visible symptom: the size cursor flashes once at the right/bottom edge
+  // and reverts to the arrow, while dragging still resizes.
+  //
+  // With descent blocked, the event targets the widget's content window,
+  // whose GetNonClientComponent() routes back through NonClientHitTest to the
+  // same HTRIGHT/HTBOTTOM — so CompoundEventFilter sets the matching size
+  // cursor instead. aura::Window::GetEventHandlerForPoint honors this hook
+  // too (ui/aura/window.cc), which also seals the asynchronous
+  // RenderWidgetHostViewAura::UpdateCursorIfOverSelf stomp.
+  //
+  // `location` is in the widget root view's coordinate space (see
+  // BrowserView::ShouldDescendIntoChildForEventHandling, which converts from
+  // GetWidget()->GetRootView()).
+  if (const views::Widget* widget = GetWidget()) {
+    gfx::Point point_in_this(location);
+    views::View::ConvertPointToTarget(widget->GetRootView(), this,
+                                      &point_in_this);
+    if (ResizeEdgeAtLocalPoint(point_in_this) !=
+        custom_browser::ResizeEdge::kNone) {
+      return false;
+    }
   }
   auto child_type = GetNativeChildType(child);
   if (child_type == kBackgroundWebContentsChild) {
@@ -505,15 +549,10 @@ int CustomBrowserView::NonClientHitTest(const gfx::Point& point) {
   //
   // BrowserFrameViewWin returns the client view's component verbatim, so a
   // resize code here reaches Windows and drives both the cursor and the drag.
-  const views::Widget* widget = GetWidget();
-  if (widget && parent() && widget->widget_delegate() &&
-      widget->widget_delegate()->CanResize() && !IsMaximized() &&
-      !IsFullscreen()) {
+  if (parent()) {
     gfx::Point point_in_this(point);
     views::View::ConvertPointToTarget(parent(), this, &point_in_this);
-    switch (custom_browser::ResizeEdgeForPoint(point_in_this.x(),
-                                               point_in_this.y(), width(),
-                                               height())) {
+    switch (ResizeEdgeAtLocalPoint(point_in_this)) {
       case custom_browser::ResizeEdge::kLeft: return HTLEFT;
       case custom_browser::ResizeEdge::kRight: return HTRIGHT;
       case custom_browser::ResizeEdge::kTop: return HTTOP;

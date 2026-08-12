@@ -65,6 +65,7 @@
 #include "ui/events/event.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
 #include "custom_browser/ui/view/native_ui_container_view.h"
+#include "custom_browser/ui/view/window_hit_test.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ui/compositor/compositor_metrics_tracker.h"
@@ -273,6 +274,16 @@ private:
 
   void EnsureMouseEventFilter();
   void ResetMouseEventFilter();
+
+  // Which resize-gutter edge `point_in_this` (this view's coordinate space)
+  // falls on, or kNone when the window can't be resized (maximized,
+  // fullscreen, CanResize() false) or the point is off the gutter. Shared by
+  // NonClientHitTest (drives WM_NCHITTEST and thus WM_SETCURSOR) and
+  // ShouldDescendIntoChildForEventHandling (keeps aura targeting from handing
+  // gutter events to a web contents, whose window would recompute the cursor
+  // as an arrow) — the two must agree or the resize cursor flickers.
+  custom_browser::ResizeEdge ResizeEdgeAtLocalPoint(
+      const gfx::Point& point_in_this) const;
 
   void UpdatePositionArea(const gfx::Point& location);
   NativeChildType GetNativeChildType(gfx::NativeView child);

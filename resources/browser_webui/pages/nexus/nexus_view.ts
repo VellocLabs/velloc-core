@@ -231,46 +231,44 @@ export class NexusViewElement extends CrLitElement {
     this.requestUpdate();
   }
 
-  // Clear the `nexus.webapp_url` override and reload the panel. The reset goes
-  // through the legacy `setWebappUrl` chrome.send route
+  // Clear the `nexus.webapp_url` override, then restart the client. The reset
+  // goes through the legacy `setWebappUrl` chrome.send route
   // (NexusSettingsHandler, registered on this WebUI by custom_browser_webui.cc)
   // — empty string means "use the built-in default" (nexus_guest_config.cc).
   //
-  // The reload is required, not cosmetic: the resolved guest URL is injected
-  // into loadTimeData when the WebUI controller is constructed, so the new
-  // pref only takes effect on a fresh page. It also cannot be computed here —
-  // the default in loadTimeData is the RAW base, without the /v<N>/ segment
-  // that GetResolvedNexusGuestURL() appends on the C++ side.
-  private async onRecoveryReset_() {
-    try {
-      await sendWithPromise('setWebappUrl', '');
-    } catch (e) {
-      // Fall through to the reload anyway: if the pref write failed the page
-      // comes back to this same overlay, which is a better outcome than a
-      // dead button. The restart hint in the overlay covers the rest.
-      console.error('[NexusView] setWebappUrl reset failed', e);
-    }
-    location.reload();
-  }
-
-  private onRecoveryRetry_() {
-    location.reload();
-  }
-
-  // Restart the client, restoring the open session
-  // (NexusSettingsHandler::HandleRestartBrowser → nexus::RestartClient).
+  // Restart, not `location.reload()`: reloading the panel does pick up the new
+  // pref (the resolved guest URL is injected into loadTimeData when the WebUI
+  // controller is constructed, so it only takes effect on a fresh page), but a
+  // reload alone was routinely not enough — the overlay's own hint told the
+  // user to restart the client if the panel came back empty, which made the
+  // restart the second half of this one recovery step rather than a separate
+  // choice. Doing both here is why the overlay no longer offers a standalone
+  // "Restart client" button. The restart restores the open session, so the
+  // cost of taking it unconditionally is a few seconds.
   //
-  // Plain `chrome.send`, not `sendWithPromise`: the route deliberately never
-  // answers — the browser is on its way out — so awaiting it would hang, and
-  // there is nothing to do on this page afterwards anyway.
-  //
-  // Why this surface does not use the guest bridge's `appInfo.relaunch`, which
+  // Restart via `chrome.send`, not `sendWithPromise`
+  // (NexusSettingsHandler::HandleRestartBrowser → nexus::RestartClient): the
+  // route deliberately never answers — the browser is on its way out — so
+  // awaiting it would hang, and there is nothing to do on this page
+  // afterwards anyway. And not the guest bridge's `appInfo.relaunch`, which
   // the About page's "Restart now" button calls for the same job: this overlay
   // exists precisely because the guest never completed its handshake, so that
   // bridge is unreachable from here by construction. Both routes land on the
   // same nexus::RestartClient.
-  private onRecoveryRestart_() {
+  private async onRecoveryReset_() {
+    try {
+      await sendWithPromise('setWebappUrl', '');
+    } catch (e) {
+      // Fall through to the restart anyway: if the pref write failed the panel
+      // comes back to this same overlay, which is a better outcome than a
+      // dead button.
+      console.error('[NexusView] setWebappUrl reset failed', e);
+    }
     chrome.send('restartBrowser');
+  }
+
+  private onRecoveryRetry_() {
+    location.reload();
   }
 
   // Host-handshake stage source (bootstrapNexusGuest's onStatus callback):
@@ -452,8 +450,7 @@ export class NexusViewElement extends CrLitElement {
         <nexus-guest-recovery class="recovery-overlay"
             .guestUrl=${this.guestFailureUrl_}
             @nexus-guest-recovery-reset=${this.onRecoveryReset_}
-            @nexus-guest-recovery-retry=${this.onRecoveryRetry_}
-            @nexus-guest-recovery-restart=${this.onRecoveryRestart_}>
+            @nexus-guest-recovery-retry=${this.onRecoveryRetry_}>
         </nexus-guest-recovery>
       `}
     `;

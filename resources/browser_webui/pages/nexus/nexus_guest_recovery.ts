@@ -43,8 +43,6 @@ interface RecoveryCopy {
   urlLabel: string;
   reset: string;
   retry: string;
-  restart: string;
-  restartHint: string;
 }
 
 const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
@@ -57,9 +55,6 @@ const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
     urlLabel: 'Tried',
     reset: 'Restore default runtime',
     retry: 'Try again',
-    restart: 'Restart client',
-    restartHint:
-        'If the panel is still empty after restoring, restart the client.',
   },
   zh: {
     title: '{product} 运行时未能加载',
@@ -69,8 +64,6 @@ const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
     urlLabel: '已尝试',
     reset: '恢复默认运行时',
     retry: '重试',
-    restart: '重启客户端',
-    restartHint: '若恢复后面板仍为空白，请重启客户端。',
   },
   es: {
     title: 'No se pudo cargar el runtime de {product}',
@@ -81,9 +74,6 @@ const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
     urlLabel: 'Se intentó',
     reset: 'Restaurar runtime predeterminado',
     retry: 'Reintentar',
-    restart: 'Reiniciar el cliente',
-    restartHint:
-        'Si el panel sigue vacío después de restaurar, reinicie el cliente.',
   },
   fr: {
     title: 'Le runtime {product} n’a pas pu être chargé',
@@ -94,10 +84,6 @@ const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
     urlLabel: 'Tentative',
     reset: 'Restaurer le runtime par défaut',
     retry: 'Réessayer',
-    restart: 'Redémarrer le client',
-    restartHint:
-        'Si le panneau reste vide après la restauration, redémarrez le ' +
-        'client.',
   },
   de: {
     title: '{product}-Runtime konnte nicht geladen werden',
@@ -108,10 +94,6 @@ const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
     urlLabel: 'Versucht',
     reset: 'Standard-Runtime wiederherstellen',
     retry: 'Erneut versuchen',
-    restart: 'Client neu starten',
-    restartHint:
-        'Ist das Panel nach dem Wiederherstellen weiterhin leer, starte den ' +
-        'Client neu.',
   },
 };
 
@@ -237,12 +219,6 @@ export class NexusGuestRecoveryElement extends CrLitElement {
       outline: 2px solid #2563eb;
       outline-offset: 2px;
     }
-
-    .recovery-hint {
-      font-size: 11px;
-      color: #64748b;
-      margin-top: 4px;
-    }
   `;
 
   // The guest URL that failed, shown verbatim so the user (or a bug report)
@@ -271,10 +247,6 @@ export class NexusGuestRecoveryElement extends CrLitElement {
     this.dispatchEvent(new CustomEvent('nexus-guest-recovery-retry'));
   }
 
-  private onRestart_() {
-    this.dispatchEvent(new CustomEvent('nexus-guest-recovery-restart'));
-  }
-
   protected override render() {
     const copy = RECOVERY_COPY[resolveRecoveryLocale(navigator.language)];
     const productName = getString('customBrowserProductName', 'Velloc');
@@ -296,15 +268,7 @@ export class NexusGuestRecoveryElement extends CrLitElement {
           <button class="secondary"
               id="retryRuntime"
               @click=${this.onRetry_}>${copy.retry}</button>
-          <!-- The hint below has always said to restart; until now that was
-               the one instruction the overlay could not carry out, leaving
-               the user to quit the client by hand from a panel that is
-               visibly broken. -->
-          <button class="secondary"
-              id="restartClient"
-              @click=${this.onRestart_}>${copy.restart}</button>
         </div>
-        <div class="recovery-hint">${copy.restartHint}</div>
       </div>
     `;
   }

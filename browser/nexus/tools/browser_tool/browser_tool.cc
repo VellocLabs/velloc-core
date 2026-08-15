@@ -39,6 +39,7 @@
 #include "components/tabs/public/tab_group.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/media_session.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "custom_browser/browser/nexus/session/nexus_session_features.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
@@ -50,6 +51,7 @@
 #include "services/media_session/public/cpp/media_position.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "ui/gfx/geometry/size.h"
+#include "url/gurl.h"
 
 namespace nexus {
 
@@ -1025,6 +1027,12 @@ void BrowserTool::OnActionsResultBuilt(
   // vector; reduce it via upstream's canonical helper (first non-OK wins).
   const actor::mojom::ActionResultCode result_code =
       OverallActorResultCode(action_results);
+  // Read-and-clear the late-navigation retry latch FIRST, so every exit —
+  // ok, actor error, even a failed retry observation — resets it and the
+  // NEXT action gets its own guard. One action is in flight per session at
+  // a time, so a plain member is a safe carrier.
+  const bool was_settle_retry = nav_settle_observation_retried_;
+  nav_settle_observation_retried_ = false;
   // Node registry ACCUMULATES across observations now — indexes
   // (== APC content_node_id) are stable for a document's lifetime,
   // so the LLM can refer to elements from prior turns. Stale indexes
@@ -1047,6 +1055,11 @@ void BrowserTool::OnActionsResultBuilt(
     // the model; every other action keeps the lightweight flag.
     observation = BuildObservationDict(
         *result_proto, /*include_screenshot_image=*/action_name == "screenshot");
+  }
+  if (was_settle_retry) {
+    LOG(INFO) << "[BrowserTool] " << action_name
+              << ": settle-guard retry observation built (observed_url="
+              << last_observation_url_ << ")";
   }
 
   base::DictValue result;
@@ -1071,7 +1084,133 @@ void BrowserTool::OnActionsResultBuilt(
   }
 
   result.Set("ok", true);
+
+  // ── Late-navigation settle guard ──────────────────────────────────────
+  // The upstream ObservationDelayController restarts its wait when a
+  // navigation STARTS during it (kPageNavigated) — but "page settled" and a
+  // renderer-initiated BeginNavigation travel on independent mojo pipes with
+  // no cross-pipe ordering, so under CPU load the browser can process
+  // "settled" while the click's navigation is still in transit. The APC
+  // fetch then snapshots the OLD document and the model is told its click
+  // did nothing (observed live: the e2e browser-tool sweep's click step
+  // reporting the pre-navigation URL under a 6-worker parallel run).
+  //
+  // By the time the observation RESULT is built we have had a full renderer
+  // roundtrip of wall time, so the raced navigation is browser-visible by
+  // now in practice: either still in flight (IsLoading / a pending entry)
+  // or already committed (live URL != the URL the observation captured).
+  // On either signal, wait out the navigation (bounded) and re-observe
+  // ONCE so the model sees the page its action actually produced. The
+  // healthy path — observation matches the committed URL, nothing in
+  // flight — pays nothing.
+  if (!was_settle_retry && result_proto && result_proto->tabs_size() > 0) {
+    const std::optional<tabs::TabHandle> work = LastWorkTab();
+    tabs::TabInterface* work_tab = work.has_value() ? work->Get() : nullptr;
+    content::WebContents* wc = work_tab ? work_tab->GetContents() : nullptr;
+    if (wc) {
+      const GURL& committed = wc->GetLastCommittedURL();
+      const bool nav_in_flight =
+          wc->IsLoading() ||
+          wc->GetController().GetPendingEntry() != nullptr;
+      const bool url_mismatch = !last_observation_url_.empty() &&
+                                GURL(last_observation_url_) != committed;
+      if (nav_in_flight || url_mismatch) {
+        LOG(INFO) << "[BrowserTool] " << action_name
+                  << ": observation raced a navigation (in_flight="
+                  << nav_in_flight << " observed_url=" << last_observation_url_
+                  << " committed_url=" << committed.spec()
+                  << ") — waiting for quiescence, then re-observing once";
+        nav_settle_observation_retried_ = true;
+        // 300 × 150ms = a 45s bound, well inside the 180s per-action
+        // budget. Generous on purpose: this path only runs when the
+        // observation is ALREADY known-stale, and under the machine load
+        // that creates this race a local navigation has been measured
+        // needing 17s+ from click to first server request (e2e sweep,
+        // 6-worker run). Real navigations rarely wait the full bound —
+        // the poll exits at COMMIT (URL change), not full load-stop.
+        // Better a late observation than a wrong one; a genuinely wedged
+        // load still re-observes at exhaustion and resolves.
+        WaitForWorkTabQuiescenceThenReobserve(
+            std::move(done), std::move(action_name), std::move(result),
+            /*entry_committed_url=*/committed.spec(),
+            /*polls_left=*/300);
+        return;
+      }
+    }
+  }
+
+  // Honesty stamp: if we are resolving while the work tab still has a
+  // navigation in flight (reachable on the settle-retry path when the
+  // bounded wait expired), say so — the model must know the page may be
+  // about to change out from under the snapshot it was just handed, and
+  // that a fresh `read_page` before the next action is the safe move.
+  if (was_settle_retry) {
+    const std::optional<tabs::TabHandle> work = LastWorkTab();
+    tabs::TabInterface* work_tab = work.has_value() ? work->Get() : nullptr;
+    content::WebContents* wc = work_tab ? work_tab->GetContents() : nullptr;
+    if (wc && (wc->IsLoading() ||
+               wc->GetController().GetPendingEntry() != nullptr)) {
+      result.Set("navigation_pending", true);
+      result.Set("navigation_pending_hint",
+                 "A navigation was still in flight when this observation was "
+                 "taken; the page may be about to change. Re-observe with "
+                 "read_page before acting on this snapshot.");
+    }
+  }
+
   std::move(done).Resolve(std::move(result));
+}
+
+void BrowserTool::WaitForWorkTabQuiescenceThenReobserve(
+    ToolCallback done,
+    std::string action_name,
+    base::DictValue fallback_result,
+    std::string entry_committed_url,
+    int polls_left) {
+  const std::optional<tabs::TabHandle> work = LastWorkTab();
+  tabs::TabInterface* work_tab = work.has_value() ? work->Get() : nullptr;
+  content::WebContents* wc = work_tab ? work_tab->GetContents() : nullptr;
+  if (!wc) {
+    // The work tab died while we waited out its navigation. The ACTION
+    // itself succeeded — resolve with the observation we already built
+    // rather than failing a successful action over its follow-up snapshot.
+    std::move(done).Resolve(std::move(fallback_result));
+    return;
+  }
+  // Exit as soon as the raced navigation COMMITS (the URL moved off what
+  // was committed when the guard armed) — the new document exists and can
+  // be observed; waiting further for full load-stop only delays the model
+  // behind subresources. Quiescence remains the exit for the
+  // mismatch-triggered case where the commit had already happened.
+  const bool committed_moved =
+      wc->GetLastCommittedURL().spec() != entry_committed_url;
+  const bool quiescent = !wc->IsLoading() &&
+                         wc->GetController().GetPendingEntry() == nullptr;
+  if (!committed_moved && !quiescent && polls_left > 0) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&BrowserTool::WaitForWorkTabQuiescenceThenReobserve,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(done),
+                       std::move(action_name), std::move(fallback_result),
+                       std::move(entry_committed_url), polls_left - 1),
+        base::Milliseconds(150));
+    return;
+  }
+  // Committed, quiescent — or still churning after the bounded wait (a
+  // long-polling page can hold IsLoading indefinitely). Either way take a
+  // FRESH observation: `RunTabObservation` re-marks the work tab, the
+  // framework re-fetches APC for the task's tabs, and the result flows
+  // through `OnActionsResultBuilt` again — which skips this guard via the
+  // latch, so at most one retry per action.
+  LOG(INFO) << "[BrowserTool] " << action_name
+            << ": settle-guard re-observing (committed_moved="
+            << committed_moved << " quiescent=" << quiescent
+            << " polls_left=" << polls_left
+            << " loading=" << wc->IsLoading()
+            << " committed_url=" << wc->GetLastCommittedURL().spec() << ")";
+  RunTabObservation(work->raw_value(), action_name, std::move(done),
+                    base::BindOnce(&BrowserTool::OnActionsResultBuilt,
+                                   weak_ptr_factory_.GetWeakPtr()));
 }
 
 namespace {

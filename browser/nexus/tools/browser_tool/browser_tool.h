@@ -505,6 +505,24 @@ class BrowserTool : public ToolBase,
       std::unique_ptr<optimization_guide::proto::ActionsResult> result_proto,
       std::unique_ptr<actor::AggregatedJournal::PendingAsyncEntry> journal);
 
+  // Late-navigation settle guard (see the block comment at its call site in
+  // `OnActionsResultBuilt`): the just-built observation raced a navigation
+  // on the work tab, so poll (150ms × `polls_left`) until the raced
+  // navigation COMMITS (committed URL moves off `entry_committed_url`) or
+  // the tab is quiescent — not loading, no pending entry — then take ONE
+  // fresh observation via `RunTabObservation` and resolve `done` with it.
+  // If the work tab dies while waiting, resolves with `fallback_result`
+  // (the observation that was already built) instead — the action itself
+  // succeeded and must not be failed retroactively.
+  // `entry_committed_url` is a GURL spec, carried as a string so this
+  // header needn't depend on url/gurl.h (same convention as
+  // `StartUrlDownloadAfterDirReady`).
+  void WaitForWorkTabQuiescenceThenReobserve(ToolCallback done,
+                                             std::string action_name,
+                                             base::DictValue fallback_result,
+                                             std::string entry_committed_url,
+                                             int polls_left);
+
   // Recursively walks one ContentNode tree. For every node that has
   // an interaction info / actionable role, registers it in
   // `node_registry_` keyed by `(content_node_id, tab_id)` and
@@ -689,6 +707,15 @@ class BrowserTool : public ToolBase,
   std::string last_observation_normalized_projection_;
   bool last_observation_focus_target_present_ = false;
   std::string last_observation_focus_target_id_;
+
+  // One-shot latch for the late-navigation observation retry. Set when
+  // `OnActionsResultBuilt` hands off to
+  // `WaitForWorkTabQuiescenceThenReobserve`; read-and-cleared at the top of
+  // the next `OnActionsResultBuilt` entry so the retried observation skips
+  // the guard — at most ONE re-observation per action, never a loop. One
+  // action is in flight per session at a time (the agent loop serializes
+  // tool calls), which is what makes a plain member a safe carrier.
+  bool nav_settle_observation_retried_ = false;
 
   base::WeakPtrFactory<BrowserTool> weak_ptr_factory_{this};
 };

@@ -162,28 +162,25 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   if (const base::ListValue* models = settings.FindList("enabledModels")) {
     out.Set("enabled_models", models->Clone());
   }
-  // Carry the verification stamp through to the pref so BuildCatalog's
-  // `provider_verified` gate (IsProviderVerified → last_verification.
-  // verifiedAtMs) flips the provider's catalog entry enabled after a
-  // settings-side (React `providers.upsert` → `publishProviderConfigs`) save —
-  // the path that replaced the legacy `updateProviderConfig` →
-  // RefreshCatalogForProvider flow. Without this the quick model picker stays
-  // empty after configuring a provider even though the key is saved and works
-  // for LLM calls. The inner keys stay camelCase (providerId / verifiedAtMs):
-  // IsProviderVerified reads them as-is; only the outer key is snake_case to
-  // match the legacy pref shape.
+  // Carry the verification stamp through to the pref so the settings surfaces
+  // that REPORT it stay right across a settings-side (React `providers.upsert`
+  // → `publishProviderConfigs`) save: `providers.list`'s `isVerified` and the
+  // "Connected" status card. It is reporting only — `BuildCatalog` gates the
+  // picker on `provider_set_up` (configured + a user-supplied stored config),
+  // so losing the stamp no longer empties the quick model picker. The inner keys stay camelCase (providerId
+  // / verifiedAtMs): IsProviderVerified reads them as-is; only the outer key is
+  // snake_case to match the legacy pref shape.
   //
   // Drop a stale stamp ONLY when the api_key actually changed — mirroring
   // mergeProviderConfigForSave (providerConfigMerge.ts), which clears
-  // lastVerification when `form.apiKey !== saved.apiKey`. The previous
-  // unconditional `Remove` wiped the pref's existing stamp whenever the
-  // incoming settings config omitted `lastVerification` — including the
-  // boot-time `publishProviderConfigsAtBoot` push, which carries only
-  // stream-guard overrides for providers whose apiKey lives in the pref
-  // (the e2e harness seeds apiKey + last_verification into the pref, NOT
-  // settings.json). That left `has_key=1 verified=0` and disabled every
-  // configured provider in the catalog. When the key is unchanged (or the
-  // settings config carries no key at all), keep the existing stamp.
+  // lastVerification when `form.apiKey !== saved.apiKey`. An unconditional
+  // `Remove` would wipe the pref's existing stamp whenever the incoming
+  // settings config omits `lastVerification` — including the boot-time
+  // `publishProviderConfigsAtBoot` push, which carries only stream-guard
+  // overrides for providers whose apiKey lives in the pref — and report a
+  // working, previously-verified provider as unverified. When the key is
+  // unchanged (or the settings config carries no key at all), keep the
+  // existing stamp.
   if (const base::DictValue* last_verification =
           settings.FindDict("lastVerification")) {
     out.Set("last_verification", last_verification->Clone());

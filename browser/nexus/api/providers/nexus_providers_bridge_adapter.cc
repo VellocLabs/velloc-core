@@ -243,12 +243,14 @@ void NexusProvidersBridgeAdapter::HandleListOnUI(
     provider_dict.Set("type", type_string);
     provider_dict.Set("isConfigured", info.is_configured);
     provider_dict.Set("hasStoredApiKey", HasStoredApiKey(stored_config));
-    // Verification state from the broker pref — the SAME `last_verification`
-    // stamp BuildCatalog's `provider_verified` gate reads. The React Models
-    // page uses this to show "Connected" for a provider configured outside
-    // settings.json (launch prefs / legacy path), whose config the page's
-    // settings.json `providers.configs` view never carries; without it a
-    // working, broker-configured provider showed "No provider configured".
+    // Verification state from the broker pref — the `last_verification` stamp
+    // the settings "Test connection" probe writes. The React Models page uses
+    // this to show "Connected" for a provider configured outside settings.json
+    // (launch prefs / legacy path), whose config the page's settings.json
+    // `providers.configs` view never carries; without it a working,
+    // broker-configured provider showed "No provider configured". Display
+    // only — it does not gate the catalog (BuildCatalog's gate is
+    // `provider_set_up`).
     bool is_verified = false;
     if (const base::DictValue* last_verification =
             stored_config.FindDict("last_verification")) {

@@ -31,8 +31,11 @@ std::string GetNexusProviderIconSvg(const std::string& provider_id);
 
 // True when the user has saved a successful "verify connection" result
 // for `provider_id` (i.e. `nexus.provider_configs[provider_id].
-// last_verification.verifiedAtMs` is set). The popup uses this to hide
-// providers that haven't been confirmed reachable.
+// last_verification.verifiedAtMs` is set). REPORTING only — it says whether
+// the settings probe has ever passed, and nothing about whether the provider
+// is usable. `BuildCatalog` deliberately does NOT consult it: a saved
+// connection is pickable whether or not it was ever probed (see the
+// `provider_set_up` gate there).
 bool IsNexusProviderVerified(PrefService* prefs,
                              const std::string& provider_id);
 

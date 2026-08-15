@@ -126,6 +126,40 @@ bool IsProviderVerified(PrefService* prefs, const std::string& provider_id) {
   return last_verification->Find("verifiedAtMs") != nullptr;
 }
 
+// True when the STORED provider config carries something the user supplied:
+// a credential, an endpoint, a model choice, or the custom-provider marker.
+//
+// This is the "did the user set this provider up" half of the picker gate, and
+// `LlmProvider::IsConfigured()` cannot answer it alone — that method reports
+// whether the provider is USABLE, which is a much weaker claim.
+// `OllamaProvider::IsConfigured()` returns true unconditionally, and every
+// keyless provider counts as configured the moment it has its compiled-in
+// default base URL. Gating on IsConfigured() alone therefore puts Ollama in
+// every user's picker on a profile that has never heard of it, hands it the
+// catalog's default selection, and suppresses the first-run
+// provider-missing dialog (all three caught by the e2e suite).
+//
+// Stream-guard overrides are deliberately NOT evidence: `stream_idle_timeout_s`
+// / `max_concurrent_streams` are pushed for every curated provider by the
+// guest's boot-time `publishProviderConfigsAtBoot`, so a provider the user
+// never touched still ends up with a (stream-guard-only) pref entry.
+bool HasUserProviderSetup(const base::DictValue& config) {
+  static constexpr const char* kUserSuppliedStringKeys[] = {
+      "api_key", "account_token", "base_url", "default_model", "model",
+  };
+  for (const char* key : kUserSuppliedStringKeys) {
+    if (const std::string* value = config.FindString(key);
+        value && !value->empty()) {
+      return true;
+    }
+  }
+  if (const base::ListValue* enabled_models = config.FindList("enabled_models");
+      enabled_models && !enabled_models->empty()) {
+    return true;
+  }
+  return config.FindBool("is_custom_provider").value_or(false);
+}
+
 // Resolve a `{ "h": "a|b|c", "args": { "enabledToolNames": [...] } }`
 // system-prompt holder element into text. Splits the holder list on '|',
 // resolves each name via the prompt-section renderer (the browser owns
@@ -612,32 +646,51 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
     // catalog lists the provider as disabled. Re-apply the stored config
     // now (prefs is fully loaded by the time BuildCatalog runs) so a
     // late-loading prefs file still yields a configured provider.
-    if (provider && !provider->IsConfigured() && prefs) {
-      if (const base::DictValue* stored_config =
-              GetStoredProviderConfig(prefs, info.id)) {
-        provider->Configure(*stored_config);
-      }
+    const base::DictValue* stored_config =
+        prefs ? GetStoredProviderConfig(prefs, info.id) : nullptr;
+    if (provider && !provider->IsConfigured() && stored_config) {
+      provider->Configure(*stored_config);
     }
     // For OAuth providers, treat "signed in" (tokens present) as the source of
-    // truth for configured/verified — the in-memory api_key or the prefs
-    // last_verification stamp can lag (e.g. tokens stored before stamping
-    // existed), which would otherwise hide the provider from the picker even
+    // truth for configured — the in-memory api_key can lag behind the stored
+    // tokens, which would otherwise hide the provider from the picker even
     // though it works.
     const bool oauth_connected =
         IsOAuthProvider(info.id) && broker->oauth_manager() &&
         broker->oauth_manager()->IsConnected(info.id);
+    // SET UP is the whole gate: a saved connection is enough to be pickable,
+    // and nothing has to prove it reachable first. This used to be
+    // `configured && verified`, where "verified" meant a `providerAuth.verify`
+    // probe had once succeeded and stamped `last_verification`
+    // (IsProviderVerified). That let a REACHABILITY test decide picker
+    // MEMBERSHIP — a provider whose endpoint was down when it was saved, whose
+    // credentials were configured outside the settings form, or which sits
+    // behind a gateway that serves generation but not `/models`, silently
+    // vanished from the quick model picker with nothing in the UI saying why.
+    // Settings still runs that probe and still stamps its result (it drives
+    // the "Connected" card and `providers.list`'s `isVerified`); it just no
+    // longer decides what the user may select. An endpoint that is genuinely
+    // unreachable now fails at send time, where the error card can explain it,
+    // instead of removing the model from the picker beforehand.
+    //
+    // The other half of the old gate still has to be replaced, though:
+    // `IsConfigured()` means "usable", not "the user set this up", so it is
+    // true out of the box for Ollama and for any keyless provider carrying its
+    // default base URL. `HasUserProviderSetup` is what keeps those out of a
+    // picker on a profile that never configured them.
     const bool provider_configured =
         (provider && provider->IsConfigured()) || oauth_connected;
-    const bool provider_verified =
+    const bool provider_set_up =
         provider_configured &&
-        (oauth_connected || IsProviderVerified(prefs, info.id));
+        (oauth_connected ||
+         (stored_config && HasUserProviderSetup(*stored_config)));
 
     bool has_enabled_model = false;
     std::vector<mojom::NexusLlmModelPtr> models;
     std::set<std::string> seen_ids;
     for (const ModelInfo& model : info.models) {
       const bool model_enabled =
-          provider_verified && IsModelEnabled(prefs, info.id, model.id);
+          provider_set_up && IsModelEnabled(prefs, info.id, model.id);
       has_enabled_model = has_enabled_model || model_enabled;
 
       auto model_ptr = mojom::NexusLlmModel::New();
@@ -688,9 +741,9 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
 
           // Honour the user's per-provider enabled-models allowlist
           // when present; if absent or empty, all curated models are
-          // enabled for this verified provider.
+          // enabled for this configured provider.
           const bool model_enabled =
-              provider_verified && IsModelEnabled(prefs, info.id, id);
+              provider_set_up && IsModelEnabled(prefs, info.id, id);
           has_enabled_model = has_enabled_model || model_enabled;
 
           auto model_ptr = mojom::NexusLlmModel::New();
@@ -707,12 +760,8 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
       }
     }
 
-    const base::DictValue* stored_config_for_model =
-        GetStoredProviderConfig(prefs, info.id);
     std::string default_model_id =
-        stored_config_for_model
-            ? GetStoredDefaultModelId(*stored_config_for_model)
-            : std::string();
+        stored_config ? GetStoredDefaultModelId(*stored_config) : std::string();
     if (default_model_id.empty() && provider) {
       default_model_id = provider->GetDefaultModelId();
     }
@@ -728,7 +777,7 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
     //    configured default fails with worker_invalid_model_selection.
     // Skip if the id is already present (from online fetch or curated
     // graft) to avoid duplicates.
-    if (provider_verified && !default_model_id.empty() &&
+    if (provider_set_up && !default_model_id.empty() &&
         seen_ids.find(default_model_id) == seen_ids.end()) {
       auto model_ptr = mojom::NexusLlmModel::New();
       model_ptr->id = default_model_id;
@@ -746,11 +795,11 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
     provider_ptr->id = info.id;
     provider_ptr->label = info.name;
     provider_ptr->icon_svg = ResolveProviderIconSvg(info.id);
-    provider_ptr->enabled = provider_verified && has_enabled_model;
+    provider_ptr->enabled = provider_set_up && has_enabled_model;
     if (IsOAuthProvider(info.id)) {
       DLOG(INFO) << "[nexus-catalog] " << info.id
-                 << " configured=" << provider_configured
-                 << " verified=" << provider_verified
+                 << " set_up=" << provider_set_up
+                 << " oauth_connected=" << oauth_connected
                  << " fetched_models=" << info.models.size()
                  << " has_enabled_model=" << has_enabled_model
                  << " enabled=" << provider_ptr->enabled;

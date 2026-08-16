@@ -277,6 +277,9 @@ action("nexus_tools_codegen") {
     "api/declarations/session/setActiveSession.api.json",
     "api/declarations/session/setAgentLoopSettings.api.json",
 
+    # search category — span-index transcript search (Ctrl+K dialog).
+    "api/declarations/search/queryTranscripts.api.json",
+
     # ui category — 14 actions; settings shortcut + boot-state events
     # + open-url + native window title + the guest-webview Inspect
     # context-menu pref. All run on UI (the bridge's home thread).
@@ -410,6 +413,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/catalog/catalog_api.gen.cc",
     "$target_gen_dir/api/session/session_api.gen.h",
     "$target_gen_dir/api/session/session_api.gen.cc",
+    "$target_gen_dir/api/search/search_api.gen.h",
+    "$target_gen_dir/api/search/search_api.gen.cc",
     "$target_gen_dir/api/providers/providers_api.gen.h",
     "$target_gen_dir/api/providers/providers_api.gen.cc",
     "$target_gen_dir/api/browser_tools/browser_tools_api.gen.h",
@@ -487,6 +492,25 @@ source_set("fs") {
     "//base",
     "//mojo/public/cpp/base",
   ]
+}
+
+# Span-index transcript search: the structural JSONL indexer + the
+# mmap-backed search engine behind the `search` bridge capability.
+# Deliberately a leaf (//base + re2 only) so the lite unit-test binary
+# links it without dragging in `bridge`.
+source_set("transcript_search") {
+  sources = [
+    "search/transcript_search_engine.cc",
+    "search/transcript_search_engine.h",
+    "search/transcript_span_index.cc",
+    "search/transcript_span_index.h",
+    "search/transcript_span_index_file.cc",
+    "search/transcript_span_index_file.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [ "//third_party/re2" ]
 }
 
 # Minimal source_set holding just `ToolParameter` / `ToolSchema` / the
@@ -609,6 +633,8 @@ source_set("bridge") {
     "api/network/nexus_network_host.h",
     "api/providers/nexus_providers_bridge_adapter.cc",
     "api/providers/nexus_providers_bridge_adapter.h",
+    "api/search/nexus_search_bridge_adapter.cc",
+    "api/search/nexus_search_bridge_adapter.h",
     "api/session/nexus_session_bridge_adapter.cc",
     "api/session/nexus_session_bridge_adapter.h",
     "api/shell/nexus_shell_bridge_adapter.cc",
@@ -651,6 +677,8 @@ source_set("bridge") {
     "tools/nexus_ripgrep_runner.h",
     "tools/process_tool/nexus_media_service_launcher.cc",
     "tools/process_tool/nexus_media_service_launcher.h",
+    "tools/process_tool/nexus_search_service_launcher.cc",
+    "tools/process_tool/nexus_search_service_launcher.h",
     "tools/nexus_tool_callback.cc",
     "tools/nexus_tool_callback.h",
     "tools/nexus_tool_macros.h",
@@ -700,6 +728,7 @@ source_set("bridge") {
     "$target_gen_dir/api/mcp/mcp_api.gen.cc",
     "$target_gen_dir/api/network/network_api.gen.cc",
     "$target_gen_dir/api/providers/providers_api.gen.cc",
+    "$target_gen_dir/api/search/search_api.gen.cc",
     "$target_gen_dir/api/session/session_api.gen.cc",
     "$target_gen_dir/api/shell/shell_api.gen.cc",
     "$target_gen_dir/api/system_prefs/system_prefs_api.gen.cc",
@@ -1095,12 +1124,16 @@ source_set("unit_tests_lite") {
     "domain/domain_sandbox_manager_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
+    "search/transcript_search_engine_unittest.cc",
+    "search/transcript_span_index_file_unittest.cc",
+    "search/transcript_span_index_unittest.cc",
     "session/nexus_session_tab_counts_unittest.cc",
   ]
 
   deps = [
     ":domain",
     ":mcp_server_store",
+    ":transcript_search",
 
     # Codegen smoke test exercises the inline Build<Name>Schema() and
     # Extract() functions emitted into the per-tool *.gen.h files

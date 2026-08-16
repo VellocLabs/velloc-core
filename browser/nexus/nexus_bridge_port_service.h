@@ -28,6 +28,7 @@ class NexusMcpBridgeAdapter;
 class NexusMessagePortEndpoint;
 class NexusNetworkBridgeAdapter;
 class NexusProvidersBridgeAdapter;
+class NexusSearchBridgeAdapter;
 class NexusSessionBridgeAdapter;
 class NexusShellBridgeAdapter;
 class NexusSystemPrefsBridgeAdapter;
@@ -170,6 +171,10 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // raw back-pointer to `tools_adapter_`; the two adapters share a
   // lifetime under this port service so the back-ref is safe.
   std::unique_ptr<NexusSessionBridgeAdapter> session_adapter_;
+  // Guest-only: the `search` capability — span-index search over the
+  // on-disk session transcripts (the Ctrl+K dialog). All work runs on a
+  // dedicated ThreadPool sequence inside the adapter.
+  std::unique_ptr<NexusSearchBridgeAdapter> search_adapter_;
   // Guest-only: the `shell` capability — `status` (→ ReadBackgroundOutput) and
   // `kill` (→ Mojo Kill) for BACKGROUND shells the model spawned via the Bash
   // tool's run_in_background mode. Lets the TS layer poll/stop a backgrounded

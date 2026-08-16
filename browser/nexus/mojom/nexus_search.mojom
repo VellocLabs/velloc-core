@@ -1,0 +1,73 @@
+// Copyright 2026 The Custom Browser Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module nexus.mojom;
+
+import "mojo/public/mojom/base/file_path.mojom";
+import "mojo/public/mojom/base/time.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+// Which part of a transcript a hit came from. Mirrors
+// `nexus::TranscriptSpanKind`.
+enum SearchSpanKind {
+  kUserText,
+  kAssistantText,
+  kSystemText,
+  kToolCall,
+  kToolResult,
+};
+
+struct SearchMatch {
+  string session_id;
+  string project_dir;
+  string transcript_path;
+  uint32 line_ordinal;
+  string message_uuid;
+  SearchSpanKind span_kind;
+  // Context around the hit, JSON-unescaped and single-line. Byte offsets
+  // of the hit within it.
+  string snippet;
+  int32 match_start;
+  int32 match_len;
+};
+
+struct SearchResult {
+  bool success;
+  // Set only on failure; `SEARCH_BAD_PATTERN` for an invalid regex.
+  string error_code;
+  string error;
+  bool superseded;
+  bool truncated;
+  int32 skipped_files;
+  array<SearchMatch> matches;
+};
+
+// Span-index search over session transcripts, and the owner of their
+// `.sdi` sidecars.
+//
+// This runs in a utility process for two reasons. The obvious one is that
+// scanning and matching megabytes of transcript is CPU work that has no
+// business on the browser's UI thread or in its process at all. The
+// subtler one is ownership: the sidecar cache is read, validated and
+// rewritten entirely here, so nothing had to be added to the transcript
+// WRITE path in the browser. A search is the only thing that ever touches
+// a sidecar, and the process that does it is the only one that knows the
+// format.
+//
+// kNoSandbox: the service reads transcripts and writes sidecars under the
+// user's `~/.velloc/projects`, which the utility sandbox forbids. It runs
+// no untrusted input beyond the transcript bytes themselves, and holds no
+// browser or network state.
+[ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
+interface NexusSearchService {
+  // Searches `targets` IN THE ORDER GIVEN — the caller owns relevance
+  // ranking, and the result preserves that order. Each call also brings
+  // every target's sidecar up to date: current ones are reused as-is, an
+  // appended transcript costs a tail rescan, and anything else a rebuild.
+  QueryTranscripts(array<mojo_base.mojom.FilePath> targets,
+                   string query,
+                   bool regex,
+                   bool case_sensitive,
+                   int32 max_results) => (SearchResult result);
+};

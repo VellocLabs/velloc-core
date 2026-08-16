@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "queryTranscripts",
+  "description": "Span-index search over a caller-ordered list of session transcripts. Matching runs over semantically classified byte ranges only (user text, assistant text, inline tool args/results) in that priority order — JSON syntax, metadata lines and thinking blocks can never match. Single response; a newer query supersedes an in-flight one, which returns {superseded:true} and is discarded client-side.",
+  "inputs": [
+    {
+      "name": "targets",
+      "type": "array<string>",
+      "required": true,
+      "description": "Absolute transcript.jsonl paths to search, IN PRIORITY ORDER — the guest already caches the project/session list, so it decides relevance (active session first, then by update time) and the host never enumerates or re-sorts. Searched front-to-back so the result caps cut the least relevant tail; over 2000 entries the tail is dropped and `truncated` is set. Unreadable paths are counted in `skippedFiles`, never an error."
+    },
+    {
+      "name": "query",
+      "type": "string",
+      "required": true,
+      "description": "Search text. Literal by default; RE2 syntax when `regex` is true. Empty returns success with zero matches."
+    },
+    {
+      "name": "regex",
+      "type": "boolean",
+      "required": false,
+      "description": "Treat `query` as an RE2 pattern. An invalid pattern fails with SEARCH_BAD_PATTERN and the RE2 error text."
+    },
+    {
+      "name": "caseSensitive",
+      "type": "boolean",
+      "required": false,
+      "description": "Exact-case matching. Default false = ASCII case folding for literals, case-insensitive RE2 for regex."
+    },
+    {
+      "name": "maxResults",
+      "type": "integer",
+      "required": false,
+      "description": "Total match cap across all files. Absent or <= 0 means 500; clamped to 2000. The per-file cap of 10 is fixed."
+    },
+    {
+      "name": "generation",
+      "type": "integer",
+      "required": true,
+      "description": "Client keystroke counter, echoed back verbatim so the dialog can drop out-of-order responses. Server-side supersession is independent (engine-internal counter)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

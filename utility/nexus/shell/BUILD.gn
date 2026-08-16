@@ -102,6 +102,26 @@ source_set("media_service") {
   ]
 }
 
+# Transcript span-index search. Scanning and matching megabytes of JSONL is
+# CPU work, and the `.sdi` sidecars are read and rewritten here too — the
+# browser process owns neither. `:transcript_search` is a leaf target
+# (//base + re2), so hosting it here costs nothing extra.
+source_set("search_service") {
+  sources = [
+    "../search/nexus_search_service_impl.cc",
+    "../search/nexus_search_service_impl.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//custom_browser/browser/nexus/mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  deps = [ "//custom_browser/browser/nexus:transcript_search" ]
+}
+
 # Slice-4 long-lived streaming child process: live stdio pipes + an
 # implementation of `mojom::NexusStreamingProcess`. Used by the native MCP
 # host transport. Blocking pump/wait loops run on dedicated thread-pool
@@ -158,6 +178,7 @@ source_set("services") {
   deps = [
     ":media_service",
     ":nexus_shell_service",
+    ":search_service",
     "//custom_browser/browser/nexus/mojom",
   ]
 }

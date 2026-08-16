@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 8> kBridgeCapabilities = {
+constexpr std::array<const char*, 9> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -41,6 +41,10 @@ constexpr std::array<const char*, 8> kBridgeCapabilities = {
     // `setAgentLoopSettings` (per-session wall-clock budgets). See
     // custom_browser/browser/nexus/api/session/.
     "session",
+    // Span-index transcript search (Ctrl+K dialog). The guest gates the
+    // dialog + topbar button on this advertisement, so an older binary
+    // simply hides the feature. See custom_browser/browser/nexus/search/.
+    "search",
     // Phase 12: catalog metadata served lazily over the bridge. JS
     // pulls `listHostedTools` (replacing the bootstrap manifest's
     // hostedTools field) and `renderPromptSection` (replacing TS-side

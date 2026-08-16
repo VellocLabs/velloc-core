@@ -21,6 +21,7 @@
 #include "custom_browser/browser/nexus/api/system_prefs/nexus_system_prefs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/search/nexus_search_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/shell/nexus_shell_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
@@ -173,11 +174,16 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   // spawned via Bash run_in_background. Uses the per-Profile shared launcher
   // (so it reads the same registry ProcessTool spawns into).
   shell_adapter_ = std::make_unique<NexusShellBridgeAdapter>(this, profile);
+  // Span-index transcript search. A pure forwarder: the engine, the span
+  // cache and the `.sdi` sidecars all live in a utility process reached
+  // through the per-Profile shared launcher.
+  search_adapter_ = std::make_unique<NexusSearchBridgeAdapter>(this, profile);
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
   RegisterCapability("network", network_adapter_.get());
   RegisterCapability("mcp", mcp_adapter_.get());
   RegisterCapability("session", session_adapter_.get());
+  RegisterCapability("search", search_adapter_.get());
   RegisterCapability("shell", shell_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());

@@ -173,8 +173,9 @@ def main() -> int:
             print("extension entry missing valid name", file=sys.stderr)
             return 1
 
+        # Bundled extensions are opt-in: absent means off.
         enabled_by_default = ensure_bool(
-            ext.get("enabled_by_default"), True, "enabled_by_default"
+            ext.get("enabled_by_default"), False, "enabled_by_default"
         )
 
         raw_path = ext.get("path", f"custom_extensions/{name}")

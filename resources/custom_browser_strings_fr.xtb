@@ -46,7 +46,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Étape 4. Des outils intégrés puissants</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium inclut des extensions intégrées facultatives. Vous gardez la main.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Activé par défaut</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Désactivé par défaut</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Blocage de contenu efficace pour un web plus rapide et plus propre.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Désactivé par défaut</translation>

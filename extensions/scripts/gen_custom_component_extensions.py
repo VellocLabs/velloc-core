@@ -139,7 +139,8 @@ def main() -> int:
             print("extension entry missing valid name", file=sys.stderr)
             return 1
 
-        enabled_by_default = ext.get("enabled_by_default", True)
+        # Bundled extensions are opt-in: absent means off.
+        enabled_by_default = ext.get("enabled_by_default", False)
         if not isinstance(enabled_by_default, bool):
             print(
                 f"invalid enabled_by_default for extension {name}",

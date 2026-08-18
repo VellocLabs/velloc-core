@@ -24,6 +24,12 @@ Add a new built-in extension
     `"custom_extensions/<name>"`).
   - `"background_page"`: optional boolean, `true` if the extension uses a
     background page (MV2) or service worker (MV3) (default `false`).
+  - `"enabled_by_default"`: optional boolean, whether the extension loads for
+    a profile that has never toggled it (default `false`). **Bundled
+    extensions are opt-in** — leave this out (or set it `false`) unless the
+    extension is genuinely required for the browser to work. The value is
+    only a fallback: once the user flips the toggle in settings, the
+    per-profile pref `custom_browser.extensions.enabled` wins forever.
 
 Notes
 - Only runtime assets should be placed in the extension directory; the build
@@ -48,6 +54,7 @@ Example:
   "name": "uBlock",
   "path": "custom_extensions/uBlock",
   "background_page": true,
+  "enabled_by_default": false,
   "esbuild": {
     "minify": true,
   }

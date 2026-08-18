@@ -46,7 +46,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Шаг 4. Встроенные мощные инструменты</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">В Chromium есть дополнительные встроенные расширения. Управление остаётся за вами.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Включено по умолчанию</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Выключено по умолчанию</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Эффективная блокировка контента ради более быстрого и чистого веба.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Выключено по умолчанию</translation>

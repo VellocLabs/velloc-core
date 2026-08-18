@@ -46,7 +46,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">第 4 步：内置的实用工具</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium 附带了一些可选的内置扩展程序。是否使用，由你决定。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">默认已启用</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">默认关闭</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">高效拦截内容，让网页更快、更清爽。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey（旧版）</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">默认关闭</translation>

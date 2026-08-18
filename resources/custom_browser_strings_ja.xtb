@@ -46,7 +46,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">ステップ 4. 組み込みの強力なツール</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium には任意で使える組み込みの拡張機能が含まれています。主導権はあなたにあります。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">デフォルトで有効</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">デフォルトでオフ</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">効率的なコンテンツブロックで、ウェブをより速く、すっきりと。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey（レガシー）</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">デフォルトでオフ</translation>

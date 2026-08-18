@@ -46,7 +46,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">ধাপ ৪. বিল্ট-ইন শক্তিশালী টুল</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium-এ কিছু ঐচ্ছিক বিল্ট-ইন এক্সটেনশন রয়েছে। নিয়ন্ত্রণ আপনার হাতেই থাকে।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">ডিফল্টভাবে চালু</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">ডিফল্টভাবে বন্ধ</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">আরও দ্রুত ও পরিচ্ছন্ন ওয়েবের জন্য কার্যকর কনটেন্ট ব্লকিং।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">ডিফল্টভাবে বন্ধ</translation>

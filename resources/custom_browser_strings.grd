@@ -175,7 +175,7 @@ translated for each locale.
         uBlock Origin
       </message>
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS" desc="Status text for the uBlock Origin tool card" use_name_for_id="true">
-        Enabled by default
+        Off by default
       </message>
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION" desc="Description for the uBlock Origin tool card" use_name_for_id="true">
         Efficient content blocking for a faster, cleaner web.

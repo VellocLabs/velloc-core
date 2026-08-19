@@ -15,6 +15,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/important_file_writer.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
@@ -563,11 +564,25 @@ NexusFsHost::ReadRangeResult NexusFsHost::ReadRange(const std::string& path,
 
 NexusFsHost::SimpleResult NexusFsHost::WriteFile(
     const std::string& path,
-    mojo_base::BigBuffer content) const {
+    mojo_base::BigBuffer content,
+    bool atomic) const {
   SimpleResult result;
   const base::FilePath resolved = ResolvePath(cwd_, path);
+  const std::vector<uint8_t> bytes = CopyBigBufferBytes(content);
 
-  if (!base::WriteFile(resolved, base::span(CopyBigBufferBytes(content)))) {
+  bool written = false;
+  if (atomic) {
+    // Temp file in the target's directory, then ReplaceFile — a crash at any
+    // point leaves either the old file or the new one, never a torn one. The
+    // guest asks for this on the session `meta.json`, whose unlogged fields
+    // have no other copy.
+    written = base::ImportantFileWriter::WriteFileAtomically(
+        resolved, std::string_view(reinterpret_cast<const char*>(bytes.data()),
+                                   bytes.size()));
+  } else {
+    written = base::WriteFile(resolved, base::span(bytes));
+  }
+  if (!written) {
     result.error = "Failed to write file";
     return result;
   }

@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "writeFile",
-  "description": "Write a file; payload carries the bytes (overwrites any existing content). Bytes may arrive inline as `content` (array<integer>) or via a transferred message port.",
+  "description": "Write a file; payload carries the bytes (overwrites any existing content). Bytes may arrive inline as `content` (array<integer>) or via a transferred message port. With `atomic`, the bytes land in a temp file that then replaces the target, so a crash mid-write never leaves a torn file.",
   "inputs": [
     {
       "name": "path",
@@ -14,6 +14,12 @@
       "type": "bytes",
       "required": true,
       "description": "Bytes to write. May arrive inline as an array of integers in the payload, OR via a transferred MessagePort that delivers an ArrayBuffer."
+    },
+    {
+      "name": "atomic",
+      "type": "boolean",
+      "required": false,
+      "description": "Write via a temp file + replace (base::ImportantFileWriter) instead of in place, so a crash mid-write never leaves a partially written target. Additive, ignore-if-absent: an older host writes in place as before. Used for the session `meta.json`."
     }
   ],
   "runtime": {

@@ -71,9 +71,14 @@ TEST(TranscriptSpanIndexTest, StructuredToolResultUsesWholeValueRange) {
             R"({"rows":[1,2],"note":"ok"})");
 }
 
+// The non-message records a transcript carries — a `custom-title` action
+// record (and, in pre-2026-08-18 files, legacy `__session_meta` snapshots) —
+// are not indexable; neither is an attachment or an `isMeta` user line. The
+// indexer allow-lists `user` / `assistant` / `system`, so their TYPE names are
+// never consulted — only their physical lines count for the ordinals.
 TEST(TranscriptSpanIndexTest, MetaAndAttachmentAndIsMetaLinesSkipped) {
   const std::string data =
-      R"({"type":"__session_meta","sessionId":"s"})"
+      R"({"type":"custom-title","sessionId":"s","customTitle":"Named","updatedAt":1})"
       "\n"
       R"({"type":"attachment","uuid":"at-1","attachment":{"content":"skill listing text"}})"
       "\n"

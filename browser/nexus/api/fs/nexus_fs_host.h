@@ -238,8 +238,13 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   ReadRangeResult ReadRange(const std::string& path,
                             uint64_t offset,
                             uint32_t length) const;
+  // `atomic`: write via a temp file that then replaces `path`
+  // (base::ImportantFileWriter::WriteFileAtomically), so a crash mid-write
+  // never leaves a partially written target. The default is the in-place
+  // base::WriteFile — unchanged behaviour for every caller that does not ask.
   SimpleResult WriteFile(const std::string& path,
-                         mojo_base::BigBuffer content) const;
+                         mojo_base::BigBuffer content,
+                         bool atomic = false) const;
   SimpleResult AppendFile(const std::string& path,
                           mojo_base::BigBuffer data) const;
   SimpleResult Mkdir(const std::string& path) const;

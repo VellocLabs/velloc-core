@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -49,6 +50,54 @@ TEST(NexusFsHostTest, AppendFileCreatesMissingFileAndAppendsData) {
   ASSERT_TRUE(base::ReadFileToString(
       temp_dir.GetPath().AppendASCII("session.jsonl"), &content));
   EXPECT_EQ("{\"first\":true}\n{\"second\":true}\n", content);
+}
+
+// `atomic` writes go through base::ImportantFileWriter: a temp file in the
+// target's directory, then a replace. The guest asks for this on the session
+// `meta.json` (the sidebar's one-object projection), whose unlogged fields
+// have no other copy. Pins: the target carries exactly the new bytes, an
+// existing file is replaced (not appended to, not left as a mix), and no
+// `*.tmp` is left behind on the happy path. The default (no flag) stays the
+// in-place write.
+TEST(NexusFsHostTest, WriteFileAtomicReplacesTargetAndLeavesNoTempFile) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  const base::FilePath target = temp_dir.GetPath().AppendASCII("meta.json");
+  ASSERT_TRUE(base::WriteFile(target, "{\"old\":true,\"padding\":\"xxxxxxxx\"}"));
+
+  auto write = [&](const std::string& text, bool atomic) {
+    std::vector<uint8_t> bytes(text.begin(), text.end());
+    return host->WriteFile("meta.json", mojo_base::BigBuffer(base::span(bytes)),
+                           atomic);
+  };
+
+  NexusFsHost::SimpleResult atomic = write("{\"new\":1}", /*atomic=*/true);
+  EXPECT_TRUE(atomic.success) << atomic.error;
+  std::string content;
+  ASSERT_TRUE(base::ReadFileToString(target, &content));
+  EXPECT_EQ("{\"new\":1}", content);
+
+  // Nothing but the target in the directory — the temp file was replaced
+  // into place, not left beside it.
+  base::FileEnumerator files(temp_dir.GetPath(), /*recursive=*/false,
+                             base::FileEnumerator::FILES);
+  int count = 0;
+  for (base::FilePath p = files.Next(); !p.empty(); p = files.Next()) {
+    ++count;
+    EXPECT_EQ(target, p);
+  }
+  EXPECT_EQ(1, count);
+
+  // The default is still the in-place write, same result on the happy path.
+  NexusFsHost::SimpleResult plain = write("{\"new\":2}", /*atomic=*/false);
+  EXPECT_TRUE(plain.success) << plain.error;
+  ASSERT_TRUE(base::ReadFileToString(target, &content));
+  EXPECT_EQ("{\"new\":2}", content);
 }
 
 // Regression: a missing file must report ENOENT-style wording, not the
@@ -100,7 +149,7 @@ TEST(NexusFsHostTest, ReadFileReturnsContentsForExistingFile) {
 
 namespace {
 
-// `root/p1/s1/{transcript.jsonl, meta.jsonl, tool-details/{a,b}.json}` — the
+// `root/p1/s1/{transcript.jsonl, meta.json, tool-details/{a,b}.json}` — the
 // shape of a real session store, including the directory that must NOT be
 // descended into.
 void BuildSessionStoreFixture(const base::FilePath& root) {
@@ -109,8 +158,8 @@ void BuildSessionStoreFixture(const base::FilePath& root) {
   ASSERT_TRUE(base::CreateDirectory(session.AppendASCII("tool-details")));
   ASSERT_TRUE(base::WriteFile(session.AppendASCII("transcript.jsonl"),
                               "{\"type\":\"user\"}\n"));
-  ASSERT_TRUE(base::WriteFile(session.AppendASCII("meta.jsonl"),
-                              "{\"type\":\"__session_meta\"}\n"));
+  ASSERT_TRUE(base::WriteFile(session.AppendASCII("meta.json"),
+                              "{\"schemaVersion\":1,\"sessionId\":\"s1\"}"));
   ASSERT_TRUE(base::WriteFile(
       session.AppendASCII("tool-details").AppendASCII("a.json"), "{}"));
   ASSERT_TRUE(base::WriteFile(
@@ -158,7 +207,7 @@ TEST(NexusFsHostTest, ReaddirTreeStopsAtDepthCap) {
 
   // The session's own files are reached at depth 3 …
   EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/transcript.jsonl"));
-  EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/meta.jsonl"));
+  EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/meta.json"));
   // … and tool-details is LISTED as a directory …
   EXPECT_TRUE(HasRowWithPath(result.entries, "p1/s1/tool-details"));
   // … but never descended into.
@@ -315,8 +364,9 @@ TEST(NexusFsHostTest, ReadBatchConcatenatesAndIndexesEachItem) {
   EXPECT_EQ(4.0, second.FindDouble("byteLength").value_or(-1));
 }
 
-// The legacy-session path: sessions with no meta.jsonl sidecar are served by
-// a 64KB tail range in the SAME batch as the sidecar reads.
+// The migration path: a session with no `meta.json` yet is served by a 64KB
+// transcript tail range in the SAME batch as the `meta.json` reads (the guest
+// derives and writes its `meta.json` from it). Per-item ranges exist for this.
 TEST(NexusFsHostTest, ReadBatchHonorsPerItemRange) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

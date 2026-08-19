@@ -110,14 +110,18 @@ TEST_F(TranscriptSearchEngineTest, FindsAndAttributesMatch) {
 TEST_F(TranscriptSearchEngineTest, JsonKeysAndMetaLinesNeverMatch) {
   // "toolCallId" and "type" occur in JSON syntax only; a span-confined
   // search must not see them.
+  // A `custom-title` action record is the non-message line a current
+  // transcript carries (titles are matched guest-side from the session list,
+  // never from the body — see runTranscriptSearch.ts `titleOnlyGroups`).
   WriteTranscript("proj-a", "sess-1",
-                  R"({"type":"__session_meta","sessionId":"marker-xyz"})"
+                  R"({"type":"custom-title","sessionId":"marker-xyz","customTitle":"marker-title","updatedAt":1})"
                   "\n" +
                       ToolResultLine("u-1", "plain result"));
   auto engine = base::MakeRefCounted<TranscriptSearchEngine>();
   EXPECT_TRUE(Run(engine.get(), "toolCallId").matches.empty());
   EXPECT_TRUE(Run(engine.get(), "sessionId").matches.empty());
   EXPECT_TRUE(Run(engine.get(), "marker-xyz").matches.empty());
+  EXPECT_TRUE(Run(engine.get(), "marker-title").matches.empty());
   EXPECT_EQ(Run(engine.get(), "plain result").matches.size(), 1u);
 }
 

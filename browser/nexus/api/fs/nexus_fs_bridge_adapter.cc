@@ -423,15 +423,18 @@ void NexusFsBridgeAdapter::HandleWriteFileOnUI(
   // input.content is always populated here — the codegen dispatcher resolved
   // either inline-payload or transferred-port before invoking. Build the
   // BigBuffer on the worker to avoid a copy on UI.
+  // `atomic` is an additive, ignore-if-absent input (no interface bump): a
+  // guest that does not send it gets the in-place write it always got.
+  const bool atomic = input.atomic.value_or(false);
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
           [](scoped_refptr<NexusFsHost> host, std::string path,
-             std::vector<uint8_t> content) {
-            return host->WriteFile(path,
-                                   mojo_base::BigBuffer(base::span(content)));
+             std::vector<uint8_t> content, bool atomic) {
+            return host->WriteFile(
+                path, mojo_base::BigBuffer(base::span(content)), atomic);
           },
-          fs_host_, std::move(input.path), std::move(input.content)),
+          fs_host_, std::move(input.path), std::move(input.content), atomic),
       base::BindOnce(&RespondSimple, std::move(done), "WriteFile failed"));
 }
 

@@ -41,6 +41,51 @@ base::FilePath ResolvePath(const base::FilePath& cwd,
   return cwd.Append(requested);
 }
 
+// Atomic write with a SHORT temp name, for targets too deep for the upstream
+// writer. Same shape as `base::ImportantFileWriter` — sibling temp, flush,
+// replace — but named `<target>.tmp`.
+//
+// Why it has to exist: upstream names its temp file with a random 36-char
+// GUID plus ".tmp" (`CreateAndOpenTemporaryFileInDir`,
+// base/files/file_util_win.cc), so an atomic write needs 41 characters of
+// headroom past the target's DIRECTORY, regardless of how short the target's
+// own name is. On Windows that fails once `dir + 41 > MAX_PATH` — roughly 32
+// characters BEFORE the target path itself would be too long, so a plain write
+// to the very same path still succeeds. A background sub-agent's `meta.json`
+// sits deep enough to cross that line,
+//   projects/<sanitized-project-root>/<parentSessionId>/subagents/<subId>/
+// and the failure is not cosmetic: the write is the sub-agent's first, so it
+// aborted the whole sub-agent with "Failed to write file".
+//
+// `<target>.tmp` costs 4 characters instead of 41, which keeps the atomic
+// path's reach within a few characters of the plain one. The fixed name is
+// safe here where a shared temp name would not be: the guest serializes writes
+// per path (`BridgeFsSessionStorage`'s per-session queue), and the temp is
+// derived from the target rather than shared across targets.
+bool WriteFileAtomicallyShortTemp(const base::FilePath& target,
+                                  base::span<const uint8_t> bytes) {
+  const base::FilePath tmp = target.AddExtension(FILE_PATH_LITERAL("tmp"));
+  {
+    base::File file(tmp,
+                    base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+    if (!file.IsValid()) {
+      return false;
+    }
+    // Flush before the replace: the point of the temp file is that a crash
+    // leaves either the old contents or the new, never a half-written file.
+    if (!file.WriteAndCheck(0, bytes) || !file.Flush()) {
+      file.Close();
+      base::DeleteFile(tmp);
+      return false;
+    }
+  }
+  if (!base::ReplaceFile(tmp, target, nullptr)) {
+    base::DeleteFile(tmp);
+    return false;
+  }
+  return true;
+}
+
 // The stat payload the guest sees, as a dict. Shared by `Stat` (which
 // JSON-writes it) and `StatBatch` (which nests it in a row) so the two can
 // never drift into reporting different fields for the same file.
@@ -579,6 +624,13 @@ NexusFsHost::SimpleResult NexusFsHost::WriteFile(
     written = base::ImportantFileWriter::WriteFileAtomically(
         resolved, std::string_view(reinterpret_cast<const char*>(bytes.data()),
                                    bytes.size()));
+    if (!written) {
+      // Upstream's GUID temp name needs 41 characters of headroom past the
+      // directory, so it gives up ~32 characters before this path is actually
+      // too long. Retry atomically with a short temp name rather than falling
+      // back to a torn-able plain write — see WriteFileAtomicallyShortTemp.
+      written = WriteFileAtomicallyShortTemp(resolved, base::span(bytes));
+    }
   } else {
     written = base::WriteFile(resolved, base::span(bytes));
   }

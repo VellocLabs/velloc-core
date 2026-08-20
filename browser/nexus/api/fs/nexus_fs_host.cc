@@ -15,7 +15,6 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/file_path.h"
-#include "base/files/important_file_writer.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
@@ -25,6 +24,12 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+
+// NEXUS_FS_ATOMIC_WRITE is defined in nexus_fs_host.h — see the flag's comment
+// there for why it is off and what turning it back on restores.
+#if NEXUS_FS_ATOMIC_WRITE
+#include "base/files/important_file_writer.h"
+#endif
 
 namespace nexus {
 
@@ -41,6 +46,7 @@ base::FilePath ResolvePath(const base::FilePath& cwd,
   return cwd.Append(requested);
 }
 
+#if NEXUS_FS_ATOMIC_WRITE
 // Atomic write with a SHORT temp name, for targets too deep for the upstream
 // writer. Same shape as `base::ImportantFileWriter` — sibling temp, flush,
 // replace — but named `<target>.tmp`.
@@ -85,6 +91,7 @@ bool WriteFileAtomicallyShortTemp(const base::FilePath& target,
   }
   return true;
 }
+#endif  // NEXUS_FS_ATOMIC_WRITE
 
 // The stat payload the guest sees, as a dict. Shared by `Stat` (which
 // JSON-writes it) and `StatBatch` (which nests it in a row) so the two can
@@ -615,6 +622,7 @@ NexusFsHost::SimpleResult NexusFsHost::WriteFile(
   const base::FilePath resolved = ResolvePath(cwd_, path);
   const std::vector<uint8_t> bytes = CopyBigBufferBytes(content);
 
+#if NEXUS_FS_ATOMIC_WRITE
   bool written = false;
   if (atomic) {
     // Temp file in the target's directory, then ReplaceFile — a crash at any
@@ -634,6 +642,13 @@ NexusFsHost::SimpleResult NexusFsHost::WriteFile(
   } else {
     written = base::WriteFile(resolved, base::span(bytes));
   }
+#else
+  // NEXUS_FS_ATOMIC_WRITE == 0: `atomic` is accepted and ignored, so the guest
+  // needs no change and an atomic-capable build can be restored by the flag
+  // alone. See the flag's comment for what this gives up.
+  (void)atomic;
+  bool written = base::WriteFile(resolved, base::span(bytes));
+#endif
   if (!written) {
     result.error = "Failed to write file";
     return result;

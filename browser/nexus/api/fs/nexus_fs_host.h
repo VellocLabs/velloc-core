@@ -12,6 +12,27 @@
 #include "base/values.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
+// Atomic (temp-file + replace) writes for `fs.writeFile({atomic: true})`.
+//
+// DISABLED while we investigate a Microsoft Defender false positive on the
+// released installer. Defender's cloud ML flagged the NSIS package
+// (Trojan:Script/Sabsik.FL.A!ml, later Trojan:Win32/Wacatac.B!ml); a build with
+// this path compiled out scanned clean side-by-side with one that had it, so it
+// is switched off until the installer is code-signed. Signing is the real fix:
+// these are unsigned-binary reputation verdicts, and every inner file
+// (chrome.dll, mini_installer.exe) scans clean on its own.
+//
+// Re-enable by flipping this to 1 — that restores
+// `base::ImportantFileWriter::WriteFileAtomically` plus the short-temp-name
+// fallback, and nothing outside this pair of files has to change (the guest
+// keeps sending `atomic` either way; a 0 build accepts and ignores it).
+//
+// What is given up while it is 0: a crash midway through rewriting a session's
+// `meta.json` can tear the file. The guest rebuilds titles/counts/preview from
+// `transcript.jsonl`, but the unlogged fields — model selection, permission
+// mode, composer draft, counters, terminal state — live only in that file.
+#define NEXUS_FS_ATOMIC_WRITE 0
+
 namespace nexus {
 
 // Synchronous filesystem helper used by NexusFsBridgeAdapter. Each

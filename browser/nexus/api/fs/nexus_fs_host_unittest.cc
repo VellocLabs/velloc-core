@@ -52,6 +52,7 @@ TEST(NexusFsHostTest, AppendFileCreatesMissingFileAndAppendsData) {
   EXPECT_EQ("{\"first\":true}\n{\"second\":true}\n", content);
 }
 
+#if NEXUS_FS_ATOMIC_WRITE
 // `atomic` writes go through base::ImportantFileWriter: a temp file in the
 // target's directory, then a replace. The guest asks for this on the session
 // `meta.json` (the sidebar's one-object projection), whose unlogged fields
@@ -171,6 +172,7 @@ TEST(NexusFsHostTest, WriteFileAtomicSucceedsOnDeeplyNestedTarget) {
   }
   EXPECT_EQ(1, count);
 }
+#endif  // NEXUS_FS_ATOMIC_WRITE
 
 // Regression: a missing file must report ENOENT-style wording, not the
 // generic "Failed to read file". The JS guest's isMissingFileError()

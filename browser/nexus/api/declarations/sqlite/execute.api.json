@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "execute",
+  "description": "Run one write/DDL SQL statement against a SQLite file (path) or an open connection (handle).",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ path|handle, sql, params?, mode?, busyTimeoutMs? }. Exactly one of path/handle. Returns { rowsAffected } (no lastInsertRowId; use SELECT last_insert_rowid())."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "close",
+  "description": "Close a SQLite connection previously returned by open, releasing its handle.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ handle }."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

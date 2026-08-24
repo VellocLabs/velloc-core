@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 9> kBridgeCapabilities = {
+constexpr std::array<const char*, 10> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -51,6 +51,12 @@ constexpr std::array<const char*, 9> kBridgeCapabilities = {
     // getUsingYourToolsSection rendering). See
     // custom_browser/browser/nexus/api/catalog/.
     "catalog",
+    // Native `sqlite` capability: read/write host SQLite files from the guest
+    // (one-shot path form + connection handles). Advertised so consumers gate
+    // on it — an older binary that lacks it simply exposes no SQLite surface,
+    // which is why adding it needs no interface-version bump. See
+    // custom_browser/browser/nexus/api/sqlite/.
+    "sqlite",
 };
 
 template <size_t N>

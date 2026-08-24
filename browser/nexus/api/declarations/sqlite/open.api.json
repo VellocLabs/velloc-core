@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "open",
+  "description": "Open a persistent SQLite connection and return an opaque handle for reuse across query/execute/batch.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ path, mode?, copyBeforeOpen?, busyTimeoutMs? }. Returns { handle }. Release with close."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

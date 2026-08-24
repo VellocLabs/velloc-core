@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "query",
+  "description": "Run one read SQL statement against a SQLite file (path) or an open connection (handle) and return rows.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ path|handle, sql, params?, maxRows?, bigIntMode?, mode?, copyBeforeOpen?, busyTimeoutMs? }. Exactly one of path/handle."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

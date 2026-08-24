@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "batch",
+  "description": "Run many SQL statements against a SQLite file (path) or an open connection (handle); optionally in one transaction.",
+  "inputs": [
+    {
+      "name": "payload",
+      "type": "passthrough_payload",
+      "description": "{ path|handle, statements:[{sql, params?}], atomic?, mode?, busyTimeoutMs? }. atomic defaults true (rolls back on any failure)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

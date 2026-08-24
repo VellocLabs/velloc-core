@@ -14,6 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "custom_browser/browser/nexus/api/catalog/nexus_catalog_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/sqlite/nexus_sqlite_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/app_info/nexus_app_info_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/browser_tools/nexus_browser_tools_bridge_adapter.h"
@@ -178,6 +179,9 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   // cache and the `.sdi` sidecars all live in a utility process reached
   // through the per-Profile shared launcher.
   search_adapter_ = std::make_unique<NexusSearchBridgeAdapter>(this, profile);
+  // Guest `sqlite` capability — read/write host SQLite files. Holds no
+  // profile/cwd state: paths arrive absolute from the guest.
+  sqlite_adapter_ = std::make_unique<NexusSqliteBridgeAdapter>(this);
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
   RegisterCapability("network", network_adapter_.get());
@@ -185,6 +189,7 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   RegisterCapability("session", session_adapter_.get());
   RegisterCapability("search", search_adapter_.get());
   RegisterCapability("shell", shell_adapter_.get());
+  RegisterCapability("sqlite", sqlite_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());
   // Phase 12: `catalog` capability — listHostedTools, renderPromptSection,

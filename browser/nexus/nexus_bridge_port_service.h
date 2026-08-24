@@ -31,6 +31,7 @@ class NexusProvidersBridgeAdapter;
 class NexusSearchBridgeAdapter;
 class NexusSessionBridgeAdapter;
 class NexusShellBridgeAdapter;
+class NexusSqliteBridgeAdapter;
 class NexusSystemPrefsBridgeAdapter;
 class NexusUiBridgeAdapter;
 class ToolsAdapter;
@@ -183,6 +184,7 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // NexusShellServiceLauncher. NOT a revival of the Phase-12g `process`
   // capability (which was redundant tool-dispatch); this is narrow observe/kill.
   std::unique_ptr<NexusShellBridgeAdapter> shell_adapter_;
+  std::unique_ptr<NexusSqliteBridgeAdapter> sqlite_adapter_;
   // Phase 12g: dropped `process_adapter_` + `shell_service_launcher_`.
   // The bridge `process` capability had no JS-side callers (Phase 11b
   // deleted the only consumers — TS BashTool / GrepTool / GlobTool).

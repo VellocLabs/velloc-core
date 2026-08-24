@@ -219,6 +219,11 @@ action("nexus_tools_codegen") {
     "api/declarations/fs/systemInfo.api.json",
     "api/declarations/fs/unlink.api.json",
     "api/declarations/fs/writeFile.api.json",
+    "api/declarations/sqlite/batch.api.json",
+    "api/declarations/sqlite/close.api.json",
+    "api/declarations/sqlite/execute.api.json",
+    "api/declarations/sqlite/open.api.json",
+    "api/declarations/sqlite/query.api.json",
 
     # llm category — 7 actions, proxied through NexusLlmHost / LlmBroker.
     # Phase 12f moved `publishStatus` out to the new `session` category.
@@ -423,6 +428,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/system_prefs/system_prefs_api.gen.cc",
     "$target_gen_dir/api/app_info/app_info_api.gen.h",
     "$target_gen_dir/api/app_info/app_info_api.gen.cc",
+    "$target_gen_dir/api/sqlite/sqlite_api.gen.h",
+    "$target_gen_dir/api/sqlite/sqlite_api.gen.cc",
 
     # Per-category aggregate: one *.gen.h per UNIQUE folder under
     # declarations/. Holds the abstract base class (e.g.
@@ -491,6 +498,21 @@ source_set("fs") {
   deps = [
     "//base",
     "//mojo/public/cpp/base",
+  ]
+}
+
+# `sqlite` bridge capability engine: the sequence-affine connection wrapper
+# over sql::Database (read/write a SQLite file from the guest). A leaf
+# (//base + //sql) so the adapter in `bridge` links it without extra weight.
+source_set("sqlite") {
+  sources = [
+    "api/sqlite/nexus_sqlite_connection.cc",
+    "api/sqlite/nexus_sqlite_connection.h",
+  ]
+
+  deps = [
+    "//base",
+    "//sql",
   ]
 }
 
@@ -639,6 +661,8 @@ source_set("bridge") {
     "api/session/nexus_session_bridge_adapter.h",
     "api/shell/nexus_shell_bridge_adapter.cc",
     "api/shell/nexus_shell_bridge_adapter.h",
+    "api/sqlite/nexus_sqlite_bridge_adapter.cc",
+    "api/sqlite/nexus_sqlite_bridge_adapter.h",
     "api/system_prefs/nexus_system_prefs_bridge_adapter.cc",
     "api/system_prefs/nexus_system_prefs_bridge_adapter.h",
     "api/ui/nexus_ui_bridge_adapter.cc",
@@ -731,6 +755,7 @@ source_set("bridge") {
     "$target_gen_dir/api/search/search_api.gen.cc",
     "$target_gen_dir/api/session/session_api.gen.cc",
     "$target_gen_dir/api/shell/shell_api.gen.cc",
+    "$target_gen_dir/api/sqlite/sqlite_api.gen.cc",
     "$target_gen_dir/api/system_prefs/system_prefs_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.cc",
   ]
@@ -764,6 +789,7 @@ source_set("bridge") {
     # BuildObservationDict drains NexusPendingAgentNotice into `notices[]`.
     ":agent_notice",
     ":fs",
+    ":sqlite",
 
     # ProcessTool's Grep path ensures the pinned `rg` binary is present
     # (download → verify → extract → write) before exec; the installer
@@ -1214,6 +1240,8 @@ source_set("unit_tests") {
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_host_unittest.cc",
     "api/llm/nexus_llm_bridge_support_unittest.cc",
+    "api/sqlite/nexus_sqlite_bridge_adapter_unittest.cc",
+    "api/sqlite/nexus_sqlite_connection_unittest.cc",
     "api/ui/nexus_ui_bridge_adapter_unittest.cc",
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_guest_config_unittest.cc",
@@ -1235,6 +1263,7 @@ source_set("unit_tests") {
     ":agent_notice",
     ":bridge",
     ":fs",
+    ":sqlite",
     ":guest_config",
     ":session_tab_management",
     ":unit_tests_lite",

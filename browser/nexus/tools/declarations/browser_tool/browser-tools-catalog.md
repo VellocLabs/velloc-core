@@ -66,6 +66,8 @@ Result shape (per call):
   {"data":{"action":"...","observation":{"tabs":[{"tab_id":29,"url":"https://...","title":"...","viewport":{"x":0,"y":0,"width":1280,"height":720},"elements":[{"index":18372,"type":"form_control","role":"searchbox","text":"Search","placeholder":"Search the web","input_type":"search","box":[100,200,300,40]}]}]},"ok":true}}
 On failure: data.ok is false and data carries a structured `error` object with code / message / remediation. Most calls return a fresh post-action observation; tools that don't act (BrowserReadPage / BrowserReadElement / BrowserFindText / BrowserMediaState) return their own typed payload. Older observations in history may carry a `summary` field instead of `elements[]` — that's a compacted placeholder of what the model was doing when the tab was first introduced. Treat it as the model's own memo for that historical step.
 
+An observation may also carry an `observation.notices[]` array — out-of-band facts the browser knows but the page may have hidden. Each entry has a machine-readable `type` and a `message`. When you see a `native_dialog_suppressed` notice, a native OS file dialog was cancelled because this is an agent-controlled tab (agent tabs have no human to answer it): DO NOT retry the click that opened it — instead follow the notice's `recommended_tool` (`BrowserUpload` for a file-open picker, `BrowserDownload` for a save picker). A notice with no `recommended_tool` (e.g. a folder picker) is informational; adjust your plan rather than retrying.
+
 Each element in observation.tabs[].elements[] carries:
 - index: stable LLM-facing id; pass it back into element-targeting tools.
 - type: structural kind (link / form_control / image / element).

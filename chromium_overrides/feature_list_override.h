@@ -87,6 +87,22 @@ inline void AppendFeatureListOverrides(
   overrides->emplace_back(std::cref(actor::kGlicCrossOriginNavigationGating),
                           base::FeatureList::OVERRIDE_DISABLE_FEATURE);
 
+  // Pin the File System Access picker block ON. On an agent-controlled tab
+  // there is no human to answer a native picker, so showOpenFilePicker /
+  // showSaveFilePicker / showDirectoryPicker must be denied — the agent handles
+  // files through BrowserUpload / BrowserDownload instead. Upstream's
+  // IsFileSystemAccessApiFilePickerAllowed already does this while the actor is
+  // acting (and FSA APIs require transient activation, which on an agent tab
+  // only exists during actor actuation — so the acting-window check fully
+  // covers the reachable cases). It is enabled by default upstream; we pin it
+  // so a future default flip or field-trial config can't silently reintroduce
+  // a blocking native dialog. This keeps the fix in our layer with no upstream
+  // edit. See internal/docs/investigations/2026-08-23-agent-tab-native-dialog-suppression.md
+  // (Point B).
+  overrides->emplace_back(
+      std::cref(actor::kGlicBlockFileSystemAccessApiFilePicker),
+      base::FeatureList::OVERRIDE_ENABLE_FEATURE);
+
   // Pin the Chromium 149 "SearchSettingsUpdate" search-settings rework OFF.
   // The custom browser's search-engine UI is built on the legacy model: the Get
   // Started default-engine picker and the customize-chrome search chip rely on

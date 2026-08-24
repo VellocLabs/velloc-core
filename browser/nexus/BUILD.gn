@@ -760,6 +760,9 @@ source_set("bridge") {
     # BrowserUpload arms NexusPendingUpload before clicking a file input;
     # the chooser is answered by the hook in Browser::RunFileChooser.
     ":file_chooser_interceptor",
+
+    # BuildObservationDict drains NexusPendingAgentNotice into `notices[]`.
+    ":agent_notice",
     ":fs",
 
     # ProcessTool's Grep path ensures the pinned `rg` binary is present
@@ -1052,6 +1055,28 @@ source_set("file_chooser_interceptor") {
   ]
 }
 
+# Out-of-band agent notices — e.g. a native file dialog suppressed on an
+# agent-owned tab — queued per-WebContents and drained into the next
+# observation by BrowserTool. Like :file_chooser_interceptor, a small
+# standalone target with minimal deps so BOTH :bridge (which drains) and
+# upstream chrome/browser/ui (the RunFileChooser hook, which records) can
+# depend on it without a cycle. Deliberately does NOT depend on
+# //chrome/browser/ui.
+source_set("agent_notice") {
+  sources = [
+    "upload/nexus_pending_agent_notice.cc",
+    "upload/nexus_pending_agent_notice.h",
+  ]
+
+  deps = [
+    # NexusSessionTabTag::SessionKeyFor — the agent-owned-tab check.
+    ":session_tab_management",
+    "//base",
+    "//content/public/browser",
+    "//third_party/blink/public/common",
+  ]
+}
+
 # Settings WebUI handler for chrome://settings/nexus (T026).
 source_set("nexus_settings_handler") {
   sources = [
@@ -1203,9 +1228,11 @@ source_set("unit_tests") {
     "tools/process_tool/process_tool_unittest.cc",
     "tools/tool_base_unittest.cc",
     "tools/tool_session_unittest.cc",
+    "upload/nexus_pending_agent_notice_unittest.cc",
   ]
 
   deps = [
+    ":agent_notice",
     ":bridge",
     ":fs",
     ":guest_config",

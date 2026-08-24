@@ -46,6 +46,7 @@
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
+#include "custom_browser/browser/nexus/upload/nexus_pending_agent_notice.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/cpp/media_position.h"
@@ -1994,6 +1995,32 @@ base::DictValue BrowserTool::BuildObservationDict(
   }
 
   observation.Set("tabs", std::move(tabs));
+
+  // Drain any out-of-band notices recorded on the working tab since the last
+  // observation — e.g. a native file dialog the RunFileChooser hook suppressed
+  // on this agent tab — so the model sees facts the page may have swallowed.
+  // Sticky until drained: the chooser fires asynchronously relative to the
+  // action that caused it, so a notice can surface on a later observation than
+  // the click that triggered it.
+  if (working_handle.has_value()) {
+    tabs::TabInterface* work_tab = working_handle->Get();
+    content::WebContents* work_contents =
+        work_tab ? work_tab->GetContents() : nullptr;
+    NexusPendingAgentNotice* pending =
+        work_contents
+            ? NexusPendingAgentNotice::FromWebContents(work_contents)
+            : nullptr;
+    if (pending) {
+      std::vector<AgentNotice> drained = pending->TakeAll();
+      if (!drained.empty()) {
+        base::ListValue notices;
+        for (const AgentNotice& notice : drained) {
+          notices.Append(notice.ToDict());
+        }
+        observation.Set("notices", std::move(notices));
+      }
+    }
+  }
   return observation;
 }
 

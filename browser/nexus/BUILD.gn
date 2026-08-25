@@ -503,7 +503,9 @@ source_set("fs") {
 
 # `sqlite` bridge capability engine: the sequence-affine connection wrapper
 # over sql::Database (read/write a SQLite file from the guest). A leaf
-# (//base + //sql) so the adapter in `bridge` links it without extra weight.
+# (//base + //sql + //third_party/sqlite) so the adapter in `bridge` links it
+# without extra weight. The direct //third_party/sqlite dep is for
+# sqlite3_bind_parameter_count (validating guest param counts before binding).
 source_set("sqlite") {
   sources = [
     "api/sqlite/nexus_sqlite_connection.cc",
@@ -513,6 +515,7 @@ source_set("sqlite") {
   deps = [
     "//base",
     "//sql",
+    "//third_party/sqlite",
   ]
 }
 

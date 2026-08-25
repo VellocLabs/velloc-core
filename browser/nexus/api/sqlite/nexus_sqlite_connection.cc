@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/sqlite/sqlite3.h"
 
 namespace nexus {
 
@@ -146,6 +147,38 @@ bool BindParams(sql::Statement& statement,
   return true;
 }
 
+// Prepare `sql`, reject a param list that outnumbers the statement's
+// placeholders, then bind. sql::Statement::Bind* runs a DCHECK on an
+// out-of-range parameter index, so a guest sending more params than there are
+// placeholders would abort the debug build; ask SQLite for the real count and
+// fail gracefully instead. Fills `*error` and returns false on any failure.
+bool PrepareAndBind(sql::Database& db,
+                    const std::string& sql,
+                    const base::ListValue& params,
+                    sql::Statement* statement,
+                    SqlResponse* error) {
+  auto ref = db.GetUniqueStatement(sql);
+  statement->Assign(ref);
+  if (!statement->is_valid()) {
+    *error = SqlResponse::MakeError("SQLITE_ERROR", db.GetErrorMessage());
+    return false;
+  }
+  const int param_count = sqlite3_bind_parameter_count(ref->stmt());
+  if (params.size() > static_cast<size_t>(param_count)) {
+    *error = SqlResponse::MakeError(
+        "INVALID_ARGS",
+        "too many bind params: " + base::NumberToString(params.size()) +
+            " for " + base::NumberToString(param_count) + " placeholder(s)");
+    return false;
+  }
+  std::string bind_error;
+  if (!BindParams(*statement, params, &bind_error)) {
+    *error = SqlResponse::MakeError("INVALID_ARGS", std::move(bind_error));
+    return false;
+  }
+  return true;
+}
+
 base::Value BuildWriteResult(sql::Database& db) {
   base::DictValue result;
   result.Set("rowsAffected", Int64ToValue(db.GetLastChangeCount(),
@@ -207,13 +240,18 @@ NexusSqliteConnection::NexusSqliteConnection(base::FilePath path,
       open_message_ = "failed to copy database before open";
       return;
     }
-    // Best-effort: copy WAL / shared-memory sidecars if present.
-    for (const auto* suffix :
-         {FILE_PATH_LITERAL("-wal"), FILE_PATH_LITERAL("-shm")}) {
-      base::FilePath sidecar = WithSuffix(open_path, suffix);
-      if (base::PathExists(sidecar)) {
-        base::CopyFile(sidecar, WithSuffix(dest, suffix));
-      }
+    // Best-effort: copy the WAL sidecar so recently committed (not-yet-
+    // checkpointed) rows are visible in the copy. Deliberately NOT the -shm
+    // (wal-index): it is transient and a stale one — inconsistent with the
+    // separately-copied -wal — can make SQLite misread WAL frames; SQLite
+    // reconstructs the wal-index from the -wal when opening the copy. Note
+    // this snapshot is not transactionally atomic (the main file and -wal are
+    // read by separate copies while a foreign writer may be active), so a
+    // concurrent checkpoint can still drop the most recent rows; it cannot
+    // corrupt the read because the copy is opened read-only.
+    base::FilePath wal = WithSuffix(open_path, FILE_PATH_LITERAL("-wal"));
+    if (base::PathExists(wal)) {
+      base::CopyFile(wal, WithSuffix(dest, FILE_PATH_LITERAL("-wal")));
     }
     open_path = std::move(dest);
   }
@@ -252,13 +290,10 @@ SqlResponse NexusSqliteConnection::Query(std::string sql,
   if (!open_ok_) {
     return SqlResponse::MakeError(open_code_, open_message_);
   }
-  sql::Statement statement(db_.GetUniqueStatement(sql));
-  if (!statement.is_valid()) {
-    return SqlResponse::MakeError("SQLITE_ERROR", db_.GetErrorMessage());
-  }
-  std::string bind_error;
-  if (!BindParams(statement, params, &bind_error)) {
-    return SqlResponse::MakeError("INVALID_ARGS", std::move(bind_error));
+  sql::Statement statement;
+  SqlResponse prepare_error;
+  if (!PrepareAndBind(db_, sql, params, &statement, &prepare_error)) {
+    return prepare_error;
   }
 
   base::ListValue rows;
@@ -295,13 +330,10 @@ SqlResponse NexusSqliteConnection::Execute(std::string sql,
   if (!open_ok_) {
     return SqlResponse::MakeError(open_code_, open_message_);
   }
-  sql::Statement statement(db_.GetUniqueStatement(sql));
-  if (!statement.is_valid()) {
-    return SqlResponse::MakeError("SQLITE_ERROR", db_.GetErrorMessage());
-  }
-  std::string bind_error;
-  if (!BindParams(statement, params, &bind_error)) {
-    return SqlResponse::MakeError("INVALID_ARGS", std::move(bind_error));
+  sql::Statement statement;
+  SqlResponse prepare_error;
+  if (!PrepareAndBind(db_, sql, params, &statement, &prepare_error)) {
+    return prepare_error;
   }
   if (!statement.Run()) {
     return SqlResponse::MakeError("SQLITE_ERROR", db_.GetErrorMessage());
@@ -328,14 +360,12 @@ SqlResponse NexusSqliteConnection::Batch(
 
   base::ListValue results;
   for (auto& item : statements) {
-    sql::Statement statement(db_.GetUniqueStatement(item.sql));
-    if (!statement.is_valid()) {
+    sql::Statement statement;
+    SqlResponse prepare_error;
+    if (!PrepareAndBind(db_, item.sql, item.params, &statement,
+                        &prepare_error)) {
       // transaction (if any) auto-rolls back on scope exit.
-      return SqlResponse::MakeError("SQLITE_ERROR", db_.GetErrorMessage());
-    }
-    std::string bind_error;
-    if (!BindParams(statement, item.params, &bind_error)) {
-      return SqlResponse::MakeError("INVALID_ARGS", std::move(bind_error));
+      return prepare_error;
     }
     if (!statement.Run()) {
       return SqlResponse::MakeError("SQLITE_ERROR", db_.GetErrorMessage());

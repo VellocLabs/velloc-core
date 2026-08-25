@@ -5,10 +5,12 @@
 #include "base/functional/bind.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "build/build_config.h"
 
 namespace nexus {
 
@@ -23,6 +25,12 @@ namespace {
 // A frame that opens dozens of connections and never closes them is a bug;
 // this bounds the leak rather than letting it grow unbounded.
 constexpr size_t kMaxOpenHandles = 64;
+
+// A guest firing one-shots faster than they reply (or on unbounded distinct
+// paths) would otherwise spin up an unbounded number of transient connections
+// and per-file sequences. Bound the in-flight set the same way `open` is
+// bounded by kMaxOpenHandles.
+constexpr size_t kMaxInFlightOneShots = 64;
 
 // Absolute ceiling on rows returned in one query, regardless of maxRows — a
 // serialize-to-JSON bridge can't stream an unbounded table.
@@ -120,8 +128,23 @@ bool ParseStatements(const base::DictValue& payload,
   return true;
 }
 
+// Canonicalize `path` into the key that selects a file's serialization runner.
+// Two spellings of the same file MUST map to the same key, or writes to it stop
+// being serialized. We fold ASCII case on Windows (its file system is
+// case-insensitive, so 'A.DB' and 'a.db' are one file) — a pure-string
+// operation. We intentionally do NOT resolve '..'/symlinks or make the path
+// absolute here: that requires filesystem I/O (base::MakeAbsoluteFilePath wraps
+// a MAY_BLOCK ScopedBlockingCall) and this runs on the UI thread; paths already
+// arrive absolute from the guest, so the realistic aliasing is case.
 base::FilePath NormalizeKey(const std::string& path) {
-  return base::FilePath::FromUTF8Unsafe(path).NormalizePathSeparators();
+  base::FilePath normalized =
+      base::FilePath::FromUTF8Unsafe(path).NormalizePathSeparators();
+#if BUILDFLAG(IS_WIN)
+  return base::FilePath::FromUTF8Unsafe(
+      base::ToLowerASCII(normalized.AsUTF8Unsafe()));
+#else
+  return normalized;
+#endif
 }
 
 }  // namespace
@@ -144,6 +167,28 @@ NexusSqliteBridgeAdapter::NexusSqliteBridgeAdapter(
     : ::nexus::generated::SqliteApiBase(delegate) {}
 
 NexusSqliteBridgeAdapter::~NexusSqliteBridgeAdapter() = default;
+
+template <typename AsyncOp>
+void NexusSqliteBridgeAdapter::StartOneShot(const base::FilePath& key,
+                                            SqliteOpenOptions open_options,
+                                            BridgeResponseCallback done,
+                                            AsyncOp async_op) {
+  if (one_shots_.size() >= kMaxInFlightOneShots) {
+    std::move(done).Error("SQLITE_TOO_MANY_OPS",
+                          "too many in-flight sqlite operations");
+    return;
+  }
+  scoped_refptr<base::SequencedTaskRunner> runner = AcquireRunner(key);
+  const std::string op_id = MintId();
+  Connection connection{
+      base::SequenceBound<NexusSqliteConnection>(runner, key, open_options),
+      key};
+  Connection& stored =
+      one_shots_.emplace(op_id, std::move(connection)).first->second;
+  std::move(async_op)(stored.conn)
+      .Then(base::BindOnce(&NexusSqliteBridgeAdapter::ReplyOneShot,
+                           weak_factory_.GetWeakPtr(), std::move(done), op_id));
+}
 
 void NexusSqliteBridgeAdapter::HandleQueryOnUI(
     QueryInput input,
@@ -178,17 +223,13 @@ void NexusSqliteBridgeAdapter::HandleQueryOnUI(
   const SqliteOpenOptions open_options =
       ParseOpenOptions(payload, SqliteOpenMode::kReadOnly);
   const base::FilePath key = NormalizeKey(*path);
-  scoped_refptr<base::SequencedTaskRunner> runner = AcquireRunner(key);
-  const std::string op_id = MintId();
-  Connection connection{
-      base::SequenceBound<NexusSqliteConnection>(runner, key, open_options),
-      key};
-  Connection& stored =
-      one_shots_.emplace(op_id, std::move(connection)).first->second;
-  stored.conn.AsyncCall(&NexusSqliteConnection::Query)
-      .WithArgs(*sql, std::move(params), query_options)
-      .Then(base::BindOnce(&NexusSqliteBridgeAdapter::ReplyOneShot,
-                           weak_factory_.GetWeakPtr(), std::move(done), op_id));
+  StartOneShot(
+      key, open_options, std::move(done),
+      [sql = *sql, params = std::move(params), query_options](
+          base::SequenceBound<NexusSqliteConnection>& conn) mutable {
+        return conn.AsyncCall(&NexusSqliteConnection::Query)
+            .WithArgs(std::move(sql), std::move(params), query_options);
+      });
 }
 
 void NexusSqliteBridgeAdapter::HandleExecuteOnUI(
@@ -223,17 +264,13 @@ void NexusSqliteBridgeAdapter::HandleExecuteOnUI(
   const SqliteOpenOptions open_options =
       ParseOpenOptions(payload, SqliteOpenMode::kReadWrite);
   const base::FilePath key = NormalizeKey(*path);
-  scoped_refptr<base::SequencedTaskRunner> runner = AcquireRunner(key);
-  const std::string op_id = MintId();
-  Connection connection{
-      base::SequenceBound<NexusSqliteConnection>(runner, key, open_options),
-      key};
-  Connection& stored =
-      one_shots_.emplace(op_id, std::move(connection)).first->second;
-  stored.conn.AsyncCall(&NexusSqliteConnection::Execute)
-      .WithArgs(*sql, std::move(params))
-      .Then(base::BindOnce(&NexusSqliteBridgeAdapter::ReplyOneShot,
-                           weak_factory_.GetWeakPtr(), std::move(done), op_id));
+  StartOneShot(
+      key, open_options, std::move(done),
+      [sql = *sql, params = std::move(params)](
+          base::SequenceBound<NexusSqliteConnection>& conn) mutable {
+        return conn.AsyncCall(&NexusSqliteConnection::Execute)
+            .WithArgs(std::move(sql), std::move(params));
+      });
 }
 
 void NexusSqliteBridgeAdapter::HandleBatchOnUI(
@@ -269,17 +306,13 @@ void NexusSqliteBridgeAdapter::HandleBatchOnUI(
   const SqliteOpenOptions open_options =
       ParseOpenOptions(payload, SqliteOpenMode::kReadWrite);
   const base::FilePath key = NormalizeKey(*path);
-  scoped_refptr<base::SequencedTaskRunner> runner = AcquireRunner(key);
-  const std::string op_id = MintId();
-  Connection connection{
-      base::SequenceBound<NexusSqliteConnection>(runner, key, open_options),
-      key};
-  Connection& stored =
-      one_shots_.emplace(op_id, std::move(connection)).first->second;
-  stored.conn.AsyncCall(&NexusSqliteConnection::Batch)
-      .WithArgs(std::move(statements), atomic)
-      .Then(base::BindOnce(&NexusSqliteBridgeAdapter::ReplyOneShot,
-                           weak_factory_.GetWeakPtr(), std::move(done), op_id));
+  StartOneShot(
+      key, open_options, std::move(done),
+      [statements = std::move(statements), atomic](
+          base::SequenceBound<NexusSqliteConnection>& conn) mutable {
+        return conn.AsyncCall(&NexusSqliteConnection::Batch)
+            .WithArgs(std::move(statements), atomic);
+      });
 }
 
 void NexusSqliteBridgeAdapter::HandleOpenOnUI(

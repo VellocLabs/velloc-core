@@ -11,6 +11,7 @@
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/api/sqlite/nexus_sqlite_connection.h"
@@ -101,6 +102,123 @@ TEST(NexusSqliteBridgeAdapterTest, OneShotQueryResolvesWithRows) {
   const base::ListValue* rows = delegate.last_success.GetDict().FindList("rows");
   ASSERT_TRUE(rows);
   EXPECT_EQ(rows->size(), 1u);
+}
+
+// One-shot execute over a path writes and reports rowsAffected, then reaps the
+// transient connection and its file lease.
+TEST(NexusSqliteBridgeAdapterTest, OneShotExecuteReportsRowsAffected) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath db_path = SeedDatabase(temp_dir);
+
+  RecordingDelegate delegate;
+  auto adapter = std::make_unique<NexusSqliteBridgeAdapter>(&delegate);
+
+  base::DictValue payload;
+  payload.Set("path", db_path.AsUTF8Unsafe());
+  payload.Set("sql", "INSERT INTO t VALUES (8, 'carol')");
+  EXPECT_TRUE(adapter->Dispatch("execute", "req-1", SqliteRoute("execute"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+
+  EXPECT_EQ(delegate.success_count, 1);
+  EXPECT_EQ(delegate.error_count, 0);
+  ASSERT_TRUE(delegate.last_success.is_dict());
+  EXPECT_EQ(
+      delegate.last_success.GetDict().FindInt("rowsAffected").value_or(-1), 1);
+  EXPECT_EQ(adapter->OneShotCountForTesting(), 0u);
+  EXPECT_EQ(adapter->FileEntryCountForTesting(), 0u);
+}
+
+// One-shot batch over a path runs every statement and reaps the connection.
+TEST(NexusSqliteBridgeAdapterTest, OneShotBatchViaPathRunsAllStatements) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath db_path = SeedDatabase(temp_dir);
+
+  RecordingDelegate delegate;
+  auto adapter = std::make_unique<NexusSqliteBridgeAdapter>(&delegate);
+
+  base::ListValue statements;
+  {
+    base::DictValue s1;
+    s1.Set("sql", "INSERT INTO t VALUES (1, 'x')");
+    statements.Append(std::move(s1));
+    base::DictValue s2;
+    s2.Set("sql", "INSERT INTO t VALUES (2, 'y')");
+    statements.Append(std::move(s2));
+  }
+  base::DictValue payload;
+  payload.Set("path", db_path.AsUTF8Unsafe());
+  payload.Set("statements", std::move(statements));
+  EXPECT_TRUE(adapter->Dispatch("batch", "req-1", SqliteRoute("batch"), payload,
+                                {}));
+  task_environment.RunUntilIdle();
+
+  EXPECT_EQ(delegate.success_count, 1);
+  EXPECT_EQ(delegate.error_count, 0);
+  EXPECT_EQ(adapter->OneShotCountForTesting(), 0u);
+  EXPECT_EQ(adapter->FileEntryCountForTesting(), 0u);
+}
+
+// More params than the SQL has placeholders is a graceful error, not a DCHECK
+// abort (sql::Statement::Bind* DCHECKs on an out-of-range parameter index).
+TEST(NexusSqliteBridgeAdapterTest, TooManyParamsErrorsNotCrash) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath db_path = SeedDatabase(temp_dir);
+
+  RecordingDelegate delegate;
+  auto adapter = std::make_unique<NexusSqliteBridgeAdapter>(&delegate);
+
+  base::ListValue params;
+  params.Append(1);
+  params.Append(2);  // one placeholder, two params
+  base::DictValue payload;
+  payload.Set("path", db_path.AsUTF8Unsafe());
+  payload.Set("sql", "SELECT ?");
+  payload.Set("params", std::move(params));
+  EXPECT_TRUE(adapter->Dispatch("query", "req-1", SqliteRoute("query"), payload,
+                                {}));
+  task_environment.RunUntilIdle();
+
+  EXPECT_EQ(delegate.success_count, 0);
+  EXPECT_EQ(delegate.error_count, 1);
+  EXPECT_EQ(adapter->OneShotCountForTesting(), 0u);
+  EXPECT_EQ(adapter->FileEntryCountForTesting(), 0u);
+}
+
+// Opening more than kMaxOpenHandles (64) persistent handles is refused rather
+// than growing unbounded.
+TEST(NexusSqliteBridgeAdapterTest, OpenHandleLimitEnforced) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath db_path = SeedDatabase(temp_dir);
+
+  RecordingDelegate delegate;
+  auto adapter = std::make_unique<NexusSqliteBridgeAdapter>(&delegate);
+
+  for (int i = 0; i < 64; ++i) {
+    base::DictValue payload;
+    payload.Set("path", db_path.AsUTF8Unsafe());
+    EXPECT_TRUE(adapter->Dispatch("open", "r" + base::NumberToString(i),
+                                  SqliteRoute("open"), payload, {}));
+  }
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.success_count, 64);
+  EXPECT_EQ(delegate.error_count, 0);
+
+  base::DictValue overflow;
+  overflow.Set("path", db_path.AsUTF8Unsafe());
+  EXPECT_TRUE(adapter->Dispatch("open", "over", SqliteRoute("open"), overflow,
+                                {}));
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.error_count, 1);
+  EXPECT_EQ(delegate.last_error_code, "SQLITE_TOO_MANY_HANDLES");
 }
 
 // A query against an unknown handle is a clean InvalidArgs error.

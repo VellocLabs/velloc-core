@@ -48,6 +48,11 @@ class NexusSqliteBridgeAdapter : public ::nexus::generated::SqliteApiBase {
   NexusSqliteBridgeAdapter(const NexusSqliteBridgeAdapter&) = delete;
   NexusSqliteBridgeAdapter& operator=(const NexusSqliteBridgeAdapter&) = delete;
 
+  // Test-only: registry sizes, so a test can assert transient connections and
+  // their file leases are reaped once a one-shot reply lands.
+  size_t OneShotCountForTesting() const { return one_shots_.size(); }
+  size_t FileEntryCountForTesting() const { return files_.size(); }
+
  private:
   // A live connection plus the file key it leases.
   struct Connection {
@@ -95,6 +100,18 @@ class NexusSqliteBridgeAdapter : public ::nexus::generated::SqliteApiBase {
   void ReplyOpen(::nexus::BridgeResponseCallback done,
                  std::string handle_id,
                  SqlResponse status);
+
+  // Opens a transient one-shot connection on `key`, records it in one_shots_,
+  // issues its async op via `async_op(conn)`, forwards the result to `done`,
+  // and reaps the connection (ReplyOneShot). Shared by query/execute/batch so
+  // the one-shot lifecycle (lease, registry, in-flight cap, reaping) lives in
+  // one place. Replies with an error instead of starting when too many
+  // one-shots are already in flight.
+  template <typename AsyncOp>
+  void StartOneShot(const base::FilePath& key,
+                    SqliteOpenOptions open_options,
+                    ::nexus::BridgeResponseCallback done,
+                    AsyncOp async_op);
 
   // Registry (UI thread only).
   scoped_refptr<base::SequencedTaskRunner> AcquireRunner(

@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_host.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,8 +17,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/test/file_path_reparse_point_win.h"
+#endif
 
 namespace nexus {
 namespace {
@@ -192,6 +198,75 @@ TEST(NexusFsHostTest, ReadFileMissingReportsEnoent) {
   EXPECT_FALSE(result.data.has_value());
   // Must contain a marker the guest's regex recognizes.
   EXPECT_NE(std::string::npos, result.error.find("ENOENT")) << result.error;
+}
+
+// Regression (fs error taxonomy, 2026-09-01): a missing path's Stat must
+// report the discriminated ENOENT wording, not the retired ambiguous
+// "File not found or permission denied". The JS guest keys "genuinely
+// absent" off the leading code so SuperEdit's commit conflict check can
+// tell a missing file from a transient permission/lock/I/O failure —
+// which must NOT read as absent (see nexus_web utils/fsTransportFailure.ts).
+TEST(NexusFsHostTest, StatMissingReportsEnoent) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::StatResult result = host->Stat("does-not-exist.txt");
+  EXPECT_FALSE(result.success);
+  // EXACT equality pins the MECHANISM, not just the string: since the
+  // review-round fix removed the default arm's existence-probe fallback,
+  // the FILE_ERROR_NOT_FOUND switch arm is the ONLY producer of this
+  // wording — so this assertion fails if GetLastFileError capture ever
+  // goes dead (a missing path would then read EUNKNOWN).
+  EXPECT_EQ("ENOENT: no such file or directory", result.error);
+}
+
+// Pins every arm of the wire-message taxonomy directly — the guest's
+// isFsNotFoundError regex and its EACCES/EBUSY handling are calibrated
+// against these exact strings, and platform-specific failures (locks,
+// ACLs) cannot be staged portably in a unit test. Also pins that the
+// unmapped default NEVER emits chromium's ErrorToString tokens (a
+// chromium roll must not change guest-visible wire text) and NEVER
+// matches the guest's not-found prose.
+TEST(NexusFsHostTest, FsFailureMessageWireContract) {
+  EXPECT_EQ("ENOENT: no such file or directory",
+            FsFailureMessage(base::File::FILE_ERROR_NOT_FOUND));
+  EXPECT_EQ("EACCES: permission denied",
+            FsFailureMessage(base::File::FILE_ERROR_ACCESS_DENIED));
+  EXPECT_EQ("EBUSY: file is in use or locked",
+            FsFailureMessage(base::File::FILE_ERROR_IN_USE));
+  EXPECT_EQ("ENOTDIR: not a directory",
+            FsFailureMessage(base::File::FILE_ERROR_NOT_A_DIRECTORY));
+  EXPECT_EQ("EIO: input/output error",
+            FsFailureMessage(base::File::FILE_ERROR_IO));
+  // Unmapped errors: raw enum value, transient-shaped, no enum tokens.
+  const std::string unmapped =
+      FsFailureMessage(base::File::FILE_ERROR_NO_SPACE);
+  EXPECT_EQ(0u, unmapped.find("EUNKNOWN:")) << unmapped;
+  EXPECT_EQ(std::string::npos, unmapped.find("FILE_ERROR")) << unmapped;
+  EXPECT_EQ(std::string::npos, unmapped.find("ENOENT")) << unmapped;
+  const std::string failed = FsFailureMessage(base::File::FILE_ERROR_FAILED);
+  EXPECT_EQ(0u, failed.find("EUNKNOWN:")) << failed;
+}
+
+// Happy path: Stat on an existing file succeeds and reports a file, so the
+// taxonomy change cannot have disturbed the success shape.
+TEST(NexusFsHostTest, StatExistingFileStillSucceeds) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("f.txt"), "x"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::StatResult result = host->Stat("f.txt");
+  EXPECT_TRUE(result.success) << result.error;
+  EXPECT_NE(std::string::npos, result.json.find("\"isFile\":true"))
+      << result.json;
 }
 
 // Happy path stays intact: an existing file reads back its exact bytes.
@@ -559,6 +634,157 @@ TEST(NexusFsHostTest, ReadBatchStopsAtByteBudgetWithoutFailingTheCall) {
   EXPECT_TRUE(result.truncated);
   EXPECT_TRUE(result.entries[0].GetDict().FindBool("ok").value_or(false));
   EXPECT_FALSE(result.entries[1].GetDict().FindBool("ok").value_or(true));
+}
+
+TEST(NexusFsHostTest, RenameMovesFileWithExactBytes) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  // Explicit length: the literal embeds a NUL, so a bare const char* would
+  // truncate at it.
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("old.bin"),
+                              std::string("payload\x00\xff", 9)));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::SimpleResult result = host->Rename("old.bin", "sub/new.bin");
+  // The destination's parent is NOT auto-created — parity with base::Move.
+  EXPECT_FALSE(result.success);
+
+  ASSERT_TRUE(base::CreateDirectory(temp_dir.GetPath().AppendASCII("sub")));
+  result = host->Rename("old.bin", "sub/new.bin");
+  ASSERT_TRUE(result.success) << result.error;
+  EXPECT_FALSE(base::PathExists(temp_dir.GetPath().AppendASCII("old.bin")));
+  std::string content;
+  ASSERT_TRUE(base::ReadFileToString(
+      temp_dir.GetPath().AppendASCII("sub").AppendASCII("new.bin"), &content));
+  EXPECT_EQ(std::string("payload\x00\xff", 9), content);
+}
+
+TEST(NexusFsHostTest, RenameMovesDirectoryTreeWhole) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath src = temp_dir.GetPath().AppendASCII("srcdir");
+  ASSERT_TRUE(base::CreateDirectory(src.AppendASCII("nested")));
+  ASSERT_TRUE(base::WriteFile(src.AppendASCII("nested").AppendASCII("f.txt"),
+                              "deep"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::SimpleResult result = host->Rename("srcdir", "dstdir");
+  ASSERT_TRUE(result.success) << result.error;
+  EXPECT_FALSE(base::PathExists(src));
+  std::string content;
+  ASSERT_TRUE(base::ReadFileToString(temp_dir.GetPath()
+                                         .AppendASCII("dstdir")
+                                         .AppendASCII("nested")
+                                         .AppendASCII("f.txt"),
+                                     &content));
+  EXPECT_EQ("deep", content);
+}
+
+// The two refusal strings are wire contract: the JS guest maps them to
+// NotFoundError / AlreadyExistsError by exact text (BrowserFsOperations).
+TEST(NexusFsHostTest, RenameRefusalErrorStringsAreWireContract) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "a"));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("b.txt"), "b"));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(temp_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::SimpleResult missing = host->Rename("absent.txt", "c.txt");
+  EXPECT_FALSE(missing.success);
+  EXPECT_EQ("Source does not exist", missing.error);
+
+  NexusFsHost::SimpleResult occupied = host->Rename("a.txt", "b.txt");
+  EXPECT_FALSE(occupied.success);
+  EXPECT_EQ("Destination already exists", occupied.error);
+  // Refusals must leave both files untouched.
+  std::string content;
+  ASSERT_TRUE(base::ReadFileToString(temp_dir.GetPath().AppendASCII("a.txt"),
+                                     &content));
+  EXPECT_EQ("a", content);
+  ASSERT_TRUE(base::ReadFileToString(temp_dir.GetPath().AppendASCII("b.txt"),
+                                     &content));
+  EXPECT_EQ("b", content);
+}
+
+// `resolveLinks` follows a link inside a directory that points out of it —
+// the escape the untrusted read boundary (F-20) and the fsx root rule check
+// for. On Windows the default form only normalizes, so a junction under a
+// root still reads as under the root; this test fails there without the
+// flag's implementation. Also pins: a path that does not exist yet resolves
+// through its existing ancestor, and the default form is unchanged (it is the
+// session cwd / storage identity).
+TEST(NexusFsHostTest, RealpathResolveLinksFollowsALinkOutOfTheDirectory) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir root_dir;
+  base::ScopedTempDir outside_dir;
+  ASSERT_TRUE(root_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(outside_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(
+      base::WriteFile(outside_dir.GetPath().AppendASCII("secret.txt"), "s"));
+  ASSERT_TRUE(
+      base::WriteFile(root_dir.GetPath().AppendASCII("plain.txt"), "p"));
+  const base::FilePath link = root_dir.GetPath().AppendASCII("link");
+#if BUILDFLAG(IS_WIN)
+  // A junction: creatable without privileges, unlike a symlink. Declared
+  // after both temp dirs so it is removed before they are deleted.
+  ASSERT_TRUE(base::CreateDirectory(link));
+  std::optional<base::test::FilePathReparsePoint> junction =
+      base::test::FilePathReparsePoint::Create(link, outside_dir.GetPath());
+  ASSERT_TRUE(junction.has_value());
+#else
+  ASSERT_TRUE(base::CreateSymbolicLink(outside_dir.GetPath(), link));
+#endif
+  // The temp dirs themselves may sit under an 8.3 or linked %TEMP%, so the
+  // expectations are built from the resolved forms.
+  base::FilePath real_root;
+  base::FilePath real_outside;
+  ASSERT_TRUE(base::NormalizeFilePath(root_dir.GetPath(), &real_root));
+  ASSERT_TRUE(base::NormalizeFilePath(outside_dir.GetPath(), &real_outside));
+
+  auto host = base::MakeRefCounted<NexusFsHost>(root_dir.GetPath());
+  base::RunLoop().RunUntilIdle();
+
+  NexusFsHost::RealpathResult through_link =
+      host->Realpath("link/secret.txt", /*resolve_links=*/true);
+  ASSERT_TRUE(through_link.success) << through_link.error;
+  EXPECT_EQ(real_outside.AppendASCII("secret.txt").AsUTF8Unsafe(),
+            through_link.path);
+
+  NexusFsHost::RealpathResult link_itself =
+      host->Realpath(link.AsUTF8Unsafe(), /*resolve_links=*/true);
+  ASSERT_TRUE(link_itself.success) << link_itself.error;
+  EXPECT_EQ(real_outside.AsUTF8Unsafe(), link_itself.path);
+
+  NexusFsHost::RealpathResult not_yet =
+      host->Realpath("link/new/file.txt", /*resolve_links=*/true);
+  ASSERT_TRUE(not_yet.success) << not_yet.error;
+  EXPECT_EQ(
+      real_outside.AppendASCII("new").AppendASCII("file.txt").AsUTF8Unsafe(),
+      not_yet.path);
+
+  NexusFsHost::RealpathResult no_link =
+      host->Realpath("plain.txt", /*resolve_links=*/true);
+  ASSERT_TRUE(no_link.success) << no_link.error;
+  EXPECT_EQ(real_root.AppendASCII("plain.txt").AsUTF8Unsafe(), no_link.path);
+
+#if BUILDFLAG(IS_WIN)
+  // The default form is untouched: normalized, the junction not followed.
+  NexusFsHost::RealpathResult default_form =
+      host->Realpath("link/secret.txt", /*resolve_links=*/false);
+  ASSERT_TRUE(default_form.success) << default_form.error;
+  EXPECT_EQ(base::MakeAbsoluteFilePath(link.AppendASCII("secret.txt"))
+                .AsUTF8Unsafe(),
+            default_form.path);
+#endif
 }
 
 }  // namespace

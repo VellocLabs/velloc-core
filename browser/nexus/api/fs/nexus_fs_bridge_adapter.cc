@@ -465,6 +465,17 @@ void NexusFsBridgeAdapter::HandleMkdirOnUI(
       base::BindOnce(&RespondSimple, std::move(done), "Mkdir failed"));
 }
 
+void NexusFsBridgeAdapter::HandleRenameOnUI(
+    ::nexus::generated::RenameInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::Rename, fs_host_,
+                     std::move(input.oldPath), std::move(input.newPath)),
+      base::BindOnce(&RespondSimple, std::move(done), "Rename failed"));
+}
+
 void NexusFsBridgeAdapter::HandleRmOnUI(
     ::nexus::generated::RmInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
@@ -501,9 +512,14 @@ void NexusFsBridgeAdapter::HandleRealpathOnUI(
     ::nexus::generated::RealpathInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
+  // `resolveLinks` is an additive, ignore-if-absent input (no interface
+  // bump): an older host ignores it and answers the default form, which is
+  // what every guest got before it existed.
+  const bool resolve_links = input.resolveLinks.value_or(false);
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&NexusFsHost::Realpath, fs_host_, std::move(input.path)),
+      base::BindOnce(&NexusFsHost::Realpath, fs_host_, std::move(input.path),
+                     resolve_links),
       base::BindOnce(&RespondRealpath, std::move(done)));
 }
 

@@ -18,6 +18,7 @@
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
@@ -44,6 +45,35 @@ base::FilePath ResolvePath(const base::FilePath& cwd,
     return requested;
   }
   return cwd.Append(requested);
+}
+
+// `absolute` with its links resolved (base::NormalizeFilePath), or empty when
+// that is not possible. A path that does not exist yet is resolved through
+// its deepest existing ancestor, so `<root>/link/new.txt` with `link`
+// pointing elsewhere comes back outside `<root>` even before `new.txt` exists.
+// A missing tail that climbs (`..`) or names `.` is refused: which directory it
+// lands in depends on the links it would cross, so it cannot be appended.
+base::FilePath ResolveLinks(const base::FilePath& absolute) {
+  base::FilePath existing = absolute.StripTrailingSeparators();
+  std::vector<base::FilePath::StringType> missing_tail;
+  while (!base::PathExists(existing)) {
+    const base::FilePath parent = existing.DirName();
+    const base::FilePath::StringType name = existing.BaseName().value();
+    if (parent == existing || name == base::FilePath::kCurrentDirectory ||
+        name == base::FilePath::kParentDirectory) {
+      return base::FilePath();
+    }
+    missing_tail.push_back(name);
+    existing = parent;
+  }
+  base::FilePath resolved;
+  if (!base::NormalizeFilePath(existing, &resolved)) {
+    return base::FilePath();
+  }
+  for (auto it = missing_tail.rbegin(); it != missing_tail.rend(); ++it) {
+    resolved = resolved.Append(*it);
+  }
+  return resolved;
 }
 
 #if NEXUS_FS_ATOMIC_WRITE
@@ -96,10 +126,21 @@ bool WriteFileAtomicallyShortTemp(const base::FilePath& target,
 // The stat payload the guest sees, as a dict. Shared by `Stat` (which
 // JSON-writes it) and `StatBatch` (which nests it in a row) so the two can
 // never drift into reporting different fields for the same file.
-// nullopt = the path could not be stat'd.
-std::optional<base::DictValue> BuildStatDict(const base::FilePath& resolved) {
+// nullopt = the path could not be stat'd; when the caller supplies
+// `out_error`, the OS failure kind (base::File::GetLastFileError — the
+// thread's errno/GetLastError, read before any other filesystem call runs)
+// is written there so `Stat` can discriminate its wire message. NOTE:
+// GetFileInfo is a free base:: helper, so a ScopedBlockingCall teardown runs
+// between the failing syscall and this read — that teardown is
+// last-error-safe by construction (~UncheckedScopedBlockingCall holds
+// base::ScopedClearLastError), which is what makes this capture sound.
+std::optional<base::DictValue> BuildStatDict(const base::FilePath& resolved,
+                                             base::File::Error* out_error) {
   base::File::Info info;
   if (!base::GetFileInfo(resolved, &info)) {
+    if (out_error) {
+      *out_error = base::File::GetLastFileError();
+    }
     return std::nullopt;
   }
 
@@ -162,6 +203,36 @@ std::string ExtractShellBasename(std::optional<std::string> raw) {
 }
 
 }  // namespace
+
+// The one canonical spelling of the absent-path wire code (see
+// FsFailureMessage's header comment) — shared so no method can drift into a
+// fourth variant.
+constexpr char kEnoentMessage[] = "ENOENT: no such file or directory";
+
+std::string FsFailureMessage(base::File::Error error) {
+  switch (error) {
+    case base::File::FILE_ERROR_NOT_FOUND:
+      return kEnoentMessage;
+    case base::File::FILE_ERROR_ACCESS_DENIED:
+      return "EACCES: permission denied";
+    case base::File::FILE_ERROR_IN_USE:
+      return "EBUSY: file is in use or locked";
+    // A file sitting where a directory component was expected: the path as
+    // named definitely does not exist, so the guest treats ENOTDIR like
+    // ENOENT ("safely absent") — that keeps getFileHandle(create:true)
+    // behavior identical to the pre-taxonomy existence-probe fallback.
+    case base::File::FILE_ERROR_NOT_A_DIRECTORY:
+      return "ENOTDIR: not a directory";
+    case base::File::FILE_ERROR_IO:
+      return "EIO: input/output error";
+    default:
+      // Raw enum VALUE on purpose — never ErrorToString's chromium-versioned
+      // tokens (header comment). Reads as transient guest-side, which is the
+      // safe default for anything undiagnosed.
+      return "EUNKNOWN: filesystem operation failed (error " +
+             base::NumberToString(static_cast<int>(error)) + ")";
+  }
+}
 
 // ---- Out-of-line ctor/dtor for move-only Result structs --------------------
 //
@@ -319,9 +390,29 @@ NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
 
 NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
   StatResult result;
-  std::optional<base::DictValue> dict = BuildStatDict(ResolvePath(cwd_, path));
+  const base::FilePath resolved = ResolvePath(cwd_, path);
+  base::File::Error stat_error = base::File::FILE_OK;
+  std::optional<base::DictValue> dict = BuildStatDict(resolved, &stat_error);
   if (!dict.has_value()) {
-    result.error = "File not found or permission denied";
+    // Discriminated, Node-style wording — a WIRE CONTRACT like ReadFile's
+    // ENOENT line and Rename's strings: the guest keys on the leading code
+    // to tell "genuinely absent" (safe to treat as no file) from transient
+    // failures (permission, lock, I/O) that must NOT read as absent —
+    // SuperEdit's commit conflict check is the first consumer (see
+    // nexus_web utils/fsTransportFailure.ts + the internal repo's
+    // docs/tools/nexus-run-js.md). The old single wording ("File not found
+    // or permission denied") is retired; an older guest treats any of these
+    // as absent, which is exactly its previous behavior — degradable, no
+    // interface bump.
+    //
+    // Deliberately NO existence-probe fallback for unmapped errors: a
+    // base::PathExists on a path whose stat just failed with EIO / a
+    // network blip fails for the SAME underlying reason and would answer
+    // "absent" — re-opening the transient-reads-as-absent hole this
+    // taxonomy closes (review 2026-09-01 §2). An unmapped failure stays
+    // EUNKNOWN (transient), at the cost of a rare over-report on a
+    // malformed path.
+    result.error = FsFailureMessage(stat_error);
     return result;
   }
 
@@ -338,7 +429,8 @@ NexusFsHost::StatBatchResult NexusFsHost::StatBatch(
     // Echo the REQUEST string, not the resolved path: callers key their
     // results by what they asked for.
     row.Set("path", path);
-    std::optional<base::DictValue> stat = BuildStatDict(ResolvePath(cwd_, path));
+    std::optional<base::DictValue> stat =
+        BuildStatDict(ResolvePath(cwd_, path), nullptr);
     if (stat.has_value()) {
       row.Set("stat", base::Value(std::move(*stat)));
     } else {
@@ -555,9 +647,20 @@ NexusFsHost::ReadResult NexusFsHost::ReadFile(const std::string& path) const {
     // wording for the absent case so the guest's isMissingFileError()
     // detector (regex on ENOENT / "no such file") recognizes it — Node
     // parity, since CC relies on err.code === 'ENOENT'.
-    result.error = base::PathExists(resolved)
-                       ? "Failed to read file"
-                       : "ENOENT: no such file or directory";
+    // Same taxonomy as Stat, from the same last-error capture. The captured
+    // NOT_FOUND leads unconditionally — a PathExists probe can race a
+    // concurrent re-create and would then bury the ENOENT inside the
+    // parenthetical, where the guest's ANCHORED not-found matcher never
+    // looks. Present-but-unreadable carries the discriminated code as a
+    // parenthetical DETAIL so existing "Failed to read file" matchers keep
+    // working while the guest gains the cause.
+    const base::File::Error read_error = base::File::GetLastFileError();
+    if (read_error == base::File::FILE_ERROR_NOT_FOUND ||
+        !base::PathExists(resolved)) {
+      result.error = kEnoentMessage;
+    } else {
+      result.error = "Failed to read file (" + FsFailureMessage(read_error) + ")";
+    }
     return result;
   }
 
@@ -650,7 +753,11 @@ NexusFsHost::SimpleResult NexusFsHost::WriteFile(
   bool written = base::WriteFile(resolved, base::span(bytes));
 #endif
   if (!written) {
-    result.error = "Failed to write file";
+    // Discriminated detail in parentheses (same prefix-preserving shape as
+    // ReadFile): a locked/denied write now names its cause instead of the
+    // bare ambiguity the stat one call earlier no longer has.
+    result.error = "Failed to write file (" +
+                   FsFailureMessage(base::File::GetLastFileError()) + ")";
     return result;
   }
   result.success = true;
@@ -682,6 +789,37 @@ NexusFsHost::SimpleResult NexusFsHost::Mkdir(const std::string& path) const {
   SimpleResult result;
   if (!base::CreateDirectory(ResolvePath(cwd_, path))) {
     result.error = "Failed to create directory";
+    return result;
+  }
+  result.success = true;
+  return result;
+}
+
+NexusFsHost::SimpleResult NexusFsHost::Rename(
+    const std::string& old_path,
+    const std::string& new_path) const {
+  SimpleResult result;
+  const base::FilePath resolved_old = ResolvePath(cwd_, old_path);
+  const base::FilePath resolved_new = ResolvePath(cwd_, new_path);
+
+  // The error strings below are a wire contract (mapped to DOMException
+  // names guest-side) — change them only together with
+  // BrowserFsOperations.rename.
+  if (!base::PathExists(resolved_old)) {
+    result.error = "Source does not exist";
+    return result;
+  }
+  // Never overwrite. base::Move already refuses an existing destination on
+  // Windows, but the POSIX rename(2) underneath it silently replaces a
+  // destination file — this check is what makes the contract hold on every
+  // platform. (Best-effort: a same-instant external create can still race
+  // it, as with any pre-check.)
+  if (base::PathExists(resolved_new)) {
+    result.error = "Destination already exists";
+    return result;
+  }
+  if (!base::Move(resolved_old, resolved_new)) {
+    result.error = "Failed to move path";
     return result;
   }
   result.success = true;
@@ -731,8 +869,8 @@ NexusFsHost::ExistsResult NexusFsHost::Exists(const std::string& path) const {
   return result;
 }
 
-NexusFsHost::RealpathResult NexusFsHost::Realpath(
-    const std::string& path) const {
+NexusFsHost::RealpathResult NexusFsHost::Realpath(const std::string& path,
+                                                  bool resolve_links) const {
   RealpathResult result;
   const base::FilePath resolved = ResolvePath(cwd_, path);
 
@@ -742,6 +880,15 @@ NexusFsHost::RealpathResult NexusFsHost::Realpath(
   // is exactly what JS-side dedup wants: two callers that ended up at
   // the same on-disk file produce the same string.
   base::FilePath canonical = base::MakeAbsoluteFilePath(resolved);
+  if (resolve_links) {
+    // Windows: `canonical` is normalized (`..` collapsed), not link-resolved.
+    // POSIX: it is empty for a path that does not exist yet.
+    const base::FilePath linked =
+        ResolveLinks(canonical.empty() ? resolved : canonical);
+    if (!linked.empty()) {
+      canonical = linked;
+    }
+  }
   if (canonical.empty()) {
     result.error = "Failed to resolve canonical path";
     return result;

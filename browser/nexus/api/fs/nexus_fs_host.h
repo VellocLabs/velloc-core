@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
@@ -180,8 +181,9 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
 
   struct RealpathResult {
     bool success = false;
-    // Canonical (symlink-resolved on POSIX, normalized on Windows) path,
-    // UTF-8 encoded. Empty when `success` is false.
+    // Canonical (symlink-resolved on POSIX, normalized on Windows — or
+    // link-resolved everywhere with `resolve_links`) path, UTF-8 encoded.
+    // Empty when `success` is false.
     std::string path;
     std::string error;
   };
@@ -269,6 +271,15 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   SimpleResult AppendFile(const std::string& path,
                           mojo_base::BigBuffer data) const;
   SimpleResult Mkdir(const std::string& path) const;
+  // Rename/move a file or directory via base::Move — a true rename on the
+  // same volume (atomic, O(1), carries whole directory trees), an internal
+  // copy+delete only across volumes. NEVER overwrites: an existing
+  // destination fails with the exact string "Destination already exists",
+  // and a missing source with "Source does not exist" — the JS guest maps
+  // these strings to AlreadyExistsError / NotFoundError (see
+  // BrowserFsOperations.rename), so they are wire contract, not prose.
+  SimpleResult Rename(const std::string& old_path,
+                      const std::string& new_path) const;
   SimpleResult Rm(const std::string& path, bool recursive, bool force) const;
   SimpleResult Unlink(const std::string& path) const;
   ExistsResult Exists(const std::string& path) const;
@@ -277,7 +288,19 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   // the JS guest's skill-dedup pipeline so two SKILL.md files surfaced
   // through different sources collapse when they ultimately point at the
   // same on-disk file.
-  RealpathResult Realpath(const std::string& path) const;
+  //
+  // `resolve_links` asks for the path with links resolved on every platform:
+  // on Windows that follows junctions, symlinks and mapped / subst drives
+  // (GetFinalPathNameByHandle), which the default form does not. It is for
+  // containment checks — the untrusted read boundary and the fsx root rule —
+  // where a link inside a root that points out of it is the escape to catch.
+  // A path that does not exist yet resolves the links of its deepest existing
+  // ancestor and keeps the rest. When the link-resolved form cannot be had
+  // (a path over MAX_PATH, a target that cannot be opened) the default form is
+  // returned. The default is kept for everything else on purpose: it feeds
+  // the session cwd and the session-storage identity, which must not move for
+  // a project opened through a junction.
+  RealpathResult Realpath(const std::string& path, bool resolve_links) const;
 
   // Snapshot host-process platform info — `base::SysInfo` reads on the
   // current thread, so callers must allow base::MayBlock() like the
@@ -290,6 +313,19 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
 
   base::FilePath cwd_;
 };
+
+// Map a base::File::Error to the discriminated, Node-style wire message —
+// THE single producer of the fs error-string taxonomy (a wire contract: the
+// guest's `isFsNotFoundError` keys on the leading code; see
+// nexus_web utils/fsTransportFailure.ts). Every discriminating method calls
+// this so a new code is added in exactly one place. Exposed at namespace
+// scope so the unit test can pin each mapping without staging
+// platform-specific failures.
+//
+// Unmapped errors deliberately emit the raw enum VALUE, not
+// base::File::ErrorToString — those tokens are chromium-versioned and must
+// never ride a wire string the guest pattern-matches.
+std::string FsFailureMessage(base::File::Error error);
 
 }  // namespace nexus
 

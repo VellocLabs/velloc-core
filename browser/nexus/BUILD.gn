@@ -200,7 +200,7 @@ action("nexus_tools_codegen") {
     # add it to the inputs/outputs lists below.
     "codegen/api_schema.json",
 
-    # fs category — 18 actions, all proxied through NexusFsHost.
+    # fs category — 19 actions, all proxied through NexusFsHost.
     "api/declarations/fs/appendFile.api.json",
     "api/declarations/fs/cwd.api.json",
     "api/declarations/fs/exists.api.json",
@@ -212,6 +212,7 @@ action("nexus_tools_codegen") {
     "api/declarations/fs/readdir.api.json",
     "api/declarations/fs/readdirTree.api.json",
     "api/declarations/fs/realpath.api.json",
+    "api/declarations/fs/rename.api.json",
     "api/declarations/fs/rm.api.json",
     "api/declarations/fs/stat.api.json",
     "api/declarations/fs/statBatch.api.json",

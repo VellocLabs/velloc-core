@@ -5,6 +5,7 @@
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,11 +15,16 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/messaging/message_port_descriptor.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/test/file_path_reparse_point_win.h"
+#endif
 
 namespace nexus {
 namespace {
@@ -338,6 +344,61 @@ TEST(NexusFsBridgeAdapterTest,
   EXPECT_EQ(delegate.binary_count, 0);
   EXPECT_EQ(delegate.success_count, 0);
   EXPECT_EQ(delegate.error_count, 0);
+}
+
+// The wire key: `realpath {path, resolveLinks: true}` answers the
+// link-resolved path, and a payload without it keeps the default form. The
+// guest's containment checks send exactly this key; a rename on either side
+// would silently reopen the link escape (the default form is what an older
+// host answers too, so nothing would fail loudly).
+TEST(NexusFsBridgeAdapterTest, RealpathResolveLinksKeyFollowsALink) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir root_dir;
+  base::ScopedTempDir outside_dir;
+  ASSERT_TRUE(root_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(outside_dir.CreateUniqueTempDir());
+  const base::FilePath link = root_dir.GetPath().AppendASCII("link");
+#if BUILDFLAG(IS_WIN)
+  ASSERT_TRUE(base::CreateDirectory(link));
+  std::optional<base::test::FilePathReparsePoint> junction =
+      base::test::FilePathReparsePoint::Create(link, outside_dir.GetPath());
+  ASSERT_TRUE(junction.has_value());
+#else
+  ASSERT_TRUE(base::CreateSymbolicLink(outside_dir.GetPath(), link));
+#endif
+  base::FilePath real_outside;
+  ASSERT_TRUE(base::NormalizeFilePath(outside_dir.GetPath(), &real_outside));
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, root_dir.GetPath());
+  task_environment.RunUntilIdle();
+
+  base::DictValue payload;
+  payload.Set("path", "link");
+  payload.Set("resolveLinks", true);
+  EXPECT_TRUE(adapter->Dispatch("realpath", "req-1", FsRoute("realpath"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+  ASSERT_EQ(delegate.success_count, 1);
+  ASSERT_TRUE(delegate.last_success.GetIfDict());
+  const std::string* resolved =
+      delegate.last_success.GetIfDict()->FindString("path");
+  ASSERT_TRUE(resolved);
+  EXPECT_EQ(real_outside.AsUTF8Unsafe(), *resolved);
+
+#if BUILDFLAG(IS_WIN)
+  payload.Remove("resolveLinks");
+  EXPECT_TRUE(adapter->Dispatch("realpath", "req-2", FsRoute("realpath"),
+                                payload, {}));
+  task_environment.RunUntilIdle();
+  ASSERT_EQ(delegate.success_count, 2);
+  ASSERT_TRUE(delegate.last_success.GetIfDict());
+  const std::string* normalized =
+      delegate.last_success.GetIfDict()->FindString("path");
+  ASSERT_TRUE(normalized);
+  EXPECT_EQ(base::MakeAbsoluteFilePath(link).AsUTF8Unsafe(), *normalized);
+#endif
 }
 
 }  // namespace

@@ -8,6 +8,12 @@
       "type": "string",
       "required": true,
       "description": "Path to canonicalize (relative paths resolve against cwd)."
+    },
+    {
+      "name": "resolveLinks",
+      "type": "boolean",
+      "required": false,
+      "description": "Resolve links on every platform: on Windows follow junctions, symlinks and mapped/subst drives (GetFinalPathNameByHandle), which the default form does not; a path that does not exist yet resolves through its deepest existing ancestor. For containment checks (untrusted read boundary, fsx root rule). Additive, ignore-if-absent: an older host answers the default form. The default stays unresolved on Windows because it feeds the session cwd and session-storage identity."
     }
   ],
   "runtime": {

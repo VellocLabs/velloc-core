@@ -110,6 +110,10 @@ class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
       ::nexus::generated::MkdirInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  void HandleRenameOnUI(
+      ::nexus::generated::RenameInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   void HandleRmOnUI(
       ::nexus::generated::RmInput input,
       std::vector<blink::MessagePortDescriptor> ports,

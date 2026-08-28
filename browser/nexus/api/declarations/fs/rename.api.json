@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "rename",
+  "description": "Rename or move a file or directory. Never overwrites: an existing destination is an error. Same-volume renames are atomic (base::Move); cross-volume moves fall back to copy+delete inside base::Move.",
+  "inputs": [
+    {
+      "name": "oldPath",
+      "type": "string",
+      "required": true,
+      "description": "Existing file or directory path to move."
+    },
+    {
+      "name": "newPath",
+      "type": "string",
+      "required": true,
+      "description": "Destination path. Must not already exist."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

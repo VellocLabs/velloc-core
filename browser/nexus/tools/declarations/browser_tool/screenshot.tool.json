@@ -2,14 +2,24 @@
   "$schema": "../../codegen/tool_schema.json",
   "name": "screenshot",
   "wire_name": "BrowserScreenshot",
-  "description": "Capture a screenshot of the active tab and return it alongside a fresh page observation. Use when visual context is needed; the default observation already lists every actionable element.",
+  "description": "Capture a screenshot of the active tab and return it alongside a fresh page observation. Use when visual context is needed; the default observation already lists every actionable element. Pass an element index to capture just that element (and a little of its surroundings) — far fewer image tokens than the whole viewport.",
   "skill": "browser",
-  "inputs": [],
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": false,
+      "description": "Optional element index from the latest observation's elements[] to crop the screenshot to (e.g. a chart, an image, a canvas). The element must be in the current viewport. OMIT THIS FIELD ENTIRELY for a full-viewport screenshot — do NOT pass 0 or a placeholder."
+    }
+  ],
   "output_kind": "object",
   "providers": {
     "anthropic": {
       "input_examples": [
-        {}
+        {},
+        {
+          "index": 12
+        }
       ]
     }
   }

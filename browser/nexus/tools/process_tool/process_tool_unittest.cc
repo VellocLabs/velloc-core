@@ -326,6 +326,85 @@ TEST(ProcessToolGrepTest, GlobInArgs) {
 }
 
 // =============================================================================
+// Single-file defaults — a Grep whose `path` is one regular file gets
+// output_mode=content when none was given, and -C 5 when no context flag
+// was given. Explicit values win; directories/UNC are untouched.
+// =============================================================================
+
+TEST(ProcessToolGrepTest, SingleFileDefaultsModeAndContext) {
+  GrepInput input = MakeInput("foo");
+  std::string mode = "files_with_matches";  // what value_or() yields
+  ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode,
+                                                     /*target_is_file=*/true);
+  EXPECT_EQ(mode, "content");
+  ASSERT_TRUE(input.context_c.has_value());
+  EXPECT_EQ(*input.context_c, 5);
+
+  auto args = ProcessTool::BuildRipgrepArgsForTesting(
+      input, mode, /*show_line_numbers=*/true);
+  size_t c = FindArg(args, "-C");
+  ASSERT_NE(c, std::string::npos);
+  EXPECT_EQ(args[c + 1], "5");
+  EXPECT_EQ(FindArg(args, "-l"), std::string::npos);
+}
+
+TEST(ProcessToolGrepTest, SingleFileExplicitContentStillGetsContext) {
+  GrepInput input = MakeInput("foo");
+  input.output_mode = "content";
+  std::string mode = "content";
+  ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode, true);
+  EXPECT_EQ(mode, "content");
+  ASSERT_TRUE(input.context_c.has_value());
+  EXPECT_EQ(*input.context_c, 5);
+}
+
+TEST(ProcessToolGrepTest, SingleFileExplicitContextFlagsWin) {
+  const auto check = [](GrepInput input) {
+    std::string mode = "content";
+    ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode, true);
+    return input;
+  };
+  GrepInput a = MakeInput("foo");
+  a.context_before = 2;
+  EXPECT_FALSE(check(a).context_c.has_value());
+  GrepInput b = MakeInput("foo");
+  b.context_after = 2;
+  EXPECT_FALSE(check(b).context_c.has_value());
+  GrepInput c = MakeInput("foo");
+  c.context = 0;  // an explicit zero is still explicit
+  EXPECT_FALSE(check(c).context_c.has_value());
+  GrepInput d = MakeInput("foo");
+  d.context_c = 9;
+  EXPECT_EQ(*check(d).context_c, 9);
+}
+
+TEST(ProcessToolGrepTest, SingleFileExplicitNonContentModeUntouched) {
+  GrepInput files = MakeInput("foo");
+  files.output_mode = "files_with_matches";
+  std::string mode = "files_with_matches";
+  ProcessTool::ApplySingleFileGrepDefaultsForTesting(files, mode, true);
+  EXPECT_EQ(mode, "files_with_matches");
+  EXPECT_FALSE(files.context_c.has_value());
+
+  GrepInput count = MakeInput("foo");
+  count.output_mode = "count";
+  mode = "count";
+  ProcessTool::ApplySingleFileGrepDefaultsForTesting(count, mode, true);
+  EXPECT_EQ(mode, "count");
+  EXPECT_FALSE(count.context_c.has_value());
+}
+
+TEST(ProcessToolGrepTest, DirectoryTargetGetsNoDefaults) {
+  GrepInput input = MakeInput("foo");
+  std::string mode = "files_with_matches";
+  ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode,
+                                                     /*target_is_file=*/false);
+  EXPECT_EQ(mode, "files_with_matches");
+  EXPECT_FALSE(input.context_c.has_value());
+  EXPECT_FALSE(input.output_mode.has_value());
+}
+
+// =============================================================================
 // 2-4-5.12 — head_limit / offset (via ApplyHeadLimit behavior)
 // These test the SliceResult logic indirectly through the ForTesting
 // boundary. Since ApplyHeadLimit is also in the anonymous namespace,

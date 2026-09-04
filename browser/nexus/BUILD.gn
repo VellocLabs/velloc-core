@@ -699,6 +699,8 @@ source_set("bridge") {
     "tools/browser_tool/download_capture.h",
     "tools/browser_tool/node_registry.cc",
     "tools/browser_tool/node_registry.h",
+    "tools/browser_tool/screenshot_shaping.cc",
+    "tools/browser_tool/screenshot_shaping.h",
     "tools/file_tool/file_tool.cc",
     "tools/file_tool/file_tool.h",
     "tools/nexus_ripgrep_runner.cc",
@@ -880,6 +882,10 @@ source_set("bridge") {
     "//services/network/public/cpp",
     "//services/network/public/mojom",
     "//third_party/blink/public/common",
+
+    # skia::ImageOperations — BrowserScreenshot's long-edge downscale
+    # (tools/browser_tool/screenshot_shaping.cc).
+    "//skia",
 
     # ui::ResourceBundle (resource_bundle.h) + gfx::ImageSkia (image_skia.h)
     # back GetNexusNotificationIcon()'s IDR_PRODUCT_LOGO_64 lookup.
@@ -1253,6 +1259,8 @@ source_set("unit_tests") {
     "nexus_test_support.h",
     "session/nexus_session_tab_tag_unittest.cc",
     "tools/browser_tool/node_registry_unittest.cc",
+    "tools/browser_tool/observation_slim_unittest.cc",
+    "tools/browser_tool/screenshot_shaping_unittest.cc",
     "tools/file_tool/file_tool_unittest.cc",
     "tools/nexus_tool_schema_unittest.cc",
     "tools/nexus_tool_signature_unittest.cc",
@@ -1287,7 +1295,10 @@ source_set("unit_tests") {
     "//custom_browser/browser/nexus/launcher",
     "//custom_browser/browser/nexus/launcher:prefs",
     "//net",
+    "//skia",
     "//testing/gtest",
+    "//ui/gfx",
+    "//ui/gfx/codec",
     "//url",
   ]
 }

@@ -108,7 +108,7 @@ void ExpectNullableType(const base::DictValue* property,
 
 // =============================================================================
 // Schema-builder shape tests. Pick four representative declarations:
-//   - screenshot: zero declared inputs (reflection fields only)
+//   - screenshot: 1 optional integer (the crop `index`)
 //   - navigate:   1 required string + 1 optional boolean
 //   - click:      1 required integer (no optionals)
 //   - done:       2 required mixed-type fields (boolean + string)
@@ -122,15 +122,18 @@ TEST(CodegenSmokeTest, ScreenshotSchemaShape) {
   EXPECT_EQ(schema.name, "BrowserScreenshot");
   EXPECT_FALSE(schema.description.empty());
   EXPECT_EQ(schema.output_kind, ::nexus::JsonSchemaKind::kObject);
-  // No declared inputs → only the 3 injected reflection fields remain.
-  ASSERT_EQ(schema.parameters.size(), kReflectionFieldCount);
+  // 3 reflection + the optional crop `index` = 4.
+  ASSERT_EQ(schema.parameters.size(), kReflectionFieldCount + 1);
   EXPECT_EQ(schema.parameters[0].name, "evaluation_previous_goal");
   EXPECT_EQ(schema.parameters[1].name, "memory");
   EXPECT_EQ(schema.parameters[2].name, "next_goal");
-  for (const auto& p : schema.parameters) {
-    EXPECT_EQ(p.kind, ::nexus::JsonSchemaKind::kString);
-    EXPECT_TRUE(p.required);
+  for (size_t i = 0; i < kReflectionFieldCount; ++i) {
+    EXPECT_EQ(schema.parameters[i].kind, ::nexus::JsonSchemaKind::kString);
+    EXPECT_TRUE(schema.parameters[i].required);
   }
+  EXPECT_EQ(schema.parameters[3].name, "index");
+  EXPECT_EQ(schema.parameters[3].kind, ::nexus::JsonSchemaKind::kInteger);
+  EXPECT_FALSE(schema.parameters[3].required);
   // Anthropic input_examples block emitted from the .tool.json.
   ASSERT_TRUE(schema.input_examples.has_value());
   EXPECT_FALSE(schema.input_examples->empty());
@@ -306,6 +309,30 @@ TEST(CodegenSmokeTest, FileSearchSchemasAreConcurrencySafe) {
   EXPECT_FALSE(BuildScreenshotSchema().concurrency_safe);
 }
 
+// The run_in_background parameter description is what the model reads to
+// decide between "wait for the completion notification" and "poll". It must
+// not claim a background command is bounded by `timeout` — a detached
+// command is injected with the no-timeout-cap sentinel and runs to
+// completion (see nexus-tools-parity-divergences.md "Auto-backgrounded shell
+// runs UNCAPPED"). Pin the prose so the misleading wording cannot regress.
+TEST(CodegenSmokeTest, ShellRunInBackgroundDescriptionDoesNotClaimTimeoutBound) {
+  for (const auto& schema : {BuildBashSchema(), BuildPowerShellSchema()}) {
+    const ::nexus::ToolParameter* run_in_background = nullptr;
+    for (const auto& p : schema.parameters) {
+      if (p.name == "run_in_background") {
+        run_in_background = &p;
+        break;
+      }
+    }
+    ASSERT_NE(run_in_background, nullptr) << schema.name;
+    const std::string& desc = run_in_background->description;
+    EXPECT_EQ(desc.find("still bounded by `timeout`"), std::string::npos)
+        << schema.name << " run_in_background description: " << desc;
+    EXPECT_NE(desc.find("not bounded by `timeout`"), std::string::npos)
+        << schema.name << " run_in_background description: " << desc;
+  }
+}
+
 // =============================================================================
 // Extract() tests: success paths + missing-required error paths.
 // Every browser-tool Extract() expects the 3 reflection fields, so each
@@ -319,7 +346,18 @@ TEST(CodegenSmokeTest, ScreenshotExtractWithReflectionFields) {
   SeedReflectionFields(args);
   ScreenshotInput input;
   EXPECT_FALSE(Extract(args, input).has_value());
+  EXPECT_FALSE(input.index.has_value());
   ExpectReflectionFieldsPopulated(input);
+}
+
+TEST(CodegenSmokeTest, ScreenshotExtractCropIndex) {
+  base::DictValue args;
+  SeedReflectionFields(args);
+  args.Set("index", 42);
+  ScreenshotInput input;
+  EXPECT_FALSE(Extract(args, input).has_value());
+  ASSERT_TRUE(input.index.has_value());
+  EXPECT_EQ(*input.index, 42);
 }
 
 TEST(CodegenSmokeTest, ScreenshotExtractMissingReflectionField) {

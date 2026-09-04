@@ -1,10 +1,18 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 
+#include <array>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "base/logging.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/values.h"
+#include "url/gurl.h"
 #include "chrome/browser/glic/actor/glic_actor_policy_checker.h"
 #include "chrome/browser/glic/public/glic_keyed_service.h"
 #include "chrome/browser/glic/public/glic_keyed_service_factory.h"
@@ -918,6 +926,183 @@ std::string TruncateUtf8Snippet(std::string s, int max_bytes) {
   }
   s.clear();
   return s;
+}
+
+namespace {
+
+// Query params that are pure tracking noise — dropped from observation
+// hrefs. Matched case-insensitively on the key; `utm_` is a prefix match,
+// the rest are exact. Deliberately conservative: only params that never
+// affect where a link goes for the agent's purposes.
+bool IsTrackingParam(std::string_view key) {
+  std::string lower = base::ToLowerASCII(key);
+  if (base::StartsWith(lower, "utm_")) {
+    return true;
+  }
+  static constexpr std::array<std::string_view, 8> kExact = {
+      "fbclid",   "gclid",  "dclid",     "gclsrc",
+      "msclkid",  "mc_eid", "mc_cid",    "igshid"};
+  for (std::string_view k : kExact) {
+    if (lower == k) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Rebuild a query string with tracking params removed. Returns the
+// filtered query (no leading '?'), preserving original order and the
+// original key=value spelling of the params that survive.
+std::string StripTrackingParams(std::string_view query) {
+  std::vector<std::string_view> kept;
+  for (std::string_view pair : base::SplitStringPiece(
+           query, "&", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+    const size_t eq = pair.find('=');
+    const std::string_view key = pair.substr(0, eq);
+    if (!IsTrackingParam(key)) {
+      kept.push_back(pair);
+    }
+  }
+  return base::JoinString(kept, "&");
+}
+
+}  // namespace
+
+std::string CompressHref(std::string_view href,
+                         std::string_view page_url,
+                         bool* truncated) {
+  if (truncated) {
+    *truncated = false;
+  }
+  GURL url(href);
+  std::string out;
+  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
+    // Strip tracking params from the query. Rebuild via ReplaceComponents
+    // rather than by hand so scheme/host/PORT/path/fragment survive
+    // untouched (hand-concatenating scheme://host/path silently drops a
+    // non-default port).
+    const std::string query =
+        url.has_query() ? StripTrackingParams(url.query()) : std::string();
+    GURL::Replacements repl;
+    if (query.empty()) {
+      repl.ClearQuery();
+    } else {
+      repl.SetQueryStr(query);
+    }
+    const GURL rebuilt = url.ReplaceComponents(repl);
+
+    GURL page(page_url);
+    const bool same_origin =
+        page.is_valid() && url.SchemeIs(page.scheme()) &&
+        url.host() == page.host() &&
+        url.EffectiveIntPort() == page.EffectiveIntPort();
+    if (same_origin) {
+      // Drop scheme+host (same as the page): path[?query], then fragment.
+      out = rebuilt.PathForRequest();  // path + "?" + query, no fragment
+      if (rebuilt.has_ref() && !rebuilt.ref().empty()) {
+        base::StrAppend(&out, {"#", rebuilt.ref()});
+      }
+    } else {
+      // Cross-origin: keep the full absolute URL (port and all), only the
+      // tracking params removed.
+      out = rebuilt.spec();
+    }
+  } else {
+    // Non-http(s) or unparseable — pass through untouched (mailto:,
+    // javascript:, relative fragments the model may still need verbatim).
+    out = std::string(href);
+  }
+
+  if (static_cast<int>(out.size()) > kHrefMaxBytes) {
+    out = TruncateUtf8Snippet(std::move(out), kHrefMaxBytes);
+    if (truncated) {
+      *truncated = true;
+    }
+  }
+  return out;
+}
+
+bool ShouldShortCircuitObservation(bool enabled,
+                                   bool stale,
+                                   std::string_view prev_doc,
+                                   std::string_view cur_doc,
+                                   std::string_view prev_hash,
+                                   std::string_view cur_hash) {
+  if (!enabled || stale) {
+    return false;
+  }
+  if (prev_doc.empty() || cur_doc.empty() || prev_doc != cur_doc) {
+    return false;
+  }
+  if (prev_hash.empty() || cur_hash.empty() || prev_hash != cur_hash) {
+    return false;
+  }
+  return true;
+}
+
+ObservationBaseline::ObservationBaseline() = default;
+ObservationBaseline::~ObservationBaseline() = default;
+
+bool ObservationBaseline::ShouldShortCircuit(bool enabled,
+                                             std::string_view cur_doc,
+                                             std::string_view cur_hash) const {
+  return ShouldShortCircuitObservation(enabled, stale_, document_id_, cur_doc,
+                                       projection_, cur_hash);
+}
+
+void ObservationBaseline::Stage(std::string document_id,
+                                std::string projection) {
+  staged_document_id_ = std::move(document_id);
+  staged_projection_ = std::move(projection);
+  has_staged_ = true;
+}
+
+bool ObservationBaseline::Commit() {
+  if (!has_staged_) {
+    return false;
+  }
+  document_id_ = std::move(staged_document_id_);
+  projection_ = std::move(staged_projection_);
+  staged_document_id_.clear();
+  staged_projection_.clear();
+  has_staged_ = false;
+  stale_ = false;
+  return true;
+}
+
+void ObservationBaseline::Discard() {
+  staged_document_id_.clear();
+  staged_projection_.clear();
+  has_staged_ = false;
+}
+
+void ObservationBaseline::MarkStale() {
+  stale_ = true;
+  document_id_.clear();
+  projection_.clear();
+  Discard();
+}
+
+int StripObservationToBasics(base::DictValue& observation) {
+  base::ListValue* tabs = observation.FindList("tabs");
+  if (!tabs) {
+    return 0;
+  }
+  int stripped = 0;
+  for (base::Value& tab_value : *tabs) {
+    base::DictValue* tab = tab_value.GetIfDict();
+    if (!tab) {
+      continue;
+    }
+    // `Remove` returns whether the key was present — count a tab as
+    // stripped when it actually carried an elements[] payload.
+    const bool had_elements = tab->Remove("elements");
+    tab->Remove("screenshot");
+    if (had_elements) {
+      ++stripped;
+    }
+  }
+  return stripped;
 }
 
 }  // namespace nexus::browser_tool_internal

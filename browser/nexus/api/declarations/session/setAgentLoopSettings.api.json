@@ -28,6 +28,18 @@
       "description": "If true, clear the session's native Read/Edit/Write read-state cache. Used after /compact or /clear because earlier Read content may no longer be visible in model context."
     },
     {
+      "name": "browserObservationDiffOptIn",
+      "type": "boolean",
+      "required": false,
+      "description": "New-guest handshake for the browser observation short-circuit (T0-c). Set true once at boot to allow the host to collapse an unchanged working-tab observation to an {unchanged,count} stub. Omitted by older guests, so the host keeps sending full observations for them."
+    },
+    {
+      "name": "clearBrowserObservationCache",
+      "type": "boolean",
+      "required": false,
+      "description": "If true, mark the browser observation cache stale so the next observation is sent full instead of an {unchanged} stub. The guest pushes it on its first settings push per engine instance (session open / restore / fork — the C++ ToolSession may be warm from an earlier guest lifetime while the transcript was reloaded from storage) and after /clear, /compact and autocompact — the stub's baseline observation may no longer be in model context. Try-again resumes in place and does not push it."
+    },
+    {
       "name": "executionContext",
       "type": "object",
       "required": false,

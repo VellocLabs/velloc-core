@@ -36,13 +36,16 @@ namespace {
 constexpr int kDefaultBashTimeoutMs = 120000;
 constexpr int kMaxBashTimeoutMs = 600000;
 // No-timeout-cap sentinel: a `run_in_background` command carrying this `timeout`
-// runs with no wall-clock kill (the auto-background middle layer sets it so a
-// detached command runs to completion — CC's `background()` clears the kill
-// timer). Passed through to the utility, which recognises the same value
+// runs with no wall-clock kill, so a detached command runs to completion — CC's
+// `background()` clears the kill timer. The JS side sets it on BOTH background
+// paths: the auto-background middle layer (a foreground command that crosses its
+// timeout) AND an explicit `run_in_background: true` from the model. Passed
+// through to the utility, which recognises the same value
 // (SafeCommandLimits::kNoTimeoutCapSentinelMs). INT32_MAX so it fits `int
 // timeout_ms` and an OLD utility clamps it to kMaxBashTimeoutMs (safe degrade).
-// Never sent by the model — bash.tool.json caps `timeout` at kMaxBashTimeoutMs.
-// Kept in sync with nexus_web hostedTools.ts SHELL_NO_TIMEOUT_CAP_SENTINEL_MS.
+// Never sent by the model as a literal — bash.tool.json caps `timeout` at
+// kMaxBashTimeoutMs; the JS middle layer substitutes it after the model's args
+// arrive. Kept in sync with nexus_web hostedTools.ts SHELL_NO_TIMEOUT_CAP_SENTINEL_MS.
 constexpr int kNoTimeoutCapSentinelMs = 2147483647;
 constexpr int kMaxOutputBytes = 30000;
 constexpr char kProcessUnavailableCode[] = "process_unavailable";
@@ -332,6 +335,10 @@ CommandInterpretation InterpretExit(const std::string& base, int exit) {
 
 constexpr int kDefaultGrepHeadLimit = 250;
 constexpr int kGrepMaxColumns = 500;
+// Context lines defaulted onto a `content` grep whose `path` is one regular
+// file and that carries no -A/-B/-C/context of its own. See
+// ApplySingleFileGrepDefaults for why 5 and not more.
+constexpr int kSingleFileGrepDefaultContext = 5;
 
 // VCS dirs ripgrep should never recurse into. ripgrep already
 // gitignore-respects but we belt-and-suspender against `.git` etc.
@@ -454,6 +461,36 @@ std::vector<std::string> BuildRipgrepArgs(
   }
 
   return args;
+}
+
+// A Grep whose `path` names one regular file is locating, not discovering:
+// `files_with_matches` would answer with the path the model already typed,
+// and a bare matching line is followed by a targeted Read of the lines
+// around it in roughly half of such calls (Sep-2026 transcript corpus, CC
+// and Velloc alike). Passing any context cuts that follow-up to ~16-29% and
+// the effect saturates at -C 4-6 — larger windows buy nothing, so 5.
+//
+// Explicit values always win: an `output_mode` the model set is kept even
+// when it is `files_with_matches`, and any -A/-B/-C/context disables the
+// default. Directories and UNC targets (existence assumed, type unknown)
+// are left alone — a repo-wide grep with context is unbounded in size.
+void ApplySingleFileGrepDefaults(::nexus::generated::GrepInput& input,
+                                 std::string& output_mode,
+                                 bool target_is_file) {
+  if (!target_is_file) {
+    return;
+  }
+  if (!input.output_mode.has_value()) {
+    output_mode = "content";
+  }
+  if (output_mode != "content") {
+    return;
+  }
+  if (input.context.has_value() || input.context_c.has_value() ||
+      input.context_before.has_value() || input.context_after.has_value()) {
+    return;
+  }
+  input.context_c = kSingleFileGrepDefaultContext;
 }
 
 // Apply head_limit + offset slicing matching the TS `applyHeadLimit`.
@@ -654,9 +691,10 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
 
   int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
   // A run_in_background command may carry the no-timeout-cap sentinel (the JS
-  // auto-background middle layer sets it so a detached command runs to
-  // completion). Pass it through UNCLAMPED — the utility's ClampTimeoutMs
-  // recognises the same value. Every other value keeps the normal default/clamp.
+  // side sets it on both the auto-background middle layer AND an explicit
+  // run_in_background, so a detached command runs to completion). Pass it
+  // through UNCLAMPED — the utility's ClampTimeoutMs recognises the same value.
+  // Every other value keeps the normal default/clamp.
   const bool no_timeout_cap = input.run_in_background.value_or(false) &&
                               timeout_ms == kNoTimeoutCapSentinelMs;
   if (!no_timeout_cap) {
@@ -1071,9 +1109,10 @@ void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
 
   int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
   // A run_in_background command may carry the no-timeout-cap sentinel (the JS
-  // auto-background middle layer sets it so a detached command runs to
-  // completion). Pass it through UNCLAMPED — the utility's ClampTimeoutMs
-  // recognises the same value. Every other value keeps the normal default/clamp.
+  // side sets it on both the auto-background middle layer AND an explicit
+  // run_in_background, so a detached command runs to completion). Pass it
+  // through UNCLAMPED — the utility's ClampTimeoutMs recognises the same value.
+  // Every other value keeps the normal default/clamp.
   const bool no_timeout_cap = input.run_in_background.value_or(false) &&
                               timeout_ms == kNoTimeoutCapSentinelMs;
   if (!no_timeout_cap) {
@@ -1513,14 +1552,14 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
     OnGrepPathChecked(std::move(input), std::move(done),
                       std::move(output_mode), show_line_numbers, head_limit,
                       offset, target, default_root, std::move(options),
-                      /*path_exists=*/true);
+                      GrepTargetKind::kUnknown);
     return;
   }
 
   base::FilePath target_for_check = target;
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ProcessTool::RunGrepPathExistsOnBlocking,
+      base::BindOnce(&ProcessTool::ClassifyGrepTargetOnBlocking,
                      std::move(target_for_check)),
       base::BindOnce(&ProcessTool::OnGrepPathChecked,
                      weak_ptr_factory_.GetWeakPtr(), std::move(input),
@@ -1529,8 +1568,14 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
                      std::move(default_root), std::move(options)));
 }
 
-bool ProcessTool::RunGrepPathExistsOnBlocking(base::FilePath target) {
-  return base::PathExists(target);
+ProcessTool::GrepTargetKind ProcessTool::ClassifyGrepTargetOnBlocking(
+    base::FilePath target) {
+  base::File::Info info;
+  if (!base::GetFileInfo(target, &info)) {
+    return GrepTargetKind::kMissing;
+  }
+  return info.is_directory ? GrepTargetKind::kDirectory
+                           : GrepTargetKind::kFile;
 }
 
 void ProcessTool::OnGrepPathChecked(::nexus::generated::GrepInput input,
@@ -1542,14 +1587,16 @@ void ProcessTool::OnGrepPathChecked(::nexus::generated::GrepInput input,
                                     base::FilePath target,
                                     base::FilePath default_root,
                                     RipgrepRunOptions options,
-                                    bool path_exists) {
-  if (!path_exists) {
+                                    GrepTargetKind target_kind) {
+  if (target_kind == GrepTargetKind::kMissing) {
     std::move(done).Reject(
         "path_not_found",
         base::StrCat({"Path does not exist: ", input.path.value_or("")}));
     return;
   }
 
+  ApplySingleFileGrepDefaults(input, output_mode,
+                              target_kind == GrepTargetKind::kFile);
   std::vector<std::string> rg_args =
       BuildRipgrepArgs(input, output_mode, show_line_numbers);
   rg_args.push_back(target.AsUTF8Unsafe());
@@ -1713,6 +1760,14 @@ std::vector<std::string> nexus::ProcessTool::BuildRipgrepArgsForTesting(
     const std::string& output_mode,
     bool show_line_numbers) {
   return BuildRipgrepArgs(input, output_mode, show_line_numbers);
+}
+
+// static
+void nexus::ProcessTool::ApplySingleFileGrepDefaultsForTesting(
+    ::nexus::generated::GrepInput& input,
+    std::string& output_mode,
+    bool target_is_file) {
+  ApplySingleFileGrepDefaults(input, output_mode, target_is_file);
 }
 
 // static

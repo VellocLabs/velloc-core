@@ -194,6 +194,17 @@ void NexusSessionBridgeAdapter::HandleSetAgentLoopSettingsOnUI(
   if (input.clearReadState.value_or(false)) {
     session.file_tool().ClearReadState();
   }
+  // T0-c browser observation short-circuit. Opt-in is the new-guest
+  // handshake (old guests never send it → the feature stays off and
+  // every observation is a full payload). The clear-cache flag marks
+  // the last observation stale so the next one is re-sent full.
+  if (input.browserObservationDiffOptIn.has_value()) {
+    session.browser_tool().SetObservationDiffEnabled(
+        *input.browserObservationDiffOptIn);
+  }
+  if (input.clearBrowserObservationCache.value_or(false)) {
+    session.browser_tool().MarkObservationStale();
+  }
 
   Dict result;
   result.Set("ok", true);

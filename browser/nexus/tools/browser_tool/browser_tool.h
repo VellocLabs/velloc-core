@@ -29,6 +29,7 @@
 #include "components/page_content_annotations/content/page_context_fetcher.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/tab_interface.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/node_registry.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
@@ -188,6 +189,20 @@ class BrowserTool : public ToolBase,
   const std::string& last_observation_normalized_projection() const {
     return last_observation_normalized_projection_;
   }
+
+  // T0-c observation short-circuit control. `SetObservationDiffEnabled`
+  // is the new-guest handshake — an old guest never calls it, so
+  // `observation_diff_enabled_` stays false and every observation is a
+  // full elements[] payload (behaviour identical to today).
+  // `MarkObservationStale` is called via `session.setAgentLoopSettings`
+  // whenever the guest's context was compacted / restored / replayed:
+  // the base full observation the short-circuit stub refers to may be
+  // gone from the model's context, so the next observation must re-send
+  // full. See browser_tool_internal::ObservationBaseline.
+  void SetObservationDiffEnabled(bool enabled) {
+    observation_diff_enabled_ = enabled;
+  }
+  void MarkObservationStale() { observation_baseline_.MarkStale(); }
   // Focus target may be absent (no focused element); the bool flag
   // separates "no focus" from "focus present but with empty id".
   bool has_last_observation_focus_target() const {
@@ -451,6 +466,7 @@ class BrowserTool : public ToolBase,
       std::string scope,
       int max_chars,
       int32_t requested_tab_id,
+      bool include_observation,
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
@@ -471,6 +487,7 @@ class BrowserTool : public ToolBase,
   void OnFindTextObservationBuilt(
       std::string query,
       int max_results,
+      bool include_observation,
       ToolCallback done,
       std::string action_name,
       base::TimeTicks start_time,
@@ -577,9 +594,20 @@ class BrowserTool : public ToolBase,
   // omits the image entirely (no flag) to avoid bloating its result with
   // pixels the model didn't ask for. The `screenshot` key's presence is
   // the sole, unambiguous "image included" signal.
+  // `force_full`: the caller explicitly asked for the elements
+  // (`read_page` / `find_text` with `include_observation:true`) — never
+  // collapse the working tab to a T0-c `{unchanged}` stub. Screenshots
+  // force full implicitly.
+  //
+  // T0-c baseline contract: this walk only STAGES the working tab's
+  // projection on `observation_baseline_`. The caller that resolves the
+  // result must call `observation_baseline_.Commit()` if the elements[]
+  // actually ship, or `.Discard()` if they are stripped / the observation
+  // is thrown away — see ObservationBaseline in browser_tool_internal.h.
   base::DictValue BuildObservationDict(
       const optimization_guide::proto::ActionsResult& result_proto,
-      bool include_screenshot_image = false);
+      bool include_screenshot_image = false,
+      bool force_full = false);
 
   // Phase 2 stop-gap for tools that aren't actor-wired yet.
   void RejectNotYetImplemented(std::string_view tool_name, ToolCallback done);
@@ -707,6 +735,28 @@ class BrowserTool : public ToolBase,
   std::string last_observation_normalized_projection_;
   bool last_observation_focus_target_present_ = false;
   std::string last_observation_focus_target_id_;
+
+  // T0-c observation short-circuit state. `observation_baseline_` holds
+  // the normalized projection + document id of the working-tab
+  // observation the model last RECEIVED in full; `BuildObservationDict`
+  // compares the freshly-walked projection against it to decide whether
+  // the interactive surface is byte-identical and can be collapsed to an
+  // `{unchanged, count}` stub, and stages the new projection — which the
+  // resolving caller commits (elements shipped) or discards (stripped /
+  // dropped). `observation_diff_enabled_` gates the whole feature
+  // (new-guest handshake, default off). Both flipped via the setters
+  // above.
+  browser_tool_internal::ObservationBaseline observation_baseline_;
+  bool observation_diff_enabled_ = false;
+
+  // Per-tab document identifier last seen by the observation walk. When a
+  // tab's document changes (navigation, cross-document load) every
+  // content_node_id from the old document is dead, so `BuildObservationDict`
+  // calls `node_registry_.ClearTab(tab_id)` before re-walking to evict the
+  // stale entries — otherwise `Find(index)` could resolve a stale index to
+  // a defunct document_id and the actor would reject the action. Cleared
+  // alongside `node_registry_` in `OnStop`.
+  base::flat_map<int, std::string> registry_document_by_tab_;
 
   // One-shot latch for the late-navigation observation retry. Set when
   // `OnActionsResultBuilt` hands off to

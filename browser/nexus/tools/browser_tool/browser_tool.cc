@@ -219,6 +219,12 @@ void BrowserTool::OnStop(OnStopReason reason) {
   // Stale node ids from a stopped session must never feed back
   // into a fresh session's actor calls.
   node_registry_.Clear();
+  registry_document_by_tab_.clear();
+  // A projection staged by an action that was stopped before it resolved
+  // never shipped. The committed baseline itself is kept: the warm-stop
+  // reasons (kCompleted / kUserStopped) keep the model's context, and the
+  // guest re-marks it stale on the context mutations that matter.
+  observation_baseline_.Discard();
   // Note: tabs are NOT closed here. Closure happens in ~BrowserTool
   // so that the OnStop-but-stay-warm reasons (kCompleted /
   // kUserStopped) preserve the user's tabs across turns.
@@ -1056,6 +1062,10 @@ void BrowserTool::OnActionsResultBuilt(
     // the model; every other action keeps the lightweight flag.
     observation = BuildObservationDict(
         *result_proto, /*include_screenshot_image=*/action_name == "screenshot");
+  } else {
+    // No observation this pass — nothing of an earlier walk may be
+    // committed below by mistake.
+    observation_baseline_.Discard();
   }
   if (was_settle_retry) {
     LOG(INFO) << "[BrowserTool] " << action_name
@@ -1080,6 +1090,9 @@ void BrowserTool::OnActionsResultBuilt(
     result.Set("ok", false);
     result.Set("result",
                 DescribeActorErrorForTool(action_name, result_code));
+    // The observation (with its elements[]) rides this error result, so
+    // the model does receive it — it is the new T0-c baseline.
+    observation_baseline_.Commit();
     std::move(done).Resolve(std::move(result));
     return;
   }
@@ -1131,6 +1144,10 @@ void BrowserTool::OnActionsResultBuilt(
         // the poll exits at COMMIT (URL change), not full load-stop.
         // Better a late observation than a wrong one; a genuinely wedged
         // load still re-observes at exhaustion and resolves.
+        // T0-c: the observation just built is NOT committed here — it is
+        // only sent if the work tab dies mid-wait (the fallback path in
+        // `WaitForWorkTabQuiescenceThenReobserve` commits it then);
+        // otherwise the re-observe builds and commits its own.
         WaitForWorkTabQuiescenceThenReobserve(
             std::move(done), std::move(action_name), std::move(result),
             /*entry_committed_url=*/committed.spec(),
@@ -1159,6 +1176,10 @@ void BrowserTool::OnActionsResultBuilt(
     }
   }
 
+  // The elements[] built above ship in this result → they are what the
+  // model now holds, so they become the T0-c baseline. (No-op when the
+  // walk short-circuited to a stub or produced no working-tab payload.)
+  observation_baseline_.Commit();
   std::move(done).Resolve(std::move(result));
 }
 
@@ -1175,6 +1196,9 @@ void BrowserTool::WaitForWorkTabQuiescenceThenReobserve(
     // The work tab died while we waited out its navigation. The ACTION
     // itself succeeded — resolve with the observation we already built
     // rather than failing a successful action over its follow-up snapshot.
+    // That observation's projection is still the staged one (no walk ran
+    // in between) and it does ship now → commit it.
+    observation_baseline_.Commit();
     std::move(done).Resolve(std::move(fallback_result));
     return;
   }
@@ -1673,7 +1697,19 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
       // Anchor specifics — destination URL. Critical for telling search
       // result links apart on a results page.
       if (attrs.has_anchor_data() && !attrs.anchor_data().url().empty()) {
-        elem.Set("href", attrs.anchor_data().url());
+        // T0-a: slim the emitted href — drop scheme+host for same-origin
+        // links, strip tracking params, cap length. `last_observation_url_`
+        // is set from main_frame_data before this walk runs, so it names
+        // the working tab's page. The dom_hash projection above keeps the
+        // RAW href (`h=`), so this slimming never perturbs the fingerprint.
+        bool href_truncated = false;
+        elem.Set("href",
+                 browser_tool_internal::CompressHref(
+                     attrs.anchor_data().url(), last_observation_url_,
+                     &href_truncated));
+        if (href_truncated) {
+          elem.Set("href_truncated", true);
+        }
       }
       // Viewport bounding box — `[x, y, w, h]`. Useful when the LLM has
       // multiple candidate matches and wants to prefer the one near
@@ -1805,7 +1841,12 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
 
 base::DictValue BrowserTool::BuildObservationDict(
     const apc::ActionsResult& result_proto,
-    bool include_screenshot_image) {
+    bool include_screenshot_image,
+    bool force_full) {
+  // A projection staged by an earlier walk that was never resolved (e.g.
+  // the settle guard dropped that observation) is dead — this walk stages
+  // its own, and only the caller resolving THIS result commits.
+  observation_baseline_.Discard();
   // The "working tab" is the session's stored `last_work_tab_` — set
   // by `RecordWorkTab` at the top of `RunActorAction` /
   // `RunTabObservation`, so by the time we're building the
@@ -1981,6 +2022,17 @@ base::DictValue BrowserTool::BuildObservationDict(
           apc_data.has_tab_id() ? apc_data.tab_id() : tab_obs.id();
 
       if (apc_data.has_root_node()) {
+        // Evict stale registry entries when this tab's document changed
+        // since we last walked it — their content_node_ids belong to a
+        // defunct document and would otherwise resolve to actor-rejected
+        // targets. (NodeRegistry::ClearTab wiring.)
+        auto doc_it = registry_document_by_tab_.find(tab_id_for_registry);
+        if (doc_it != registry_document_by_tab_.end() &&
+            doc_it->second != document_id) {
+          node_registry_.ClearTab(tab_id_for_registry);
+        }
+        registry_document_by_tab_[tab_id_for_registry] = document_id;
+
         // Pre-pass: index `<label for=...>` → control so `WalkContentNode`
         // can retarget hidden checkboxes/radios to their visible label.
         // Per-tab scope — clear before each walk.
@@ -1989,6 +2041,35 @@ base::DictValue BrowserTool::BuildObservationDict(
         WalkContentNode(apc_data.root_node(), document_id, tab_id_for_registry,
                         elements);
       }
+
+      // T0-c: short-circuit an unchanged working-tab observation. The walk
+      // above already refreshed node_registry_ and the last_observation_*
+      // snapshot (so indexes still resolve and agent_meta is correct); we
+      // only replace the bulky elements[] payload with a compact stub when
+      // the interactive surface is byte-identical to the last full send on
+      // the same document. Never for BrowserScreenshot (the model asked for
+      // pixels + a fresh look) and never when the caller explicitly asked
+      // for the elements (`force_full` — `include_observation:true`).
+      const bool short_circuit =
+          !include_screenshot_image && !force_full &&
+          observation_baseline_.ShouldShortCircuit(
+              observation_diff_enabled_, document_id,
+              last_observation_normalized_projection_);
+      if (short_circuit) {
+        base::DictValue unchanged;
+        unchanged.Set("unchanged", true);
+        unchanged.Set("count", static_cast<int>(elements.size()));
+        tab_dict.Set("elements", std::move(unchanged));
+        tabs.Append(std::move(tab_dict));
+        continue;
+      }
+      // Full walk — STAGE this projection/doc. It becomes the baseline
+      // only when the resolving caller commits it (the elements[] really
+      // went to the model); a caller that strips the observation to basics
+      // or throws it away discards instead, so the baseline keeps tracking
+      // what is actually in the model's context.
+      observation_baseline_.Stage(document_id,
+                                  last_observation_normalized_projection_);
     }
     tab_dict.Set("elements", std::move(elements));
     tabs.Append(std::move(tab_dict));

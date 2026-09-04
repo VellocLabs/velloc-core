@@ -8,6 +8,7 @@
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -31,6 +32,7 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_evaluate.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/download_capture.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/screenshot_shaping.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "custom_browser/browser/nexus/upload/nexus_file_chooser_interceptor.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -99,6 +101,66 @@ constexpr net::NetworkTrafficAnnotationTag kDownloadTrafficAnnotation =
           "Downloads are initiated only by explicit agent tool calls, "
           "mirroring a user clicking a download link."
       })");
+
+// =============================================================================
+// BrowserScreenshot capture + shaping.
+// =============================================================================
+
+// The capture BrowserScreenshot asks upstream for: lossless PNG at native
+// resolution. No `max_width` / `max_height` on purpose — element boxes are in
+// captured device pixels, so the crop must run on the unscaled image; the
+// long-edge cap is applied afterwards by `ShapeScreenshotResult`.
+std::optional<page_content_annotations::ScreenshotOptions::
+                  ScreenshotCollectionOptions>
+ModelScreenshotCaptureOptions() {
+  page_content_annotations::ScreenshotOptions::ScreenshotCollectionOptions
+      options;
+  options.screenshot_image_format =
+      page_content_annotations::ScreenshotOptions::ScreenshotImageFormat::kPng;
+  // Anything but kLow selects the full-compression PNG encoder upstream.
+  options.screenshot_compression_quality = page_content_annotations::
+      ScreenshotOptions::ScreenshotCompressionQuality::kHigh;
+  return options;
+}
+
+// Wraps `inner` so a successful BrowserScreenshot result is shaped on the
+// thread pool (decode / crop / resize / encode is CPU work that must stay off
+// the UI thread) before it resolves. Errors pass straight through. The two
+// callbacks share `inner` through a ref-counted holder; if the wrapper or the
+// reply is dropped unfired, `inner`'s own destructor reports the drop.
+ToolCallback WrapWithScreenshotShaping(ToolCallback inner,
+                                       std::optional<int32_t> crop_index) {
+  auto holder = base::MakeRefCounted<base::RefCountedData<ToolCallback>>(
+      std::move(inner));
+  return ToolCallback(
+      base::BindOnce(
+          [](scoped_refptr<base::RefCountedData<ToolCallback>> h,
+             std::optional<int32_t> index, base::Value value) {
+            if (!value.is_dict()) {
+              std::move(h->data).Resolve(std::move(value));
+              return;
+            }
+            base::ThreadPool::PostTaskAndReplyWithResult(
+                FROM_HERE,
+                {base::TaskPriority::USER_BLOCKING,
+                 base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
+                base::BindOnce(&ShapeScreenshotResult,
+                               std::move(value).TakeDict(), index,
+                               kScreenshotMaxEdge),
+                base::BindOnce(
+                    [](ToolCallback done, base::DictValue shaped) {
+                      std::move(done).Resolve(std::move(shaped));
+                    },
+                    std::move(h->data)));
+          },
+          holder, crop_index),
+      base::BindOnce(
+          [](scoped_refptr<base::RefCountedData<ToolCallback>> h,
+             std::string code, std::string message) {
+            std::move(h->data).Reject(std::move(code), std::move(message));
+          },
+          holder));
+}
 
 // =============================================================================
 // File-local helpers used by `read_page` / `find_text` / `read_element`
@@ -574,13 +636,20 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   // params (now folded into per-action `action_results`) and added a
   // trailing screenshot_collection_options. This call site has no prior
   // action results to forward (the create-tab navigate already settled),
-  // so pass an empty vector and no screenshot options.
+  // so pass an empty vector.
+  //
+  // Screenshot options only for BrowserScreenshot — the one action whose
+  // pixels reach the model (the settle-guard re-observe keeps the action
+  // name, so it asks for the same capture). Every other observation keeps
+  // upstream's cheap default capture, which is discarded anyway.
   actor::BuildActionsResultWithObservations(
       *profile, start_time,
       /*action_results=*/{},
       *task,
       /*skip_async_observation_information=*/false,
-      /*screenshot_collection_options=*/std::nullopt,
+      /*screenshot_collection_options=*/
+      action_name == "screenshot" ? ModelScreenshotCaptureOptions()
+                                  : std::nullopt,
       base::BindOnce(std::move(completion), std::move(done),
                      std::string(action_name)));
 }
@@ -602,6 +671,11 @@ void BrowserTool::RunScreenshotOnUI(::nexus::generated::ScreenshotInput input,
   if (!resolved_tab_id.has_value()) {
     return;
   }
+  // Shape the image (optional element crop, long-edge cap, PNG) on its way
+  // out — see screenshot_shaping.h. Wrapping `done` covers every resolve
+  // site of `OnActionsResultBuilt` (ok, actor error, settle-guard fallback)
+  // in one place.
+  done = WrapWithScreenshotShaping(std::move(done), input.index);
   // Reuse the standard `OnActionsResultBuilt`: it routes the `"screenshot"`
   // action name to `BuildObservationDict(include_screenshot_image=true)`, so
   // the working tab's dict carries the actual `screenshot: {mime,data_base64}`
@@ -633,7 +707,9 @@ void BrowserTool::RunReadPageOnUI(::nexus::generated::ReadPageInput input,
                      weak_ptr_factory_.GetWeakPtr(),
                      /*scope=*/std::string("full_page"),
                      /*max_chars=*/kReadPageMaxChars,
-                     *resolved_tab_id));
+                     *resolved_tab_id,
+                     /*include_observation=*/
+                     input.include_observation.value_or(false)));
 }
 
 void BrowserTool::RunNavigateOnUI(::nexus::generated::NavigateInput input,
@@ -1096,6 +1172,12 @@ void BrowserTool::RunCloseTabOnUI(::nexus::generated::CloseTabInput input,
   if (!resolved_tab_id.has_value()) {
     return;
   }
+  // The tab's document is going away with it: evict its registry entries
+  // and its per-tab document record now (they are otherwise only pruned on
+  // OnStop). Done before the action rather than in its callback so a
+  // failed close costs at most one "stale index" re-observe for that tab.
+  node_registry_.ClearTab(*resolved_tab_id);
+  registry_document_by_tab_.erase(*resolved_tab_id);
   apc::Actions actions;
   apc::CloseTabAction* close_tab =
       actions.add_actions()->mutable_close_tab();
@@ -1646,7 +1728,9 @@ void BrowserTool::RunFindTextOnUI(::nexus::generated::FindTextInput input,
       *resolved_tab_id, "find_text", std::move(done),
       base::BindOnce(&BrowserTool::OnFindTextObservationBuilt,
                      weak_ptr_factory_.GetWeakPtr(),
-                     std::move(input.query), kFindTextMaxResults));
+                     std::move(input.query), kFindTextMaxResults,
+                     /*include_observation=*/
+                     input.include_observation.value_or(false)));
 }
 
 // =============================================================================
@@ -1659,6 +1743,7 @@ void BrowserTool::OnReadPageObservationBuilt(
     std::string scope,
     int max_chars,
     int32_t requested_tab_id,
+    bool include_observation,
     ToolCallback done,
     std::string action_name,
     base::TimeTicks /*start_time*/,
@@ -1698,12 +1783,32 @@ void BrowserTool::OnReadPageObservationBuilt(
     std::move(done).Resolve(std::move(result));
     return;
   }
-  // Refresh the standard SimpleObservation alongside the page_text so
-  // the LLM can still pick indexes out of `tabs[].elements[]` if
-  // it wants to act after reading.
-  base::DictValue observation = BuildObservationDict(*result_proto);
+  // Refresh the observation. BuildObservationDict is always called — it
+  // updates node_registry_ + last_observation_* (agent_meta source) — but
+  // T0-b strips the bulky elements[] to basics-only (tab_id/url/title) by
+  // default: read_page's answer is its page_text, so the full interactive
+  // list is redundant here. The model can pass `include_observation:true`
+  // to get it back for a read-then-act flow — and then it MUST get the
+  // array, never a T0-c `{unchanged}` stub (`force_full`).
+  //
+  // T0-c baseline: the elements[] only become the baseline when they
+  // ship. Stripped to basics → discard the staged projection, so the
+  // baseline keeps pointing at the page the model last actually saw and a
+  // later same-document action is compared against THAT, not against a
+  // surface the model never received.
+  base::DictValue observation = BuildObservationDict(
+      *result_proto, /*include_screenshot_image=*/false,
+      /*force_full=*/include_observation);
   if (!observation.empty()) {
+    if (include_observation) {
+      observation_baseline_.Commit();
+    } else {
+      observation_baseline_.Discard();
+      browser_tool_internal::StripObservationToBasics(observation);
+    }
     result.Set("observation", std::move(observation));
+  } else {
+    observation_baseline_.Discard();
   }
 
   // Find the requested tab within the observation. The actor framework
@@ -1773,6 +1878,7 @@ void BrowserTool::OnReadPageObservationBuilt(
 void BrowserTool::OnFindTextObservationBuilt(
     std::string query,
     int max_results,
+    bool include_observation,
     ToolCallback done,
     std::string action_name,
     base::TimeTicks /*start_time*/,
@@ -1808,12 +1914,27 @@ void BrowserTool::OnFindTextObservationBuilt(
     return;
   }
 
-  // Refresh the standard observation (also updates the node registry
-  // and last_observation_* fields used by ToolsAdapter for agent_meta).
-  // No inverse map needed — index is the LLM-facing id.
-  base::DictValue observation = BuildObservationDict(*result_proto);
+  // Refresh the observation (also updates the node registry and
+  // last_observation_* fields used by ToolsAdapter for agent_meta).
+  // T0-b: default to basics-only — find_text's answer is its matches[]
+  // (each already carries `clickable_ancestor_index`, enough to click
+  // the result directly). `include_observation:true` returns the full
+  // elements[] for a search-then-act-elsewhere flow — as an array, never
+  // a T0-c stub (`force_full`). Baseline commit/discard mirrors read_page:
+  // only shipped elements move the baseline.
+  base::DictValue observation = BuildObservationDict(
+      *result_proto, /*include_screenshot_image=*/false,
+      /*force_full=*/include_observation);
   if (!observation.empty()) {
+    if (include_observation) {
+      observation_baseline_.Commit();
+    } else {
+      observation_baseline_.Discard();
+      browser_tool_internal::StripObservationToBasics(observation);
+    }
     result.Set("observation", std::move(observation));
+  } else {
+    observation_baseline_.Discard();
   }
 
   // Find walk. Limited to the first APC tree (the active observed

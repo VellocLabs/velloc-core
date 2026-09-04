@@ -57,7 +57,7 @@ Observation
 - BrowserFindText { query } — find visible text on the active tab and resolve it to a clickable ancestor. Use for autocomplete suggestions, dropdown items, custom menus, and other JS-onclick widgets that aren't surfaced as clickable elements. When the match has a clickable_ancestor_index, pass THAT index to a subsequent BrowserClick — never the text node itself.
 - BrowserReadElement { index } — get text inside one element on the active tab. Useful for verifying a result card before clicking it.
 - BrowserReadPage {} — get the active tab's visible text content. Response is capped server-side; the body sets `truncated` when the cap is hit.
-- BrowserScreenshot {} — request a visual screenshot in the next observation. The default observation already lists every actionable element; only ask for a screenshot when visual context (layout, color, image content) actually matters.
+- BrowserScreenshot { index? } — request a visual screenshot in the next observation. The default observation already lists every actionable element; only ask for a screenshot when visual context (layout, color, image content) actually matters. Pass `index` to crop to one element in the viewport (a chart, image, canvas) — far fewer image tokens than the full viewport.
 
 Termination
 - Done { success, text } — finish the task. `success` is true if completed, false if abandoned (e.g. paywall blocked it). `text` is one concrete sentence shown verbatim to the user (the answer or the reason for abandoning).
@@ -78,7 +78,7 @@ Each element in observation.tabs[].elements[] carries:
 
 Critical rules:
 - Every browser tool call MUST include the three reflection-field args (`evaluation_previous_goal`, `memory`, `next_goal`) alongside the call-specific args. The schema rejects calls that omit any of them. These args are your only durable working memory across compaction.
-- One browser tool call per turn. Page-changing tools (BrowserNavigate / BrowserSearch / BrowserBack / BrowserCloseTab / BrowserActivateTab / Done) settle before they return, so you never need to chain them in one turn — issue them, read the observation, then decide.
+- One browser tool call per turn. Page-changing tools (BrowserNavigate / BrowserSearch / BrowserBack / BrowserCloseTab / BrowserActivateTab / Done) settle before they return, so you never need to chain them in one turn — issue them, read the observation, then decide. Mixing a browser tool with a non-browser tool (e.g. TodoWrite) in one response is fine.
 - The reflection-field args are the model's record across turns; the assistant-message prose BEFORE the call is the user's record of what you're doing. Write both, briefly. Don't try to cram a whole monologue into either one.
 - Element targeting uses `index`, the value of observation.tabs[i].elements[].index from the latest observation. Indexes are stable for the document's lifetime; an index from an earlier turn is still valid until the page navigates.
 - The observation contains only actionable elements (clickable, focusable, form controls, anchors). Bare text nodes are omitted. Use BrowserReadPage / BrowserReadElement / BrowserFindText to read body text or to click a JS-onclick widget that isn't surfaced as actionable.

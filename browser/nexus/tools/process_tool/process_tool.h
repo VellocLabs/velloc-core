@@ -79,6 +79,13 @@ class ProcessTool : public ToolBase,
       bool show_line_numbers);
   static std::vector<std::string> SplitGlobPatternsForTesting(
       const std::string& glob);
+  // Applies the single-file Grep defaults (mode -> content, -C 5) exactly as
+  // OnGrepPathChecked does before building argv; `target_is_file` is what
+  // ClassifyGrepTargetOnBlocking would have reported.
+  static void ApplySingleFileGrepDefaultsForTesting(
+      ::nexus::generated::GrepInput& input,
+      std::string& output_mode,
+      bool target_is_file);
   // Windows-only model-facing PowerShell tool (gated into the catalog by
   // the listHostedTools filter). Tries PowerShell 7 (`pwsh`) first, falling
   // back to Windows PowerShell (`powershell`) when pwsh isn't installed, and
@@ -230,15 +237,21 @@ class ProcessTool : public ToolBase,
                     base::FilePath cwd,
                     RipgrepRunResult result);
 
-  // Blocking half of the Grep path-existence pre-check. Runs on a
-  // `base::ThreadPool` worker (MayBlock) — NEVER on the UI thread, where
-  // `base::PathExists` would trip the blocking-disallowed DCHECK. Returns
-  // whether `target` exists.
-  static bool RunGrepPathExistsOnBlocking(base::FilePath target);
+  // What the Grep target turned out to be on disk. `kUnknown` is the UNC
+  // case: existence is assumed (no stat, to avoid NTLM credential leaks) so
+  // the type cannot be known and no single-file default applies.
+  enum class GrepTargetKind { kMissing, kFile, kDirectory, kUnknown };
 
-  // UI-thread reply to `RunGrepPathExistsOnBlocking`. Rejects `done` with
-  // `path_not_found` when the target is missing; otherwise launches ripgrep
-  // through `ripgrep_runner_` (exec + auto-install + line shaping).
+  // Blocking half of the Grep target pre-check. Runs on a `base::ThreadPool`
+  // worker (MayBlock) — NEVER on the UI thread, where `base::GetFileInfo`
+  // would trip the blocking-disallowed DCHECK. Classifies `target` as
+  // missing / regular file / directory.
+  static GrepTargetKind ClassifyGrepTargetOnBlocking(base::FilePath target);
+
+  // UI-thread reply to `ClassifyGrepTargetOnBlocking`. Rejects `done` with
+  // `path_not_found` when the target is missing; applies the single-file
+  // defaults when it is a regular file; then launches ripgrep through
+  // `ripgrep_runner_` (exec + auto-install + line shaping).
   void OnGrepPathChecked(::nexus::generated::GrepInput input,
                          ToolCallback done,
                          std::string output_mode,
@@ -248,7 +261,7 @@ class ProcessTool : public ToolBase,
                          base::FilePath target,
                          base::FilePath default_root,
                          RipgrepRunOptions options,
-                         bool path_exists);
+                         GrepTargetKind target_kind);
 
   // Blocking half of the Grep `files_with_matches` result shaping. Runs on a
   // `base::ThreadPool` worker (MayBlock) — NEVER on the UI thread — because it

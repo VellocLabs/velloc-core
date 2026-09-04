@@ -26,7 +26,7 @@
       "name": "run_in_background",
       "type": "boolean",
       "required": false,
-      "description": "Set true to run the command in the background and return immediately with a shell_id instead of waiting for it to finish. Use this only when you don't need the result right away (long builds, servers, watchers). You will be notified when the command completes, so do not check the output right away or poll while it is running. The command is still bounded by `timeout`."
+      "description": "Set true to run the command in the background and return immediately with a shell_id instead of waiting for it to finish. Use this only when you don't need the result right away (long builds, servers, watchers). A background command is not bounded by `timeout` — it runs to completion (or until explicitly stopped), and you will be notified when it completes, so do not check the output right away or poll while it is running. A foreground command that reaches its `timeout` is moved to the background and keeps running rather than being killed, unless it starts with `sleep`."
     },
     {
       "name": "hook_shell",

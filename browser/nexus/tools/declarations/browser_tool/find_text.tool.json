@@ -10,6 +10,12 @@
       "type": "string",
       "required": true,
       "description": "Required text to search for. Case-insensitive substring match."
+    },
+    {
+      "name": "include_observation",
+      "type": "boolean",
+      "required": false,
+      "description": "When true, include the full interactive elements[] in the observation. Default false: the result carries matches[] (each with clickable_ancestor_index, enough to click the result directly) plus basics-only tab metadata. Set true only if you need to act on a different element than the search hit."
     }
   ],
   "output_kind": "object",

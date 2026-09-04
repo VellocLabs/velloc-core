@@ -7,7 +7,7 @@ You have a flat catalog of browser-control tools (navigate, click, input, search
 - The user wants to find information online → `search`. Don't `navigate` to a search homepage and then type into a search box — `search` does both in one call.
 - The user gave you a direct URL → `navigate` (or `create_tab` if you need a side-by-side view).
 - You need to interact with a specific element (button, form field, link) → look up the element's `index` from the latest observation's `elements[]` and call the matching index-targeted tool: `click`, `input`, `select`, `hover`, `drag_and_drop`, `scroll_to`.
-- You need text that's not surfaced as an actionable element (article body, paragraph copy) → `read_page` for the visible viewport, `read_page` with `scope: 'full_page'` to include below-the-fold body, or `read_element` for a single container.
+- You need text that's not surfaced as an actionable element (article body, paragraph copy) → `read_page` (returns the full page text), or `read_element` for a single container.
 - You need to find a specific phrase that might be a JS-onclick suggestion (autocomplete, custom dropdown, menu item that isn't surfaced as actionable) → `find_text`. The result resolves the text node to the nearest clickable ancestor's `index`; pass THAT to `click`, never the text node itself.
 - You're done → `done` with `success: true|false` and a one-sentence `text` summary the user will see verbatim.
 
@@ -51,7 +51,7 @@ If an element is in the observation but the call fails with ELEMENT_OFFSCREEN, p
 
 ## When to use a screenshot
 
-The default observation already lists every actionable element, so most tasks don't need a screenshot. Ask for one only when visual context (layout, color, image content, video frame) actually matters to the decision.
+The default observation already lists every actionable element, so most tasks don't need a screenshot. Ask for one only when visual context (layout, color, image content, video frame) actually matters to the decision. When only one element matters, pass its `index` — the image is cropped to that element, which costs far fewer image tokens than the whole viewport.
 
 ## When to stop
 

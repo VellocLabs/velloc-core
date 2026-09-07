@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setUserColor",
+  "description": "Set the profile's theme user colour via ThemeService::SetUserColorAndBrowserColorVariant (prefs browser.theme.user_color2 + color_variant2). Omit `color` to clear the user colour and fall back to the default palette. Like setColorScheme this repaints the guest through the existing nexus-theme push. Returns {ok:true}.",
+  "inputs": [
+    {
+      "name": "color",
+      "type": "string",
+      "required": false,
+      "description": "Seed colour as \"#rrggbb\" (case-insensitive). Absent or empty clears the user colour."
+    },
+    {
+      "name": "variant",
+      "type": "string",
+      "required": false,
+      "description": "Colour variant: \"tonalSpot\", \"neutral\", \"vibrant\" or \"expressive\". Defaults to tonalSpot when absent."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

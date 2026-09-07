@@ -12,7 +12,6 @@ import type {NexusViewElement} from './nexus_view.js';
 // Session-list custom element. Registered for global use so any surface
 // inside this page (today: nothing renders it by default) receives
 // `nexusSessionsSummary` updates from the SharedWorker.
-import './nexus_session_list.js';
 
 /**
  * Thin panel host (Phase 4). The topbar + settings UI moved into the React
@@ -35,7 +34,10 @@ export class NexusPage extends CrLitElement {
       align-items: stretch;
       box-sizing: border-box;
       overflow: hidden;
-      background: var(--app-bg);
+      /* Toolbar colour, not the tab-strip tint: this host is the ground the
+       * welcome overlay and the guest paint over, so the intermediate frames
+       * stay one neutral until the final colours land. */
+      background: var(--color-toolbar);
       color: var(--text-primary);
     }
 

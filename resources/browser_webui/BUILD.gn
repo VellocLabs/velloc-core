@@ -59,17 +59,28 @@ build_webui("build") {
     # nexus_settings*, and their *_client / *_panel_client / nexus_panel_bridge
     # / nexus_icons deps) moved into the React guest (`nexus_web/`). The panel
     # is now a thin host: webview + session-state plumbing.
+    # The UI <-> Runtime wire, mirrored from nexus_web by
+    # nexus_web/scripts/sync_runtime_protocol_mirror.py (generated — edit the
+    # nexus_web source and re-run; its `protocol-mirror.test.ts` fails when this
+    # copy and its source disagree). Only the codec: the panel host subscribes
+    # to one topic and issues no requests, so it drives the handshake with a
+    # small client of its own rather than a copy of the guest's.
+    "pages/nexus/protocol/runtimeProtocol/errors.ts",
+    "pages/nexus/protocol/runtimeProtocol/route.ts",
+    "pages/nexus/protocol/runtimeProtocol/topics.ts",
+    "pages/nexus/protocol/runtimeProtocol/frames.ts",
+    "pages/nexus/protocol/runtimeProtocol/codec.ts",
     "pages/nexus/nexus_shared.ts",
-    "pages/nexus/nexus_webui_bridge.ts",
-    "pages/nexus/nexus_session_state_client.ts",
-    "pages/nexus/nexus_ui_event_client.ts",
+    "pages/nexus/nexus_panel_id.ts",
+    "pages/nexus/nexus_runtime_client.ts",
+    "pages/nexus/nexus_shell_client.ts",
     "pages/nexus/nexus_bg_tabs_strip.ts",
     "pages/nexus/nexus_view.ts",
     "pages/nexus/nexus_welcome.ts",
     "pages/nexus/nexus_guest_recovery.ts",
     "pages/nexus/nexus_page.ts",
     "pages/nexus/nexus_runtime_bootstrap.ts",
-    "pages/nexus/nexus_session_list.ts",
+    "pages/nexus/nexus_host_theme.ts",
     "controller/tabs_controller.ts",
     "components/tabs_panel/types.ts",
     "components/tabs_panel/tab_hover_preview_controller.ts",

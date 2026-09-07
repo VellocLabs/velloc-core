@@ -12,6 +12,11 @@
         /* https://chromium.googlesource.com/chromium/src/%2B/main/chrome/browser/ui/color/chrome_color_id.h */
         --app-bg: var(--color-web-ui-tab-strip-background);
         --app-tab-active-bg: var(--color-web-ui-tab-strip-tab-active-title-background);
+        /* The ACTIVE tab's own background = the toolbar/content surface (white in
+         * light, #3c3c3c in dark). Overlays that should read as "the page", not
+         * "the tab strip", paint from this. Not the -title-background above,
+         * which is the accent-tinted title pill. */
+        --app-active-tab-bg: var(--color-tab-background-active-frame-active);
         --app-surface: var(--color-web-ui-tab-strip-tab-background);
         --app-toolbar-bg: var(--color-web-ui-tab-strip-tab-background);
         --app-addr-bar-bg: var(--color-omnibox-results-background);
@@ -55,7 +60,13 @@
         width: 100%;
         overflow: hidden;
         margin: 0;
-        background-color: var(--app-bg);
+        /* First-frame ground. This is what shows before any layout element
+         * has painted, so it is the toolbar colour — the same neutral the
+         * Nexus page, its welcome overlay and the guest's own pre-paint ground
+         * use — rather than the tab-strip tint (blue-grey in light), which
+         * used to flash for a frame and then give way. Every layout page
+         * paints its own root background over this. */
+        background-color: var(--color-toolbar);
         transition: background-color 80ms linear;
       }
     </style>

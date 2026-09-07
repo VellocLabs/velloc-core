@@ -131,9 +131,13 @@ export class NexusGuestRecoveryElement extends CrLitElement {
        * the container's overflow:hidden clips the bottom. */
       box-sizing: border-box;
       padding: 24px;
+      /* Same theme-following surface as <nexus-welcome> (see its comment). */
       background:
-          linear-gradient(180deg, #e2e8f0 0%, #f8fafc 45%, #ffffff 100%);
-      color: #0f172a;
+          linear-gradient(180deg,
+              color-mix(in srgb, var(--text-primary) 10%, var(--app-active-tab-bg)) 0%,
+              color-mix(in srgb, var(--text-primary) 3%, var(--app-active-tab-bg)) 45%,
+              var(--app-active-tab-bg) 100%);
+      color: var(--text-primary);
       font-family: ui-sans-serif, system-ui, sans-serif;
       overflow: hidden;
       /* The overlay body doubles as a window-drag handle (as the boot overlay
@@ -164,13 +168,13 @@ export class NexusGuestRecoveryElement extends CrLitElement {
     .recovery-body {
       font-size: 13px;
       line-height: 1.5;
-      color: #475569;
+      color: var(--text-secondary);
     }
 
     .recovery-url {
       font-size: 11px;
       line-height: 1.4;
-      color: #64748b;
+      color: var(--text-disabled);
       word-break: break-all;
       max-width: 100%;
     }
@@ -195,28 +199,31 @@ export class NexusGuestRecoveryElement extends CrLitElement {
       -webkit-app-region: no-drag;
     }
 
+    /* Inverted "filled" button: text colour as the fill, surface as the
+     * label — the same relationship the old #0f172a-on-white pair had, now
+     * theme-following. */
     button.primary {
       border: 1px solid transparent;
-      background: #0f172a;
-      color: #f8fafc;
+      background: var(--text-primary);
+      color: var(--app-active-tab-bg);
     }
 
     button.primary:hover {
-      background: #1e293b;
+      background: color-mix(in srgb, var(--text-primary) 85%, var(--app-active-tab-bg));
     }
 
     button.secondary {
-      border: 1px solid #cbd5e1;
+      border: 1px solid color-mix(in srgb, var(--text-primary) 25%, transparent);
       background: transparent;
-      color: #0f172a;
+      color: var(--text-primary);
     }
 
     button.secondary:hover {
-      background: #e2e8f0;
+      background: var(--control-hover);
     }
 
     button:focus-visible {
-      outline: 2px solid #2563eb;
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
     }
   `;

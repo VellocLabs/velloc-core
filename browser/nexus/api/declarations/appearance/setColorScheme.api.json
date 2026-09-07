@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setColorScheme",
+  "description": "Set the profile's browser colour scheme via ThemeService::SetBrowserColorScheme (pref browser.theme.color_scheme2). Chrome's ColorChangeUpdater fires, the panel re-resolves chrome://theme/colors.css and re-posts nexus-theme, so the guest repaints without a reload. Returns {ok:true}. Takes effect immediately — no restart.",
+  "inputs": [
+    {
+      "name": "scheme",
+      "type": "string",
+      "required": true,
+      "description": "One of \"system\", \"light\", \"dark\". Anything else is rejected as invalid args."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

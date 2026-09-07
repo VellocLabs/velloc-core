@@ -211,9 +211,22 @@ export class NexusWelcomeElement extends CrLitElement {
        * which pushed the bottom-anchored .welcome-footer off-screen. */
       box-sizing: border-box;
       padding: 24px;
+      /* Theme-following surface: the host page aliases Chrome's own colour
+       * tokens (index.html: --app-active-tab-bg = the ACTIVE tab's background, i.e.
+       * the toolbar/content surface, white in light; NOT --app-bg, the
+       * tab-strip ground, which is blue-grey in light and read as a dirty
+       * splash —, --text-* =
+       * the cr-*-text colours), so this overlay tracks Appearance > Mode and
+       * the user's colour theme exactly like the tab strip beside it. The
+       * light gradient (slate-200 → white) is reproduced as "a little text
+       * colour mixed into the surface at the top, fading to the surface",
+       * which reads the same in light and inverts correctly in dark. */
       background:
-          linear-gradient(180deg, #e2e8f0 0%, #f8fafc 45%, #ffffff 100%);
-      color: #0f172a;
+          linear-gradient(180deg,
+              color-mix(in srgb, var(--text-primary) 10%, var(--app-active-tab-bg)) 0%,
+              color-mix(in srgb, var(--text-primary) 3%, var(--app-active-tab-bg)) 45%,
+              var(--app-active-tab-bg) 100%);
+      color: var(--text-primary);
       font-family: ui-sans-serif, system-ui, sans-serif;
       overflow: hidden;
       /* The whole boot overlay is a window-drag handle. The parent WebUI view
@@ -256,7 +269,7 @@ export class NexusWelcomeElement extends CrLitElement {
 
     .welcome-subtitle {
       font-size: clamp(1rem, 2vw, 1.125rem);
-      color: #475569;
+      color: var(--text-secondary);
       line-height: 1.4;
     }
 
@@ -283,12 +296,12 @@ export class NexusWelcomeElement extends CrLitElement {
       font-size: 12px;
       font-weight: 400;
       line-height: 18px;
-      color: #8A8F98;
+      color: var(--text-disabled);
       white-space: nowrap;
     }
 
     .welcome-footer .sep {
-      color: #C2C7CF;
+      color: color-mix(in srgb, var(--text-disabled) 55%, transparent);
     }
   `;
 

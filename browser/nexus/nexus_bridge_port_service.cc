@@ -17,6 +17,7 @@
 #include "custom_browser/browser/nexus/api/sqlite/nexus_sqlite_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/app_info/nexus_app_info_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/appearance/nexus_appearance_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/browser_tools/nexus_browser_tools_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/mcp/nexus_mcp_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/system_prefs/nexus_system_prefs_bridge_adapter.h"
@@ -228,6 +229,15 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   app_info_adapter_ =
       std::make_unique<NexusAppInfoBridgeAdapter>(this, profile);
   RegisterCapability("appInfo", app_info_adapter_.get());
+
+  // Settings · Appearance (colour scheme + user colour) and the language row
+  // on Settings · General. Per-PROFILE, unlike systemPrefs above: ThemeService
+  // is profile-keyed and kApplicationLocale is a profile pref. Write-only in
+  // practice — the guest's repaint comes from the panel's existing nexus-theme
+  // push, not from a read here.
+  appearance_adapter_ =
+      std::make_unique<NexusAppearanceBridgeAdapter>(this, profile);
+  RegisterCapability("appearance", appearance_adapter_.get());
 
   // Phase 12g: the `process` bridge capability has been retired.
   // History: `NexusProcessBridgeAdapter` + a separate

@@ -28,6 +28,8 @@ import {NexusBridgeBootstrap} from
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 
 import type {LoadingStage} from './nexus_welcome.js';
+import {startHostThemeSync} from './nexus_host_theme.js';
+import {panelId} from './nexus_panel_id.js';
 
 // Reports host-side handshake progress to the boot-welcome overlay's footer.
 // Same page/process as the overlay, so this is a direct callback — no bridge.
@@ -145,7 +147,8 @@ function waitForGuestAck(
       }
       try {
         webview.contentWindow.postMessage(
-            { type: 'nexus-init', nexus: true }, guestOrigin);
+            { type: 'nexus-init', nexus: true, panelId: panelId() },
+            guestOrigin);
       } catch (e) {
         debugTrace('nexus-init postMessage failed', {
           message: e instanceof Error ? e.message : String(e),
@@ -259,6 +262,10 @@ function waitForBootstrapAndForward(
   });
 }
 
+// One theme sync per webview: a re-handshake (guest reload) replaces the
+// previous sender instead of stacking a second one.
+const themeSyncStops = new WeakMap<HTMLElement, () => void>();
+
 export async function bootstrapNexusGuest(
     webview: HTMLElement | null,
     onStatus?: BootStatusReporter,
@@ -367,6 +374,13 @@ export async function bootstrapNexusGuest(
         await waitForBootstrapAndForward(guest, guestOrigin, signal);
         // Ports handed to the webview; the guest now boots its own runtime.
         reportStatus('loading');
+        // Live theme: resolved Chrome colours, now and on every change. The
+        // guest's listener is installed at its module entry, so nothing sent
+        // after the ack can be missed. Additive message: an older guest
+        // ignores it and keeps its built-in palette.
+        themeSyncStops.get(guest)?.();
+        themeSyncStops.set(
+            guest, startHostThemeSync(guest, guestOrigin, debugTrace));
         debugTrace('bootstrap complete; runtime ports owned by the webview', {
           reason,
         });

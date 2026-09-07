@@ -353,6 +353,15 @@ action("nexus_tools_codegen") {
     "api/declarations/system_prefs/get.api.json",
     "api/declarations/system_prefs/setBackgroundMode.api.json",
     "api/declarations/system_prefs/setLauncher.api.json",
+
+    # appearance category — the React Settings · Appearance page and the
+    # language row on Settings · General. Writes the profile ThemeService
+    # (colour scheme + user colour) and kApplicationLocale; the READ side
+    # is the existing nexus-theme push from the panel, not a route here.
+    "api/declarations/appearance/getAppearance.api.json",
+    "api/declarations/appearance/setColorScheme.api.json",
+    "api/declarations/appearance/setUiLocale.api.json",
+    "api/declarations/appearance/setUserColor.api.json",
   ]
 
   outputs = [
@@ -431,6 +440,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/app_info/app_info_api.gen.cc",
     "$target_gen_dir/api/sqlite/sqlite_api.gen.h",
     "$target_gen_dir/api/sqlite/sqlite_api.gen.cc",
+    "$target_gen_dir/api/appearance/appearance_api.gen.h",
+    "$target_gen_dir/api/appearance/appearance_api.gen.cc",
 
     # Per-category aggregate: one *.gen.h per UNIQUE folder under
     # declarations/. Holds the abstract base class (e.g.
@@ -637,6 +648,8 @@ source_set("bridge") {
   sources = [
     "api/app_info/nexus_app_info_bridge_adapter.cc",
     "api/app_info/nexus_app_info_bridge_adapter.h",
+    "api/appearance/nexus_appearance_bridge_adapter.cc",
+    "api/appearance/nexus_appearance_bridge_adapter.h",
     "api/browser_tools/nexus_browser_tools_bridge_adapter.cc",
     "api/browser_tools/nexus_browser_tools_bridge_adapter.h",
     "api/catalog/nexus_catalog_bridge_adapter.cc",
@@ -752,6 +765,7 @@ source_set("bridge") {
     # need their ctors/dtors to link.
     "$target_gen_dir/api/fs/fs_api.gen.cc",
     "$target_gen_dir/api/app_info/app_info_api.gen.cc",
+    "$target_gen_dir/api/appearance/appearance_api.gen.cc",
     "$target_gen_dir/api/browser_tools/browser_tools_api.gen.cc",
     "$target_gen_dir/api/catalog/catalog_api.gen.cc",
     "$target_gen_dir/api/llm/llm_api.gen.cc",

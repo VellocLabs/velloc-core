@@ -20,6 +20,7 @@ namespace nexus {
 
 class NexusBridgeCapabilityHandler;
 class NexusAppInfoBridgeAdapter;
+class NexusAppearanceBridgeAdapter;
 class NexusBrowserToolsBridgeAdapter;
 class NexusCatalogBridgeAdapter;
 class NexusFsBridgeAdapter;
@@ -138,6 +139,7 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // Settings · About (version + webapp-URL editor).
   std::unique_ptr<NexusSystemPrefsBridgeAdapter> system_prefs_adapter_;
   std::unique_ptr<NexusAppInfoBridgeAdapter> app_info_adapter_;
+  std::unique_ptr<NexusAppearanceBridgeAdapter> appearance_adapter_;
   // V1 of WebFetch: general-purpose HTTP-GET bridge surface used by
   // TS-side tools that need to fetch a URL through the Chromium net
   // stack (not subject to renderer CORS). See

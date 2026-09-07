@@ -13,7 +13,7 @@ import {
   type BootProgressPayload,
   type BuildInfoPayload,
   type MainContentsLayoutPayload,
-} from './nexus_ui_event_client.js';
+} from './nexus_shell_client.js';
 
 import {sendWithPromise} from 'chrome://resources/js/cr.js';
 
@@ -60,6 +60,10 @@ export class NexusViewElement extends CrLitElement {
       position: relative;
       -webkit-app-region: no-drag;
       overflow: hidden;
+      /* The <webview> is allowtransparency; until the guest paints, this is
+       * what shows through. Same neutral as <nexus-page> and the guest's own
+       * pre-stylesheet ground. */
+      background: var(--color-toolbar);
     }
 
     /* The native main-contents-view holder. The guest owns the geometry:

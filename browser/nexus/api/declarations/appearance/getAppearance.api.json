@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getAppearance",
+  "description": "Read the browser appearance state backing the React Settings · Appearance page: the browser colour scheme (system/light/dark), the user colour as a #rrggbb string (absent when no user colour is set), the colour variant, and the prospective UI locale. Scheme + colour live in the profile's ThemeService; the locale is kApplicationLocale in LOCAL STATE, the same pref chrome://settings/languages writes. The two halves are in DIFFERENT pref stores: outside ChromeOS nothing registers kApplicationLocale on a profile, so reading it there is a CHECK failure inside PrefService that takes the browser process down (Chrome's own languages_handler.cc uses the profile only under IS_CHROMEOS). Named getAppearance rather than get because generated input structs share one namespace and system_prefs already owns GetInput.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setUiLocale",
+  "description": "Set the prospective UI language by writing the kApplicationLocale pref in LOCAL STATE (not the profile - outside ChromeOS it is not registered there, and reading it from a profile CHECK-fails inside PrefService) — the same single write chrome://settings/languages performs (LanguagesHandler::HandleSetProspectiveUILanguage). Takes effect after a client restart, which the guest triggers separately via appInfo.relaunch. The guest reads its own catalogue from the same locale, so one write switches both the browser chrome and the web app. Returns {ok:true}.",
+  "inputs": [
+    {
+      "name": "locale",
+      "type": "string",
+      "required": true,
+      "description": "BCP-47 tag limited to the locales Velloc actually ships on both surfaces: en, zh-CN, es, fr, de, ja, ko."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

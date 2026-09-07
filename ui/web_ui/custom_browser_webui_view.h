@@ -133,8 +133,17 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
  private:
   void SetContainerTargetVisibility(bool target_visible);
 
-  void InitializeWebView();
+  // `reattached`: the contents came back from nexus::NexusBackgroundPanelHost
+  // with its page already loaded — re-point the WebUI at this window instead
+  // of navigating. False for a fresh contents and for the crash-reload path.
+  void InitializeWebView(bool reattached);
   void DeinitializeWebView();
+
+  // Background panel (System > "Continue running background apps when main
+  // window is closed"): a kNexus window's contents is parked with the
+  // profile's NexusBackgroundPanelHost instead of dying with the window.
+  bool ShouldParkForBackground() const;
+  void ParkForBackground();
 
   // CustomBrowserUIEmbedder:
   //   const ui::AcceleratorProvider* GetAcceleratorProvider() const override;
@@ -176,11 +185,21 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   // views::AccessiblePaneView
   bool SetPaneFocusAndFocusDefault() override;
 
+  // views::View
+  void AddedToWidget() override;
+
   // Helper method to enable draggable regions in the web contents
   static void EnableDraggableRegions(content::WebContents* web_contents);
 
   const raw_ptr<CustomBrowserView> custom_browser_view_;
   const raw_ptr<views::WebView> web_view_;
+  // The top-chrome WebContents. Owned here (not by `web_view_`, which only
+  // displays it) so it can be handed to NexusBackgroundPanelHost when the
+  // window closes, and taken back from it when the next kNexus window opens.
+  std::unique_ptr<content::WebContents> owned_contents_;
+  // Set when `owned_contents_` came back parked (hidden) and must be shown
+  // explicitly once this view is in a widget — see AddedToWidget().
+  bool reattached_pending_show_ = false;
   bool is_draggable_ready_ = false;
   // Used to keep the toolbar revealed while the tab strip is open.
   std::unique_ptr<ImmersiveRevealedLock> immersive_revealed_lock_;

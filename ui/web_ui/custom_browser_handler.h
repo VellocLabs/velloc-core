@@ -30,6 +30,7 @@ class TabInterface;
 }  // namespace tabs
 
 class CustomBrowserUIEmbedder;
+class Profile;
 
 class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
                              public TabStripModelObserver,
@@ -49,6 +50,15 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
   void NotifyLayoutChanged();
   void NotifyReceivedKeyboardFocus();
   void NotifyContextMenuClosed();
+
+  // Background-panel hand-over (CustomBrowserWebUI::DetachFromView /
+  // AttachToView). Detach stops observing the closing window's tab strip and
+  // pauses the receiver so page calls queue instead of touching a dead
+  // Browser; Attach observes the new window's strip, replays its tabs and
+  // active tab to the page (the closing strip already sent TabRemoved for
+  // every tab it had), resumes the receiver and re-pushes the theme.
+  void DetachFromView();
+  void AttachToView(CustomBrowserView* custom_browser_view);
 
   // TabStripModelObserver:
   void OnTabGroupChanged(const TabGroupChange& change) override;
@@ -132,8 +142,13 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
 
   const raw_ptr<content::WebUI> web_ui_;
 
-  const raw_ptr<CustomBrowserView> custom_browser_view_;
-  const raw_ptr<Browser> browser_;
+  // Re-pointed by DetachFromView / AttachToView; null while detached (the
+  // receiver is paused then, so no BrowserHandler method runs on null).
+  raw_ptr<CustomBrowserView> custom_browser_view_;
+  raw_ptr<Browser> browser_;
+  // The profile outlives every window the handler is attached to; theme
+  // observation is keyed to it, not to a Browser.
+  const raw_ptr<Profile> profile_;
 
   std::map<content::WebContents*, custom_browser::mojom::TabPtr>
       web_contents_to_tab_data_;

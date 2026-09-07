@@ -72,6 +72,17 @@ class CustomBrowserWebUI : public ui::MojoWebUIController,
   void Initialize(CustomBrowserView* browser);
   void Deinitialize();
 
+  // Background-panel hand-over (see nexus::NexusBackgroundPanelHost). The
+  // page keeps living across a window close: DetachFromView() unhooks the
+  // page handlers from the dying window (they stop observing its tab strip /
+  // ui prefs and pause their Mojo receivers, so the page's remotes stay
+  // bound) and AttachToView() re-points them at the next kNexus window,
+  // replays that window's tabs / mode to the page and resumes the receivers.
+  // A page that never created its handlers (CreatePageHandler not reached
+  // yet) simply gets the new view for when it does.
+  void DetachFromView();
+  void AttachToView(CustomBrowserView* browser);
+
   // The embedder should call this whenever the result of
   // Embedder::GetLayout() changes.
   void LayoutChanged();
@@ -99,6 +110,22 @@ class CustomBrowserWebUI : public ui::MojoWebUIController,
       page_factory_receiver_{this};
 
   raw_ptr<CustomBrowserView> custom_browser_view_ = nullptr;
+
+  // A CreatePageHandler that arrived while no window was attached (the page
+  // was parked before its renderer bound its handlers). Held until
+  // AttachToView, which binds it against the new window — otherwise the
+  // page's remotes would dangle forever, since the renderer asks only once.
+  struct PendingPageHandler {
+    PendingPageHandler();
+    ~PendingPageHandler();
+    mojo::PendingRemote<custom_browser::mojom::Browser> browser;
+    mojo::PendingRemote<custom_browser::mojom::UIView> native_view;
+    mojo::PendingReceiver<custom_browser::mojom::BrowserHandler>
+        browser_handler_receiver;
+    mojo::PendingReceiver<custom_browser::mojom::UIViewHandler>
+        native_view_handler_receiver;
+  };
+  std::unique_ptr<PendingPageHandler> pending_page_handler_;
 
   WEB_UI_CONTROLLER_TYPE_DECL();
 };

@@ -214,6 +214,16 @@ class CustomBrowserView : public BrowserView,
   void WillCloseAllTabs(TabStripModel* tab_strip_model) override;
   void TabStripEmpty() override;
 
+  // BrowserWindow:
+  // In the custom layouts a tab activated while <main-contents-view> is
+  // hidden (kNexus: no guest shows it) never gets a size from its hidden
+  // NativeViewHost; size it here. See
+  // CustomBrowserViewLayout::SizeUndisplayedTabs().
+  void OnActiveTabChanged(content::WebContents* old_contents,
+                          content::WebContents* new_contents,
+                          int index,
+                          int reason) override;
+
   // FullscreenObserver:
   void OnFullscreenStateChanged() override;
 

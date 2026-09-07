@@ -49,7 +49,8 @@ class NexusSystemPrefsBridgeAdapter
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 
-  // Write `nexus::prefs::kNexusLauncherEnabled` on local_state.
+  // Alias of HandleSetBackgroundModeOnUI: writes `prefs::kBackgroundModeEnabled`
+  // (the toggles were merged; kept for wire compatibility).
   // Returns `{ok:true}`.
   void HandleSetLauncherOnUI(
       ::nexus::generated::SetLauncherInput input,

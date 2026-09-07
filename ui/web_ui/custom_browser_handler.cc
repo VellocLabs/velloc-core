@@ -177,7 +177,10 @@ class WebUITabContextMenu : public ui::SimpleMenuModel::Delegate,
 }  // namespace
 
 CustomBrowserHandler::~CustomBrowserHandler() {
-  ThemeServiceFactory::GetForProfile(browser_->profile())->RemoveObserver(this);
+  if (browser_) {
+    browser_->tab_strip_model()->RemoveObserver(this);
+  }
+  ThemeServiceFactory::GetForProfile(profile_)->RemoveObserver(this);
   theme_observation_.Reset();
   // if (auto* widget = browser_->GetBrowserView().GetWidget(); widget) {
   //   widget->RemoveObserver(this);
@@ -194,6 +197,7 @@ CustomBrowserHandler::CustomBrowserHandler(
       web_ui_(web_ui),
       custom_browser_view_(custom_browser_view),
       browser_(custom_browser_view->browser()),
+      profile_(custom_browser_view->browser()->profile()),
       thumbnail_tracker_(
           base::BindRepeating(&CustomBrowserHandler::HandleThumbnailUpdate,
                               base::Unretained(this))),
@@ -204,7 +208,7 @@ CustomBrowserHandler::CustomBrowserHandler(
   browser_->tab_strip_model()->AddObserver(this);
 
   // Listen for theme installation.
-  ThemeServiceFactory::GetForProfile(browser_->profile())->AddObserver(this);
+  ThemeServiceFactory::GetForProfile(profile_)->AddObserver(this);
 
   // if (auto* widget = browser_->GetBrowserView().GetWidget(); widget) {
   //   widget->AddObserver(this);
@@ -213,6 +217,45 @@ CustomBrowserHandler::CustomBrowserHandler(
   // Or native theme change.
   theme_observation_.Observe(
       webui::GetNativeThemeDeprecated(web_ui_->GetWebContents()));
+}
+
+void CustomBrowserHandler::DetachFromView() {
+  if (!browser_) {
+    return;
+  }
+  browser_->tab_strip_model()->RemoveObserver(this);
+  browser_ = nullptr;
+  custom_browser_view_ = nullptr;
+  // Queue (do not drop) page calls until a window is attached again.
+  receiver_.Pause();
+}
+
+void CustomBrowserHandler::AttachToView(
+    CustomBrowserView* custom_browser_view) {
+  DCHECK(custom_browser_view);
+  DCHECK(!browser_) << "AttachToView without DetachFromView";
+  custom_browser_view_ = custom_browser_view;
+  browser_ = custom_browser_view->browser();
+  DCHECK(browser_);
+  DCHECK_EQ(profile_, browser_->profile());
+  TabStripModel* tab_strip_model = browser_->tab_strip_model();
+  tab_strip_model->AddObserver(this);
+  // Replay the new window's strip the way kInserted would have: the page's
+  // tab model already dropped the old window's tabs (that strip sent
+  // TabRemoved for each as the window closed).
+  for (int i = 0; i < tab_strip_model->count(); ++i) {
+    content::WebContents* contents = tab_strip_model->GetWebContentsAt(i);
+    auto tab_data = GetTabData(contents, tab_strip_model->GetTabAtIndex(i), i);
+    web_contents_to_tab_data_[contents] = tab_data->Clone();
+    page_browser_->TabCreated(std::move(tab_data));
+  }
+  if (content::WebContents* active = tab_strip_model->GetActiveWebContents()) {
+    page_browser_->TabActiveChanged(
+        extensions::ExtensionTabUtil::GetTabId(active));
+  }
+  receiver_.Resume();
+  // Colors are per-window (frame active state, theme); refresh them.
+  page_browser_->ThemeChanged();
 }
 
 void CustomBrowserHandler::NotifyLayoutChanged() {

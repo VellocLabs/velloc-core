@@ -9,6 +9,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/common/pref_names.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
 #include "components/keep_alive_registry/scoped_keep_alive.h"
@@ -23,12 +24,31 @@ NexusBackgroundModeManager::NexusBackgroundModeManager(StatusTray* status_tray)
     : status_tray_(status_tray) {
   PrefService* local_state = g_browser_process->local_state();
   CHECK(local_state);
+  MigrateLegacyLauncherPref(local_state);
   local_state_registrar_.Init(local_state);
   local_state_registrar_.Add(
-      prefs::kNexusLauncherEnabled,
+      ::prefs::kBackgroundModeEnabled,
       base::BindRepeating(&NexusBackgroundModeManager::OnEnabledPrefChanged,
                           base::Unretained(this)));
   UpdateState();
+}
+
+// static
+void NexusBackgroundModeManager::MigrateLegacyLauncherPref(
+    PrefService* local_state) {
+  if (!local_state || !local_state->HasPrefPath(prefs::kNexusLauncherEnabled)) {
+    return;
+  }
+  // The user's explicit choice on the old tray toggle carries over, unless
+  // they already touched the new toggle (then their newer choice wins).
+  // GetUserPrefValue, not HasPrefPath: a policy-managed value must not read
+  // as "the user chose this" (it also cannot be overwritten below).
+  if (!local_state->GetUserPrefValue(::prefs::kBackgroundModeEnabled)) {
+    local_state->SetBoolean(
+        ::prefs::kBackgroundModeEnabled,
+        local_state->GetBoolean(prefs::kNexusLauncherEnabled));
+  }
+  local_state->ClearPref(prefs::kNexusLauncherEnabled);
 }
 
 NexusBackgroundModeManager::~NexusBackgroundModeManager() = default;
@@ -40,7 +60,7 @@ void NexusBackgroundModeManager::OnEnabledPrefChanged() {
 void NexusBackgroundModeManager::UpdateState() {
   PrefService* local_state = g_browser_process->local_state();
   const bool enabled =
-      local_state && local_state->GetBoolean(prefs::kNexusLauncherEnabled);
+      local_state && local_state->GetBoolean(::prefs::kBackgroundModeEnabled);
 
   // Keep-alive: hold the process open while enabled.
   if (enabled && !keep_alive_) {

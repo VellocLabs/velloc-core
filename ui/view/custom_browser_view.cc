@@ -697,6 +697,23 @@ void CustomBrowserView::WillCloseAllTabs(TabStripModel* tab_strip_model) {
   BrowserView::WillCloseAllTabs(tab_strip_model);
 }
 
+void CustomBrowserView::OnActiveTabChanged(content::WebContents* old_contents,
+                                           content::WebContents* new_contents,
+                                           int index,
+                                           int reason) {
+  BrowserView::OnActiveTabChanged(old_contents, new_contents, index, reason);
+  // The base attached `new_contents` to the active contents WebView and laid
+  // the container out. If <main-contents-view> is hidden, that NativeViewHost
+  // is hidden too and never sized the tab: a tab created or activated for a
+  // session no window shows would stay 0x0. Skipped in the Chromium layout
+  // (its contents container is always shown; non-normal windows do not have
+  // a CustomBrowserViewLayout) and while closing all tabs.
+  if (IsChromiumLayout() || browser_->tab_strip_model()->closing_all()) {
+    return;
+  }
+  GetCustomBrowserViewLayout()->SizeUndisplayedTabs();
+}
+
 void CustomBrowserView::TabStripEmpty() {
   // Second restore for the "strip emptied via tab drag-out" path, which does
   // not go through CloseAllTabs()/WillCloseAllTabs(). Idempotent — see

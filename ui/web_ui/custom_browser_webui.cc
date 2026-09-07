@@ -305,7 +305,17 @@ void CustomBrowserWebUI::CreatePageHandler(
     native_view_handler_ = std::make_unique<UIViewHandler>(
         std::move(native_view_handler_receiver), std::move(native_view),
         custom_browser_view_);
+    return;
   }
+  // No window right now (page parked mid-load): keep the handles for
+  // AttachToView instead of dropping them.
+  pending_page_handler_ = std::make_unique<PendingPageHandler>();
+  pending_page_handler_->browser = std::move(browser);
+  pending_page_handler_->native_view = std::move(native_view);
+  pending_page_handler_->browser_handler_receiver =
+      std::move(browser_handler_receiver);
+  pending_page_handler_->native_view_handler_receiver =
+      std::move(native_view_handler_receiver);
 }
 
 void CustomBrowserWebUI::Initialize(CustomBrowserView* custom_browser_view) {
@@ -320,6 +330,39 @@ void CustomBrowserWebUI::Deinitialize() {
   native_view_handler_.reset();
   DCHECK(custom_browser_view_);
   custom_browser_view_ = nullptr;
+}
+
+CustomBrowserWebUI::PendingPageHandler::PendingPageHandler() = default;
+CustomBrowserWebUI::PendingPageHandler::~PendingPageHandler() = default;
+
+void CustomBrowserWebUI::DetachFromView() {
+  if (custom_browser_handler_) {
+    custom_browser_handler_->DetachFromView();
+  }
+  if (native_view_handler_) {
+    native_view_handler_->DetachFromView();
+  }
+  custom_browser_view_ = nullptr;
+}
+
+void CustomBrowserWebUI::AttachToView(CustomBrowserView* custom_browser_view) {
+  DCHECK(custom_browser_view);
+  custom_browser_view_ = custom_browser_view;
+  if (pending_page_handler_) {
+    std::unique_ptr<PendingPageHandler> pending =
+        std::move(pending_page_handler_);
+    CreatePageHandler(std::move(pending->browser),
+                      std::move(pending->native_view),
+                      std::move(pending->browser_handler_receiver),
+                      std::move(pending->native_view_handler_receiver));
+    return;
+  }
+  if (custom_browser_handler_) {
+    custom_browser_handler_->AttachToView(custom_browser_view);
+  }
+  if (native_view_handler_) {
+    native_view_handler_->AttachToView(custom_browser_view);
+  }
 }
 
 void CustomBrowserWebUI::LayoutChanged() {

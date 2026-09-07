@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_impl.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_params.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.h"
+#include "custom_browser/ui/view/undisplayed_contents_sizer.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/layout/flex_layout_types.h"
 
@@ -24,6 +25,15 @@ class CustomBrowserViewLayout : public BrowserViewTabbedLayoutImpl {
 
   void LayoutContentsContainerView(gfx::Rect& contents_container_bounds,
                                    bool visible);
+  // Gives every tab of this window that no view has sized yet a real size:
+  // the size the contents area last had while shown, else the window's client
+  // area. A tab activated while <main-contents-view> is hidden is attached to
+  // a hidden NativeViewHost, which never sizes it, so it would otherwise stay
+  // 0x0 and break observation, screenshots and input
+  // (undisplayed_contents_sizer.h). Runs after every contents layout and on
+  // every active-tab change (CustomBrowserView::OnActiveTabChanged).
+  void SizeUndisplayedTabs();
+
  protected:
   CustomBrowserView* GetCustomBrowserView() const;
   NativeUIContainerView* GetNativeUIContainerView() const;
@@ -37,6 +47,7 @@ class CustomBrowserViewLayout : public BrowserViewTabbedLayoutImpl {
       const BrowserLayoutParams& params) const override;
 
  private:
+  UndisplayedContentsSizer undisplayed_contents_sizer_;
 };
 
 }  // namespace custom_browser

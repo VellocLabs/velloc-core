@@ -43,14 +43,22 @@ class UIViewHandler : public custom_browser::mojom::UIViewHandler,
   // CustomBrowserUiPrefs::Observer
   void OnPrefUIModeChanged(custom_browser::mojom::UIMode ui_mode) override;
 
+  // Background-panel hand-over (CustomBrowserWebUI::DetachFromView /
+  // AttachToView): stop observing the closing window's ui prefs and pause the
+  // receiver; observe the new window's prefs, resume, and push its mode.
+  void DetachFromView();
+  void AttachToView(CustomBrowserView* custom_browser_view);
+
  private:
   void OnCaptureFinished(int id, bool success);
 
   mojo::Receiver<custom_browser::mojom::UIViewHandler> receiver_;
   mojo::Remote<custom_browser::mojom::UIView> native_view_;
 
-  const raw_ptr<CustomBrowserView> custom_browser_view_;
-  const raw_ptr<NativeUIContainerView> native_ui_container_;
+  // Re-pointed by DetachFromView / AttachToView; null while detached (the
+  // receiver is paused then).
+  raw_ptr<CustomBrowserView> custom_browser_view_;
+  raw_ptr<NativeUIContainerView> native_ui_container_;
   raw_ptr<CustomBrowserUiPrefs> ui_prefs_ = nullptr;
   base::WeakPtrFactory<UIViewHandler> weak_ptr_factory_{this};
 };

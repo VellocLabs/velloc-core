@@ -1,5 +1,9 @@
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
 
+#include <optional>
+
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_delegate.h"
 #include "chrome/browser/ui/views/frame/multi_contents_view.h"
@@ -9,6 +13,7 @@
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/native_ui_container_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
+#include "content/public/browser/web_contents.h"
 namespace {
 
 // Loading bar is thicker than a separator, but instead of moving the bottom
@@ -236,12 +241,40 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
     content_right =
         std::min(content_right, browser_params.visual_client_area.right());
   }
-  SetViewBoundAndVisibility(
-      views().contents_container,
-      gfx::Rect(content_left, params.visual_client_area.y(),
-                content_right - content_left,
-                params.visual_client_area.height()),
-      visible);
+  const gfx::Rect contents_container_rect(
+      content_left, params.visual_client_area.y(), content_right - content_left,
+      params.visual_client_area.height());
+  SetViewBoundAndVisibility(views().contents_container,
+                            contents_container_rect, visible);
+
+  undisplayed_contents_sizer_.OnContentsAreaLaidOut(
+      contents_container_rect.size(), visible);
+  SizeUndisplayedTabs();
+}
+
+void CustomBrowserViewLayout::SizeUndisplayedTabs() {
+  TabStripModel* const tab_strip_model =
+      browser() ? browser()->tab_strip_model() : nullptr;
+  if (!tab_strip_model) {
+    return;
+  }
+  // The native UI container spans the window's client area.
+  const NativeUIContainerView* const native_ui_container =
+      GetNativeUIContainerView();
+  const gfx::Size client_area =
+      native_ui_container ? native_ui_container->size() : gfx::Size();
+  for (int i = 0; i < tab_strip_model->count(); ++i) {
+    content::WebContents* const contents =
+        tab_strip_model->GetWebContentsAt(i);
+    if (!contents || contents->IsBeingDestroyed()) {
+      continue;
+    }
+    const std::optional<gfx::Size> size =
+        undisplayed_contents_sizer_.SizeFor(contents->GetSize(), client_area);
+    if (size) {
+      contents->Resize(gfx::Rect(*size));
+    }
+  }
 }
 
 CustomBrowserViewLayout::ProposedLayout

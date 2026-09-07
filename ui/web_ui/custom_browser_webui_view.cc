@@ -15,7 +15,9 @@
 #include "base/trace_event/trace_event.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "base/supports_user_data.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
+#include "content/public/browser/web_contents.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
 #include "chrome/browser/ui/browser.h"
@@ -36,10 +38,13 @@
 #include "content/public/common/drop_data.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/window_container_type.mojom-shared.h"
+#include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_constants.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui.h"
+#include "custom_browser/ui/web_ui/nexus_file_drop_policy.h"
+#include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/base/clipboard/clipboard_format_type.h"
 #include "ui/base/clipboard/custom_data_helper.h"
@@ -61,6 +66,20 @@
 
 namespace {
 
+// Window-drag state stashed on a parked WebContents (base::SupportsUserData)
+// so the next window restores it: the page's `-webkit-app-region` regions
+// are only re-reported by blink when they CHANGE, and the guest topbar only
+// re-measures on resize, so a re-attached page at the same size would
+// otherwise leave the new view with no regions — and IsInWebUIDragRegion's
+// "not ready" fallback treats the whole page as caption.
+constexpr char kParkedDragStateKey[] = "custom_browser_parked_drag_state";
+struct ParkedDragState : public base::SupportsUserData::Data {
+  SkRegion draggable_region;
+  bool is_draggable_ready = false;
+  SkRegion guest_drag_region;
+  bool guest_drag_ready = false;
+};
+
 CustomBrowserWebUI* GetBrowserWebUI(content::WebContents* web_contents) {
   content::WebUI* const webui = web_contents->GetWebUI();
   return webui && webui->GetController()
@@ -78,12 +97,30 @@ CustomBrowserWebUIView::CustomBrowserWebUIView(
 
   SetVisible(false);
   view_observations_.AddObservation(custom_browser_view_.get());
-  // TODO(crbug.com/40651211) WebContents are initially assumed to be visible by
-  // default unless explicitly hidden. The WebContents need to be set to hidden
-  // so that the visibility state of the document in JavaScript is correctly
-  // initially set to 'hidden', and the 'visibilitychange' events correctly get
-  // fired.
-  web_view_->GetWebContents()->WasHidden();
+
+  // A kNexus window first asks the profile's background-panel host for a
+  // parked contents (the page a previous kNexus window left running when it
+  // closed); otherwise create a fresh one. `web_view_` never owns it.
+  Profile* profile = custom_browser_view_->GetProfile();
+  bool reattached = false;
+  if (custom_browser_view_->IsNexusUIMode()) {
+    if (auto* host =
+            nexus::NexusBackgroundPanelHostFactory::GetForProfile(profile)) {
+      owned_contents_ = host->Take();
+      reattached = owned_contents_ != nullptr;
+    }
+  }
+  if (!owned_contents_) {
+    owned_contents_ =
+        content::WebContents::Create(content::WebContents::CreateParams(profile));
+    // TODO(crbug.com/40651211) WebContents are initially assumed to be visible
+    // by default unless explicitly hidden. The WebContents need to be set to
+    // hidden so that the visibility state of the document in JavaScript is
+    // correctly initially set to 'hidden', and the 'visibilitychange' events
+    // correctly get fired.
+    owned_contents_->WasHidden();
+  }
+  web_view_->SetWebContents(owned_contents_.get());
 
   // NOTE: Do NOT enable `set_allow_accelerators(true)` here.
   //
@@ -107,14 +144,64 @@ CustomBrowserWebUIView::CustomBrowserWebUIView(
   // model and is what an interactive panel needs.
 
   SetLayoutManager(std::make_unique<views::FillLayout>());
-  InitializeWebView();
+  InitializeWebView(reattached);
+  reattached_pending_show_ = reattached;
 
   SetContainerTargetVisibility(true);
   // SetPaneFocusAndFocusDefault();
 }
 
 CustomBrowserWebUIView::~CustomBrowserWebUIView() {
+  if (ShouldParkForBackground()) {
+    ParkForBackground();
+    return;
+  }
   DeinitializeWebView();
+  // `web_view_` (a child view, destroyed after this body) holds a raw
+  // pointer to the contents: unhook it before the contents dies.
+  web_view_->SetWebContents(nullptr);
+  owned_contents_.reset();
+}
+
+bool CustomBrowserWebUIView::ShouldParkForBackground() const {
+  if (!owned_contents_ || owned_contents_->IsCrashed()) {
+    return false;
+  }
+  if (!custom_browser_view_ || !custom_browser_view_->IsNexusUIMode()) {
+    return false;  // Only the kNexus window's page is worth keeping.
+  }
+  if (browser_shutdown::HasShutdownStarted()) {
+    return false;  // The process is going away; nothing to reopen into.
+  }
+  if (!nexus::NexusBackgroundPanelHost::IsBackgroundPanelEnabled()) {
+    return false;  // The System toggle is off: close means close.
+  }
+  return nexus::NexusBackgroundPanelHostFactory::GetForProfile(
+             custom_browser_view_->GetProfile()) != nullptr;
+}
+
+void CustomBrowserWebUIView::ParkForBackground() {
+  auto* host = nexus::NexusBackgroundPanelHostFactory::GetForProfile(
+      custom_browser_view_->GetProfile());
+  DCHECK(host);
+  content::WebContentsObserver::Observe(nullptr);
+  if (auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get())) {
+    // Handlers survive, paused, for the next window (AttachToView).
+    custom_browser_webui->DetachFromView();
+  }
+  auto drag_state = std::make_unique<ParkedDragState>();
+  drag_state->draggable_region = draggable_region_;
+  drag_state->is_draggable_ready = is_draggable_ready_;
+  drag_state->guest_drag_region = guest_drag_region_;
+  drag_state->guest_drag_ready = guest_drag_ready_;
+  owned_contents_->SetUserData(kParkedDragStateKey, std::move(drag_state));
+  owned_contents_->SetDelegate(nullptr);
+  web_view_->SetWebContents(nullptr);
+  // Detaching from the WebView already reports hidden; make it explicit so
+  // the page sees 'hidden' while parked (glic does the mirror-image
+  // UpdateWebContentsVisibility(VISIBLE) on show).
+  owned_contents_->WasHidden();
+  host->Park(std::move(owned_contents_));
 }
 
 // static
@@ -153,7 +240,7 @@ views::NativeViewHost* CustomBrowserWebUIView::GetNativeViewHost() {
 }
 
 content::WebContents* CustomBrowserWebUIView::GetWebContents() {
-  return web_view_->GetWebContents();
+  return owned_contents_.get();
 }
 
 // const ui::AcceleratorProvider*
@@ -168,8 +255,8 @@ content::WebContents* CustomBrowserWebUIView::GetWebContents() {
 
 void CustomBrowserWebUIView::SetContainerTargetVisibility(bool target_visible) {
   if (target_visible) {
-    if (web_view_->GetWebContents()->IsCrashed()) {
-      InitializeWebView();
+    if (owned_contents_->IsCrashed()) {
+      InitializeWebView(/*reattached=*/false);
     }
 
     immersive_revealed_lock_ =
@@ -289,8 +376,7 @@ void CustomBrowserWebUIView::OnViewBoundsChanged(View* observed_view) {
     // replaceable with PreferredSizeChanged.
     InvalidateLayout();
 
-    if (auto* custom_browser_webui =
-            GetBrowserWebUI(web_view_->GetWebContents())) {
+    if (auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get())) {
       custom_browser_webui->LayoutChanged();
     }
   }
@@ -309,11 +395,25 @@ void CustomBrowserWebUIView::OnWidgetDestroying(views::Widget* widget) {
   editor_bubble_widget_ = nullptr;
 }
 
+void CustomBrowserWebUIView::AddedToWidget() {
+  views::AccessiblePaneView::AddedToWidget();
+  if (!reattached_pending_show_ || !owned_contents_) {
+    return;
+  }
+  reattached_pending_show_ = false;
+  // A parked page was hidden explicitly (ParkForBackground); the WebView's
+  // own visibility plumbing does not reliably flip it back for an adopted
+  // contents, so do what glic does when it shows its kept-alive client
+  // (GlicInstanceImpl::MaybeShowHostUi): force VISIBLE now that the view is
+  // in a widget. The guest <webview> follows its embedder's visibility.
+  owned_contents_->UpdateWebContentsVisibility(content::Visibility::VISIBLE);
+}
+
 bool CustomBrowserWebUIView::SetPaneFocusAndFocusDefault() {
   // Make sure the pane first receives focus, then send a WebUI event to the
   // front-end so the correct HTML element receives focus.
   bool received_focus = AccessiblePaneView::SetPaneFocusAndFocusDefault();
-  auto* custom_browser_webui = GetBrowserWebUI(web_view_->GetWebContents());
+  auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get());
   if (received_focus && custom_browser_webui) {
     custom_browser_webui->ReceivedKeyboardFocus();
   }
@@ -366,33 +466,59 @@ void CustomBrowserWebUIView::EnableDraggableRegions(
   web_contents->SetSupportsDraggableRegions(true);
 }
 
-void CustomBrowserWebUIView::InitializeWebView() {
+void CustomBrowserWebUIView::InitializeWebView(bool reattached) {
   DCHECK(web_view_);
-  content::WebContentsObserver::Observe(web_view_->GetWebContents());
-  web_view_->GetWebContents()->SetDelegate(this);
+  DCHECK(owned_contents_);
+  content::WebContentsObserver::Observe(owned_contents_.get());
+  owned_contents_->SetDelegate(this);
 
-  // Load WebUI with uiMode parameter from prefs.
-  GURL initial_url = custom_browser_view_->ui_prefs()->BuildInitUrl();
-  web_view_->LoadInitialURL(initial_url);
-  task_manager::WebContentsTags::CreateForTabContents(
-      web_view_->web_contents());
+  if (custom_browser_view_->IsNexusUIMode()) {
+    // CanDragEnter admits file drags in this window (they are meant for the
+    // guest's composer). One that misses the guest must not navigate the page
+    // that hosts every session, so this page never loads a dropped file.
+    // (The guest refuses load drops on its own.)
+    owned_contents_->GetMutableRendererPrefs()->can_accept_load_drops = false;
+    owned_contents_->SyncRendererPrefs();
+  }
 
-  if (auto* custom_browser_webui =
-          GetBrowserWebUI(web_view_->GetWebContents())) {
-    // References to the |custom_browser_view_->browser()| and |this| are
-    // borrowed here, and will be released |DeinitializeWebView|.
-    custom_browser_webui->Initialize(custom_browser_view_);
+  if (reattached) {
+    // The page is already loaded and mid-life (sessions running in its
+    // guest). Load this window's layout params for the mode the window
+    // decided on (what BuildInitUrl() does as a side effect) and re-point the
+    // page's handlers at this window; no navigation.
+    custom_browser_view_->ui_prefs()->RestoreFromPrefs();
+    if (auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get())) {
+      custom_browser_webui->AttachToView(custom_browser_view_);
+    }
+    if (auto* drag_state = static_cast<ParkedDragState*>(
+            owned_contents_->GetUserData(kParkedDragStateKey))) {
+      draggable_region_ = drag_state->draggable_region;
+      is_draggable_ready_ = drag_state->is_draggable_ready;
+      guest_drag_region_ = drag_state->guest_drag_region;
+      guest_drag_ready_ = drag_state->guest_drag_ready;
+      owned_contents_->RemoveUserData(kParkedDragStateKey);
+    }
+  } else {
+    // Load WebUI with uiMode parameter from prefs.
+    GURL initial_url = custom_browser_view_->ui_prefs()->BuildInitUrl();
+    web_view_->LoadInitialURL(initial_url);
+    task_manager::WebContentsTags::CreateForTabContents(owned_contents_.get());
+
+    if (auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get())) {
+      // References to the |custom_browser_view_->browser()| and |this| are
+      // borrowed here, and will be released |DeinitializeWebView|.
+      custom_browser_webui->Initialize(custom_browser_view_);
+    }
   }
 
   // Enable draggable regions for window dragging support
-  CustomBrowserWebUIView::EnableDraggableRegions(web_view_->GetWebContents());
+  CustomBrowserWebUIView::EnableDraggableRegions(owned_contents_.get());
 }
 
 void CustomBrowserWebUIView::DeinitializeWebView() {
   content::WebContentsObserver::Observe(nullptr);
 
-  if (auto* custom_browser_webui =
-          GetBrowserWebUI(web_view_->GetWebContents())) {
+  if (auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get())) {
     // See corresponding comments from InitializeWebView().
     custom_browser_webui->Deinitialize();
   }
@@ -411,6 +537,13 @@ bool CustomBrowserWebUIView::CanDragEnter(
     content::WebContents* source,
     const content::DropData& data,
     blink::DragOperationsMask operations_allowed) {
+  // The kNexus window admits OS file drags: they are aimed at the guest's
+  // composer dropzone, and this delegate is asked on the guest's behalf.
+  if (custom_browser_view_ && custom_browser_view_->IsNexusUIMode() &&
+      custom_browser::IsNexusFileDrop(data)) {
+    return true;
+  }
+
   // TODO(crbug.com/40110968): Prevent dragging across Chromium instances.
   if (auto it = data.custom_data.find(kCustomWebUITabIdDataType);
       it != data.custom_data.end()) {
@@ -435,7 +568,12 @@ bool CustomBrowserWebUIView::CanDragEnter(
 }
 
 bool CustomBrowserWebUIView::IsPrivileged() {
-  return true;
+  // WebContentsViewAura admits a drag only when source and target agree on
+  // "privileged", so a privileged kNexus page would refuse every OS file drag
+  // before CanDragEnter is even asked. The kNexus page has no tab-strip drags
+  // to protect; like Glic's view it reports itself unprivileged, which also
+  // keeps its own in-page drags (source and target both unprivileged) working.
+  return !(custom_browser_view_ && custom_browser_view_->IsNexusUIMode());
 }
 
 void CustomBrowserWebUIView::DraggableRegionsChanged(
@@ -443,7 +581,7 @@ void CustomBrowserWebUIView::DraggableRegionsChanged(
     content::WebContents* contents) {
   // For browser UI, draggable regions are important for defining which parts of
   // the UI can be used to drag the window
-  if (contents == web_view_->GetWebContents()) {
+  if (contents == owned_contents_.get()) {
     // Store the updated draggable regions by directly converting to optimized
     // format
     SkRegion sk_region;

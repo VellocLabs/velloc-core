@@ -1,3 +1,24 @@
+# Constructs the Nexus BrowserContextKeyedServiceFactories at a stage where
+# that is legal (see the header). Deliberately separate from
+# ":hooks_registration": that one is reached from the
+# CustomBrowserMainExtraParts constructor, which is too early.
+source_set("nexus_keyed_service_registration") {
+  sources = [
+    "nexus_keyed_service_registration.cc",
+    "nexus_keyed_service_registration.h",
+  ]
+
+  public_deps = [ "//custom_browser/chromium_hooks:hook_api" ]
+
+  deps = [
+    "//base",
+    "//chrome/browser:browser_process",
+    "//custom_browser/browser/nexus:session_tab_management",
+    "//custom_browser/browser/nexus/api/llm:broker",
+    "//custom_browser/browser/nexus/panel:background_panel_host",
+  ]
+}
+
 source_set("hooks_registration") {
   sources = [
     "hooks_registration.cc",
@@ -5,10 +26,24 @@ source_set("hooks_registration") {
   ]
 
   deps = [
-    "//custom_browser/browser/nexus:session_tab_management",
-    "//custom_browser/browser/nexus/api/llm:broker",
+    ":nexus_keyed_service_registration",
     "//custom_browser/browser/nexus/launcher:launcher",
     "//custom_browser/chromium_hooks:hook_api",
     "//custom_browser/features/patch_webui:feature",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [ "nexus_keyed_service_registration_unittest.cc" ]
+
+  deps = [
+    ":nexus_keyed_service_registration",
+    "//base",
+    "//chrome/test:test_support",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
+    "//testing/gtest",
   ]
 }

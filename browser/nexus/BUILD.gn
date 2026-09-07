@@ -1269,6 +1269,19 @@ source_set("unit_tests") {
     "api/ui/nexus_ui_bridge_adapter_unittest.cc",
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_guest_config_unittest.cc",
+    "panel/nexus_background_panel_host_unittest.cc",
+    # Lives here, not beside its source: CustomBrowserUiPrefs is compiled into
+    # //chrome/browser/ui (browser_view_sources), and this is the only nexus
+    # test binary that links that target.
+    "//custom_browser/ui/prefs/custom_browser_ui_prefs_unittest.cc",
+    # Lives beside its header in ui/view, but the predicate reads
+    # views::View::GetVisibleBounds(), which is empty for any view outside a
+    # Widget. A real Widget needs ChromeViewsTestBase and the GL/compositor
+    # setup of this binary's ChromeUnitTestSuite; the lite binary has neither.
+    "//custom_browser/ui/view/view_visible_bounds_unittest.cc",
+    # Lives beside its header in ui/web_ui; the header reads
+    # content::DropData, which the lite binary does not link.
+    "//custom_browser/ui/web_ui/nexus_file_drop_policy_unittest.cc",
     "nexus_test_support.cc",
     "nexus_test_support.h",
     "session/nexus_session_tab_tag_unittest.cc",
@@ -1308,11 +1321,14 @@ source_set("unit_tests") {
     "//custom_browser/browser/nexus/api/llm:pref_registration",
     "//custom_browser/browser/nexus/launcher",
     "//custom_browser/browser/nexus/launcher:prefs",
+    "//custom_browser/browser/nexus/panel:background_panel_host",
     "//net",
     "//skia",
     "//testing/gtest",
     "//ui/gfx",
     "//ui/gfx/codec",
+    "//ui/views",
+    "//ui/views:test_support",
     "//url",
   ]
 }
@@ -1346,6 +1362,7 @@ test("custom_browser_nexus_browser_unittests") {
   deps = [
     ":unit_tests",
     "//chrome/test:test_support_unit",
+    "//custom_browser/features:unit_tests",
     "//testing/gtest",
   ]
 }

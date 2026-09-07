@@ -11,6 +11,7 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "custom_browser/chromium_hooks/hook_types.h"
 
+class PrefService;
 class ScopedKeepAlive;
 class StatusTray;
 
@@ -22,15 +23,22 @@ class NexusStatusIcon;
 //
 // Mirrors the relevant slice of Chrome's glic::GlicBackgroundModeManager: it
 // observes the per-installation local_state pref
-// nexus::prefs::kNexusLauncherEnabled and, while that pref is true, both
+// prefs::kBackgroundModeEnabled — the ONE System toggle ("Keep Velloc running
+// in the background", default on) — and, while that pref is true, both
 //   * holds a ScopedKeepAlive (KeepAliveOrigin::NEXUS_LAUNCHER) so the browser
 //     process survives after the last window closes, and
 //   * shows a system-tray icon (Velloc's production logo) whose click re-opens
 //     the Nexus window.
+// The same pref makes the kNexus window park its page instead of destroying
+// it on close (nexus::NexusBackgroundPanelHost), so one switch means: close
+// the window and Velloc keeps running — sessions included — in the tray.
 //
-// This is deliberately independent of Chrome's BackgroundModeManager
-// (prefs::kBackgroundModeEnabled), which only keeps the process alive when a
-// background-capable extension is installed.
+// prefs::kBackgroundModeEnabled is Chrome's "continue running background
+// apps" pref; Chrome's own BackgroundModeManager only acts on it when a
+// background-capable extension is installed, which Velloc never has, so
+// reusing it is safe and gives the toggle a single source of truth. The
+// former nexus::prefs::kNexusLauncherEnabled is migrated into it once
+// (MigrateLegacyLauncherPref) and otherwise no longer read.
 class NexusBackgroundModeManager {
  public:
   // `status_tray` may be null (e.g. in unit tests / headless), in which case
@@ -42,7 +50,15 @@ class NexusBackgroundModeManager {
   NexusBackgroundModeManager& operator=(const NexusBackgroundModeManager&) =
       delete;
 
-  // True while the keep-alive is held (i.e. the launcher pref is enabled).
+  // One-time migration of the pre-2026-09-10 local_state pref
+  // nexus::prefs::kNexusLauncherEnabled (the old "Show in the system tray"
+  // toggle, default false) into prefs::kBackgroundModeEnabled: a user-set
+  // legacy value is copied over unless the user has since set the new pref
+  // themselves, and the legacy pref is cleared either way. Idempotent; a
+  // no-op when the legacy pref was never set. Public for tests.
+  static void MigrateLegacyLauncherPref(PrefService* local_state);
+
+  // True while the keep-alive is held (i.e. the background pref is enabled).
   bool IsKeepingAliveForTesting() const { return keep_alive_ != nullptr; }
   NexusStatusIcon* status_icon_for_testing() const {
     return status_icon_.get();

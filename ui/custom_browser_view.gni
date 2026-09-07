@@ -8,6 +8,7 @@ browser_view_sources = [
   "//custom_browser/ui/view/mouse_event_handler.h",
   "//custom_browser/ui/view/mouse_event_handler.cc",
   "//custom_browser/ui/view/window_hit_test.h",
+  "//custom_browser/ui/view/undisplayed_contents_sizer.h",
   "//custom_browser/ui/view/custom_browser_window_util.h",
   "//custom_browser/ui/view/custom_browser_window_util.cc",
   "//custom_browser/ui/view/nexus_native_menus.h",
@@ -72,6 +73,7 @@ browser_view_webui_sources = [
   "//custom_browser/ui/web_ui/tab_ui_utils.h",
 
   "//custom_browser/ui/web_ui/custom_browser_webui_view.cc",
+  "//custom_browser/ui/web_ui/nexus_file_drop_policy.h",
   "//custom_browser/ui/web_ui/custom_browser_webui_view.h",
   "//custom_browser/ui/web_ui/custom_browser_webui_embedder.h",
   "//custom_browser/ui/web_ui/custom_component_extensions_handler.cc",

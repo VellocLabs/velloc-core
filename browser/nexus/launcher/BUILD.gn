@@ -45,6 +45,8 @@ source_set("launcher") {
     "//chrome/app/theme:theme_resources",
     "//chrome/browser:browser_process",
     "//chrome/browser/status_icons",
+    # prefs::kBackgroundModeEnabled — the one System toggle the manager keys on.
+    "//chrome/common:constants",
     "//components/keep_alive_registry",
     "//components/prefs",
     "//custom_browser/chromium_hooks:hook_api",

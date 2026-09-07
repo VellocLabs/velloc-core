@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/launcher/nexus_background_mode_manager.h"
 
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
@@ -17,18 +18,21 @@ namespace {
 
 class NexusBackgroundModeManagerTest : public testing::Test {
  protected:
-  // TestingBrowserProcess registers all local-state prefs (including ours, via
-  // browser_prefs.cc RegisterLocalState under ENABLE_CUSTOM_BROWSER) in its
-  // constructor, and exposes that store as both local_state() and
+  // TestingBrowserProcess registers all local-state prefs (including ours and
+  // Chrome's background-mode pref, via browser_prefs.cc RegisterLocalState) in
+  // its constructor, and exposes that store as both local_state() and
   // GetTestingLocalState(). The pref store is process-global within the test
-  // binary, so reset our pref before each test.
-  void SetUp() override { SetEnabled(false); }
+  // binary, so reset both prefs to "never set" before each test.
+  void SetUp() override {
+    local_state()->ClearPref(::prefs::kBackgroundModeEnabled);
+    local_state()->ClearPref(prefs::kNexusLauncherEnabled);
+  }
 
   TestingPrefServiceSimple* local_state() {
     return TestingBrowserProcess::GetGlobal()->GetTestingLocalState();
   }
   void SetEnabled(bool enabled) {
-    local_state()->SetBoolean(prefs::kNexusLauncherEnabled, enabled);
+    local_state()->SetBoolean(::prefs::kBackgroundModeEnabled, enabled);
   }
   bool NexusOriginRegistered() const {
     return KeepAliveRegistry::GetInstance()->IsOriginRegistered(
@@ -38,36 +42,34 @@ class NexusBackgroundModeManagerTest : public testing::Test {
   content::BrowserTaskEnvironment task_environment_;
 };
 
-// The pref defaults to false, so a freshly constructed manager holds no
-// keep-alive; toggling the pref on acquires it and toggling off releases it.
-// This is the core stage-1 guarantee: the browser only survives window-close
-// when nexus.launcher_enabled is true. (No status tray in unit tests, so only
-// the keep-alive is exercised here.)
-TEST_F(NexusBackgroundModeManagerTest, KeepAliveTracksPref) {
-  ASSERT_FALSE(local_state()->GetBoolean(prefs::kNexusLauncherEnabled));
+// The single System toggle is Chrome's prefs::kBackgroundModeEnabled, which
+// defaults to TRUE: a fresh install keeps the browser alive after the last
+// window closes. Toggling it off releases the keep-alive, on re-acquires it.
+// (No status tray in unit tests, so only the keep-alive is exercised here.)
+TEST_F(NexusBackgroundModeManagerTest, KeepAliveTracksBackgroundModePref) {
+  ASSERT_TRUE(local_state()->GetBoolean(::prefs::kBackgroundModeEnabled));
   ASSERT_FALSE(NexusOriginRegistered());
 
   NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
-  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
-  EXPECT_FALSE(NexusOriginRegistered());
-
-  SetEnabled(true);
   EXPECT_TRUE(manager.IsKeepingAliveForTesting());
   EXPECT_TRUE(NexusOriginRegistered());
 
   SetEnabled(false);
   EXPECT_FALSE(manager.IsKeepingAliveForTesting());
   EXPECT_FALSE(NexusOriginRegistered());
-}
 
-// A manager constructed while the pref is already enabled (e.g. the user had
-// the launcher on across restarts) acquires the keep-alive immediately.
-TEST_F(NexusBackgroundModeManagerTest, HoldsKeepAliveWhenEnabledAtStartup) {
   SetEnabled(true);
-
-  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
   EXPECT_TRUE(manager.IsKeepingAliveForTesting());
   EXPECT_TRUE(NexusOriginRegistered());
+}
+
+// A manager constructed while the pref is off holds nothing.
+TEST_F(NexusBackgroundModeManagerTest, NoKeepAliveWhenDisabledAtStartup) {
+  SetEnabled(false);
+
+  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+  EXPECT_FALSE(NexusOriginRegistered());
 }
 
 // Releasing the manager must release the keep-alive (no leak across the
@@ -79,6 +81,75 @@ TEST_F(NexusBackgroundModeManagerTest, ReleasesKeepAliveOnDestruction) {
     ASSERT_TRUE(NexusOriginRegistered());
   }
   EXPECT_FALSE(NexusOriginRegistered());
+}
+
+// The legacy nexus.launcher_enabled pref no longer drives anything: a stale
+// `true` there does not hold the keep-alive once the new pref is off.
+TEST_F(NexusBackgroundModeManagerTest, LegacyLauncherPrefIsNotRead) {
+  SetEnabled(false);
+  local_state()->SetBoolean(prefs::kNexusLauncherEnabled, true);
+
+  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+}
+
+// --- Migration of the old "Show in the system tray" choice -----------------
+
+// A user who had turned the old tray toggle OFF (explicitly false) keeps it
+// off: the new pref (default true) is overwritten with false, and the legacy
+// pref is cleared so this only ever happens once.
+TEST_F(NexusBackgroundModeManagerTest, MigratesExplicitLegacyOffToNewPref) {
+  local_state()->SetBoolean(prefs::kNexusLauncherEnabled, false);
+  ASSERT_FALSE(local_state()->HasPrefPath(::prefs::kBackgroundModeEnabled));
+
+  NexusBackgroundModeManager::MigrateLegacyLauncherPref(local_state());
+
+  EXPECT_TRUE(local_state()->HasPrefPath(::prefs::kBackgroundModeEnabled));
+  EXPECT_FALSE(local_state()->GetBoolean(::prefs::kBackgroundModeEnabled));
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kNexusLauncherEnabled));
+}
+
+// A user who had the old tray toggle ON gets the new toggle on (a user-set
+// true, not just the default), legacy cleared.
+TEST_F(NexusBackgroundModeManagerTest, MigratesLegacyOnToNewPref) {
+  local_state()->SetBoolean(prefs::kNexusLauncherEnabled, true);
+
+  NexusBackgroundModeManager::MigrateLegacyLauncherPref(local_state());
+
+  EXPECT_TRUE(local_state()->HasPrefPath(::prefs::kBackgroundModeEnabled));
+  EXPECT_TRUE(local_state()->GetBoolean(::prefs::kBackgroundModeEnabled));
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kNexusLauncherEnabled));
+}
+
+// A user who never touched the old toggle is untouched: the new pref stays
+// at its default and nothing is written.
+TEST_F(NexusBackgroundModeManagerTest, NoLegacyValueIsANoOp) {
+  NexusBackgroundModeManager::MigrateLegacyLauncherPref(local_state());
+
+  EXPECT_FALSE(local_state()->HasPrefPath(::prefs::kBackgroundModeEnabled));
+  EXPECT_TRUE(local_state()->GetBoolean(::prefs::kBackgroundModeEnabled));
+}
+
+// The user's NEWER choice on the merged toggle wins over a stale legacy value;
+// the legacy pref is still cleared.
+TEST_F(NexusBackgroundModeManagerTest, UserSetNewPrefWinsOverLegacy) {
+  local_state()->SetBoolean(prefs::kNexusLauncherEnabled, true);
+  local_state()->SetBoolean(::prefs::kBackgroundModeEnabled, false);
+
+  NexusBackgroundModeManager::MigrateLegacyLauncherPref(local_state());
+
+  EXPECT_FALSE(local_state()->GetBoolean(::prefs::kBackgroundModeEnabled));
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kNexusLauncherEnabled));
+}
+
+// The manager runs the migration on construction, so a migrated "off" user
+// starts without the keep-alive even though the new pref defaults to on.
+TEST_F(NexusBackgroundModeManagerTest, ConstructorAppliesMigration) {
+  local_state()->SetBoolean(prefs::kNexusLauncherEnabled, false);
+
+  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kNexusLauncherEnabled));
 }
 
 }  // namespace

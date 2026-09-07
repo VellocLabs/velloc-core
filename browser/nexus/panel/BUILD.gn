@@ -1,0 +1,29 @@
+# Copyright 2026 The Custom Browser Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Parking slot for the kNexus window's top-chrome WebContents while no window
+# shows it (System > "Continue running background apps when main window is
+# closed"). Deliberately a small leaf — no //chrome/browser/ui — so the UI
+# layer (CustomBrowserWebUIView, compiled into //chrome/browser/ui) can depend
+# on it without a cycle. Docs: docs/P-platform/P-6-browser-ui/custom-browser-ui.md
+# ("Background panel").
+source_set("background_panel_host") {
+  sources = [
+    "nexus_background_panel_host.cc",
+    "nexus_background_panel_host.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser:browser_process",
+    "//chrome/browser/profiles",
+    "//chrome/browser/profiles/keep_alive",
+    "//chrome/browser/themes",
+    "//chrome/common:constants",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
+    "//components/prefs",
+    "//content/public/browser",
+  ]
+}

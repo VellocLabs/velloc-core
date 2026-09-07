@@ -10,17 +10,14 @@ class PrefRegistrySimple;
 namespace nexus {
 namespace prefs {
 
-// local_state pref (per-installation, browser-wide). When true, the Nexus
-// launcher holds a keep-alive so the browser process survives after the last
-// window closes — keeping the Nexus surface reachable while the browser is
-// minimized/closed (a later stage surfaces a system-tray icon + global hotkey
-// that re-open the Nexus window on demand).
-//
-// This is the Nexus analogue of Chrome's glic.launcher.enabled. It is distinct
-// from prefs::kBackgroundModeEnabled ("continue running background apps"),
-// which only keeps the process alive when a background-capable extension is
-// installed. Default false. Read by NexusBackgroundModeManager; the System
-// settings page writes it via NexusSettingsHandler (added in a later stage).
+// LEGACY local_state pref (per-installation, browser-wide), superseded on
+// 2026-09-10 by prefs::kBackgroundModeEnabled — the single System toggle that
+// now drives the tray keep-alive AND the background panel. Still registered
+// (default false) only so NexusBackgroundModeManager::MigrateLegacyLauncherPref
+// can read a user's old "Show in the system tray" choice once and clear it.
+// Nothing else reads or writes it; the systemPrefs bridge's `launcherEnabled`
+// / `setLauncher` and the panel's get/setNexusLauncherEnabled are aliases of
+// the background pref for wire compatibility.
 inline constexpr char kNexusLauncherEnabled[] = "nexus.launcher_enabled";
 
 }  // namespace prefs

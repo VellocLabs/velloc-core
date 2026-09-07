@@ -902,41 +902,16 @@ void NexusSettingsHandler::HandleSetBackgroundModeEnabled(
 
 void NexusSettingsHandler::HandleGetNexusLauncherEnabled(
     const base::ListValue& args) {
-  AllowJavascript();
-  CHECK_GE(args.size(), 1u);
-  const std::string& callback_id = args[0].GetString();
-
-  // Browser-wide local_state pref (default false); NexusBackgroundModeManager
-  // observes it to acquire/release the keep-alive + system-tray icon.
-  PrefService* local_state = g_browser_process->local_state();
-  const bool enabled =
-      local_state &&
-      local_state->GetBoolean(nexus::prefs::kNexusLauncherEnabled);
-  ResolveJavascriptCallback(base::Value(callback_id), base::Value(enabled));
+  // Alias of getBackgroundModeEnabled since the two System toggles were merged
+  // (2026-09-10): prefs::kBackgroundModeEnabled drives the keep-alive + tray
+  // icon (NexusBackgroundModeManager) and the background panel.
+  HandleGetBackgroundModeEnabled(args);
 }
 
 void NexusSettingsHandler::HandleSetNexusLauncherEnabled(
     const base::ListValue& args) {
-  AllowJavascript();
-  CHECK_GE(args.size(), 2u);
-  const std::string& callback_id = args[0].GetString();
-  const bool enabled = args[1].GetBool();
-
-  PrefService* local_state = g_browser_process->local_state();
-  if (!local_state) {
-    RejectJavascriptCallback(base::Value(callback_id),
-                             base::Value("Local state unavailable"));
-    return;
-  }
-
-  // Writing the pref is sufficient: NexusBackgroundModeManager's
-  // PrefChangeRegistrar on local_state reacts (acquires/releases the keep-alive
-  // and the tray icon), exactly as the manager does on startup.
-  local_state->SetBoolean(nexus::prefs::kNexusLauncherEnabled, enabled);
-  ResolveJavascriptCallback(
-      base::Value(callback_id),
-      base::Value(
-          local_state->GetBoolean(nexus::prefs::kNexusLauncherEnabled)));
+  // Alias of setBackgroundModeEnabled (see HandleGetNexusLauncherEnabled).
+  HandleSetBackgroundModeEnabled(args);
 }
 
 // HandleGetAgentConfig + HandleSetAgentConfig were the WebUI surface

@@ -1,6 +1,7 @@
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 
 #include <memory>
+#include <string_view>
 
 #include "base/command_line.h"
 #include "base/supports_user_data.h"
@@ -14,8 +15,14 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/chrome_switches.h"
+#include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
+#include "custom_browser/common/custom_browser_switches.h"
 #include "custom_browser/ui/prefs/custom_browser_ui_prefs.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
+#include "custom_browser/ui/view/relaunch_command_line.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
@@ -212,23 +219,55 @@ bool ConsumePendingExternalUrlWindow(Profile* profile) {
 }
 
 bool HasExternalUrlStartupArgs() {
-  // `about:blank` is exempt: the e2e harness appends it to every launch
-  // purely to keep the NTP tab from spawning (see the "Why the trailing
-  // about:blank" note in nexus_web/e2e/harness/launchBrowser.ts). Nothing
-  // externally opens about:blank, so it must not demote the startup window
-  // from kNexus.
-  constexpr base::CommandLine::StringViewType kAboutBlankPlaceholder =
-#if BUILDFLAG(IS_WIN)
-      L"about:blank";
-#else
-      "about:blank";
-#endif
-  for (const auto& arg : base::CommandLine::ForCurrentProcess()->GetArgs()) {
-    if (arg != kAboutBlankPlaceholder) {
-      return true;
+  return HasExternalUrlArgs(*base::CommandLine::ForCurrentProcess());
+}
+
+bool HandlePlainRelaunch(Profile* profile,
+                         const base::CommandLine& command_line) {
+  if (!profile) {
+    return false;
+  }
+  // Switches that ask for a specific kind of window. Any of them means the
+  // launch is not "just open the product" and Chromium's own handling wins:
+  // --app/--app-id (PWA / shortcut app window), --incognito, the launch-on-
+  // startup --no-startup-window (nothing should open at all), and our own
+  // --browser-mode escape hatch (explicitly a normal browser window).
+  // ...plus launches that carry their own action and are dispatched deeper in
+  // ProcessCmdLineImpl: a toast click (--notification-launch-id), a jump-list
+  // task, session restore, the guest-window and app-uninstall launches.
+  const std::string_view kWindowKindSwitches[] = {
+      ::switches::kApp,
+      ::switches::kAppId,
+      ::switches::kIncognito,
+      ::switches::kNoStartupWindow,
+      ::switches::kGuest,
+      ::switches::kRestoreLastSession,
+      ::switches::kNotificationLaunchId,
+      ::switches::kWinJumplistAction,
+      ::switches::kUninstallAppId,
+      custom_browser::switches::kBrowserMode,
+  };
+  if (!IsPlainRelaunchCommandLine(command_line, kWindowKindSwitches)) {
+    return false;
+  }
+  // The relaunch names the last-used profile, but the page the user wants
+  // back may be parked for another loaded profile (background panel): that
+  // profile's window is the one to reopen, or its sessions run invisibly
+  // with nothing ever taking them back.
+  if (auto* host = nexus::NexusBackgroundPanelHostFactory::GetForProfile(profile);
+      !host || !host->has_parked()) {
+    if (ProfileManager* profile_manager = g_browser_process->profile_manager()) {
+      for (Profile* loaded : profile_manager->GetLoadedProfiles()) {
+        auto* other = nexus::NexusBackgroundPanelHostFactory::GetForProfile(loaded);
+        if (other && other->has_parked()) {
+          profile = loaded;
+          break;
+        }
+      }
     }
   }
-  return false;
+  OpenOrFocusNexusWindow(profile);
+  return true;
 }
 
 }  // namespace custom_browser::window_util

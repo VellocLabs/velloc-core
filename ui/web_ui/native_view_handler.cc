@@ -32,6 +32,33 @@ UIViewHandler::~UIViewHandler() {
   }
 }
 
+void UIViewHandler::DetachFromView() {
+  if (ui_prefs_) {
+    ui_prefs_->RemoveObserver(this);
+  }
+  ui_prefs_ = nullptr;
+  native_ui_container_ = nullptr;
+  custom_browser_view_ = nullptr;
+  receiver_.Pause();
+}
+
+void UIViewHandler::AttachToView(CustomBrowserView* custom_browser_view) {
+  DCHECK(custom_browser_view);
+  DCHECK(!custom_browser_view_) << "AttachToView without DetachFromView";
+  custom_browser_view_ = custom_browser_view;
+  native_ui_container_ = custom_browser_view->native_ui_container();
+  ui_prefs_ = custom_browser_view->ui_prefs();
+  if (ui_prefs_) {
+    ui_prefs_->AddObserver(this);
+  }
+  receiver_.Resume();
+  // The page pulled its mode once at load (GetUIMode); a re-attached page
+  // needs the new window's authoritative mode pushed instead.
+  if (ui_prefs_ && native_view_.is_bound()) {
+    native_view_->PrefUIModeChanged(ui_prefs_->current_mode());
+  }
+}
+
 void UIViewHandler::UpsertNativeViewLayouts(
     std::vector<custom_browser::mojom::NativeViewParamsPtr> batch) {
   TRACE_EVENT0("browser", "UIViewHandler::UpsertNativeViewLayouts");

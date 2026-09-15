@@ -16,6 +16,10 @@ enum NexusLlmContentPartType {
   kRedactedThinking,
   kToolUse,
   kToolResult,
+  // A document (PDF) as a top-level message part: an @-mentioned PDF inlined
+  // by the guest. Base64 in `data`, type in `mime_type`. The host advertises
+  // support with the bootstrap manifest's `llmDocumentParts` flag.
+  kDocument,
 };
 
 enum NexusLlmFinishReason {
@@ -102,6 +106,8 @@ struct NexusLlmContentPart {
   NexusLlmContentPartType type;
   string? text;
   string? image;
+  // kDocument payload (base64).
+  string? data;
   string? mime_type;
   string? signature;
   string? tool_use_id;
@@ -156,6 +162,12 @@ struct NexusLlmAssistantMessage {
   string? model_id;
   NexusLlmFinishReason finish_reason;
   NexusLlmUsage usage;
+  // Provider detail for a kContentFilter finish — Anthropic `stop_details`
+  // (`{type, category, explanation, recommended_model}`) normalized by the
+  // provider. Null for every other finish reason and for providers that
+  // report none. Additive / ignore-if-absent on the bridge wire
+  // (`message.stop_details`), so no interface bump.
+  mojo_base.mojom.DictionaryValue? stop_details;
 };
 
 struct NexusLlmCallResult {
@@ -182,6 +194,10 @@ struct NexusLlmStreamEvent {
   mojo_base.mojom.Value? input;
   NexusLlmFinishReason? finish_reason;
   NexusLlmUsage? usage;
+  // kFinish only: same `stop_details` as NexusLlmAssistantMessage, parsed off
+  // the provider's `stopDetails` finish-chunk field. Surfaces on the bridge
+  // as `message_delta.delta.stop_details` beside `stop_reason`.
+  mojo_base.mojom.DictionaryValue? stop_details;
   string? error_message;
   // kError only: structured mirror of the canonical
   // "HTTP <status>: <message> (retry-after: <n>s)" prefix/suffix that

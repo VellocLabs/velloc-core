@@ -23,6 +23,8 @@ class LlmProvider;
 //      OpenAI or Anthropic wire format, reuse OpenAiProvider / AnthropicProvider
 //      via their parameterized (id, display_name, default_base_url) ctor.
 //   2. Register the ID in CreateProvider() and add it to kProviderIds.
+//   3. An API-key vendor's default base URL is guest-owned: set
+//      `defaultBaseUrl` on its nexus_web provider config, not here.
 class LlmProviderFactory {
  public:
   LlmProviderFactory() = delete;

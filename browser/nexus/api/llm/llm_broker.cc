@@ -17,6 +17,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
+#include "custom_browser/browser/nexus/api/llm/provider_config.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
@@ -43,6 +44,7 @@ LlmBroker::LlmBroker(
       base::BindRepeating(&LlmBroker::OnOAuthTokensSaved,
                           base::Unretained(this)));
   InitializeProviders();
+  MigrateBakedDefaultBaseUrls();
   LoadProviderConfigs();
   // At-rest secret encryption: api_key + OAuth tokens are stored encrypted
   // and decrypted in LlmProvider::Configure() / OAuthTokenStore. The OS
@@ -62,6 +64,10 @@ LlmBroker::LlmBroker(
   // chance to push fresh data via `model.publishCatalog` /
   // `session.publishStatus`.
   ts_model_catalog_ = prefs_->GetDict(prefs::kNexusTsModelCatalogCache).Clone();
+  // The cached catalog also carries the guest-owned default base URLs, so
+  // providers can reach their endpoint on a cold boot before the guest
+  // republishes.
+  ApplyCatalogDefaultBaseUrls();
   session_status_ = prefs_->GetDict(prefs::kNexusLastSessionStatus).Clone();
   // Model catalogues are TS-authoritative (see
   // `nexus_web/src/browser/config/nexusModelConfig.ts`). No network discovery
@@ -107,10 +113,37 @@ void LlmBroker::SetTsModelCatalog(base::DictValue catalog) {
   // guest reconnects. Cheap (catalog is small JSON) and keeps the WebUI
   // popup correct across browser restarts.
   prefs_->SetDict(prefs::kNexusTsModelCatalogCache, ts_model_catalog_.Clone());
+  ApplyCatalogDefaultBaseUrls();
 
   for (auto& observer : observers_) {
     observer.OnTsModelCatalogChanged(ts_model_catalog_);
   }
+}
+
+void LlmBroker::ApplyCatalogDefaultBaseUrls() {
+  // Default base URLs are guest-owned (`defaultBaseUrl` per provider in the
+  // published catalog); the host compiles none in for API-key vendors. A
+  // provider the catalog does not name keeps whatever default it has — the
+  // OAuth backends, and custom endpoints (none).
+  for (const auto& [provider_id, url] :
+       GetCatalogDefaultBaseUrls(ts_model_catalog_)) {
+    if (LlmProvider* provider = GetProvider(provider_id)) {
+      provider->SetDefaultBaseUrl(url);
+    }
+  }
+}
+
+void LlmBroker::MigrateBakedDefaultBaseUrls() {
+  // Once per profile: afterwards a stored value equal to an old default was
+  // typed by the user, not stamped by the save path.
+  if (prefs_->GetBoolean(prefs::kNexusBakedDefaultBaseUrlsCleared)) {
+    return;
+  }
+  base::DictValue all = prefs_->GetDict(prefs::kNexusProviderConfigs).Clone();
+  if (ClearBakedDefaultBaseUrls(all)) {
+    prefs_->SetDict(prefs::kNexusProviderConfigs, std::move(all));
+  }
+  prefs_->SetBoolean(prefs::kNexusBakedDefaultBaseUrlsCleared, true);
 }
 
 namespace {
@@ -133,7 +166,16 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
       out.Set(to, *v);
     }
   };
-  copy_string("apiKey", "api_key");
+  // The api key is SEALED into the pref (OSCrypt, `NEXUSENC1:` marker), never
+  // copied verbatim: the guest persists ciphertext after `model.encryptSecret`
+  // and republishes that exact string (a no-op seal), but an older guest — or
+  // a settings.json edited by hand / by the update-config skill — can still
+  // push plaintext, and the pref cache must not hold it either way.
+  // `LlmProvider::Configure` decrypts through the memoized NexusSecretCrypt
+  // cache, so the plaintext is materialised once per process, not per read.
+  if (const std::string* api_key = settings.FindString("apiKey")) {
+    out.Set("api_key", SealApiKeyForPref(*api_key));
+  }
   copy_string("baseUrl", "base_url");
   copy_string("defaultModel", "default_model");
   copy_string("model", "model");
@@ -149,6 +191,9 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   };
   copy_int("streamIdleTimeoutSeconds", "stream_idle_timeout_s");
   copy_int("maxConcurrentStreams", "max_concurrent_streams");
+  // Preset User-Agent — code-owned in the guest like the stream guards, and
+  // mirrored the same way: '' or absent clears it (host default).
+  SetStoredUserAgent(settings.FindString("userAgent"), out);
   // User-created custom providers: the identity bits the broker needs to
   // REBUILD the provider on a cold boot, when only the pref survives (see
   // LoadProviderConfigs → EnsureCustomProvider). Without carrying these
@@ -185,7 +230,11 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
           settings.FindDict("lastVerification")) {
     out.Set("last_verification", last_verification->Clone());
   } else if (const std::string* new_api_key = settings.FindString("apiKey");
-             new_api_key && *new_api_key != existing_api_key_str) {
+             new_api_key &&
+             StoredApiKeysDiffer(*new_api_key, existing_api_key_str)) {
+    // Compared as SECRETS, not strings: the pref holds ciphertext and the
+    // guest may republish the same key as a different ciphertext (or as
+    // legacy plaintext), which must not read as a key change.
     out.Remove("last_verification");
   }
 }
@@ -198,6 +247,18 @@ void LlmBroker::SetProviderConfigs(base::DictValue configs,
   // them onto the existing pref per provider so C++-owned secrets (OAuth
   // tokens) survive, configure the live provider, then write the pref back as
   // the cold-boot cache `LoadProviderConfigs` reads.
+  //
+  // If the OS encryptor is not acquired yet, `SealApiKeyForPref` cannot seal
+  // and `StoredApiKeysDiffer` cannot compare secrets. Apply now anyway (the
+  // providers must work immediately) and re-apply this exact publish once
+  // the encryptor arrives, which re-seals any plaintext that landed in the
+  // pref and re-judges the verification stamp on the real secrets.
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
+  if (!crypt->ready()) {
+    crypt->WhenReady(base::BindOnce(&LlmBroker::SetProviderConfigs,
+                                    weak_factory_.GetWeakPtr(),
+                                    configs.Clone(), active_provider_id));
+  }
   base::DictValue all = prefs_->GetDict(prefs::kNexusProviderConfigs).Clone();
   for (const auto [provider_id, config_val] : configs) {
     if (!config_val.is_dict()) {
@@ -557,6 +618,8 @@ void LlmBroker::ReloadProvidersFromPrefs() {
   dynamic_provider_dialects_.clear();
   InitializeProviders();
   LoadProviderConfigs();
+  // Fresh instances start without a default base URL.
+  ApplyCatalogDefaultBaseUrls();
 }
 
 // ---------------------------------------------------------------------------

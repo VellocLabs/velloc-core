@@ -71,7 +71,6 @@ base::DictValue GetStoredProviderConfigCopy(PrefService* prefs,
 }
 
 base::DictValue MergeProviderConfigUpdates(PrefService* prefs,
-                                           nexus::LlmProvider* provider,
                                            const std::string& provider_id,
                                            const base::DictValue& updates) {
   base::DictValue merged = GetStoredProviderConfigCopy(prefs, provider_id);
@@ -121,26 +120,28 @@ base::DictValue MergeProviderConfigUpdates(PrefService* prefs,
     merged.Set("last_verification", last_verification->Clone());
   }
 
+  // Preset User-Agent — same rule as the `providerAuth` adapter's copy:
+  // present ('' = host default) replaces the stored one, absent keeps it.
+  if (updates.Find("user_agent")) {
+    nexus::SetStoredUserAgent(updates.FindString("user_agent"), merged);
+  }
+
+  // An empty base_url means "use the default" and is stored as '' — never
+  // as the default's current value, which would pin the provider to it after
+  // the guest-owned default moves (Configure() resolves '' to the default).
   if (updates.Find("base_url")) {
     const std::string* base_url = updates.FindString("base_url");
-    if (base_url && !base_url->empty()) {
-      merged.Set("base_url", *base_url);
-    } else if (provider) {
-      merged.Set("base_url", provider->GetDefaultBaseUrl());
-    } else {
-      merged.Set("base_url", std::string());
-    }
+    merged.Set("base_url", base_url ? *base_url : std::string());
   }
 
   return merged;
 }
 
 base::DictValue BuildVerificationConfig(PrefService* prefs,
-                                        nexus::LlmProvider* provider,
                                         const std::string& provider_id,
                                         const base::DictValue& updates) {
   base::DictValue merged =
-      MergeProviderConfigUpdates(prefs, provider, provider_id, updates);
+      MergeProviderConfigUpdates(prefs, provider_id, updates);
   merged.Remove("model");
   merged.Remove("default_model");
   merged.Remove("enabled_models");
@@ -534,7 +535,7 @@ void NexusSettingsHandler::HandleUpdateProviderConfig(
 
   PrefService* prefs = profile->GetPrefs();
   base::DictValue merged_config =
-      MergeProviderConfigUpdates(prefs, provider, provider_id, *updates);
+      MergeProviderConfigUpdates(prefs, provider_id, *updates);
   const bool success = broker->ConfigureProvider(provider_id, merged_config);
 
   if (success && provider->IsConfigured()) {
@@ -615,8 +616,12 @@ void NexusSettingsHandler::HandleVerifyProviderConfig(
     return;
   }
 
-  base::DictValue verification_config = BuildVerificationConfig(
-      profile->GetPrefs(), persisted_provider, provider_id, *updates);
+  // A factory-fresh provider has no default base URL — the guest-owned one
+  // lives on the persisted instance, applied from the published catalog.
+  transient_provider->SetDefaultBaseUrl(
+      persisted_provider->GetDefaultBaseUrl());
+  base::DictValue verification_config =
+      BuildVerificationConfig(profile->GetPrefs(), provider_id, *updates);
   if (!transient_provider->Configure(verification_config)) {
     ResolveJavascriptCallback(
         base::Value(callback_id),

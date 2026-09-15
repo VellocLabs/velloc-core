@@ -38,6 +38,7 @@ source_set("provider_config") {
     ":pref_names",
     "//base",
     "//components/prefs",
+    "//custom_browser/browser/nexus:secret_crypt",
   ]
 }
 
@@ -104,6 +105,9 @@ source_set("provider") {
     ":types",
     "//base",
   ]
+
+  # net::HttpRequestHeaders for ApplyUserAgent().
+  deps = [ "//net" ]
 }
 
 # Generic per-provider stream guard: idle-timeout watchdog + concurrency pool
@@ -188,6 +192,7 @@ source_set("broker") {
 
   deps = [
     ":pref_registration",
+    ":provider_config",
     "//components/pref_registry",
     "//custom_browser/browser/nexus:secret_crypt",
   ]
@@ -240,6 +245,36 @@ source_set("openai_usage") {
   public_deps = [ "//base" ]
 }
 
+# Serializes a bridge `role:"tool"` message (N parallel `tool-result` parts)
+# into OpenAI-compatible wire entries: one tool message / function_call_output
+# per part, images in one follow-up user message after the batch (see
+# openai_tool_result_messages.h). Shared by the OpenAI and Ollama providers.
+# Tiny base-only source_set (same pattern as :openai_usage) so the lite
+# unit-test binary can cover the batch shape without linking a provider.
+source_set("openai_tool_result_messages") {
+  sources = [
+    "providers/openai/openai_tool_result_messages.cc",
+    "providers/openai/openai_tool_result_messages.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Serializes a bridge user message into Responses-API `content`: a string when
+# text-only, else input_text / input_image / input_file parts (see
+# openai_user_content.h). Tiny base-only source_set (same pattern as
+# :openai_usage) so the lite unit-test binary can cover the part shapes
+# without linking the provider.
+source_set("openai_user_content") {
+  sources = [
+    "providers/openai/openai_user_content.cc",
+    "providers/openai/openai_user_content.h",
+  ]
+
+  public_deps = [ "//base" ]
+  deps = [ ":openai_tool_result_messages" ]
+}
+
 # Pulls the message + code out of a Responses-API terminal error event. The
 # public /v1/responses API and the ChatGPT (Codex) backend disagree about
 # where they live, and an unrecognized shape used to collapse to a
@@ -284,7 +319,9 @@ source_set("openai_provider") {
     ":line_splitter",
     ":openai_responses_error",
     ":openai_tool_call_stream",
+    ":openai_tool_result_messages",
     ":openai_usage",
+    ":openai_user_content",
     ":provider",
     ":stream_guard",
     ":types",
@@ -307,6 +344,21 @@ source_set("anthropic_schema_sanitizer") {
   public_deps = [ "//base" ]
 }
 
+# Anthropic `stop_reason` -> FinishReason mapping + `stop_details`
+# normalization. Pure (base + :types) so it can be unit-tested without the
+# network stack; the provider links it.
+source_set("anthropic_stop_reason") {
+  sources = [
+    "providers/anthropic/anthropic_stop_reason.cc",
+    "providers/anthropic/anthropic_stop_reason.h",
+  ]
+
+  public_deps = [
+    ":types",
+    "//base",
+  ]
+}
+
 source_set("anthropic_provider") {
   sources = [
     "providers/anthropic/anthropic_provider.cc",
@@ -315,6 +367,7 @@ source_set("anthropic_provider") {
 
   deps = [
     ":anthropic_schema_sanitizer",
+    ":anthropic_stop_reason",
     ":error_extract",
     ":provider",
     ":types",
@@ -349,6 +402,7 @@ source_set("ollama_provider") {
   deps = [
     ":error_extract",
     ":line_splitter",
+    ":openai_tool_result_messages",
     ":provider",
     ":types",
     "//base",

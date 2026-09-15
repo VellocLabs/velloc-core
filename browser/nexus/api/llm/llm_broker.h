@@ -237,6 +237,11 @@ class LlmBroker : public KeyedService {
  private:
   void InitializeProviders();
   void LoadProviderConfigs();
+  // Pushes each provider's catalog `defaultBaseUrl` into the live provider.
+  void ApplyCatalogDefaultBaseUrls();
+  // Once per profile, blanks `base_url` values that are only a stamp of a
+  // legacy compiled-in default (see ClearBakedDefaultBaseUrls).
+  void MigrateBakedDefaultBaseUrls();
 
   // Materialise the provider a USER-CREATED custom endpoint needs.
   //

@@ -44,6 +44,7 @@ class OllamaProvider final : public LlmProvider {
   bool IsConfigured() const override;
   bool Configure(const base::DictValue& config) override;
   std::string GetDefaultBaseUrl() const override;
+  void SetDefaultBaseUrl(const std::string& url) override;
   std::string GetBaseUrl() const override;
 
   void DoGenerate(const base::DictValue& call_options,
@@ -125,7 +126,11 @@ class OllamaProvider final : public LlmProvider {
   void OnFetchModelsComplete(FetchModelsCallback callback,
                              std::optional<std::string> response_body);
 
+  // Guest-supplied via SetDefaultBaseUrl(); empty until the catalog arrives.
+  std::string default_base_url_;
   std::string base_url_;
+  // True while `base_url_` is a user override rather than the default.
+  bool base_url_overridden_ = false;
   std::string configured_model_;
   std::vector<ModelInfo> fetched_models_;
   std::string last_raw_catalog_json_;

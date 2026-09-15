@@ -267,7 +267,7 @@ bool ValidateCanonicalBridgeContent(const Value& part_value,
   }
 
   if (*type == "text" || *type == "thinking" || *type == "redacted_thinking" ||
-      *type == "image") {
+      *type == "image" || *type == "document") {
     return true;
   }
 
@@ -443,6 +443,22 @@ void AppendBridgeContentPart(const Value& part_value,
     if (mime_type) {
       part->mime_type = *mime_type;
     }
+    out->push_back(std::move(part));
+    return;
+  }
+
+  if (*type == "document") {
+    std::optional<std::string> data =
+        bridge_support::FindNonEmptyString(*part_dict, "data");
+    if (!data) {
+      return;
+    }
+    auto part = mojom::NexusLlmContentPart::New();
+    part->type = mojom::NexusLlmContentPartType::kDocument;
+    part->data = *data;
+    part->mime_type =
+        bridge_support::FindNonEmptyString(*part_dict, "mimeType")
+            .value_or("application/pdf");
     out->push_back(std::move(part));
     return;
   }
@@ -687,6 +703,13 @@ std::optional<Dict> FromMojoContentPart(const mojom::NexusLlmContentPart& part) 
       }
       return bridge_part;
 
+    case mojom::NexusLlmContentPartType::kDocument:
+      bridge_part.Set("type", "document");
+      bridge_part.Set("data", part.data.value_or(std::string()));
+      bridge_part.Set("mimeType",
+                      part.mime_type.value_or(std::string("application/pdf")));
+      return bridge_part;
+
     case mojom::NexusLlmContentPartType::kToolUse:
       bridge_part.Set("type", "tool-call");
       bridge_part.Set("toolCallId", part.tool_use_id.value_or(std::string()));
@@ -819,7 +842,8 @@ void FlushPendingToolCalls(NexusLlmBridgeStreamState* state, List* chunks) {
 void FinalizeStream(NexusLlmBridgeStreamState* state,
                     List* chunks,
                     std::optional<mojom::NexusLlmFinishReason> finish_reason,
-                    const mojom::NexusLlmUsage* usage) {
+                    const mojom::NexusLlmUsage* usage,
+                    const Dict* stop_details) {
   CloseOpenDeltaBlock(state, chunks);
   FlushPendingToolCalls(state, chunks);
 
@@ -827,6 +851,11 @@ void FinalizeStream(NexusLlmBridgeStreamState* state,
     Dict delta;
     if (finish_reason.has_value()) {
       delta.Set("stop_reason", FinishReasonToStopReason(*finish_reason));
+    }
+    // Anthropic-shaped `stop_details` beside `stop_reason`, exactly where the
+    // vendor SSE puts it. Additive: absent unless the provider reported one.
+    if (stop_details) {
+      delta.Set("stop_details", stop_details->Clone());
     }
 
     Dict chunk;
@@ -1064,6 +1093,10 @@ base::DictValue CallResultToBridge(const mojom::NexusLlmCallResult& result) {
                    FinishReasonToStopReason(
                        result.message ? result.message->finish_reason
                                       : mojom::NexusLlmFinishReason::kUnknown));
+  // Same additive `stop_details` the stream path puts on message_delta.
+  if (result.message && result.message->stop_details.has_value()) {
+    message_dict.Set("stop_details", result.message->stop_details->Clone());
+  }
   message_dict.Set(
       "usage",
       UsageToBridge(result.message ? result.message->usage.get() : nullptr));
@@ -1208,7 +1241,10 @@ base::DictValue StreamReadResultToBridge(
 
       case mojom::NexusLlmStreamEventType::kFinish:
         FinalizeStream(state, &chunks, event->finish_reason,
-                       event->usage.get());
+                       event->usage.get(),
+                       event->stop_details.has_value()
+                           ? &*event->stop_details
+                           : nullptr);
         break;
 
       case mojom::NexusLlmStreamEventType::kError: {
@@ -1241,7 +1277,7 @@ base::DictValue StreamReadResultToBridge(
 
   bool done = result.done || state->terminal_emitted;
   if (done && !state->terminal_emitted) {
-    FinalizeStream(state, &chunks, std::nullopt, nullptr);
+    FinalizeStream(state, &chunks, std::nullopt, nullptr, nullptr);
   }
 
   *done_out = done;

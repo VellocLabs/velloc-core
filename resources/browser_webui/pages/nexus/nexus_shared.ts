@@ -87,17 +87,6 @@ export type NexusSettingsSection = 'models'|'mcp'|'permissions'|'tools'|
 export type SettingsStatus = 'idle'|'draft'|'verifying'|'ready'|'error';
 export type StatusTone = 'error'|'info'|'success'|'warning';
 
-export const DEFAULT_BASE_URLS: Record<string, string> = {
-  anthropic: 'https://api.anthropic.com',
-  deepseek: 'https://api.deepseek.com',
-  glm: 'https://open.bigmodel.cn/api/paas/v4',
-  google: 'https://generativelanguage.googleapis.com/v1beta',
-  kimi: 'https://api.moonshot.cn/v1',
-  minimax: 'https://api.minimax.io/v1',
-  ollama: 'http://localhost:11434',
-  openai: 'https://api.openai.com/v1',
-  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-};
 export const WEBAPP_URL_PREF = 'nexus.webapp_url';
 
 export const PROVIDER_NAME_KEYS: Record<string, string> = {
@@ -159,10 +148,6 @@ export function getBaseUrlValidationMessage(url: string): string {
         'customBrowserNexusErrorInvalidBaseUrl',
         'Invalid Base URL - enter a valid API endpoint');
   }
-}
-
-export function hasDefaultBaseUrl(providerId: string): boolean {
-  return Object.prototype.hasOwnProperty.call(DEFAULT_BASE_URLS, providerId);
 }
 
 export function getWebappUrlValidationMessage(url: string): string {

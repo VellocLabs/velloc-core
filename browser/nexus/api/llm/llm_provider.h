@@ -8,6 +8,10 @@
 #include "base/values.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 
+namespace net {
+class HttpRequestHeaders;
+}  // namespace net
+
 namespace nexus {
 
 // Abstract base class for all LLM providers. Each concrete provider translates
@@ -66,8 +70,16 @@ class LlmProvider {
   virtual bool IsConfigured() const = 0;
   virtual bool Configure(const base::DictValue& config) = 0;
 
-  // Returns the provider's built-in default base URL.
+  // Returns the provider's default base URL. API-key vendors compile none in:
+  // the guest owns them (`defaultBaseUrl` on each provider of the published
+  // model catalog) and the broker applies them through SetDefaultBaseUrl(),
+  // so this is empty until the catalog arrives. OAuth backends keep the one
+  // their OAuth config names; custom endpoints have none.
   virtual std::string GetDefaultBaseUrl() const = 0;
+
+  // Replaces the default base URL. The active base URL follows it unless a
+  // user override (a non-empty `base_url` in Configure()) is in effect.
+  virtual void SetDefaultBaseUrl(const std::string& url) = 0;
 
   // Returns the currently active base URL (custom if set, otherwise default).
   virtual std::string GetBaseUrl() const = 0;
@@ -94,8 +106,28 @@ class LlmProvider {
   // preserves the previous behaviour for every other provider.
   virtual bool IsRequestQueued(const std::string& request_id) const;
 
+  // The User-Agent this provider pins on its HTTP requests, or empty for the
+  // host's default. Set by ConfigureUserAgent().
+  const std::string& user_agent() const { return user_agent_; }
+
  protected:
   LlmProvider() = default;
+
+  // Reads the optional `user_agent` key of a Configure() dict — a code-owned
+  // per-provider preset the guest publishes as `userAgent` (e.g. OpenCode
+  // Zen's `opencode/<version>`). Non-empty pins it; empty or absent restores
+  // the host default. Every Configure() calls this first, before any early
+  // return, so a config never leaves a previous one's User-Agent behind.
+  void ConfigureUserAgent(const base::DictValue& config);
+
+  // Sets the pinned User-Agent on an outgoing request's |headers|, replacing
+  // the host default the network stack would add. No-op when none is pinned.
+  // Every request a provider sends (generate, stream, model discovery) goes
+  // through this.
+  void ApplyUserAgent(net::HttpRequestHeaders& headers) const;
+
+ private:
+  std::string user_agent_;
 };
 
 }  // namespace nexus

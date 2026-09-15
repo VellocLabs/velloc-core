@@ -116,7 +116,6 @@ std::string GetConfiguredBaseUrlFromConfig(const base::DictValue& config,
 // header so the new adapter can stand alone before P6 retires the
 // legacy handler. When that happens, only this copy survives.
 base::DictValue MergeProviderConfigUpdates(PrefService* prefs,
-                                           nexus::LlmProvider* provider,
                                            const std::string& provider_id,
                                            const base::DictValue& updates) {
   base::DictValue merged = GetStoredProviderConfigCopy(prefs, provider_id);
@@ -161,15 +160,20 @@ base::DictValue MergeProviderConfigUpdates(PrefService* prefs,
     merged.Set("last_verification", last_verification->Clone());
   }
 
+  // The draft's preset User-Agent. Custom providers are probed through a
+  // shared backend slot whose stored config carries whatever the last request
+  // published there, so the probe must take the draft's own value ('' = host
+  // default). Absent (an older guest) keeps the stored one.
+  if (updates.Find("user_agent")) {
+    nexus::SetStoredUserAgent(updates.FindString("user_agent"), merged);
+  }
+
+  // An empty base_url means "use the default" and is stored as '' — never
+  // as the default's current value, which would pin the provider to it after
+  // the guest-owned default moves (Configure() resolves '' to the default).
   if (updates.Find("base_url")) {
     const std::string* base_url = updates.FindString("base_url");
-    if (base_url && !base_url->empty()) {
-      merged.Set("base_url", *base_url);
-    } else if (provider) {
-      merged.Set("base_url", provider->GetDefaultBaseUrl());
-    } else {
-      merged.Set("base_url", std::string());
-    }
+    merged.Set("base_url", base_url ? *base_url : std::string());
   }
 
   return merged;
@@ -181,11 +185,10 @@ base::DictValue MergeProviderConfigUpdates(PrefService* prefs,
 // to the connectivity probe (model selection, enabled_models,
 // last_verification). Keeps base_url + api_key/account_token.
 base::DictValue BuildVerificationConfig(PrefService* prefs,
-                                        nexus::LlmProvider* provider,
                                         const std::string& provider_id,
                                         const base::DictValue& updates) {
   base::DictValue merged =
-      MergeProviderConfigUpdates(prefs, provider, provider_id, updates);
+      MergeProviderConfigUpdates(prefs, provider_id, updates);
   merged.Remove("model");
   merged.Remove("default_model");
   merged.Remove("enabled_models");
@@ -341,8 +344,8 @@ void NexusProvidersBridgeAdapter::HandleUpdateOnUI(
   }
 
   PrefService* prefs = profile_->GetPrefs();
-  base::DictValue merged_config = MergeProviderConfigUpdates(
-      prefs, provider, input.providerId, input.updates);
+  base::DictValue merged_config =
+      MergeProviderConfigUpdates(prefs, input.providerId, input.updates);
   const bool success =
       broker->ConfigureProvider(input.providerId, merged_config);
 
@@ -507,8 +510,12 @@ void NexusProvidersBridgeAdapter::HandleVerifyOnUI(
   }
 
   PrefService* prefs = profile_->GetPrefs();
-  base::DictValue verification_config = BuildVerificationConfig(
-      prefs, persisted_provider, input.providerId, input.updates);
+  // A factory-fresh provider has no default base URL — the guest-owned one
+  // lives on the persisted instance, applied from the published catalog.
+  transient_provider->SetDefaultBaseUrl(
+      persisted_provider->GetDefaultBaseUrl());
+  base::DictValue verification_config =
+      BuildVerificationConfig(prefs, input.providerId, input.updates);
   if (!transient_provider->Configure(verification_config)) {
     std::move(done).Success(base::Value(BuildVerificationFailure(
         "Provider is not configured. Check the required connection "

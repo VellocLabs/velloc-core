@@ -85,6 +85,13 @@ inline constexpr char kNexusProviderCatalogs[] = "nexus.provider_catalogs";
 inline constexpr char kNexusTsModelCatalogCache[] =
     "nexus.ts_model_catalog_cache";
 
+// True once `LlmBroker` has blanked the `base_url` values that were only a
+// stamp of a legacy compiled-in default (see ClearBakedDefaultBaseUrls). The
+// cleanup runs once per profile: a value a user types afterwards — even one
+// equal to an old default — is a choice, and must survive later boots.
+inline constexpr char kNexusBakedDefaultBaseUrlsCleared[] =
+    "nexus.baked_default_base_urls_cleared";
+
 // Last `SessionStatus` payload pushed by nexus_web via
 // `session.publishStatus`. Cached so the WebUI quick-settings popup can
 // render the most-recent selection on cold boot before the guest comes

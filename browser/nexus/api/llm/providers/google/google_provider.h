@@ -39,6 +39,7 @@ class GoogleProvider : public LlmProvider {
   bool IsConfigured() const override;
   bool Configure(const base::DictValue& config) override;
   std::string GetDefaultBaseUrl() const override;
+  void SetDefaultBaseUrl(const std::string& url) override;
   std::string GetBaseUrl() const override;
   void DoGenerate(const base::DictValue& call_options,
                   GenerateCallback callback) override;
@@ -93,7 +94,11 @@ class GoogleProvider : public LlmProvider {
   std::vector<FetchModelsCallback> pending_models_callbacks_;
 
   std::string api_key_;
+  // Guest-supplied via SetDefaultBaseUrl(); empty until the catalog arrives.
+  std::string default_base_url_;
   std::string base_url_;
+  // True while `base_url_` is a user override rather than the default.
+  bool base_url_overridden_ = false;
   std::string model_id_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::map<std::string, PendingGenerate> pending_generates_;

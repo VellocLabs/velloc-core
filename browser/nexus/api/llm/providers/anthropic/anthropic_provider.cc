@@ -3,6 +3,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/llm_observation.h"
 #include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_schema_sanitizer.h"
+#include "custom_browser/browser/nexus/api/llm/providers/anthropic/anthropic_stop_reason.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
 #include <array>
@@ -82,16 +83,6 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
           "Not yet covered by enterprise policy."
       }
     )");
-
-FinishReason TranslateStopReason(std::string_view stop_reason) {
-  if (stop_reason == "end_turn" || stop_reason == "stop_sequence")
-    return FinishReason::kStop;
-  if (stop_reason == "max_tokens")
-    return FinishReason::kLength;
-  if (stop_reason == "tool_use")
-    return FinishReason::kToolCalls;
-  return FinishReason::kOther;
-}
 
 std::string_view FinishReasonToString(FinishReason reason) {
   switch (reason) {
@@ -452,9 +443,16 @@ class AnthropicProvider::StreamSession
 
     } else if (event_type == "message_delta") {
       FinishReason reason = FinishReason::kUnknown;
+      // `stop_details` accompanies `stop_reason: "refusal"` (Fable 5 / 5.1,
+      // Opus 5 safety classifiers) and sits inside `delta` next to
+      // `stop_reason`. Informational only — the guest branches on the finish
+      // reason, never on these details.
+      std::optional<base::DictValue> stop_details;
       if (const auto* delta_obj = dict.FindDict("delta")) {
         if (const auto* sr = delta_obj->FindString("stop_reason"))
-          reason = TranslateStopReason(*sr);
+          reason = TranslateAnthropicStopReason(*sr);
+        stop_details =
+            NormalizeAnthropicStopDetails(delta_obj->Find("stop_details"));
       }
       if (const auto* usage = dict.FindDict("usage"))
         completion_tokens_ = usage->FindInt("output_tokens").value_or(0);
@@ -462,6 +460,8 @@ class AnthropicProvider::StreamSession
       base::DictValue chunk;
       chunk.Set("type", "finish");
       chunk.Set("finishReason", std::string(FinishReasonToString(reason)));
+      if (stop_details.has_value())
+        chunk.Set("stopDetails", std::move(*stop_details));
 
       base::DictValue usage;
       usage.Set("promptTokens", prompt_tokens_);
@@ -553,7 +553,7 @@ AnthropicProvider::AnthropicProvider(
     : AnthropicProvider(std::move(url_loader_factory),
                         std::string(kAnthropicProviderId),
                         std::string(kAnthropicDisplayName),
-                        "https://api.anthropic.com") {}
+                        /*default_base_url=*/std::string()) {}
 
 AnthropicProvider::AnthropicProvider(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
@@ -612,6 +612,8 @@ bool AnthropicProvider::IsConfigured() const {
 bool AnthropicProvider::Configure(const base::DictValue& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  ConfigureUserAgent(config);
+
   if (const auto* key = config.FindString("api_key"))
     api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*key);
 
@@ -620,10 +622,11 @@ bool AnthropicProvider::Configure(const base::DictValue& config) {
     model_id_ = *model;
   }
 
+  // A non-empty base_url is a user override; an empty one means "use the
+  // default" and drops a previous override. Absent leaves it unchanged.
   if (const auto* base_url = config.FindString("base_url")) {
-    if (!base_url->empty()) {
-      base_url_ = *base_url;
-    }
+    base_url_overridden_ = !base_url->empty();
+    base_url_ = base_url_overridden_ ? *base_url : default_base_url_;
   }
 
   return IsConfigured();
@@ -805,6 +808,7 @@ void AnthropicProvider::FetchAvailableModels(FetchModelsCallback callback) {
   request->method = "GET";
   request->headers.SetHeader("x-api-key", api_key_);
   request->headers.SetHeader("anthropic-version", "2023-06-01");
+  ApplyUserAgent(request->headers);
   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 
   models_loader_ =
@@ -1428,7 +1432,10 @@ GenerateResult AnthropicProvider::ParseResponse(
   }
 
   if (const auto* reason = response.FindString("stop_reason"))
-    result.finish_reason = TranslateStopReason(*reason);
+    result.finish_reason = TranslateAnthropicStopReason(*reason);
+  // Null for every stop_reason but "refusal" — see anthropic_stop_reason.h.
+  result.stop_details =
+      NormalizeAnthropicStopDetails(response.Find("stop_details"));
 
   if (const auto* usage = response.FindDict("usage")) {
     result.prompt_tokens = usage->FindInt("input_tokens").value_or(0);
@@ -1457,6 +1464,7 @@ AnthropicProvider::CreateResourceRequest() const {
                              std::string(kAnthropicApiVersion));
   request->headers.SetHeader(net::HttpRequestHeaders::kContentType,
                              "application/json");
+  ApplyUserAgent(request->headers);
   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   return request;
 }
@@ -1468,6 +1476,13 @@ std::string AnthropicProvider::GenerateRequestId() {
 
 std::string AnthropicProvider::GetDefaultBaseUrl() const {
   return default_base_url_;
+}
+
+void AnthropicProvider::SetDefaultBaseUrl(const std::string& url) {
+  default_base_url_ = url;
+  if (!base_url_overridden_) {
+    base_url_ = default_base_url_;
+  }
 }
 
 std::string AnthropicProvider::GetBaseUrl() const {

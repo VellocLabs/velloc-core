@@ -9,6 +9,7 @@
 
 #include "base/base64.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_util.h"
 #include "components/os_crypt/async/browser/os_crypt_async.h"
@@ -97,6 +98,13 @@ std::string NexusSecretCrypt::Decrypt(const std::string& stored) {
   }
   std::string plaintext;
   if (!encryptor_->DecryptString(ciphertext, &plaintext)) {
+    // The value carries our marker but this OS keystore cannot open it —
+    // typically a sealed settings.json / pref copied from another machine or
+    // OS user, or a reset DPAPI/Keychain. Say so once per distinct value:
+    // callers see an empty secret and would otherwise fail with a bare 401.
+    LOG(ERROR) << "NexusSecretCrypt: a sealed secret could not be decrypted "
+                  "by this OS keystore (copied from another machine or user?); "
+                  "the secret must be re-entered";
     return std::string();
   }
   ++decrypt_ops_;
@@ -112,6 +120,13 @@ bool NexusSecretCrypt::IsEncrypted(const std::string& stored) {
 void NexusSecretCrypt::SetEncryptorForTesting(
     os_crypt_async::Encryptor encryptor) {
   encryptor_ = std::move(encryptor);
+  acquiring_ = false;
+  decrypt_cache_.clear();
+  decrypt_ops_ = 0;
+}
+
+void NexusSecretCrypt::ClearEncryptorForTesting() {
+  encryptor_.reset();
   acquiring_ = false;
   decrypt_cache_.clear();
   decrypt_ops_ = 0;

@@ -260,6 +260,12 @@ struct GenerateResult {
   std::optional<std::vector<base::DictValue>> reasoning;
   std::optional<std::vector<base::DictValue>> tool_calls;
   FinishReason finish_reason = FinishReason::kUnknown;
+  // Provider detail for a kContentFilter stop — Anthropic's `stop_details`
+  // (`{type, category, explanation, recommended_model}`, string fields
+  // only) normalized by the provider. Set only when the provider reported
+  // one; informational, never a branch condition (the guest branches on
+  // finish_reason). Rides to the guest as `message.stop_details`.
+  std::optional<base::DictValue> stop_details;
   int prompt_tokens = 0;
   int completion_tokens = 0;
   int cache_read_input_tokens = 0;

@@ -447,6 +447,41 @@ TEST(NexusLlmBridgeSupportTest,
   EXPECT_EQ(*parsed_doc->FindString("mimeType"), "application/pdf");
 }
 
+// An @-mentioned PDF is inlined by the guest as a TOP-LEVEL `document` part
+// of a user message. The bridge used to accept a document only inside a tool
+// result and rejected this one with INVALID_ARGS, failing the whole turn.
+TEST(NexusLlmBridgeSupportTest, BuildMojoLlmRequestAcceptsTopLevelDocumentPart) {
+  base::DictValue payload;
+  base::ListValue messages;
+  base::DictValue user_message;
+  user_message.Set("role", "user");
+  base::ListValue content;
+  base::DictValue text_part;
+  text_part.Set("type", "text");
+  text_part.Set("text", "PDF file read: /tmp/claim.pdf (2 page(s))");
+  content.Append(std::move(text_part));
+  base::DictValue doc_part;
+  doc_part.Set("type", "document");
+  doc_part.Set("data", "JVBERi0=");
+  doc_part.Set("mimeType", "application/pdf");
+  content.Append(std::move(doc_part));
+  user_message.Set("content", std::move(content));
+  messages.Append(std::move(user_message));
+  payload.Set("messages", std::move(messages));
+
+  std::string error_message;
+  mojom::NexusLlmRequestParamsPtr request =
+      BuildMojoLlmRequest(payload, &error_message);
+
+  ASSERT_TRUE(request) << error_message;
+  ASSERT_EQ(request->messages.size(), 1u);
+  ASSERT_EQ(request->messages[0]->content.size(), 2u);
+  const auto& part = request->messages[0]->content[1];
+  EXPECT_EQ(part->type, mojom::NexusLlmContentPartType::kDocument);
+  EXPECT_EQ(part->data, std::optional<std::string>("JVBERi0="));
+  EXPECT_EQ(part->mime_type, std::optional<std::string>("application/pdf"));
+}
+
 // A malformed tool-call part (empty toolCallId — the exact shape the
 // qwen/DashScope streaming-parse bug used to persist) must be rejected with a
 // graceful error, NOT crash the browser. Bridge payloads carry untrusted
@@ -653,6 +688,97 @@ TEST(NexusLlmBridgeSupportTest, CallResultToBridgeEmitsSnakeCaseUsage) {
   EXPECT_EQ(*message->FindString("model"), "gpt-4o-mini");
   ASSERT_NE(message->FindString("stop_reason"), nullptr);
   EXPECT_EQ(*message->FindString("stop_reason"), "end_turn");
+}
+
+// A content-filter finish (Anthropic `stop_reason: "refusal"`) carries the
+// provider's `stop_details` beside `stop_reason` on the blocking-call reply,
+// in the vendor's own field name so the guest reads one shape for both
+// transports. Absent entirely when the provider reported none.
+TEST(NexusLlmBridgeSupportTest, CallResultToBridgeCarriesStopDetails) {
+  auto assistant = mojom::NexusLlmAssistantMessage::New();
+  assistant->model_id = "claude-fable-5-1";
+  assistant->finish_reason = mojom::NexusLlmFinishReason::kContentFilter;
+  assistant->usage = MakeUsage(/*input=*/10, /*output=*/0, /*cache_read=*/0,
+                               /*cache_create=*/0);
+  base::DictValue details;
+  details.Set("type", "refusal");
+  details.Set("category", "cyber");
+  details.Set("explanation", "Declined by a safety classifier.");
+  assistant->stop_details = std::move(details);
+
+  auto call_result = mojom::NexusLlmCallResult::New();
+  call_result->message = std::move(assistant);
+
+  base::DictValue bridge = CallResultToBridge(*call_result);
+  const base::DictValue* message = bridge.FindDict("message");
+  ASSERT_TRUE(message);
+  ASSERT_NE(message->FindString("stop_reason"), nullptr);
+  EXPECT_EQ(*message->FindString("stop_reason"), "content_filter");
+  const base::DictValue* stop_details = message->FindDict("stop_details");
+  ASSERT_TRUE(stop_details);
+  ASSERT_NE(stop_details->FindString("category"), nullptr);
+  EXPECT_EQ(*stop_details->FindString("category"), "cyber");
+  ASSERT_NE(stop_details->FindString("explanation"), nullptr);
+  EXPECT_EQ(*stop_details->FindString("explanation"),
+            "Declined by a safety classifier.");
+
+  // No details reported -> no key at all (the guest treats absence as "the
+  // provider said nothing more", never as an empty object).
+  auto plain = mojom::NexusLlmAssistantMessage::New();
+  plain->finish_reason = mojom::NexusLlmFinishReason::kStop;
+  plain->usage = MakeUsage(1, 1, 0, 0);
+  auto plain_result = mojom::NexusLlmCallResult::New();
+  plain_result->message = std::move(plain);
+  base::DictValue plain_bridge = CallResultToBridge(*plain_result);
+  const base::DictValue* plain_message = plain_bridge.FindDict("message");
+  ASSERT_TRUE(plain_message);
+  EXPECT_EQ(plain_message->FindDict("stop_details"), nullptr);
+}
+
+// Streaming twin of the above: the kFinish event's `stop_details` lands on
+// `message_delta.delta.stop_details`, next to the normalized `stop_reason`,
+// which is where the Anthropic SSE itself puts it.
+TEST(NexusLlmBridgeSupportTest,
+     StreamReadResultToBridgeEmitsStopDetailsOnMessageDelta) {
+  auto event = mojom::NexusLlmStreamEvent::New();
+  event->type = mojom::NexusLlmStreamEventType::kFinish;
+  event->finish_reason = mojom::NexusLlmFinishReason::kContentFilter;
+  event->usage = MakeUsage(/*input=*/10, /*output=*/0, /*cache_read=*/0,
+                           /*cache_create=*/0);
+  base::DictValue details;
+  details.Set("type", "refusal");
+  details.Set("category", "bio");
+  event->stop_details = std::move(details);
+
+  auto read_result = mojom::NexusLlmStreamReadResult::New();
+  read_result->events.push_back(std::move(event));
+  read_result->done = true;
+
+  NexusLlmBridgeStreamState state;
+  bool done = false;
+  bool should_cancel = false;
+  base::DictValue bridge =
+      StreamReadResultToBridge(&state, *read_result, &done, &should_cancel);
+
+  const base::ListValue* chunks = bridge.FindList("chunks");
+  ASSERT_TRUE(chunks);
+  const base::DictValue* message_delta = nullptr;
+  for (const base::Value& chunk : *chunks) {
+    const base::DictValue* dict = chunk.GetIfDict();
+    if (dict && dict->FindString("type") &&
+        *dict->FindString("type") == "message_delta") {
+      message_delta = dict;
+    }
+  }
+  ASSERT_TRUE(message_delta);
+  const base::DictValue* delta = message_delta->FindDict("delta");
+  ASSERT_TRUE(delta);
+  ASSERT_NE(delta->FindString("stop_reason"), nullptr);
+  EXPECT_EQ(*delta->FindString("stop_reason"), "content_filter");
+  const base::DictValue* stop_details = delta->FindDict("stop_details");
+  ASSERT_TRUE(stop_details);
+  ASSERT_NE(stop_details->FindString("category"), nullptr);
+  EXPECT_EQ(*stop_details->FindString("category"), "bio");
 }
 
 TEST(NexusLlmBridgeSupportTest, BuildMojoLlmRequestRejectsLegacyToolFormats) {

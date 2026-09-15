@@ -82,6 +82,10 @@ class NexusSecretCrypt {
   static bool IsEncrypted(const std::string& stored);
 
   void SetEncryptorForTesting(os_crypt_async::Encryptor encryptor);
+  // Puts the singleton back into the not-yet-acquired state so a test can
+  // exercise the "encryptor not ready" paths (Encrypt passthrough, Decrypt
+  // → "", the byte-compare fallback in StoredApiKeysDiffer).
+  void ClearEncryptorForTesting();
   // Number of real OS decrypt operations performed (cache misses). Lets a
   // test assert that N reads of the same value cost exactly 1 crypto op.
   size_t decrypt_ops_for_testing() const { return decrypt_ops_; }

@@ -97,6 +97,13 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
       ::nexus::generated::PublishBinaryRegistryInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // `model.encryptSecret`: seals a provider api key with the OS keystore so
+  // the guest persists only ciphertext in settings.json. Waits for the
+  // encryptor if it is not ready yet; never answers with plaintext.
+  void HandleEncryptSecretOnUI(
+      ::nexus::generated::EncryptSecretInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   // Phase 12f: `publishStatus` moved out of `llm/` into the new
   // `session/` capability — see
   // `api/session/nexus_session_bridge_adapter.{h,cc}`. The wire

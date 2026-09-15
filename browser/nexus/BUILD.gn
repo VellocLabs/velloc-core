@@ -226,10 +226,11 @@ action("nexus_tools_codegen") {
     "api/declarations/sqlite/open.api.json",
     "api/declarations/sqlite/query.api.json",
 
-    # llm category — 7 actions, proxied through NexusLlmHost / LlmBroker.
+    # llm category — 11 actions, proxied through NexusLlmHost / LlmBroker.
     # Phase 12f moved `publishStatus` out to the new `session` category.
     "api/declarations/llm/call.api.json",
     "api/declarations/llm/catalog.api.json",
+    "api/declarations/llm/encryptSecret.api.json",
     "api/declarations/llm/publishBinaryRegistry.api.json",
     "api/declarations/llm/publishCatalog.api.json",
     "api/declarations/llm/publishProviderConfigs.api.json",
@@ -1207,9 +1208,12 @@ source_set("unit_tests_lite") {
     "api/llm/oauth/oauth_token_store_unittest.cc",
     "api/llm/provider_config_unittest.cc",
     "api/llm/providers/anthropic/anthropic_schema_sanitizer_unittest.cc",
+    "api/llm/providers/anthropic/anthropic_stop_reason_unittest.cc",
     "api/llm/providers/openai/openai_responses_error_unittest.cc",
     "api/llm/providers/openai/openai_tool_call_stream_unittest.cc",
+    "api/llm/providers/openai/openai_tool_result_messages_unittest.cc",
     "api/llm/providers/openai/openai_usage_unittest.cc",
+    "api/llm/providers/openai/openai_user_content_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
@@ -1248,6 +1252,10 @@ source_set("unit_tests_lite") {
     "//components/prefs",
     "//components/prefs:test_support",
     "//custom_browser/browser/nexus/api/llm:anthropic_schema_sanitizer",
+
+    # anthropic_stop_reason_unittest.cc — `refusal` -> content-filter mapping
+    # + `stop_details` normalization.
+    "//custom_browser/browser/nexus/api/llm:anthropic_stop_reason",
     "//custom_browser/browser/nexus/api/llm:error_extract",
     "//custom_browser/browser/nexus/api/llm:line_splitter",
 
@@ -1256,7 +1264,9 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:oauth",
     "//custom_browser/browser/nexus/api/llm:openai_responses_error",
     "//custom_browser/browser/nexus/api/llm:openai_tool_call_stream",
+    "//custom_browser/browser/nexus/api/llm:openai_tool_result_messages",
     "//custom_browser/browser/nexus/api/llm:openai_usage",
+    "//custom_browser/browser/nexus/api/llm:openai_user_content",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:provider",
     "//custom_browser/browser/nexus/api/llm:provider_config",

@@ -29,14 +29,16 @@ TEST(LlmProviderFactoryTest, CreateKnownProvidersReturnsInstanceWithMatchingId) 
     EXPECT_EQ(provider->GetId(), id);
     EXPECT_FALSE(provider->GetDisplayName().empty())
         << "DisplayName was empty for id=" << id;
-    // Custom endpoints intentionally ship no default base URL — the user
-    // supplies it in Settings → Models. Every built-in provider has a default.
-    if (id == "custom-openai" || id == "custom-anthropic") {
-      EXPECT_TRUE(provider->GetDefaultBaseUrl().empty())
-          << "Custom endpoint should have no default base URL: id=" << id;
-    } else {
+    // Only the OAuth backends compile a base URL in (it is part of their
+    // OAuth config). API-key vendors get theirs from the guest's catalog, and
+    // custom endpoints from the user — so a fresh instance has none.
+    if (id == "chatgpt-pro" || id == "github-copilot" || id == "qwen-code") {
       EXPECT_FALSE(provider->GetDefaultBaseUrl().empty())
-          << "DefaultBaseUrl was empty for id=" << id;
+          << "OAuth backend lost its base URL: id=" << id;
+    } else {
+      EXPECT_TRUE(provider->GetDefaultBaseUrl().empty())
+          << "Default base URLs are guest-owned; none may be compiled in: id="
+          << id;
     }
   }
 }
@@ -115,7 +117,32 @@ TEST(LlmProviderFactoryTest, CustomProvidersAreKeylessConfigurable) {
   EXPECT_EQ(anthropic->GetBaseUrl(), "http://127.0.0.1:8765");
 }
 
-TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveDistinctBaseUrls) {
+// Every provider reads the preset User-Agent from its Configure() dict, and a
+// later Configure() without one restores the host default — even for a
+// provider whose Configure() returns early (Google without an api key), since
+// the User-Agent is read before any early return.
+TEST(LlmProviderFactoryTest, EveryProviderPinsAndClearsTheUserAgent) {
+  for (const std::string& id : LlmProviderFactory::GetRegisteredProviderIds()) {
+    auto provider = LlmProviderFactory::CreateProvider(id, NullLoaderFactory());
+    ASSERT_NE(provider, nullptr) << id;
+    EXPECT_TRUE(provider->user_agent().empty())
+        << "a fresh provider must use the host default: id=" << id;
+
+    base::DictValue pinned;
+    pinned.Set("base_url", "http://127.0.0.1:8765/v1");
+    pinned.Set("user_agent", "opencode/1.18.32");
+    provider->Configure(pinned);
+    EXPECT_EQ(provider->user_agent(), "opencode/1.18.32") << id;
+
+    base::DictValue cleared;
+    cleared.Set("base_url", "http://127.0.0.1:8765/v1");
+    provider->Configure(cleared);
+    EXPECT_TRUE(provider->user_agent().empty())
+        << "a config without user_agent must drop the old one: id=" << id;
+  }
+}
+
+TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveTheirOwnIdentity) {
   auto openai =
       LlmProviderFactory::CreateProvider("openai", NullLoaderFactory());
   auto glm = LlmProviderFactory::CreateProvider("glm", NullLoaderFactory());
@@ -128,16 +155,56 @@ TEST(LlmProviderFactoryTest, OpenAiCompatProvidersHaveDistinctBaseUrls) {
 
   ASSERT_TRUE(openai && glm && kimi && minimax && qwen && deepseek);
 
-  EXPECT_NE(glm->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
-  EXPECT_NE(kimi->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
-  EXPECT_NE(minimax->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
-  EXPECT_NE(qwen->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
-  EXPECT_NE(deepseek->GetDefaultBaseUrl(), openai->GetDefaultBaseUrl());
-
-  // And each compat provider's display name is its own, not "OpenAI".
+  // Each compat provider's display name is its own, not "OpenAI".
   EXPECT_NE(glm->GetDisplayName(), openai->GetDisplayName());
   EXPECT_NE(kimi->GetDisplayName(), openai->GetDisplayName());
   EXPECT_EQ(deepseek->GetDisplayName(), "DeepSeek");
+}
+
+// The default base URL is guest-owned: the broker pushes each provider's
+// catalog `defaultBaseUrl` through SetDefaultBaseUrl(). The active URL must
+// follow it — including a later change, which is how a moved vendor endpoint
+// (Kimi: api.moonshot.cn → the Kimi Code endpoint) reaches every profile —
+// but never through a user override; and clearing the override ('' in
+// Configure) must land back on the CURRENT default, not a stale one. Covers
+// every provider class: OpenAI (and its compat ids), Anthropic, Google,
+// Ollama.
+TEST(LlmProviderFactoryTest, BaseUrlFollowsGuestDefaultUnlessOverridden) {
+  for (const char* id : {"openai", "kimi", "anthropic", "google", "ollama"}) {
+    SCOPED_TRACE(id);
+    auto provider = LlmProviderFactory::CreateProvider(id, NullLoaderFactory());
+    ASSERT_TRUE(provider);
+    EXPECT_TRUE(provider->GetBaseUrl().empty());
+
+    provider->SetDefaultBaseUrl("https://default-a.example/v1");
+    EXPECT_EQ(provider->GetDefaultBaseUrl(), "https://default-a.example/v1");
+    EXPECT_EQ(provider->GetBaseUrl(), "https://default-a.example/v1");
+
+    // A config without base_url (e.g. an OAuth token refresh) keeps it.
+    base::DictValue key_only;
+    key_only.Set("api_key", "test-key");
+    provider->Configure(key_only);
+    EXPECT_EQ(provider->GetBaseUrl(), "https://default-a.example/v1");
+
+    provider->SetDefaultBaseUrl("https://default-b.example/v1");
+    EXPECT_EQ(provider->GetBaseUrl(), "https://default-b.example/v1");
+
+    base::DictValue override_cfg;
+    override_cfg.Set("api_key", "test-key");
+    override_cfg.Set("base_url", "https://relay.example/v1");
+    provider->Configure(override_cfg);
+    EXPECT_EQ(provider->GetBaseUrl(), "https://relay.example/v1");
+
+    // A user override wins over a republished default.
+    provider->SetDefaultBaseUrl("https://default-c.example/v1");
+    EXPECT_EQ(provider->GetBaseUrl(), "https://relay.example/v1");
+
+    base::DictValue cleared;
+    cleared.Set("api_key", "test-key");
+    cleared.Set("base_url", "");
+    provider->Configure(cleared);
+    EXPECT_EQ(provider->GetBaseUrl(), "https://default-c.example/v1");
+  }
 }
 
 // --- User-created custom providers -----------------------------------------

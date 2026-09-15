@@ -21,7 +21,9 @@
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_responses_error.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_result_messages.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_usage.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_user_content.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -37,8 +39,6 @@ namespace {
 
 constexpr std::string_view kOpenAiProviderId = "openai";
 constexpr std::string_view kOpenAiDisplayName = "OpenAI";
-constexpr std::string_view kOpenAiDefaultBaseUrl =
-    "https://api.openai.com/v1";
 
 constexpr int kMaxResponseSizeBytes = 4 * 1024 * 1024;
 
@@ -223,7 +223,7 @@ OpenAiProvider::OpenAiProvider(
     : OpenAiProvider(std::move(url_loader_factory),
                      std::string(kOpenAiProviderId),
                      std::string(kOpenAiDisplayName),
-                     std::string(kOpenAiDefaultBaseUrl)) {}
+                     /*default_base_url=*/std::string()) {}
 
 OpenAiProvider::OpenAiProvider(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
@@ -304,6 +304,8 @@ bool OpenAiProvider::IsConfigured() const {
 bool OpenAiProvider::Configure(const base::DictValue& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  ConfigureUserAgent(config);
+
   const std::string* api_key = config.FindString("api_key");
   if (api_key && !api_key->empty()) {
     api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*api_key);
@@ -312,9 +314,11 @@ bool OpenAiProvider::Configure(const base::DictValue& config) {
     return false;
   }
 
-  if (const std::string* base_url = config.FindString("base_url");
-      base_url && !base_url->empty()) {
-    base_url_ = *base_url;
+  // A non-empty base_url is a user override; an empty one means "use the
+  // default" and drops a previous override. Absent leaves it unchanged.
+  if (const std::string* base_url = config.FindString("base_url")) {
+    base_url_overridden_ = !base_url->empty();
+    base_url_ = base_url_overridden_ ? *base_url : default_base_url_;
   }
 
   if (const std::string* model = config.FindString("model");
@@ -366,10 +370,19 @@ void OpenAiProvider::ApplyExtraHeaders(
   if (!account_id_.empty()) {
     request->headers.SetHeader("ChatGPT-Account-Id", account_id_);
   }
+  // Last, so a pinned preset User-Agent wins over a compiled-in extra header.
+  ApplyUserAgent(request->headers);
 }
 
 std::string OpenAiProvider::GetDefaultBaseUrl() const {
   return default_base_url_;
+}
+
+void OpenAiProvider::SetDefaultBaseUrl(const std::string& url) {
+  default_base_url_ = url;
+  if (!base_url_overridden_) {
+    base_url_ = default_base_url_;
+  }
 }
 
 std::string OpenAiProvider::GetBaseUrl() const {
@@ -512,94 +525,10 @@ base::ListValue OpenAiProvider::TranslateMessages(
       continue;
 
     // --- Tool-result messages (role == "tool") ---
+    // One `role:"tool"` message per result part; images go in a follow-up
+    // `user` message after the whole batch (openai_tool_result_messages.h).
     if (*role == "tool") {
-      for (const auto& part_val : *content_parts) {
-        const base::DictValue* part = part_val.GetIfDict();
-        if (!part)
-          continue;
-        const std::string* pt = part->FindString("type");
-        if (!pt || *pt != "tool-result")
-          continue;
-
-        base::DictValue tool_msg;
-        tool_msg.Set("role", "tool");
-
-        if (const std::string* tc_id = part->FindString("toolCallId"))
-          tool_msg.Set("tool_call_id", *tc_id);
-
-        std::string content;
-        // OpenAI's `role:"tool"` message content is text-only — it does
-        // NOT accept image parts. So when a multimodal tool result carries
-        // an image (BrowserScreenshot), we put the text on the tool message
-        // and deliver the image as a SEPARATE follow-up `user` message with
-        // an `image_url` part (which OpenAI does support). Collect any
-        // image data-URIs here while flattening the text.
-        std::vector<std::string> image_data_uris;
-        if (const base::ListValue* result_parts = part->FindList("result")) {
-          for (const auto& rp_val : *result_parts) {
-            if (const base::DictValue* rp = rp_val.GetIfDict()) {
-              const std::string* rp_type = rp->FindString("type");
-              if (rp_type && *rp_type == "text") {
-                if (const std::string* text = rp->FindString("text")) {
-                  if (!content.empty())
-                    content += '\n';
-                  content += *text;
-                }
-              } else if (rp_type && *rp_type == "document") {
-                const std::string* mime = rp->FindString("mimeType");
-                if (!content.empty())
-                  content += '\n';
-                content += "[document: " + (mime ? *mime : std::string("application/pdf")) + "]";
-              } else if (rp_type && *rp_type == "image") {
-                const std::string* img = rp->FindString("image");
-                if (img && !img->empty()) {
-                  if (img->starts_with("http://") ||
-                      img->starts_with("https://") ||
-                      img->starts_with("data:")) {
-                    image_data_uris.push_back(*img);
-                  } else {
-                    const std::string* mime = rp->FindString("mimeType");
-                    image_data_uris.push_back(
-                        "data:" + (mime ? *mime : std::string("image/jpeg")) +
-                        ";base64," + *img);
-                  }
-                }
-              }
-            }
-          }
-        } else if (const std::string* result_str =
-                       part->FindString("result")) {
-          content = *result_str;
-        } else if (const base::Value* result_val = part->Find("result")) {
-          base::JSONWriter::Write(*result_val, &content);
-        }
-        tool_msg.Set("content", std::move(content));
-        messages.Append(std::move(tool_msg));
-
-        // Follow-up user message carrying the image(s), since the tool
-        // message itself can't. Placed right after the tool result so the
-        // model associates it with that call.
-        if (!image_data_uris.empty()) {
-          base::ListValue parts;
-          base::DictValue note;
-          note.Set("type", "text");
-          note.Set("text",
-                   "(Screenshot returned by the previous tool call.)");
-          parts.Append(std::move(note));
-          for (const std::string& uri : image_data_uris) {
-            base::DictValue img_part;
-            img_part.Set("type", "image_url");
-            base::DictValue img_url;
-            img_url.Set("url", uri);
-            img_part.Set("image_url", std::move(img_url));
-            parts.Append(std::move(img_part));
-          }
-          base::DictValue user_msg;
-          user_msg.Set("role", "user");
-          user_msg.Set("content", std::move(parts));
-          messages.Append(std::move(user_msg));
-        }
-      }
+      AppendChatCompletionToolMessages(*content_parts, messages);
       continue;
     }
 
@@ -691,34 +620,17 @@ base::ListValue OpenAiProvider::TranslateMessages(
           base::DictValue image_part;
           image_part.Set("type", "image_url");
           base::DictValue image_url;
-
-          // Prefer a fully-qualified URL (`data:`/http(s)) carried on the
-          // block; OpenAI-compatible backends (e.g. Kimi) reject a bare
-          // base64 payload in `image_url.url`. Fall back to wrapping the
-          // raw-base64 `image`/`data` fields with a `data:` prefix.
-          if (const std::string* url = part->FindString("url")) {
-            image_url.Set("url", *url);
-          } else if (const std::string* raw = part->FindString("image")) {
-            if (raw->starts_with("http://") || raw->starts_with("https://") ||
-                raw->starts_with("data:")) {
-              image_url.Set("url", *raw);
-            } else {
-              const std::string* mime = part->FindString("mimeType");
-              image_url.Set("url", "data:" +
-                  (mime ? *mime : std::string("image/png")) + ";base64," +
-                  *raw);
-            }
-          } else if (const std::string* b64 = part->FindString("data")) {
-            const std::string* mime = part->FindString("mimeType");
-            std::string data_uri = "data:";
-            data_uri += mime ? *mime : "image/png";
-            data_uri += ";base64,";
-            data_uri += *b64;
-            image_url.Set("url", std::move(data_uri));
+          if (std::optional<std::string> url = ImageUrlForPart(*part)) {
+            image_url.Set("url", std::move(*url));
           }
-
           image_part.Set("image_url", std::move(image_url));
           openai_content.Append(std::move(image_part));
+        } else if (*pt == "document") {
+          base::DictValue text_part;
+          text_part.Set("type", "text");
+          text_part.Set("text",
+                        DocumentUnavailableMarker(part->FindString("mimeType")));
+          openai_content.Append(std::move(text_part));
         }
       }
 
@@ -737,6 +649,10 @@ base::ListValue OpenAiProvider::TranslateMessages(
                 combined += '\n';
               combined += *text;
             }
+          } else if (pt && *pt == "document") {
+            if (!combined.empty())
+              combined += '\n';
+            combined += DocumentUnavailableMarker(part->FindString("mimeType"));
           }
         }
       }
@@ -927,92 +843,10 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
       continue;
 
     // --- Tool-result messages (role == "tool") → function_call_output ---
+    // One item per result part; images go in a follow-up `user` message
+    // item after the whole batch (openai_tool_result_messages.h).
     if (*role == "tool") {
-      for (const auto& part_val : *content_parts) {
-        const base::DictValue* part = part_val.GetIfDict();
-        if (!part)
-          continue;
-        const std::string* pt = part->FindString("type");
-        if (!pt || *pt != "tool-result")
-          continue;
-
-        base::DictValue item;
-        item.Set("type", "function_call_output");
-        if (const std::string* tc_id = part->FindString("toolCallId"))
-          item.Set("call_id", *tc_id);
-
-        std::string output;
-        // A `function_call_output` is text-only. When a multimodal tool
-        // result carries an image (BrowserScreenshot), put the text here and
-        // deliver the image as a SEPARATE follow-up `user` message item with
-        // an `input_image` part (the Responses API's image shape) — exactly
-        // the chat-completions path's strategy. Collect image data-URIs while
-        // flattening text.
-        std::vector<std::string> image_data_uris;
-        if (const base::ListValue* result_parts =
-                part->FindList("result")) {
-          for (const auto& rp_val : *result_parts) {
-            if (const base::DictValue* rp = rp_val.GetIfDict()) {
-              const std::string* rp_type = rp->FindString("type");
-              if (rp_type && *rp_type == "text") {
-                if (const std::string* text = rp->FindString("text")) {
-                  if (!output.empty())
-                    output += '\n';
-                  output += *text;
-                }
-              } else if (rp_type && *rp_type == "document") {
-                const std::string* mime = rp->FindString("mimeType");
-                if (!output.empty())
-                  output += '\n';
-                output += "[document: " + (mime ? *mime : std::string("application/pdf")) + "]";
-              } else if (rp_type && *rp_type == "image") {
-                const std::string* img = rp->FindString("image");
-                if (img && !img->empty()) {
-                  if (img->starts_with("http://") ||
-                      img->starts_with("https://") ||
-                      img->starts_with("data:")) {
-                    image_data_uris.push_back(*img);
-                  } else {
-                    const std::string* mime = rp->FindString("mimeType");
-                    image_data_uris.push_back(
-                        "data:" + (mime ? *mime : std::string("image/jpeg")) +
-                        ";base64," + *img);
-                  }
-                }
-              }
-            }
-          }
-        } else if (const std::string* result_str =
-                       part->FindString("result")) {
-          output = *result_str;
-        } else if (const base::Value* result_val = part->Find("result")) {
-          base::JSONWriter::Write(*result_val, &output);
-        }
-        item.Set("output", std::move(output));
-        input.Append(std::move(item));
-
-        // Follow-up user message carrying the image(s), since
-        // function_call_output can't. Placed right after the tool result so
-        // the model associates it with that call.
-        if (!image_data_uris.empty()) {
-          base::ListValue parts;
-          base::DictValue note;
-          note.Set("type", "input_text");
-          note.Set("text", "(Screenshot returned by the previous tool call.)");
-          parts.Append(std::move(note));
-          for (const std::string& uri : image_data_uris) {
-            base::DictValue img_part;
-            img_part.Set("type", "input_image");
-            img_part.Set("image_url", uri);
-            parts.Append(std::move(img_part));
-          }
-          base::DictValue user_item;
-          user_item.Set("type", "message");
-          user_item.Set("role", "user");
-          user_item.Set("content", std::move(parts));
-          input.Append(std::move(user_item));
-        }
-      }
+      AppendResponsesToolOutputItems(*content_parts, input);
       continue;
     }
 
@@ -1069,25 +903,22 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
       continue;
     }
 
-    // --- System / user messages — combine text parts into a single string ---
-    std::string combined;
-    for (const auto& part_val : *content_parts) {
-      if (const base::DictValue* part = part_val.GetIfDict()) {
-        const std::string* pt = part->FindString("type");
-        if (pt && *pt == "text") {
-          if (const std::string* text = part->FindString("text")) {
-            if (!combined.empty())
-              combined += '\n';
-            combined += *text;
+    // --- System messages — hoisted to the top-level `instructions` field
+    // per OpenAI's recommendation, text parts only ---
+    if (*role == "system") {
+      std::string combined;
+      for (const auto& part_val : *content_parts) {
+        if (const base::DictValue* part = part_val.GetIfDict()) {
+          const std::string* pt = part->FindString("type");
+          if (pt && *pt == "text") {
+            if (const std::string* text = part->FindString("text")) {
+              if (!combined.empty())
+                combined += '\n';
+              combined += *text;
+            }
           }
         }
       }
-    }
-
-    // System turns are hoisted to the top-level `instructions` field per
-    // OpenAI's recommendation; everything else stays in `input` as a
-    // role-tagged message item.
-    if (*role == "system") {
       if (!combined.empty()) {
         if (!instructions_collected.empty())
           instructions_collected += "\n\n";
@@ -1096,10 +927,14 @@ base::ListValue OpenAiProvider::TranslateMessagesToResponsesInput(
       continue;
     }
 
+    // --- User messages — a string, or input_text / input_image /
+    // input_file parts when the message carries media ---
     base::DictValue item;
     item.Set("type", "message");
     item.Set("role", *role);
-    item.Set("content", std::move(combined));
+    item.Set("content", BuildResponsesUserContent(
+                            *content_parts,
+                            /*accepts_input_file=*/!IsCodexBackend()));
     input.Append(std::move(item));
   }
 

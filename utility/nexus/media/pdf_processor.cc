@@ -139,8 +139,14 @@ MediaReadOutcome ReadPdfMedia(base::FilePath path,
   if (!pages.has_value()) {
     if (page_count > media_limits::kPdfInlinePageLimit) {
       out.error_code = "pdf_too_many_pages";
-      out.error_message =
-          "PDF has too many pages to read at once. Use the pages parameter.";
+      // The count is load-bearing: the guest's @-mention step reads it back
+      // for its pdf_reference note (nexus_web src/utils/attachments.ts).
+      out.error_message = base::StrCat(
+          {"This PDF has ", base::NumberToString(page_count),
+           " pages, which is too many to read at once. Use the pages "
+           "parameter to read specific page ranges (maximum ",
+           base::NumberToString(media_limits::kPdfMaxPagesPerRead),
+           " pages per request)."});
       return out;
     }
     result->parts.push_back(MakeTextMediaPart(base::StrCat({"PDF file read: ", path.AsUTF8Unsafe(), " (", base::NumberToString(page_count), " page(s))"})));
@@ -163,6 +169,15 @@ MediaReadOutcome ReadPdfMedia(base::FilePath path,
     out.error_message = "Page range starts after the end of the PDF.";
     return out;
   }
+  // Name the file and the real page count, as the whole-document branch does.
+  // Without it a page-range result is bare `<page>` markers around images:
+  // the model cannot tell which of several parallel reads an image came from
+  // (OpenAI-compatible transports move every image to a later message), and
+  // never learns how many pages the PDF actually has.
+  result->parts.push_back(MakeTextMediaPart(base::StrCat(
+      {"PDF file read: ", path.AsUTF8Unsafe(), " (pages ",
+       base::NumberToString(first_page), "-", base::NumberToString(last_page),
+       " of ", base::NumberToString(page_count), ")"})));
   for (int page = first_page; page <= last_page; ++page) {
     std::optional<std::vector<uint8_t>> jpeg =
         EncodePdfPageAsJpeg(base::span(*bytes), page - 1);

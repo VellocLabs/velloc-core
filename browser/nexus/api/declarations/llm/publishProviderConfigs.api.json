@@ -6,7 +6,7 @@
     {
       "name": "payload",
       "type": "passthrough_payload",
-      "description": "{ configs: {<providerId>: {apiKey,baseUrl,defaultModel,model,enabledModels,...}}, activeProviderId?: string } dict."
+      "description": "{ configs: {<providerId>: {apiKey,baseUrl,defaultModel,model,enabledModels,userAgent,...}}, activeProviderId?: string } dict. userAgent: a preset User-Agent the provider sends on its requests; '' or absent = the host default."
     }
   ],
   "runtime": {

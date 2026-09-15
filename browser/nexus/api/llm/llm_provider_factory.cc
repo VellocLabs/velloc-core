@@ -38,19 +38,18 @@ constexpr const char* kProviderIds[] = {
 
 // OpenAI-compatible providers. The request/response format, SSE streaming,
 // /models discovery, and tool-calling schema all follow the OpenAI
-// convention, so only identity and default base URL differ.
+// convention, so only identity differs here. Their default base URLs are
+// NOT compiled in: the guest owns them (`defaultBaseUrl` in
+// nexus_web/src/config/nexusModelConfig/providers/<id>.ts) and the broker
+// applies them from the published catalog.
 struct OpenAiCompatConfig {
   const char* id;
   const char* display_name;
-  const char* default_base_url;
 };
 
 constexpr OpenAiCompatConfig kOpenAiCompatConfigs[] = {
-    {"deepseek", "DeepSeek", "https://api.deepseek.com"},
-    {"glm", "GLM", "https://open.bigmodel.cn/api/paas/v4"},
-    {"kimi", "Kimi", "https://api.moonshot.cn/v1"},
-    {"minimax", "MiniMax", "https://api.minimax.io/v1"},
-    {"qwen", "Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+    {"deepseek", "DeepSeek"}, {"glm", "GLM"},   {"kimi", "Kimi"},
+    {"minimax", "MiniMax"},   {"qwen", "Qwen"},
 };
 
 }  // namespace
@@ -149,7 +148,7 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
     if (provider_id == config.id) {
       return std::make_unique<OpenAiProvider>(
           url_loader_factory, config.id, config.display_name,
-          config.default_base_url);
+          /*default_base_url=*/std::string());
     }
   }
 

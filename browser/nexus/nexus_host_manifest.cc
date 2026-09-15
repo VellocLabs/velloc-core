@@ -82,6 +82,13 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   // launcher; nothing in the bridge serializes those calls.
   manifest.Set("capabilities", std::move(capabilities));
 
+  // The LLM bridge accepts a `document` part at the top level of a message
+  // (nexus_llm.mojom kDocument), not only inside a tool result. The guest
+  // inlines an @-mentioned PDF only when this is set, so an older binary —
+  // which would reject the part and fail the turn — gets a pdf_reference
+  // note instead. That is why it needs no interface-version bump.
+  manifest.Set("llmDocumentParts", true);
+
   // Boot snapshot of the unified agent runtime config (maxTurns,
   // stepTimeoutSec, model, …). The guest applies this once after building
   // the runtime; later changes arrive live via `session.applyAgentConfig`.

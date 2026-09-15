@@ -10,6 +10,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 
 namespace nexus {
 
@@ -316,6 +317,40 @@ void NexusLlmBridgeAdapter::HandlePublishProviderConfigsOnUI(
   broker->SetProviderConfigs(configs->Clone(),
                              active ? *active : std::string());
   std::move(done).SuccessVoid();
+}
+
+void NexusLlmBridgeAdapter::HandleEncryptSecretOnUI(
+    ::nexus::generated::EncryptSecretInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // The plaintext crosses the bridge exactly once — here, on save. The
+  // guest stores the sealed value in settings.json and republishes it to
+  // `publishProviderConfigs`, where `LlmProvider::Configure` decrypts it
+  // natively through the memoized NexusSecretCrypt cache. Nothing on this
+  // route ever returns plaintext to the guest.
+  //
+  // The encryptor is primed by `NexusBridgePortService`'s ctor (long before
+  // any bridge request can arrive), so `WhenReady` resolves immediately in
+  // practice; it is used rather than `Encrypt`'s not-ready fallback because
+  // that fallback returns the PLAINTEXT, and this route must never do that.
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
+  crypt->WhenReady(base::BindOnce(
+      [](std::string plaintext, ::nexus::BridgeResponseCallback done) {
+        const std::string sealed =
+            NexusSecretCrypt::GetInstance()->Encrypt(plaintext);
+        // Encrypt returns the input unchanged on an empty secret (nothing
+        // to seal — reported back as-is) and on an OS-crypto failure, which
+        // must surface as an error rather than as a "sealed" plaintext.
+        if (!plaintext.empty() && !NexusSecretCrypt::IsEncrypted(sealed)) {
+          std::move(done).Error("ENCRYPT_FAILED",
+                                "The OS keystore could not seal the secret");
+          return;
+        }
+        base::DictValue result;
+        result.Set("value", sealed);
+        std::move(done).Success(std::move(result));
+      },
+      std::move(input.plaintext), std::move(done)));
 }
 
 void NexusLlmBridgeAdapter::HandleRegisterToolDefsOnUI(

@@ -208,10 +208,17 @@ source_set("unit_tests") {
 
     # GetManagedBinaryPath() for the managed-binary resolver/policy tests.
     "//custom_browser/common",
+
+    # The PDF media test loads the V8 snapshot pdfium needs.
+    "//gin",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
     "//testing/gtest",
+    "//tools/v8_context_snapshot:buildflags",
   ]
+
+  # Defines V8_USE_EXTERNAL_STARTUP_DATA, which gates gin's LoadV8Snapshot().
+  configs += [ "//v8:external_startup_data" ]
 }
 
 # Standalone test binary for the nexus shell unit tests. A Nexus-owned binary,

@@ -4,6 +4,7 @@
 
 #include "custom_browser/utility/nexus/media/image_processor.h"
 #include "custom_browser/utility/nexus/media/notebook_processor.h"
+#include "custom_browser/utility/nexus/media/pdf_processor.h"
 
 #include <optional>
 #include <string>
@@ -12,10 +13,16 @@
 #include "base/base64.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/task_environment.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "tools/v8_context_snapshot/buildflags.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+#include "gin/v8_initializer.h"
+#endif
 
 namespace nexus {
 namespace {
@@ -93,6 +100,103 @@ TEST(NexusMediaProcessorTest, ReadGifAndWebpPassThroughWithoutCompression) {
   EXPECT_EQ(webp_out.result->parts[1]->mime_type,
             std::optional<std::string>("image/webp"));
 }
+// pdfium initializes V8, which the utility process has loaded a snapshot
+// for; this test binary has not (same as pdf/test/run_all_unittests.cc).
+void LoadV8SnapshotForPdfium() {
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+#if BUILDFLAG(USE_V8_CONTEXT_SNAPSHOT)
+  gin::V8Initializer::LoadV8Snapshot(
+      gin::V8SnapshotFileType::kWithAdditionalContext);
+#else
+  gin::V8Initializer::LoadV8Snapshot(gin::V8SnapshotFileType::kDefault);
+#endif
+#endif
+}
+
+// A minimal valid PDF with `pages` blank US-letter pages and a correct xref.
+std::string MakeBlankPdf(int pages) {
+  std::vector<std::string> objects;
+  std::string kids;
+  for (int i = 0; i < pages; ++i) {
+    kids += base::NumberToString(3 + i) + " 0 R ";
+  }
+  objects.push_back("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push_back("<< /Type /Pages /Kids [" + kids + "] /Count " +
+                    base::NumberToString(pages) + " >>");
+  for (int i = 0; i < pages; ++i) {
+    objects.push_back(
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>");
+  }
+  std::string pdf = "%PDF-1.4\n";
+  std::vector<size_t> offsets;
+  for (size_t i = 0; i < objects.size(); ++i) {
+    offsets.push_back(pdf.size());
+    pdf += base::NumberToString(i + 1) + " 0 obj\n" + objects[i] + "\nendobj\n";
+  }
+  const size_t xref = pdf.size();
+  pdf += "xref\n0 " + base::NumberToString(objects.size() + 1) +
+         "\n0000000000 65535 f \n";
+  for (size_t offset : offsets) {
+    std::string digits = base::NumberToString(offset);
+    pdf += std::string(10 - digits.size(), '0') + digits + " 00000 n \n";
+  }
+  pdf += "trailer\n<< /Size " + base::NumberToString(objects.size() + 1) +
+         " /Root 1 0 R >>\nstartxref\n" + base::NumberToString(xref) +
+         "\n%%EOF\n";
+  return pdf;
+}
+
+// Regression: a page-range read used to return only `<page>` markers around
+// images. With several PDFs read in parallel the model could not tell which
+// file an image came from, and it never learned the real page count (the
+// guest's @-mention estimate claimed 13-15 pages for 2-page PDFs).
+TEST(NexusMediaProcessorTest, ReadPdfPageRangeNamesFileAndRealPageCount) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  LoadV8SnapshotForPdfium();
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("claim.pdf");
+  ASSERT_TRUE(base::WriteFile(file, MakeBlankPdf(2)));
+
+  MediaReadOutcome outcome = ReadPdfMedia(file, "1-14");
+
+  ASSERT_TRUE(outcome.ok) << outcome.error_message.value_or("");
+  ASSERT_TRUE(outcome.result);
+  EXPECT_EQ(outcome.result->page_count, 2u);
+  ASSERT_FALSE(outcome.result->parts.empty());
+  const auto& header = outcome.result->parts[0];
+  ASSERT_TRUE(header);
+  EXPECT_EQ(header->type, "text");
+  EXPECT_EQ(header->text.value_or(""),
+            "PDF file read: " + file.AsUTF8Unsafe() + " (pages 1-2 of 2)");
+  int images = 0;
+  for (const auto& part : outcome.result->parts) {
+    images += part && part->type == "image" ? 1 : 0;
+  }
+  EXPECT_EQ(images, 2);
+}
+
+// A whole-document read of a PDF over the inline limit fails, and the error
+// carries the real page count: the guest's @-mention step reads it back for
+// its pdf_reference note instead of guessing from the file size.
+TEST(NexusMediaProcessorTest, ReadPdfTooManyPagesReportsRealPageCount) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  LoadV8SnapshotForPdfium();
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("book.pdf");
+  ASSERT_TRUE(base::WriteFile(file, MakeBlankPdf(12)));
+
+  MediaReadOutcome outcome = ReadPdfMedia(file, std::nullopt);
+
+  ASSERT_FALSE(outcome.ok);
+  EXPECT_EQ(outcome.error_code.value_or(""), "pdf_too_many_pages");
+  EXPECT_EQ(outcome.error_message.value_or(""),
+            "This PDF has 12 pages, which is too many to read at once. Use "
+            "the pages parameter to read specific page ranges (maximum 20 "
+            "pages per request).");
+}
+
 TEST(NexusMediaProcessorTest, ReadNotebookReturnsTextAndEmbeddedImageParts) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

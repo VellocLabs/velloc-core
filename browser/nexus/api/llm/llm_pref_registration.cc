@@ -47,6 +47,11 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // GetDict without a JSON parse hop.
   registry->RegisterDictionaryPref(prefs::kNexusTsModelCatalogCache);
 
+  // One-shot marker for the legacy default-base-URL cleanup — see
+  // kNexusBakedDefaultBaseUrlsCleared.
+  registry->RegisterBooleanPref(prefs::kNexusBakedDefaultBaseUrlsCleared,
+                                false);
+
   // Most-recent SessionStatus published by nexus_web. Lets the WebUI quick-
   // settings popup render the active selection on cold boot.
   registry->RegisterDictionaryPref(prefs::kNexusLastSessionStatus);

@@ -25,9 +25,6 @@ namespace nexus {
 
 namespace {
 
-constexpr char kDefaultBaseUrl[] =
-    "https://generativelanguage.googleapis.com/v1beta";
-
 constexpr size_t kMaxResponseSizeBytes =
     network::SimpleURLLoader::kMaxBoundedStringDownloadSize;
 
@@ -96,6 +93,19 @@ base::ListValue TranslateUserContentParts(const base::ListValue& parts) {
       if (mime_type && data) {
         base::DictValue inline_data;
         inline_data.Set("mimeType", *mime_type);
+        inline_data.Set("data", *data);
+        base::DictValue p;
+        p.Set("inlineData", std::move(inline_data));
+        google_parts.Append(std::move(p));
+      }
+    } else if (*type == "document") {
+      // Gemini reads a PDF as inlineData, as the tool-result path sends it.
+      const std::string* data = part.FindString("data");
+      if (data) {
+        const std::string* mime_type = part.FindString("mimeType");
+        base::DictValue inline_data;
+        inline_data.Set("mimeType",
+                        mime_type ? *mime_type : std::string("application/pdf"));
         inline_data.Set("data", *data);
         base::DictValue p;
         p.Set("inlineData", std::move(inline_data));
@@ -653,8 +663,7 @@ GoogleProvider::PendingGenerate& GoogleProvider::PendingGenerate::operator=(
 
 GoogleProvider::GoogleProvider(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
-    : base_url_(kDefaultBaseUrl),
-      url_loader_factory_(std::move(url_loader_factory)) {
+    : url_loader_factory_(std::move(url_loader_factory)) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
 
@@ -698,28 +707,49 @@ bool GoogleProvider::IsConfigured() const {
 bool GoogleProvider::Configure(const base::DictValue& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  ConfigureUserAgent(config);
+
   const std::string* api_key = config.FindString("api_key");
   if (!api_key || api_key->empty()) {
     DLOG(ERROR) << "Google AI provider requires a non-empty api_key";
     return false;
   }
   api_key_ = NexusSecretCrypt::GetInstance()->Decrypt(*api_key);
+  // A non-empty stored value that decrypts to nothing is an UNOPENABLE
+  // ciphertext (settings.json copied to another machine / OS user, keystore
+  // reset, or the encryptor not ready yet). Report "not configured" rather
+  // than sending every request with an empty key — mirrors OpenAI/Anthropic,
+  // whose Configure returns IsConfigured().
+  if (api_key_.empty()) {
+    LOG(ERROR) << "Google AI provider: the stored api_key could not be "
+                  "decrypted; treating the provider as unconfigured";
+    return false;
+  }
 
   const std::string* model = config.FindString("model");
   if (model && !model->empty()) {
     model_id_ = *model;
   }
 
-  const std::string* base_url = config.FindString("base_url");
-  if (base_url && !base_url->empty()) {
-    base_url_ = *base_url;
+  // A non-empty base_url is a user override; an empty one means "use the
+  // default" and drops a previous override. Absent leaves it unchanged.
+  if (const std::string* base_url = config.FindString("base_url")) {
+    base_url_overridden_ = !base_url->empty();
+    base_url_ = base_url_overridden_ ? *base_url : default_base_url_;
   }
 
   return true;
 }
 
 std::string GoogleProvider::GetDefaultBaseUrl() const {
-  return kDefaultBaseUrl;
+  return default_base_url_;
+}
+
+void GoogleProvider::SetDefaultBaseUrl(const std::string& url) {
+  default_base_url_ = url;
+  if (!base_url_overridden_) {
+    base_url_ = default_base_url_;
+  }
 }
 
 std::string GoogleProvider::GetBaseUrl() const {
@@ -888,6 +918,7 @@ std::unique_ptr<network::SimpleURLLoader> GoogleProvider::CreateLoader(
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->url = url;
   resource_request->method = "POST";
+  ApplyUserAgent(resource_request->headers);
   resource_request->credentials_mode =
       network::mojom::CredentialsMode::kOmit;
 
@@ -1102,6 +1133,7 @@ void GoogleProvider::FetchAvailableModels(FetchModelsCallback callback) {
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->url = url;
   resource_request->method = "GET";
+  ApplyUserAgent(resource_request->headers);
   resource_request->credentials_mode =
       network::mojom::CredentialsMode::kOmit;
 

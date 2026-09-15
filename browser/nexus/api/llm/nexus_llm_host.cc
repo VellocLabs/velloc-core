@@ -126,40 +126,6 @@ bool IsProviderVerified(PrefService* prefs, const std::string& provider_id) {
   return last_verification->Find("verifiedAtMs") != nullptr;
 }
 
-// True when the STORED provider config carries something the user supplied:
-// a credential, an endpoint, a model choice, or the custom-provider marker.
-//
-// This is the "did the user set this provider up" half of the picker gate, and
-// `LlmProvider::IsConfigured()` cannot answer it alone — that method reports
-// whether the provider is USABLE, which is a much weaker claim.
-// `OllamaProvider::IsConfigured()` returns true unconditionally, and every
-// keyless provider counts as configured the moment it has its compiled-in
-// default base URL. Gating on IsConfigured() alone therefore puts Ollama in
-// every user's picker on a profile that has never heard of it, hands it the
-// catalog's default selection, and suppresses the first-run
-// provider-missing dialog (all three caught by the e2e suite).
-//
-// Stream-guard overrides are deliberately NOT evidence: `stream_idle_timeout_s`
-// / `max_concurrent_streams` are pushed for every curated provider by the
-// guest's boot-time `publishProviderConfigsAtBoot`, so a provider the user
-// never touched still ends up with a (stream-guard-only) pref entry.
-bool HasUserProviderSetup(const base::DictValue& config) {
-  static constexpr const char* kUserSuppliedStringKeys[] = {
-      "api_key", "account_token", "base_url", "default_model", "model",
-  };
-  for (const char* key : kUserSuppliedStringKeys) {
-    if (const std::string* value = config.FindString(key);
-        value && !value->empty()) {
-      return true;
-    }
-  }
-  if (const base::ListValue* enabled_models = config.FindList("enabled_models");
-      enabled_models && !enabled_models->empty()) {
-    return true;
-  }
-  return config.FindBool("is_custom_provider").value_or(false);
-}
-
 // Resolve a `{ "h": "a|b|c", "args": { "enabledToolNames": [...] } }`
 // system-prompt holder element into text. Splits the holder list on '|',
 // resolves each name via the prompt-section renderer (the browser owns
@@ -368,6 +334,20 @@ base::ListValue TranslateBridgeParts(
         if (part->mime_type.has_value() && !part->mime_type->empty()) {
           translated_part.Set("mimeType", *part->mime_type);
         }
+        translated.Append(std::move(translated_part));
+        break;
+      }
+
+      case mojom::NexusLlmContentPartType::kDocument: {
+        if (!part->data.has_value() || part->data->empty()) {
+          break;
+        }
+        // Providers read the same shape a tool result's document part has.
+        base::DictValue translated_part;
+        translated_part.Set("type", "document");
+        translated_part.Set("data", *part->data);
+        translated_part.Set(
+            "mimeType", part->mime_type.value_or(std::string("application/pdf")));
         translated.Append(std::move(translated_part));
         break;
       }
@@ -1187,6 +1167,9 @@ mojom::NexusLlmAssistantMessagePtr BuildAssistantMessage(
     message->model_id = model_id;
   }
   message->finish_reason = ToMojoFinishReason(result.finish_reason);
+  if (result.stop_details.has_value()) {
+    message->stop_details = result.stop_details->Clone();
+  }
   message->usage = BuildUsage(result.prompt_tokens,
                               result.completion_tokens,
                               result.cache_read_input_tokens,
@@ -1260,7 +1243,8 @@ void FlushPendingToolCalls(NexusLlmHost::StreamState* state) {
 
 void QueueFinishEvent(NexusLlmHost::StreamState* state,
                       FinishReason reason,
-                      const base::DictValue* usage) {
+                      const base::DictValue* usage,
+                      const base::DictValue* stop_details) {
   if (state->terminal_event_queued) {
     return;
   }
@@ -1268,6 +1252,9 @@ void QueueFinishEvent(NexusLlmHost::StreamState* state,
   auto event = mojom::NexusLlmStreamEvent::New();
   event->type = mojom::NexusLlmStreamEventType::kFinish;
   event->finish_reason = ToMojoFinishReason(reason);
+  if (stop_details) {
+    event->stop_details = stop_details->Clone();
+  }
   mojom::NexusLlmUsagePtr usage_ptr = UsageFromProviderDict(usage);
   event->usage = usage_ptr ? std::move(usage_ptr) : BuildUsage(0, 0);
   EnqueueEvent(state, std::move(event));
@@ -2243,7 +2230,8 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
         finish_reason && !finish_reason->empty()) {
       reason = ParseFinishReasonString(*finish_reason);
     }
-    QueueFinishEvent(&state, reason, chunk.FindDict("usage"));
+    QueueFinishEvent(&state, reason, chunk.FindDict("usage"),
+                     chunk.FindDict("stopDetails"));
     wake();
     return;
   }
@@ -2295,7 +2283,7 @@ void NexusLlmHost::OnStreamDone(const std::string& stream_id,
     QueueErrorEvent(&it->second, *error);
   } else if (!it->second.terminal_event_queued) {
     FlushPendingToolCalls(&it->second);
-    QueueFinishEvent(&it->second, FinishReason::kUnknown, nullptr);
+    QueueFinishEvent(&it->second, FinishReason::kUnknown, nullptr, nullptr);
   }
 
   it->second.done = true;

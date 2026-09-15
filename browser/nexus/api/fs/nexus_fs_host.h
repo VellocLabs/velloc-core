@@ -201,8 +201,8 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
     // Human-readable OS version, e.g. "Windows 11 Pro 10.0.26200" /
     // "macOS 14.4 23E214" / "Linux 6.6.4".
     std::string os_version;
-    // Interpreter name only, no path. Derived from $SHELL (POSIX) or
-    // $COMSPEC (Windows). Empty when neither env var is set.
+    // Interpreter name only, no path: the shell the model's shell tool
+    // runs (host_shell.h ChooseReportedShellName). Empty when unknown.
     std::string shell;
   };
 

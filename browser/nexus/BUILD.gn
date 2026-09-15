@@ -501,6 +501,18 @@ action("nexus_tools_codegen") {
   ]
 }
 
+# Which shells the host can run, and the shell name the guest prompt's
+# `Shell:` line carries. A //base-only leaf shared by `fs` (systemInfo) and
+# `bridge` (the listHostedTools shell gate), so the two never disagree.
+source_set("host_shell") {
+  sources = [
+    "api/shell/host_shell.cc",
+    "api/shell/host_shell.h",
+  ]
+
+  deps = [ "//base" ]
+}
+
 source_set("fs") {
   sources = [
     "api/fs/nexus_fs_host.cc",
@@ -508,6 +520,7 @@ source_set("fs") {
   ]
 
   deps = [
+    ":host_shell",
     "//base",
     "//mojo/public/cpp/base",
   ]
@@ -809,6 +822,9 @@ source_set("bridge") {
     # BuildObservationDict drains NexusPendingAgentNotice into `notices[]`.
     ":agent_notice",
     ":fs",
+
+    # The listHostedTools shell gate (catalog adapter).
+    ":host_shell",
     ":sqlite",
 
     # ProcessTool's Grep path ensures the pinned `rg` binary is present
@@ -1195,6 +1211,7 @@ source_set("unit_tests_lite") {
     "api/llm/providers/openai/openai_tool_call_stream_unittest.cc",
     "api/llm/providers/openai/openai_usage_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
+    "api/shell/host_shell_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
@@ -1207,6 +1224,7 @@ source_set("unit_tests_lite") {
 
   deps = [
     ":domain",
+    ":host_shell",
     ":mcp_server_store",
     ":transcript_search",
 

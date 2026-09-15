@@ -7,124 +7,18 @@
 #include <utility>
 #include <vector>
 
-#include "base/environment.h"
-#include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
-#include "base/strings/string_split.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
 #include "custom_browser/browser/nexus/api/catalog/prompt_section_renderer.h"
+#include "custom_browser/browser/nexus/api/shell/host_shell.h"
 #include "custom_browser/browser/nexus/tools/nexus_skills_registry.gen.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
 #include "custom_browser/browser/nexus/tools/tool_catalog.h"
 
 namespace nexus {
-
-namespace {
-
-#if BUILDFLAG(IS_WIN)
-constexpr char kPathSeparator = ';';
-const char* const kExecutableExtensions[] = {".exe", ".com", ".cmd",
-                                             ".bat", ".ps1", ""};
-#else
-constexpr char kPathSeparator = ':';
-const char* const kExecutableExtensions[] = {""};
-#endif
-
-
-#if BUILDFLAG(IS_WIN)
-std::optional<base::FilePath> EnvPath(const char* name) {
-  std::unique_ptr<base::Environment> env = base::Environment::Create();
-  std::optional<std::string> value = env->GetVar(std::string(name));
-  if (!value.has_value() || value->empty()) {
-    return std::nullopt;
-  }
-  return base::FilePath::FromUTF8Unsafe(*value);
-}
-
-void AppendGitBashCandidatesFromRoot(const base::FilePath& root,
-                                     std::vector<base::FilePath>* out) {
-  if (root.empty()) return;
-  out->push_back(root.AppendASCII("bin").AppendASCII("bash.exe"));
-  out->push_back(root.AppendASCII("usr").AppendASCII("bin").AppendASCII("bash.exe"));
-}
-
-bool IsGitBashInstalledForWindows() {
-  std::vector<base::FilePath> candidates;
-  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "CLAUDE_CODE_SHELL", "SHELL"}) {
-    if (std::optional<base::FilePath> p = EnvPath(env_name); p.has_value()) {
-      candidates.push_back(*p);
-    }
-  }
-  if (std::optional<base::FilePath> program_files = EnvPath("ProgramFiles")) {
-    AppendGitBashCandidatesFromRoot(program_files->AppendASCII("Git"), &candidates);
-  }
-  if (std::optional<base::FilePath> program_files_x86 = EnvPath("ProgramFiles(x86)")) {
-    AppendGitBashCandidatesFromRoot(program_files_x86->AppendASCII("Git"), &candidates);
-  }
-  if (std::optional<base::FilePath> local_app_data = EnvPath("LOCALAPPDATA")) {
-    AppendGitBashCandidatesFromRoot(
-        local_app_data->AppendASCII("Programs").AppendASCII("Git"), &candidates);
-  }
-  AppendGitBashCandidatesFromRoot(
-      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files\\Git")), &candidates);
-  AppendGitBashCandidatesFromRoot(
-      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files (x86)\\Git")),
-      &candidates);
-
-  for (const base::FilePath& candidate : candidates) {
-    if (base::PathExists(candidate) && !base::DirectoryExists(candidate)) {
-      return true;
-    }
-  }
-  return false;
-}
-#endif
-
-// Synchronous PATH lookup — no spawn, no `--version` probe. MUST run on a
-// MayBlock thread (it stats files). Mirrors the PATH-walk in
-// ShellResolver::FindOnPath (utility process) but browser-side and probe-
-// free, just to answer "is this shell installed?".
-bool IsExecutableOnPath(const std::string& tool_id) {
-  std::unique_ptr<base::Environment> env = base::Environment::Create();
-  std::optional<std::string> path_value = env->GetVar("PATH");
-  if (!path_value.has_value() || path_value->empty()) {
-    return false;
-  }
-  for (std::string_view part : base::SplitStringPiece(
-           *path_value, std::string(1, kPathSeparator), base::TRIM_WHITESPACE,
-           base::SPLIT_WANT_NONEMPTY)) {
-    base::FilePath dir = base::FilePath::FromUTF8Unsafe(part);
-    for (const char* ext : kExecutableExtensions) {
-      base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
-      if (base::PathExists(candidate) && !base::DirectoryExists(candidate)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-// Off-thread resolution of which shells the host can run. `bash` covers
-// git-bash on Windows; `pwsh` OR Windows `powershell` counts as
-// PowerShell-capable.
-CatalogShellAvailability ResolveShellAvailability() {
-  CatalogShellAvailability availability;
-  availability.bash = IsExecutableOnPath("bash");
-#if BUILDFLAG(IS_WIN)
-  if (!availability.bash) {
-    availability.bash = IsGitBashInstalledForWindows();
-  }
-#endif
-  availability.pwsh =
-      IsExecutableOnPath("pwsh") || IsExecutableOnPath("powershell");
-  return availability;
-}
-
-}  // namespace
 
 NexusCatalogBridgeAdapter::NexusCatalogBridgeAdapter(
     NexusBridgeResponseDelegate* delegate)
@@ -148,14 +42,14 @@ void NexusCatalogBridgeAdapter::HandleListHostedToolsOnUI(
   // resolve off-thread, then filter the catalog and reply on UI.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ResolveShellAvailability),
+      base::BindOnce(&ResolveHostShellAvailability),
       base::BindOnce(&NexusCatalogBridgeAdapter::ReplyWithFilteredCatalog,
                      weak_ptr_factory_.GetWeakPtr(), std::move(done)));
 }
 
 void NexusCatalogBridgeAdapter::ReplyWithFilteredCatalog(
     ::nexus::BridgeResponseCallback done,
-    CatalogShellAvailability availability) {
+    HostShellAvailability availability) {
   // Gate the two shell tools by platform + host capability; everything else
   // passes through. Wire format unchanged (`BuildHostedToolsList`).
   //   - Bash: always on POSIX; on Windows only when git-bash is on PATH
@@ -171,7 +65,7 @@ void NexusCatalogBridgeAdapter::ReplyWithFilteredCatalog(
 #endif
     } else if (schema.name == "PowerShell") {
 #if BUILDFLAG(IS_WIN)
-      if (!availability.pwsh) {
+      if (!availability.powershell()) {
         continue;
       }
 #else

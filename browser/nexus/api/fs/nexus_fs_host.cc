@@ -24,6 +24,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "custom_browser/browser/nexus/api/shell/host_shell.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
 // NEXUS_FS_ATOMIC_WRITE is defined in nexus_fs_host.h — see the flag's comment
@@ -173,33 +174,6 @@ std::vector<uint8_t> CopyBigBufferBytes(const mojo_base::BigBuffer& buffer) {
   std::vector<uint8_t> bytes(buffer.size());
   base::span(bytes).copy_from(base::span(buffer));
   return bytes;
-}
-
-// Reduce a shell path to its interpreter name only — `/usr/bin/zsh` →
-// `zsh`, `C:\Program Files\Git\bin\bash.exe` → `bash`. Empty input
-// (env var unset or value empty) produces an empty output, which the
-// caller treats as "no shell info" and the guest's prompt drops the
-// `Shell:` line entirely. Used for both $SHELL and $COMSPEC since
-// they share the same path → basename → strip-.exe normalization.
-std::string ExtractShellBasename(std::optional<std::string> raw) {
-  if (!raw.has_value() || raw->empty()) {
-    return std::string();
-  }
-  base::FilePath shell_path = base::FilePath::FromUTF8Unsafe(*raw);
-  std::string basename = shell_path.BaseName().AsUTF8Unsafe();
-#if BUILDFLAG(IS_WIN)
-  // Strip a trailing .exe on Windows so the model sees "bash" not
-  // "bash.exe" — matches the shell names Claude Code uses.
-  constexpr char kExeSuffix[] = ".exe";
-  constexpr size_t kExeSuffixLen = sizeof(kExeSuffix) - 1;
-  if (basename.size() > kExeSuffixLen) {
-    const size_t suffix_pos = basename.size() - kExeSuffixLen;
-    if (basename.compare(suffix_pos, std::string::npos, kExeSuffix) == 0) {
-      basename.resize(suffix_pos);
-    }
-  }
-#endif
-  return basename;
 }
 
 }  // namespace
@@ -362,28 +336,10 @@ NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
     result.os_version = os_name;
   }
 
-  // Best-effort shell detection. The model uses this to disambiguate
-  // POSIX-shell-on-Windows (where it should write `/dev/null` not
-  // `NUL`) from native PowerShell. We read $SHELL first because it's
-  // the interpreter the user actively chose; $COMSPEC on Windows is
-  // the cmd.exe fallback and only meaningful if $SHELL is unset.
-  //
-  // base::Environment::GetVar returns std::optional<std::string> in
-  // current Chromium (the older `bool GetVar(name, string*)` out-param
-  // form was removed). Use the optional value directly; treat both
-  // "not set" and "empty value" as "no shell info available".
-  std::unique_ptr<base::Environment> env = base::Environment::Create();
-  result.shell = ExtractShellBasename(env->GetVar("SHELL"));
-#if BUILDFLAG(IS_WIN)
-  // On Windows the user may not have $SHELL set at all. $COMSPEC is
-  // always defined (cmd.exe by default). It's a poor proxy for "what
-  // shell will the Bash tool actually invoke," but it's better than
-  // leaving the line off entirely on a Windows host that hasn't
-  // configured $SHELL.
-  if (result.shell.empty()) {
-    result.shell = ExtractShellBasename(env->GetVar("COMSPEC"));
-  }
-#endif
+  // The shell the model's shell tool runs — `bash` whenever the Bash tool
+  // is offered on Windows, not `%COMSPEC%` (host_shell.h). Stats files; this
+  // runs on the MayBlock pool (HandleSystemInfoOnUI).
+  result.shell = ResolveReportedShellName();
 
   return result;
 }

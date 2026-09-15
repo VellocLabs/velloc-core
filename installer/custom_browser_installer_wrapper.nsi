@@ -50,7 +50,6 @@
 !ifndef MASTER_PREFERENCES_SOURCE
   !define MASTER_PREFERENCES_SOURCE ".\\master_preferences"
 !endif
-!define TARGET_APP_EXE "C:\\Users\\myyyb\\AppData\\Local\\Velloc\\Application\\chrome.exe"
 
 ; Version info (defaults to PRODUCT_VERSION unless overridden).
 !ifndef MINI_COMPANY_NAME
@@ -165,7 +164,43 @@ Function UninstallLegacySchemeInstall
   DetailPrint "Legacy install removed."
 FunctionEnd
 
+; Chromium refuses to see this product's versions as newer than its own baked-in
+; "last breaking installer version" — kLastBreakingInstallerVersion = "85.0.4169.0"
+; (chrome/installer/setup/last_breaking_installer_version.cc). Our composed scheme's
+; FIRST field is a small product major (documented < 100; currently 1), so
+; base::Version compares 1.149.1.x BELOW 85.0.4169.0 and this guard in
+; AddDowngradeCleanupItems never short-circuits:
+;
+;     if (GetLastBreakingInstallerVersion(reg_root) <= new_version) return false;
+;
+; So EVERY install is treated as a downgrade across a breaking installer version,
+; and setup.exe runs the stored DowngradeCleanupCommand — the PREVIOUS version's
+; setup.exe. Chromium deletes old version directories after an upgrade, so that
+; path eventually stops existing; the launch then fails, the work-item list
+; unwinds, and the whole install rolls back as the generic INSTALL_FAILED
+; (exit code 7). Nothing in that message hints at any of it, and because the
+; rollback restores the stale command, the NEXT install fails the same way —
+; it presents as a machine that permanently stopped accepting updates.
+;
+; Deleting the value makes GetLastBreakingInstallerVersion return nullopt, which
+; compares less than any version, so the guard short-circuits as intended. That is
+; the correct behaviour rather than a workaround: the gate exists to force a clean
+; install when downgrading across Chromium 85, and no Velloc version has ever been
+; below its own 1.x scheme, so the comparison can only ever fire spuriously here.
+; setup.exe rewrites the value later in the SAME install (AddFinalizeUpdateWorkItems
+; writes it after AddDowngradeCleanupItems has already read it), so clearing it
+; here applies to this install and leaves the registry as Chromium expects.
+Function ClearBreakingInstallerVersionGate
+  ${If} $InstallMode == "system"
+    DeleteRegValue HKLM "Software\Velloc" "CleanInstallRequiredForVersionBelow"
+  ${Else}
+    DeleteRegValue HKCU "Software\Velloc" "CleanInstallRequiredForVersionBelow"
+  ${EndIf}
+  DetailPrint "Cleared the stale breaking-installer-version gate."
+FunctionEnd
+
 Section "Install"
+  Call ClearBreakingInstallerVersionGate
   Call UninstallLegacySchemeInstall
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
@@ -194,5 +229,50 @@ Section "Install"
   ${EndIf}
 SectionEnd
 
+; The Uninstall registry subkey is named after the install path component
+; (kProductPathName = "Velloc"), not the display name ${PRODUCT_NAME} ("Velloc
+; Code") — confirmed against the registered install.
+!define PRODUCT_UNINSTALL_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Velloc"
+
+; Resolves the installed chrome.exe path into $R7. Prefers the registry
+; InstallLocation written by setup.exe under the Uninstall key (covers both
+; per-user and system-level installs and any custom install dir), falling back
+; to the default per-user dir under %LOCALAPPDATA%. Sets $R7 to "" if the exe
+; cannot be found.
+Function ResolveInstalledChromeExe
+  StrCpy $R7 ""
+  ${If} $InstallMode == "system"
+    ReadRegStr $R0 HKLM "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
+  ${Else}
+    ReadRegStr $R0 HKCU "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
+  ${EndIf}
+  ${If} $R0 == ""
+    ; Fallback: default per-user install dir.
+    StrCpy $R0 "$LOCALAPPDATA\\Velloc\\Application"
+  ${EndIf}
+  StrCpy $R7 "$R0\\chrome.exe"
+  ${IfNot} ${FileExists} "$R7"
+    StrCpy $R7 ""
+  ${EndIf}
+FunctionEnd
+
+; Brings up the Velloc main window after an install. If no instance is running
+; this launches a new one; if one is running in the background the process
+; singleton routes the launch to it and raises its existing main window
+; (SetForegroundWindow + restore). Runs on every install, not just first
+; install — this is what makes an overwrite install surface the window.
+Function LaunchInstalledChrome
+  Call ResolveInstalledChromeExe
+  ${If} $R7 != ""
+    DetailPrint "Launching ${PRODUCT_NAME}..."
+    ; "--from-installer" marks the launch as installer-driven (parity with
+    ; setup.exe's own post-first-install launch).
+    Exec '"$R7" --from-installer'
+  ${Else}
+    DetailPrint "Could not locate installed chrome.exe; skipping launch."
+  ${EndIf}
+FunctionEnd
+
 Function .onInstSuccess
+  Call LaunchInstalledChrome
 FunctionEnd

@@ -218,4 +218,7 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Task-Manager</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Fenster schließen</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Neues Browserfenster</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {Remote-Zugriff: keine Geräte verbunden} =1 {Remote-Zugriff: # Gerät verbunden} other {Remote-Zugriff: # Geräte verbunden}}</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> beenden?</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {Über den Remote-Zugriff ist # Gerät verbunden. Beim Beenden wird die Verbindung getrennt.} other {Über den Remote-Zugriff sind # Geräte verbunden. Beim Beenden werden die Verbindungen getrennt.}}</translation>
 </translationbundle>

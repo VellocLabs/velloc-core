@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 10> kBridgeCapabilities = {
+constexpr std::array<const char*, 11> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -57,6 +57,13 @@ constexpr std::array<const char*, 10> kBridgeCapabilities = {
     // which is why adding it needs no interface-version bump. See
     // custom_browser/browser/nexus/api/sqlite/.
     "sqlite",
+    // The `remoteAccess` capability: status + configure for the desktop's
+    // embedded relay (remote-browser-client plan §8). The runtime gates its
+    // `remoteAccess.getStatus` call on this advertisement — an older binary
+    // without it simply exposes no remote-access surface and the runtime
+    // makes ZERO calls, which is exactly why adding it needs no
+    // interface-version bump. See custom_browser/browser/nexus/remote_access/.
+    "remoteAccess",
 };
 
 template <size_t N>

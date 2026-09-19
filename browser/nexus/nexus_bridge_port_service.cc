@@ -23,6 +23,7 @@
 #include "custom_browser/browser/nexus/api/system_prefs/nexus_system_prefs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/remote_access/nexus_remote_access_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/search/nexus_search_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/shell/nexus_shell_bridge_adapter.h"
@@ -191,6 +192,12 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   RegisterCapability("search", search_adapter_.get());
   RegisterCapability("shell", shell_adapter_.get());
   RegisterCapability("sqlite", sqlite_adapter_.get());
+  // Guest `remoteAccess` capability — status + configure for the embedded
+  // relay. The runtime gates its getStatus call on the manifest advertisement
+  // (the no-version-bump gate), so registering unconditionally is safe.
+  remote_access_adapter_ =
+      std::make_unique<NexusRemoteAccessBridgeAdapter>(this, profile);
+  RegisterCapability("remoteAccess", remote_access_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());
   // Phase 12: `catalog` capability — listHostedTools, renderPromptSection,

@@ -7,7 +7,9 @@
 
 #include <memory>
 
+#include "base/callback_list.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "custom_browser/chromium_hooks/hook_types.h"
 
@@ -39,6 +41,15 @@ class NexusStatusIcon;
 // reusing it is safe and gives the toggle a single source of truth. The
 // former nexus::prefs::kNexusLauncherEnabled is migrated into it once
 // (MigrateLegacyLauncherPref) and otherwise no longer read.
+//
+// A real quit still quits. Like Chrome's BackgroundModeManager
+// (OnAppTerminating), the manager listens for APP_TERMINATING
+// (browser_shutdown::AddAppTerminatingCallback), which fires when the last
+// browser closes during a try-to-quit exit: CDP Browser.close / end-session /
+// restart (chrome::ExitIgnoreUnloadHandlers, chrome::AttemptExit). It then drops
+// the keep-alive and the tray icon for good. A plain app-menu Exit
+// (chrome::AttemptUserExit, try_to_quit=false) does not fire it, so that one
+// still leaves Velloc in the tray, as upstream background mode does.
 class NexusBackgroundModeManager {
  public:
   // `status_tray` may be null (e.g. in unit tests / headless), in which case
@@ -64,20 +75,36 @@ class NexusBackgroundModeManager {
     return status_icon_.get();
   }
 
+  // Tray-menu "Quit". Asks the UI-layer delegate to confirm first (it only
+  // asks the user while remote-access devices are connected), and only on
+  // confirmation releases the keep-alive and closes all browsers so the
+  // process can exit. Public for tests.
+  void Quit();
+
  private:
   void OnEnabledPrefChanged();
 
+  // APP_TERMINATING: releases the keep-alive and the tray icon, and stops
+  // UpdateState() from acquiring them again.
+  void OnAppTerminating();
+
   // Acquires/releases the keep-alive and the tray icon to match the pref.
+  // A no-op once the app is terminating.
   void UpdateState();
 
-  // Tray-menu "Quit": releases the keep-alive, then asks the UI-layer delegate
-  // to close all browsers so the process can exit.
-  void Quit();
+  // The confirmed half of Quit(): releases the keep-alive, then asks the
+  // UI-layer delegate to close all browsers.
+  void QuitConfirmed();
 
   PrefChangeRegistrar local_state_registrar_;
   raw_ptr<StatusTray> status_tray_;
   std::unique_ptr<ScopedKeepAlive> keep_alive_;
   std::unique_ptr<NexusStatusIcon> status_icon_;
+  base::CallbackListSubscription on_app_terminating_subscription_;
+  bool app_terminating_ = false;
+
+  // A confirmation can be answered after shutdown began and the manager went.
+  base::WeakPtrFactory<NexusBackgroundModeManager> weak_factory_{this};
 };
 
 // Owns the NexusBackgroundModeManager for the browser-process lifetime.

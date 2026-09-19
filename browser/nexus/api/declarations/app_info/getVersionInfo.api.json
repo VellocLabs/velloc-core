@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "getVersionInfo",
-  "description": "Return application version strings for the Settings · About page: appVersion (product version) and chromiumVersion. Read-only. Replaces the loadTimeData appVersion/chromeVersion the Lit About page consumed.",
+  "description": "Return application version strings for the Settings · About page: appVersion (product version) and chromiumVersion. Read-only. Replaces the loadTimeData appVersion/chromeVersion the Lit About page consumed. Also returns this machine's hostName and osName (both omitted when the platform has no answer): not About-page material — the runtime reads them at bridge-connect time and puts them in welcome.bootstrap so a remote page can name the desktop it is driving (F-24).",
   "inputs": [],
   "runtime": {
     "thread": "ui"

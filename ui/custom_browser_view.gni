@@ -15,6 +15,8 @@ browser_view_sources = [
   "//custom_browser/ui/view/nexus_native_menus.cc",
   "//custom_browser/ui/view/nexus_launcher_delegate_impl.h",
   "//custom_browser/ui/view/nexus_launcher_delegate_impl.cc",
+  "//custom_browser/ui/view/nexus_quit_confirmation.h",
+  "//custom_browser/ui/view/nexus_quit_confirmation.cc",
   "//custom_browser/ui/view/native_ui/native_ui.h",
   "//custom_browser/ui/view/native_ui/native_ui.cc",
   "//custom_browser/ui/view/native_ui/native_ui_utils.h",

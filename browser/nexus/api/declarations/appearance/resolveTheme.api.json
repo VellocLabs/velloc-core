@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "resolveTheme",
+  "description": "Resolve a full colour theme for ONE client, parameterised by the request — the per-client-appearance replacement for broadcasting the profile's live palette. ThemeService is used as a RESOLVER ONLY: this writes NO pref (no SetColorScheme/SetUserColor/SetColorVariant on the profile) and sends NO broadcast; the resolved role → colour map goes back only as this request's reply. The colour pipeline is the same one the nexus host-theme broadcast reads (ui::ColorProviderManager → ColorProvider, the pipeline that feeds chrome://theme/colors.css), but keyed by the request's (scheme, seed, variant) instead of the profile's current values, so a remote client on a different device OS / colour preference resolves a palette independent of the desktop's own. The result `colors` maps the SAME role names the HostThemePayload carries (surface, toolbar, surfaceRaised, surfaceContainer, sidebar, base, textPrimary, textSecondary, outline, primary, onPrimary, focusRing) to `rgb(r, g, b)` strings; a role whose colour does not resolve is omitted, and the guest ignores unknown roles. `scheme` is echoed back verbatim.",
+  "inputs": [
+    {
+      "name": "scheme",
+      "type": "string",
+      "required": true,
+      "description": "\"light\" or \"dark\". NEVER \"system\" — the client collapses that against its own device OS before calling, so receiving it is a bug and is rejected as invalid args."
+    },
+    {
+      "name": "seed",
+      "type": "string",
+      "required": false,
+      "description": "The user colour as #rrggbb. ABSENT = no user colour = Chrome stock palette. Must match #rrggbb exactly (3- and 8-digit forms rejected); anything else is invalid args."
+    },
+    {
+      "name": "variant",
+      "type": "string",
+      "required": false,
+      "description": "One of \"tonalSpot\", \"neutral\", \"vibrant\", \"expressive\". ABSENT = tonalSpot. Anything else is invalid args."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

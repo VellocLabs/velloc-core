@@ -1,0 +1,8 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getPairings",
+  "description": "Return the desktop's PERSISTED remote-access pairings (the access-link table the runtime's pairingTable mirrors), as a list of pairing dicts stored verbatim in the profile pref nexus.remote_access.pairings. The runtime calls this once at boot to reload pairings so a minted link keeps working across a desktop restart (the table was previously in-memory and died with the panel). Each dict carries pairId, secret (base64url, 32 bytes — plaintext on disk by user-accepted trade-off), scope {mode, sessions}, label, createdAt/expiresAt (unix ms), revoked, and optional lastSeenAt. C++ persists the list OPAQUELY and never interprets it. Runtime-only (P-3); full-trust like getStatus, since it carries every pairSecret.",
+  "inputs": [],
+  "runtime": { "thread": "ui" },
+  "struct_name": "RemoteAccessGetPairings"
+}

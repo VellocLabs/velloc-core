@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setPairings",
+  "description": "Replace the desktop's persisted remote-access pairings wholesale. The runtime's pairingTable writes the FULL table after every mutation (start / revoke / a connection's lastSeenAt touch) so the on-disk copy in profile pref nexus.remote_access.pairings always mirrors the live table; there is no delta API. The single `pairings` input is the complete list of pairing dicts (same shape getPairings returns). C++ stores the list opaquely and never interprets it.",
+  "inputs": [
+    {
+      "name": "pairings",
+      "type": "array<object>",
+      "required": true,
+      "description": "The COMPLETE pairing table as a list of dicts (pairId, secret, scope, label, createdAt, expiresAt, revoked, lastSeenAt). Replaces the persisted list verbatim."
+    }
+  ],
+  "runtime": { "thread": "ui" },
+  "struct_name": "RemoteAccessSetPairings"
+}

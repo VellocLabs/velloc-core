@@ -111,6 +111,52 @@ inline constexpr char kNexusLastSessionStatus[] = "nexus.last_session_status";
 // Settings UI (Plan A) is the only writer.
 inline constexpr char kNexusMcpServerConfigs[] = "nexus.mcp_server_configs";
 
+// --- Remote access (remote-browser-client plan §8.3) ---
+// The desktop's embedded relay: a default-OFF net::HttpServer that reverse-
+// proxies the guest origin's immutable build entry and exposes /rt so a
+// remote browser on the LAN/VPN can join this desktop's runtime. Owned
+// C++-side (NexusRemoteAccessService); the nexus_web Settings page drives
+// them through the `remoteAccess` bridge capability, never directly.
+//
+// Whether the listener runs at all. Default OFF — remote access is opt-in.
+inline constexpr char kNexusRemoteAccessEnabled[] = "nexus.remote_access.enabled";
+// The single IPv4 literal the listener binds. Must currently appear in
+// net::GetNetworkList(); empty or absent-from-list → not listening. NEVER
+// "0.0.0.0" / "::" (plan §8.8). "127.0.0.1" is accepted for local debugging.
+inline constexpr char kNexusRemoteAccessBindAddress[] =
+    "nexus.remote_access.bind_address";
+// The listener port, 1024–65535. A port already in use surfaces as the
+// `port_in_use` status — the listener never silently switches ports (the
+// minted link would die).
+inline constexpr char kNexusRemoteAccessPort[] = "nexus.remote_access.port";
+
+// The persisted remote-access PAIRINGS, as a list of dicts — one per minted
+// access link the runtime's pairingTable holds. Persisting them (with the
+// listener's own prefs) is what lets a minted link keep working across a
+// desktop restart: the runtime reloads this list into its in-memory table on
+// boot instead of starting empty. Each entry:
+//   pairId     (string)  — the link's public id (base64url, 16 bytes)
+//   secret     (string)  — base64url, 32 bytes. The pairSecret, stored
+//                          plaintext ON DISK by user-accepted trade-off: it
+//                          never crosses the wire (the handshake is an HMAC
+//                          proof), but anyone who reads the profile dir can
+//                          impersonate the link until it expires or is
+//                          revoked. Same exposure class as the stored LLM
+//                          API keys in kNexusProviderConfigs.
+//   scope      (dict)    — { mode: "observe"|"control", sessions: "all"|[ids] }
+//   label      (string)
+//   createdAt  (double)  — unix ms
+//   expiresAt  (double)  — unix ms
+//   revoked    (bool)
+//   lastSeenAt (double, optional) — unix ms
+// The runtime is the ONLY writer/reader (through the remoteAccess capability's
+// getPairings/setPairings); C++ stores the list verbatim and never interprets
+// it — the listener's gates do not consult pairings. Shape versioning is by
+// key, not a number: readers ignore unknown keys and a missing/extra key reads
+// as "no pairings", so no migration is needed until a key's MEANING changes.
+inline constexpr char kNexusRemoteAccessPairings[] =
+    "nexus.remote_access.pairings";
+
 }  // namespace nexus::prefs
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_LLM_PREF_NAMES_H_

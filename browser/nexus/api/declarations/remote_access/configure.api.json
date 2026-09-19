@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "configure",
+  "description": "Apply a partial remote-access configure (remote-browser-client plan \u00c2\u00a78.4): any of { enabled, bindAddress, port } set \u00e2\u2020\u2019 written to the profile pref and the listener started/stopped to match; absent keys are unchanged. Returns the same status snapshot as getStatus, as of now: the bind is asynchronous, so a configure that begins one returns state 'starting' and the outcome ('listening' or 'error') arrives via onStatusChanged; re-sending an unchanged configure is a no-op that returns the current state. bindAddress must be one of the machine's current IPv4 literals (never 0.0.0.0); a port already in use surfaces as state 'error' + error 'port_in_use' \u00e2\u20ac\u201d the listener never silently switches ports.",
+  "inputs": [
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "required": false,
+      "description": "Master switch. Default unchanged. When false the listener stops (clients closed 4003) and the LNA grant for the guest origin is revoked."
+    },
+    {
+      "name": "bindAddress",
+      "type": "string",
+      "required": false,
+      "description": "The single IPv4 literal to bind. Must currently appear in net::GetNetworkList (127.0.0.1 accepted for local debugging; 0.0.0.0 / :: rejected). Empty/absent-from-list \u00e2\u2020\u2019 state 'error' + error 'no_address'."
+    },
+    {
+      "name": "port",
+      "type": "integer",
+      "required": false,
+      "description": "The listener port. 1024\u00e2\u20ac\u201c65535 pins a fixed port (a port in use \u00e2\u2020\u2019 state 'error' + error 'port_in_use'; never auto-switched). 0 requests an OS-assigned ephemeral port; the ACTUAL bound port is echoed back in the returned status.port (and getStatus / onStatusChanged)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  },
+  "struct_name": "RemoteAccessConfigure"
+}

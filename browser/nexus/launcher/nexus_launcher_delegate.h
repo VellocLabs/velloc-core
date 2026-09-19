@@ -5,6 +5,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_LAUNCHER_NEXUS_LAUNCHER_DELEGATE_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_LAUNCHER_NEXUS_LAUNCHER_DELEGATE_H_
 
+#include "base/functional/callback_forward.h"
+
 namespace nexus {
 
 // Bridges the launcher's tray icon to the window-opening logic that lives in
@@ -27,6 +29,13 @@ class NexusLauncherDelegate {
   // Focuses an existing normal (non-Nexus) browser window, or opens one. Backs
   // the tray menu's "Open Browser Window".
   virtual void OpenOrFocusNormalWindow() = 0;
+
+  // Asked before the tray menu's "Quit" does anything: runs `proceed` at once
+  // when no remote-access device is connected, otherwise after the user
+  // confirms that quitting disconnects them — and drops it if they decline.
+  // The manager keeps its keep-alive until `proceed` runs, so declining leaves
+  // the process exactly as it was.
+  virtual void ConfirmQuit(base::OnceClosure proceed) = 0;
 
   // Closes all browser windows (graceful quit). Backs the tray menu's "Quit".
   // The manager releases its keep-alive before calling this, so the process

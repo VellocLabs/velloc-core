@@ -4,6 +4,9 @@
 
 #include "custom_browser/ui/view/nexus_launcher_delegate_impl.h"
 
+#include <utility>
+
+#include "base/functional/callback.h"
 #include "base/no_destructor.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime_desktop.h"
@@ -11,6 +14,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_delegate.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
+#include "custom_browser/ui/view/nexus_quit_confirmation.h"
 
 namespace custom_browser {
 
@@ -36,6 +40,10 @@ class NexusLauncherDelegateImpl : public nexus::NexusLauncherDelegate {
 
   void OpenOrFocusNormalWindow() override {
     window_util::OpenOrFocusNormalWindow(LaunchProfile());
+  }
+
+  void ConfirmQuit(base::OnceClosure proceed) override {
+    ConfirmQuitWithRemoteDevices(std::move(proceed));
   }
 
   void Quit() override {

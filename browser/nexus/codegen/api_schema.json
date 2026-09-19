@@ -25,6 +25,12 @@
       "description": "One-line description of what this action does. Surfaced in generated code comments."
     },
 
+    "struct_name": {
+      "type": "string",
+      "pattern": "^[A-Z][a-zA-Z0-9]*$",
+      "description": "OPTIONAL override for the generated C++ input-struct name. All API input structs share one ::nexus::generated namespace, so a generic action name (getStatus -> GetStatusInput) can collide across categories. Set this to a globally-unique PascalCase name WITHOUT the trailing 'Input' (it is appended), e.g. 'RemoteAccessGetStatus' -> RemoteAccessGetStatusInput. The wire action name is unaffected."
+    },
+
     "inputs": {
       "type": "array",
       "description": "Ordered list of action inputs. Order drives the C++ input-struct field order. Each entry becomes one field on `<Name>Input` and one extraction step in the codegen-emitted Extract<Name>Input function. Empty array is valid (action takes no extracted inputs — typically because it only consumes ports, or its payload is opaque).",

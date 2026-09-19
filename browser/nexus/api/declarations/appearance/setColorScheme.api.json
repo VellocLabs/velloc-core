@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "setColorScheme",
-  "description": "Set the profile's browser colour scheme via ThemeService::SetBrowserColorScheme (pref browser.theme.color_scheme2). Chrome's ColorChangeUpdater fires, the panel re-resolves chrome://theme/colors.css and re-posts nexus-theme, so the guest repaints without a reload. Returns {ok:true}. Takes effect immediately — no restart.",
+  "description": "DEPRECATED — kept for ONE release for interface compatibility and scheduled for removal in the next release. The currently-served /v1/ guest (nexus_web main) still calls this route from its Settings · Appearance page, so removing it in the same build that serves that guest breaks the page; it stays accepted-but-deprecated until the per-client guest (resolveTheme + caller-localStorage) is the one being served. Behaviour is unchanged: set the profile's browser colour scheme via ThemeService::SetBrowserColorScheme (pref browser.theme.color_scheme2). Chrome's ColorChangeUpdater fires, the panel re-resolves chrome://theme/colors.css and re-posts nexus-theme, so the guest repaints without a reload. Returns {ok:true}. Takes effect immediately — no restart. New clients must use appearance.resolveTheme instead and own their colour state locally.",
   "inputs": [
     {
       "name": "scheme",

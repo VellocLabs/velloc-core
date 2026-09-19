@@ -9,6 +9,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/common/pref_names.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
@@ -30,6 +31,12 @@ NexusBackgroundModeManager::NexusBackgroundModeManager(StatusTray* status_tray)
       ::prefs::kBackgroundModeEnabled,
       base::BindRepeating(&NexusBackgroundModeManager::OnEnabledPrefChanged,
                           base::Unretained(this)));
+  // Without this the keep-alive outlives a try-to-quit exit: every window
+  // closes, but the process stays up with only the parked Nexus page.
+  on_app_terminating_subscription_ =
+      browser_shutdown::AddAppTerminatingCallback(
+          base::BindOnce(&NexusBackgroundModeManager::OnAppTerminating,
+                         base::Unretained(this)));
   UpdateState();
 }
 
@@ -57,7 +64,17 @@ void NexusBackgroundModeManager::OnEnabledPrefChanged() {
   UpdateState();
 }
 
+void NexusBackgroundModeManager::OnAppTerminating() {
+  app_terminating_ = true;
+  local_state_registrar_.RemoveAll();
+  keep_alive_.reset();
+  status_icon_.reset();
+}
+
 void NexusBackgroundModeManager::UpdateState() {
+  if (app_terminating_) {
+    return;
+  }
   PrefService* local_state = g_browser_process->local_state();
   const bool enabled =
       local_state && local_state->GetBoolean(::prefs::kBackgroundModeEnabled);
@@ -85,11 +102,23 @@ void NexusBackgroundModeManager::UpdateState() {
 }
 
 void NexusBackgroundModeManager::Quit() {
+  // Ask BEFORE letting go: with the keep-alive dropped and no window open, the
+  // process would exit behind the confirmation dialog, and "Cancel" would
+  // cancel nothing.
+  NexusLauncherDelegate* delegate = GetNexusLauncherDelegate();
+  if (!delegate) {
+    QuitConfirmed();
+    return;
+  }
+  delegate->ConfirmQuit(base::BindOnce(
+      &NexusBackgroundModeManager::QuitConfirmed, weak_factory_.GetWeakPtr()));
+}
+
+void NexusBackgroundModeManager::QuitConfirmed() {
   // Drop our keep-alive so the launcher no longer holds the process open, then
   // ask the UI layer to close all browser windows. chrome::CloseAllBrowsers
   // lives in //chrome/browser/ui, which the launcher target can't depend on
-  // (cycle), so it goes through the delegate. The closure is owned by the tray
-  // icon (a member), so `this` is always valid when it runs.
+  // (cycle), so it goes through the delegate.
   keep_alive_.reset();
   if (NexusLauncherDelegate* delegate = GetNexusLauncherDelegate()) {
     delegate->Quit();

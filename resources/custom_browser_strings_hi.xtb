@@ -218,4 +218,7 @@
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">टास्क मैनेजर</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">विंडो बंद करें</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">नई ब्राउज़र विंडो</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {रिमोट एक्सेस: कोई डिवाइस कनेक्ट नहीं है} =1 {रिमोट एक्सेस: # डिवाइस कनेक्ट है} other {रिमोट एक्सेस: # डिवाइस कनेक्ट हैं}}</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> से बाहर निकलें?</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {रिमोट एक्सेस के ज़रिए # डिवाइस कनेक्ट है। बाहर निकलने पर यह डिस्कनेक्ट हो जाएगा।} other {रिमोट एक्सेस के ज़रिए # डिवाइस कनेक्ट हैं। बाहर निकलने पर ये डिस्कनेक्ट हो जाएंगे।}}</translation>
 </translationbundle>

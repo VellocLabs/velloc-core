@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "getStatus",
+  "description": "Snapshot the desktop's remote-access listener (remote-browser-client plan \u00c2\u00a78.4): whether remote access is enabled, the bound address:port, the resulting state ('off'|'starting'|'listening'|'error'), the bind candidates from net::GetNetworkList, the live /rt client count, and \u00e2\u20ac\u201d when listening \u00e2\u20ac\u201d the control URL + memory-only control token the runtime dials back with. The control token appears ONLY here (full-trust); it is stripped from onStatusChanged and never enters a topic/log. Called by the runtime only after the host manifest advertises 'remoteAccess' (the no-version-bump gate).",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  },
+  "struct_name": "RemoteAccessGetStatus"
+}

@@ -218,4 +218,7 @@
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Диспетчер задач</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Закрыть окно</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Новое окно браузера</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {Удалённый доступ: нет подключённых устройств} one {Удалённый доступ: подключено # устройство} few {Удалённый доступ: подключено # устройства} many {Удалённый доступ: подключено # устройств} other {Удалённый доступ: подключено # устройства}}</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Выйти из <ph name="PRODUCT_NAME"/>?</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, one {Через удалённый доступ подключено # устройство. При выходе оно будет отключено.} few {Через удалённый доступ подключено # устройства. При выходе они будут отключены.} many {Через удалённый доступ подключено # устройств. При выходе они будут отключены.} other {Через удалённый доступ подключено # устройства. При выходе они будут отключены.}}</translation>
 </translationbundle>

@@ -4,12 +4,15 @@
 
 #include "custom_browser/browser/nexus/launcher/nexus_background_mode_manager.h"
 
+#include "base/functional/callback.h"
+#include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
 #include "components/prefs/testing_pref_service.h"
 #include "content/public/test/browser_task_environment.h"
+#include "custom_browser/browser/nexus/launcher/nexus_launcher_delegate.h"
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_prefs.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -91,6 +94,98 @@ TEST_F(NexusBackgroundModeManagerTest, LegacyLauncherPrefIsNotRead) {
 
   NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
   EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+}
+
+// A try-to-quit exit (CDP Browser.close, restart, end-session) fires
+// APP_TERMINATING once the last browser closes. The manager must drop its
+// keep-alive then, or the process outlives every window with only the parked
+// Nexus page left (2026-09-24). Once terminating, re-enabling the pref must
+// not take a new keep-alive either.
+//
+// The ONLY test that calls NotifyAppTerminating(): it fires at most once per
+// process, so a second caller in the same test batch would see a no-op.
+TEST_F(NexusBackgroundModeManagerTest, ReleasesKeepAliveOnAppTerminating) {
+  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+  ASSERT_TRUE(manager.IsKeepingAliveForTesting());
+
+  browser_shutdown::NotifyAppTerminating();
+  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+  EXPECT_FALSE(NexusOriginRegistered());
+
+  SetEnabled(false);
+  SetEnabled(true);
+  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+  EXPECT_FALSE(NexusOriginRegistered());
+}
+
+// --- Tray "Quit" asks first (remote-access devices, 2026-09-22) -------------
+
+// Stands in for the UI layer: records what the manager asks for, and lets the
+// test answer the confirmation.
+class FakeLauncherDelegate : public NexusLauncherDelegate {
+ public:
+  void OpenOrFocusNexusWindow() override {}
+  void OpenOrFocusNormalWindow() override {}
+  void ConfirmQuit(base::OnceClosure proceed) override {
+    ++confirmations;
+    pending = std::move(proceed);
+  }
+  void Quit() override { ++quits; }
+
+  int confirmations = 0;
+  int quits = 0;
+  base::OnceClosure pending;
+};
+
+class NexusBackgroundModeManagerQuitTest
+    : public NexusBackgroundModeManagerTest {
+ protected:
+  void SetUp() override {
+    NexusBackgroundModeManagerTest::SetUp();
+    SetNexusLauncherDelegate(&delegate_);
+  }
+  void TearDown() override { SetNexusLauncherDelegate(nullptr); }
+
+  FakeLauncherDelegate delegate_;
+};
+
+// The keep-alive is still held while the user is being asked: dropping it
+// first would let the process exit behind the dialog.
+TEST_F(NexusBackgroundModeManagerQuitTest, AsksBeforeLettingTheProcessGo) {
+  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+  ASSERT_TRUE(manager.IsKeepingAliveForTesting());
+
+  manager.Quit();
+  EXPECT_EQ(delegate_.confirmations, 1);
+  EXPECT_TRUE(manager.IsKeepingAliveForTesting());
+  EXPECT_TRUE(NexusOriginRegistered());
+  EXPECT_EQ(delegate_.quits, 0);
+
+  std::move(delegate_.pending).Run();
+  EXPECT_FALSE(manager.IsKeepingAliveForTesting());
+  EXPECT_FALSE(NexusOriginRegistered());
+  EXPECT_EQ(delegate_.quits, 1);
+}
+
+// Declining is dropping the closure: nothing is released, nothing closes.
+TEST_F(NexusBackgroundModeManagerQuitTest, ADeclinedQuitChangesNothing) {
+  NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+  manager.Quit();
+  delegate_.pending.Reset();
+  EXPECT_TRUE(manager.IsKeepingAliveForTesting());
+  EXPECT_TRUE(NexusOriginRegistered());
+  EXPECT_EQ(delegate_.quits, 0);
+}
+
+// A confirmation answered after the manager is gone (shutdown already under
+// way) is a no-op, not a use-after-free.
+TEST_F(NexusBackgroundModeManagerQuitTest, ALateConfirmationIsHarmless) {
+  {
+    NexusBackgroundModeManager manager(/*status_tray=*/nullptr);
+    manager.Quit();
+  }
+  std::move(delegate_.pending).Run();
+  EXPECT_EQ(delegate_.quits, 0);
 }
 
 // --- Migration of the old "Show in the system tray" choice -----------------

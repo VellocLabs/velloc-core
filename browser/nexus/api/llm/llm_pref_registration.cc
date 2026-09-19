@@ -60,6 +60,16 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // cwd}). Holds secrets in `env`; read browser-side by NexusMcpServerStore,
   // never exposed to the JS guest. See mcp_pref_names.h.
   registry->RegisterDictionaryPref(prefs::kNexusMcpServerConfigs);
+
+  // Remote access (plan §8.3): default OFF, no bind address, the well-known
+  // default port. See the pref-name comments in llm_pref_names.h.
+  registry->RegisterBooleanPref(prefs::kNexusRemoteAccessEnabled, false);
+  registry->RegisterStringPref(prefs::kNexusRemoteAccessBindAddress,
+                               std::string());
+  registry->RegisterIntegerPref(prefs::kNexusRemoteAccessPort, 47615);
+  // The persisted access-link pairings (see llm_pref_names.h). A list pref:
+  // each element is one pairing dict. Starts empty.
+  registry->RegisterListPref(prefs::kNexusRemoteAccessPairings);
 }
 
 }  // namespace nexus

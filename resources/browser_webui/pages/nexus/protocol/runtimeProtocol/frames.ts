@@ -60,7 +60,7 @@ export type TopicId = string
 export const CLIENT_KINDS = ['desktop-shell', 'panel-host', 'mobile', 'browser', 'cli'] as const
 export type ClientKind = (typeof CLIENT_KINDS)[number]
 
-export const SCOPE_MODES = ['observe', 'control', 'full'] as const
+export const SCOPE_MODES = ['observe', 'control', 'manager', 'full'] as const
 export type ScopeMode = (typeof SCOPE_MODES)[number]
 
 export type Scope = {
@@ -76,6 +76,18 @@ export type ClientDescriptor = {
   displayName?: string
   /** Bundle build stamp (`__NEXUS_BUILD_TIME__`); diagnostics only. */
   build?: string
+  /**
+   * The browser's `navigator.userAgent`, sent by a client that is NOT this
+   * machine's own shell — a remote page, which the desktop's Remote access
+   * page lists by device (F-24). It is how "3 devices" becomes "Chrome on
+   * Android / Safari on macOS": the peer IP is known only to the C++
+   * listener, and the UA is the one identifying fact the client itself can
+   * state. Diagnostics only — it grants nothing and is never trusted.
+   *
+   * The desktop shell omits it: it is not a device anyone needs listed, and
+   * an absent field keeps its `remote/state` row free of a UA nobody reads.
+   */
+  userAgent?: string
   /** desktop-shell / panel-host: the panel this client belongs to (from the nexus-init payload). */
   panelId?: string
 }
@@ -134,7 +146,23 @@ export type WelcomeFrame = {
     capabilities: readonly CapabilityAdvert[]
   }
   /** Only when `resumed` is false; a resumed connection relies on topic replay. */
-  bootstrap?: { homeDir: string; platform: string; pathSep: '/' | '\\' }
+  bootstrap?: {
+    homeDir: string
+    platform: string
+    pathSep: '/' | '\\'
+    /**
+     * Who the runtime is running as — the DESKTOP's identity, for a client
+     * that is somewhere else (F-24). A remote page shows it in the topbar's
+     * connection tooltip, so the user can tell which machine the session
+     * they are driving actually runs on. Both fields are best-effort: an
+     * older host binary reports no machine name, and a runtime whose host
+     * call failed reports neither. Absent renders as one less line, never as
+     * a blank row.
+     */
+    hostName?: string
+    /** The desktop's operating system, human-readable (`Windows 11`). */
+    osName?: string
+  }
 }
 
 export const BYE_CODES = [

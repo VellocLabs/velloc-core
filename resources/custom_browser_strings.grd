@@ -685,6 +685,21 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW" desc="System menu item on the Nexus agent window that closes the window" use_name_for_id="true">
         Close window
       </message>
+      <!-- Remote access: the tray tooltip line and the quit confirmation (F-24) -->
+      <message name="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES" desc="Second line of the system-tray icon tooltip while remote access is on: how many remote devices are connected to this computer" use_name_for_id="true">
+        {COUNT, plural,
+          =0 {Remote access: no devices connected}
+          =1 {Remote access: # device connected}
+          other {Remote access: # devices connected}}
+      </message>
+      <message name="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE" desc="Title of the dialog shown when the user quits the app (tray menu Quit or the app menu's Exit) while remote devices are connected through remote access. Answered with Yes / No." use_name_for_id="true">
+        Quit <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph>?
+      </message>
+      <message name="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY" desc="Body of the dialog shown when the user quits the app while remote devices are connected through remote access" use_name_for_id="true">
+        {COUNT, plural,
+          =1 {# device is connected through remote access. Quitting disconnects it.}
+          other {# devices are connected through remote access. Quitting disconnects them.}}
+      </message>
       <!-- Windows taskbar Jump List "Tasks" (right-click the taskbar icon) -->
       <message name="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW" desc="Taskbar Jump List task that opens a new regular browser window" use_name_for_id="true">
         New browser window

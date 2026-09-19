@@ -9,6 +9,7 @@
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/status_icons/status_icon_menu_model.h"
 #include "chrome/browser/status_icons/status_icon_observer.h"
+#include "custom_browser/browser/nexus/remote_access/nexus_remote_access_clients.h"
 
 namespace gfx {
 class ImageSkia;
@@ -27,7 +28,8 @@ namespace nexus {
 // opens the Nexus window. Owned by NexusBackgroundModeManager and only alive
 // while the launcher is enabled.
 class NexusStatusIcon : public StatusIconObserver,
-                        public StatusIconMenuModel::Delegate {
+                        public StatusIconMenuModel::Delegate,
+                        public remote_access::ConnectedClientsObserver {
  public:
   // `quit_callback` is run when the user picks "Quit".
   NexusStatusIcon(StatusTray* status_tray, base::RepeatingClosure quit_callback);
@@ -42,9 +44,17 @@ class NexusStatusIcon : public StatusIconObserver,
   // StatusIconMenuModel::Delegate:
   void ExecuteCommand(int command_id, int event_flags) override;
 
+  // remote_access::ConnectedClientsObserver:
+  void OnConnectedClientsChanged(
+      const remote_access::ConnectedClients& summary) override;
+
  private:
   // Opens/focuses the Nexus window via the registered delegate (no-op if none).
   void OpenNexusWindow();
+
+  // The product name, plus — while remote access is listening — a second line
+  // with the number of connected remote devices.
+  void UpdateToolTip(const remote_access::ConnectedClients& summary);
 
   // Velloc's production logo as a tray-sized image, from the resource bundle.
   static gfx::ImageSkia GetProductLogoIcon();

@@ -218,4 +218,7 @@ Isso remove o provedor armazenado, o endpoint salvo e os modelos selecionados qu
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Gerenciador de tarefas</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Fechar a janela</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Nova janela do navegador</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {Acesso remoto: nenhum dispositivo conectado} =1 {Acesso remoto: # dispositivo conectado} other {Acesso remoto: # dispositivos conectados}}</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Sair do <ph name="PRODUCT_NAME"/>?</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {# dispositivo está conectado pelo acesso remoto. Sair vai desconectá-lo.} other {# dispositivos estão conectados pelo acesso remoto. Sair vai desconectá-los.}}</translation>
 </translationbundle>

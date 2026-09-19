@@ -218,4 +218,7 @@ Cela supprime le fournisseur mémorisé, le point de terminaison enregistré et 
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Gestionnaire de tâches</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Fermer la fenêtre</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Nouvelle fenêtre de navigateur</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {Accès à distance : aucun appareil connecté} =1 {Accès à distance : # appareil connecté} other {Accès à distance : # appareils connectés}}</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Quitter <ph name="PRODUCT_NAME"/> ?</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {# appareil est connecté via l’accès à distance. Quitter le déconnectera.} other {# appareils sont connectés via l’accès à distance. Quitter les déconnectera.}}</translation>
 </translationbundle>

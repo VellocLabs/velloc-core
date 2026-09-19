@@ -216,4 +216,7 @@
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">작업 관리자</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">창 닫기</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">새 브라우저 창</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {원격 액세스: 연결된 디바이스 없음} other {원격 액세스: 디바이스 #대 연결됨}}</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/>을(를) 종료하시겠습니까?</translation>
+  <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, other {원격 액세스로 디바이스 #대가 연결되어 있습니다. 종료하면 연결이 끊어집니다.}}</translation>
 </translationbundle>

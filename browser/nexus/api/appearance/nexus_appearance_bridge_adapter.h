@@ -19,25 +19,38 @@ class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `AppearanceApiBase` virtuals.
 //
-// The WRITE half of Settings · Appearance and the language row on Settings ·
-// General. The read half is not here: the panel already resolves Chrome's live
-// palette from chrome://theme/colors.css and posts it to the guest as
-// `nexus-theme` (nexus_host_theme.ts), so a write through this adapter
-// repaints the guest through machinery that already exists — ThemeService
-// notifies, ColorChangeUpdater fires, the panel re-posts. `getAppearance`
-// exists only so the controls can render their CURRENT position on mount.
+// Per-client appearance (2026-09-20). The guest no longer reads the desktop's
+// live palette: `resolveTheme` resolves a full colour theme for ONE client,
+// parameterised by the request's (scheme, seed, variant), so a remote client
+// on a different device OS / colour preference gets a palette independent of
+// the desktop's own. ThemeService is used as a RESOLVER ONLY here —
+// resolveTheme writes NO profile pref and sends NO broadcast; the result goes
+// back only as the request's reply. The colour pipeline is the same one the
+// legacy host-theme broadcast reads (ui::ColorProviderManager → ColorProvider,
+// the pipeline feeding chrome://theme/colors.css), keyed by the request
+// instead of the profile.
 //
-// The two halves live in DIFFERENT pref stores, which is why this adapter
-// keeps a Profile and still reaches for local state. The theme is
-// per-PROFILE (ThemeService is profile-keyed), so the profile is held.
-// `intl.app_locale` is NOT: outside ChromeOS it is registered only on the
-// local-state registry (browser_process_impl.cc), so touching it through
-// profile prefs CHECK-fails in PrefService and kills the browser process.
-// Chrome writes it to local state on Windows too
+// `setColorScheme` / `setUserColor` are DEPRECATED but kept for ONE
+// release: the /v1/ guest currently served (nexus_web main) still calls them
+// from its Settings · Appearance page, so a binary without them breaks that
+// page — and the one-version-served deploy model makes an interface-version
+// bump useless here (the old guest is never served again). They behave exactly
+// as they did before the per-client move (write the profile theme pref, the
+// panel re-posts nexus-theme). Remove them once the per-client guest
+// (resolveTheme + caller-localStorage) is the one being served.
+// `setUiLocale` (unchanged) and `getAppearance` remain. getAppearance's
+// three colour fields (scheme/variant/color) are kept OPTIONAL for one release
+// so the desktop panel's one-shot migration can read the profile's previous
+// values.
+//
+// `intl.app_locale` is NOT a profile pref: outside ChromeOS it is registered
+// only on the local-state registry (browser_process_impl.cc), so touching it
+// through profile prefs CHECK-fails in PrefService and kills the browser
+// process. Chrome writes it to local state on Windows too
 // (LanguagesHandler::HandleSetProspectiveUILanguage).
 //
-// Threading: all actions run on UI — PrefService and ThemeService are both
-// UI-thread-bound. Holds no per-call state.
+// Threading: all actions run on UI — PrefService, ThemeService and
+// ColorProviderManager are all UI-thread-bound. Holds no per-call state.
 class NexusAppearanceBridgeAdapter
     : public ::nexus::generated::AppearanceApiBase {
  public:
@@ -52,6 +65,11 @@ class NexusAppearanceBridgeAdapter
  private:
   void HandleGetAppearanceOnUI(
       ::nexus::generated::GetAppearanceInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+
+  void HandleResolveThemeOnUI(
+      ::nexus::generated::ResolveThemeInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 

@@ -1918,6 +1918,15 @@ class ApiActionDecl:
     description: str
     inputs: list[InputDecl] = field(default_factory=list)
     runtime_thread: str = "ui"
+    # Optional override for the generated C++ input-struct name. All API
+    # input structs share one ::nexus::generated namespace, so a generic
+    # action name ("getStatus" → GetStatusInput) can collide across
+    # categories. Set this to a globally-unique PascalCase name (WITHOUT the
+    # trailing "Input", which is appended) when the derived name would be
+    # too generic, e.g. remote_access's getStatus → struct_name
+    # "RemoteAccessGetStatus" → RemoteAccessGetStatusInput. The WIRE action
+    # name (`name`) is unaffected.
+    struct_name: str = ""
     # Inferred from path:
     category_snake: str = ""   # "fs" / "llm"
     category_pascal: str = ""  # "Fs" / "Llm"
@@ -1933,14 +1942,18 @@ class ApiActionDecl:
 
     @property
     def input_struct_name(self) -> str:
-        """stat → StatInput, readFileBytes → ReadFileBytesInput."""
+        """stat → StatInput, readFileBytes → ReadFileBytesInput. Honors a
+        struct_name override (returns it verbatim + "Input")."""
+        if self.struct_name:
+            return f"{self.struct_name}Input"
         return f"{to_pascal_case_camel(self.name)}Input"
 
     @property
     def extractor_name(self) -> str:
         """stat → ExtractStatInput. The free function the dispatcher
-        calls before invoking the virtual."""
-        return f"Extract{to_pascal_case_camel(self.name)}Input"
+        calls before invoking the virtual. Derived from the (possibly
+        overridden) struct name so it stays unique alongside it."""
+        return f"Extract{self.input_struct_name}"
 
 
 def to_pascal_case_camel(camel: str) -> str:
@@ -2017,11 +2030,22 @@ def parse_api_declaration(decl_path: Path) -> ApiActionDecl:
             f"the adapter); see api/fs/nexus_fs_bridge_adapter.cc and "
             f"docs/agents/nexus-tools-api.md §6.")
 
+    struct_name = raw.get("struct_name", "")
+    if not isinstance(struct_name, str):
+        raise ValueError(f"{decl_path}: 'struct_name' must be a string")
+    if struct_name and not struct_name[:1].isupper():
+        raise ValueError(
+            f"{decl_path}: 'struct_name' must be PascalCase (start with an "
+            f"uppercase letter); got {struct_name!r}. Omit the trailing "
+            f"'Input' — it is appended."
+        )
+
     return ApiActionDecl(
         name=raw["name"],
         description=raw["description"],
         inputs=inputs,
         runtime_thread=thread,
+        struct_name=struct_name,
     )
 
 

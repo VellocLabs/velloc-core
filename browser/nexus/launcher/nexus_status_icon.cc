@@ -15,6 +15,8 @@
 #include "chrome/grit/theme_resources.h"
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_delegate.h"
 #include "custom_browser/common/branding_constants.h"
+#include "custom_browser/resources/grit/custom_browser_strings.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_separator_types.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
@@ -42,6 +44,9 @@ NexusStatusIcon::NexusStatusIcon(StatusTray* status_tray,
     return;
   }
   status_icon_->AddObserver(this);
+  // The tooltip follows remote access for as long as the icon lives.
+  remote_access::AddConnectedClientsObserver(this);
+  UpdateToolTip(remote_access::GetConnectedClients());
 
   auto menu = std::make_unique<StatusIconMenuModel>(this);
   menu->AddItem(NexusTrayCommand::kOpenNexusWindow, u"Show App");
@@ -52,6 +57,7 @@ NexusStatusIcon::NexusStatusIcon(StatusTray* status_tray,
 }
 
 NexusStatusIcon::~NexusStatusIcon() {
+  remote_access::RemoveConnectedClientsObserver(this);
   if (status_icon_) {
     status_icon_->RemoveObserver(this);
     status_tray_->RemoveStatusIcon(status_icon_);
@@ -81,6 +87,26 @@ void NexusStatusIcon::ExecuteCommand(int command_id, int event_flags) {
     default:
       break;
   }
+}
+
+void NexusStatusIcon::OnConnectedClientsChanged(
+    const remote_access::ConnectedClients& summary) {
+  UpdateToolTip(summary);
+}
+
+void NexusStatusIcon::UpdateToolTip(
+    const remote_access::ConnectedClients& summary) {
+  if (!status_icon_) {
+    return;
+  }
+  std::u16string tool_tip =
+      base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
+  if (summary.listening) {
+    tool_tip += u'\n';
+    tool_tip += l10n_util::GetPluralStringFUTF16(
+        IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES, summary.clients);
+  }
+  status_icon_->SetToolTip(tool_tip);
 }
 
 void NexusStatusIcon::OpenNexusWindow() {

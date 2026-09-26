@@ -226,6 +226,18 @@ void CustomBrowserHandler::DetachFromView() {
   browser_->tab_strip_model()->RemoveObserver(this);
   browser_ = nullptr;
   custom_browser_view_ = nullptr;
+  // The closing strip's kRemoved for its LAST tab never reaches the page:
+  // OnTabStripModelChanged returns early on an empty model (the tab is
+  // erased before the notification). Whatever is still cached here is a tab
+  // the page still lists — retire it now, before AttachToView replays the
+  // new window's strip, and drop the WebContents* keys so a freed address
+  // reused by a new tab cannot alias a stale entry.
+  for (const auto& [contents, tab_data] : web_contents_to_tab_data_) {
+    if (tab_data) {
+      page_browser_->TabRemoved(tab_data->id);
+    }
+  }
+  web_contents_to_tab_data_.clear();
   // Queue (do not drop) page calls until a window is attached again.
   receiver_.Pause();
 }
@@ -242,7 +254,8 @@ void CustomBrowserHandler::AttachToView(
   tab_strip_model->AddObserver(this);
   // Replay the new window's strip the way kInserted would have: the page's
   // tab model already dropped the old window's tabs (that strip sent
-  // TabRemoved for each as the window closed).
+  // TabRemoved for each as the window closed; DetachFromView sent it for
+  // any the strip's empty-model early return swallowed).
   for (int i = 0; i < tab_strip_model->count(); ++i) {
     content::WebContents* contents = tab_strip_model->GetWebContentsAt(i);
     auto tab_data = GetTabData(contents, tab_strip_model->GetTabAtIndex(i), i);

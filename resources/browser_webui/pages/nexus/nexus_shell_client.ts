@@ -243,12 +243,21 @@ function ensureConnected(): void {
   })();
 }
 
-/** Drop the connection: the guest reloaded, so its ports are gone. */
+/**
+ * Drop the connection: the guest reloaded, so its ports are gone. Called from
+ * the bootstrap on every guest `contentload`. With subscribers present the
+ * attach is re-driven at once; the guest's ready beacon then re-attaches
+ * again if this one was posted before its listener was up.
+ */
 export function invalidateShellClient(): void {
   cachedWebview = null;
   connected = false;
   client?.dispose();
   client = null;
+  if (dismissHandlers.size > 0 || layoutHandlers.size > 0 ||
+      buildInfoHandlers.size > 0 || bootProgressHandlers.size > 0) {
+    ensureConnected();
+  }
 }
 
 function subscribe<T>(set: Set<T>, handler: T): () => void {

@@ -187,9 +187,7 @@ class NexusRemoteAccessService {
                           std::string if_none_match,
                           std::string if_modified_since,
                           NexusRemoteAccessListener::ProxyDoneCallback done);
-  void OnProxyComplete(const std::string& url_path,
-                       const std::string& if_none_match,
-                       const std::string& if_modified_since,
+  void OnProxyComplete(const std::string& fetch_key,
                        std::optional<std::string> body);
 
   // The LNA grant for the guest origin (spike S1). Grant on enable, revoke on
@@ -235,7 +233,9 @@ class NexusRemoteAccessService {
   uint16_t bound_port_ = 0;
   ListenerState state_ = ListenerState::kOff;
   std::optional<std::string> error_;
-  // path -> the in-flight fetch and its coalesced waiters.
+  // "path\nif-none-match\nif-modified-since" -> the in-flight fetch and its
+  // coalesced waiters (same path AND same validators: a 304 is only an
+  // answer for a joiner that sent the same conditional headers).
   base::flat_map<std::string, std::unique_ptr<ProxyFetch>> in_flight_proxy_;
 
   // Status-change subscribers (the bridge adapter), keyed by subscription id.

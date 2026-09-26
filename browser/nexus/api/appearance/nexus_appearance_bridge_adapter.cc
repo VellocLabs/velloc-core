@@ -361,6 +361,24 @@ void NexusAppearanceBridgeAdapter::HandleResolveThemeOnUI(
   // keyed by the request — NO profile pref is read for the three request
   // fields, NONE is written, and nothing is broadcast. The result goes back
   // only as this request's reply.
+  //
+  // ColorProviderManager caches one provider per distinct key and never
+  // evicts, and this route is reachable at observe scope by a remote client
+  // that picks the key. Bound what a client can make it hold: once this
+  // adapter has resolved kMaxDistinctResolvedThemes distinct keys, drop the
+  // manager's cache (the browser's own providers are rebuilt lazily) and
+  // start counting again.
+  const std::string resolve_key = base::StringPrintf(
+      "%d|%s|%s", static_cast<int>(color_mode),
+      seed.has_value() ? base::NumberToString(*seed).c_str() : "",
+      input.variant.has_value() ? input.variant->c_str() : "");
+  if (!resolved_theme_keys_.contains(resolve_key)) {
+    if (resolved_theme_keys_.size() >= kMaxDistinctResolvedThemes) {
+      ui::ColorProviderManager::Get().ResetColorProviderCache();
+      resolved_theme_keys_.clear();
+    }
+    resolved_theme_keys_.insert(resolve_key);
+  }
   ui::ColorProvider* provider =
       ui::ColorProviderManager::Get().GetColorProviderFor(
           BuildResolveKey(color_mode, seed, variant));

@@ -839,10 +839,13 @@ NexusFsHost::RealpathResult NexusFsHost::Realpath(const std::string& path,
   if (resolve_links) {
     // Windows: `canonical` is normalized (`..` collapsed), not link-resolved.
     // POSIX: it is empty for a path that does not exist yet.
-    const base::FilePath linked =
-        ResolveLinks(canonical.empty() ? resolved : canonical);
-    if (!linked.empty()) {
-      canonical = linked;
+    // The caller asked for links resolved because it will compare the result
+    // against a containment root: an unresolved fallback would let a link
+    // escape pass, so a failure here is an error, never the literal path.
+    canonical = ResolveLinks(canonical.empty() ? resolved : canonical);
+    if (canonical.empty()) {
+      result.error = "Failed to resolve links";
+      return result;
     }
   }
   if (canonical.empty()) {

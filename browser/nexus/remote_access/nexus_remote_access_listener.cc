@@ -90,6 +90,11 @@ constexpr size_t kMaxPreLegBufferBytes = 1 * 1024 * 1024;   // 1 MiB → 1009
 constexpr int32_t kRelayBufferBytes = 32 * 1024 * 1024;
 // The /rt concurrency ceiling (plan §8.3's routing table: < 8).
 constexpr size_t kMaxClients = 8;
+// /rt is accepted before any authentication (the runtime authenticates over
+// the leg), so the ceiling alone lets one LAN host hold every slot with idle
+// sockets and lock every paired device out. Cap what one remote address may
+// hold; same-machine peers are the desktop's own windows and stay uncapped.
+constexpr size_t kMaxClientsPerPeer = 2;
 // Send-buffer limit of a connection carrying proxied HTTP responses.
 constexpr int32_t kProxySendBufferBytes = 16 * 1024 * 1024;
 // `GET /`'s redirect to the runtime's build entry: fresh for a year, like the
@@ -241,6 +246,8 @@ class NexusRemoteAccessListener::Core : public net::HttpServer::Delegate {
   // is the /rt concurrency count; an id leaves the set only when that client
   // connection closes.
   std::set<int> client_connection_ids_;
+  // client connection -> the remote address it came from (the per-peer cap).
+  std::map<int, net::IPAddress> client_peer_address_;
   size_t reported_client_count_ = 0;
 
   SEQUENCE_CHECKER(sequence_checker_);
@@ -487,6 +494,7 @@ void NexusRemoteAccessListener::Core::OnClose(int connection_id) {
   // Any /rt client connection (pending or spliced) leaves the concurrency
   // set when it closes.
   if (client_connection_ids_.erase(connection_id)) {
+    client_peer_address_.erase(connection_id);
     ReportClientCount();
   }
 
@@ -618,10 +626,26 @@ void NexusRemoteAccessListener::Core::AcceptClientSocket(
     CloseSocketWithCode(connection_id, kCloseTooManyClients);
     return;
   }
+  // Per-peer ceiling → 4004 as well: one remote address may not hold the
+  // whole table.
+  const net::IPAddress peer_address = info.peer.address();
+  if (!peer_address.IsLoopback()) {
+    size_t held_by_peer = 0;
+    for (const auto& [id, address] : client_peer_address_) {
+      if (address == peer_address) {
+        ++held_by_peer;
+      }
+    }
+    if (held_by_peer >= kMaxClientsPerPeer) {
+      CloseSocketWithCode(connection_id, kCloseTooManyClients);
+      return;
+    }
+  }
 
   server_->SetReceiveBufferSize(connection_id, kRelayBufferBytes);
   server_->SetSendBufferSize(connection_id, kRelayBufferBytes);
   client_connection_ids_.insert(connection_id);
+  client_peer_address_.emplace(connection_id, peer_address);
   ReportClientCount();
 
   // Mint an unpredictable legId (16 random bytes, hex) — one client must not
@@ -752,6 +776,7 @@ void NexusRemoteAccessListener::Core::DropAllClients(int close_code) {
   leg_id_by_connection_.clear();
   peer_connection_.clear();
   client_connection_ids_.clear();
+  client_peer_address_.clear();
   for (const int id : ids) {
     CloseSocketWithCode(id, close_code);
   }

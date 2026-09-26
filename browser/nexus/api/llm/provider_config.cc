@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
 
+#include "base/logging.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
@@ -35,7 +36,20 @@ std::string GetStoredDefaultModelId(const base::DictValue& config) {
 
 std::string SealApiKeyForPref(const std::string& api_key) {
   // Encrypt is idempotent on a marked value and a no-op on empty input.
-  return NexusSecretCrypt::GetInstance()->Encrypt(api_key);
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
+  std::string sealed = crypt->Encrypt(api_key);
+  // Encrypt degrades to plaintext when the encryptor is not ready (the broker
+  // re-applies from WhenReady) — but ALSO when the OS encrypt itself fails.
+  // That second case has no retry, so the plaintext would land in the pref.
+  // Refuse to store it: the guest still holds the key in settings.json and
+  // republishes it on the next boot.
+  if (crypt->ready() && !api_key.empty() &&
+      !NexusSecretCrypt::IsEncrypted(sealed)) {
+    LOG(ERROR) << "[nexus] api_key could not be sealed for the pref cache; "
+                  "not storing it";
+    return std::string();
+  }
+  return sealed;
 }
 
 bool StoredApiKeysDiffer(const std::string& stored_a,

@@ -221,10 +221,18 @@ void BrowserTool::OnStop(OnStopReason reason) {
   node_registry_.Clear();
   registry_document_by_tab_.clear();
   // A projection staged by an action that was stopped before it resolved
-  // never shipped. The committed baseline itself is kept: the warm-stop
-  // reasons (kCompleted / kUserStopped) keep the model's context, and the
-  // guest re-marks it stale on the context mutations that matter.
-  observation_baseline_.Discard();
+  // never shipped. The committed baseline itself is kept on kCompleted: the
+  // model's context is intact and the guest re-marks it stale on the context
+  // mutations that matter. On kUserStopped it is NOT kept: a result that
+  // committed around the user's Stop is replaced by the guest's interrupted
+  // marker, so the model never saw the elements[] the baseline names, and a
+  // short-circuit against it would hand the model an {unchanged} stub for a
+  // document it has no elements for. One full re-send is the price.
+  if (reason == OnStopReason::kUserStopped) {
+    observation_baseline_.MarkStale();
+  } else {
+    observation_baseline_.Discard();
+  }
   // Note: tabs are NOT closed here. Closure happens in ~BrowserTool
   // so that the OnStop-but-stay-warm reasons (kCompleted /
   // kUserStopped) preserve the user's tabs across turns.

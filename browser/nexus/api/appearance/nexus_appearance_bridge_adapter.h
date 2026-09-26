@@ -1,6 +1,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_APPEARANCE_NEXUS_APPEARANCE_BRIDGE_ADAPTER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_APPEARANCE_NEXUS_APPEARANCE_BRIDGE_ADAPTER_H_
 
+#include <set>
+#include <string>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
@@ -89,6 +91,12 @@ class NexusAppearanceBridgeAdapter
       ::nexus::BridgeResponseCallback done) override;
 
   raw_ptr<Profile> profile_;
+
+  // Distinct resolveTheme keys this adapter has fed ColorProviderManager's
+  // never-evicting cache; at kMaxDistinctResolvedThemes the cache is reset
+  // so a client choosing keys cannot grow it without bound.
+  static constexpr size_t kMaxDistinctResolvedThemes = 64;
+  std::set<std::string> resolved_theme_keys_;
 };
 
 }  // namespace nexus

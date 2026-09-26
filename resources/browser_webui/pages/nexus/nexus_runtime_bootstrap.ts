@@ -30,6 +30,7 @@ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import type {LoadingStage} from './nexus_welcome.js';
 import {startHostThemeSync} from './nexus_host_theme.js';
 import {panelId} from './nexus_panel_id.js';
+import {invalidateShellClient} from './nexus_shell_client.js';
 
 // Reports host-side handshake progress to the boot-welcome overlay's footer.
 // Same page/process as the overlay, so this is a direct callback — no bridge.
@@ -397,7 +398,12 @@ export async function bootstrapNexusGuest(
   // `contentload` fires once per guest document load — the initial
   // navigation we trigger below AND every subsequent reload. Attach the
   // listener before setting `src` so the very first load is captured.
-  guest.addEventListener('contentload', () => runHandshake('contentload'));
+  guest.addEventListener('contentload', () => {
+    // The panel's own runtime port died with the old guest document; a
+    // connection still marked live would ignore the new guest's beacon.
+    invalidateShellClient();
+    runHandshake('contentload');
+  });
 
   // About to load the guest page + run the handshake.
   reportStatus('connecting');

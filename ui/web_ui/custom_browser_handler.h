@@ -52,11 +52,12 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
   void NotifyContextMenuClosed();
 
   // Background-panel hand-over (CustomBrowserWebUI::DetachFromView /
-  // AttachToView). Detach stops observing the closing window's tab strip and
-  // pauses the receiver so page calls queue instead of touching a dead
-  // Browser; Attach observes the new window's strip, replays its tabs and
-  // active tab to the page (the closing strip already sent TabRemoved for
-  // every tab it had), resumes the receiver and re-pushes the theme.
+  // AttachToView). Detach stops observing the closing window's tab strip,
+  // retires every tab the page still lists (the strip's kRemoved for its last
+  // tab is swallowed by the empty-model early return) and pauses the receiver
+  // so page calls queue instead of touching a dead Browser; Attach observes
+  // the new window's strip, replays its tabs and active tab to the page,
+  // resumes the receiver and re-pushes the theme.
   void DetachFromView();
   void AttachToView(CustomBrowserView* custom_browser_view);
 

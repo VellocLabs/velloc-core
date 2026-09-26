@@ -39,6 +39,9 @@ std::string GetStoredDefaultModelId(const base::DictValue& config);
 // yet this returns the input UNCHANGED (plaintext stays plaintext); the
 // caller (`LlmBroker::SetProviderConfigs`) closes that window by re-applying
 // the same configs from `NexusSecretCrypt::WhenReady`, which re-seals them.
+// If the encryptor IS ready and the OS encrypt still fails, nothing re-tries,
+// so this returns "" (logged) rather than letting the plaintext reach the
+// pref; settings.json keeps the key and republishes it on the next boot.
 std::string SealApiKeyForPref(const std::string& api_key);
 
 // Whether two STORED api_key values name different secrets. Compares the

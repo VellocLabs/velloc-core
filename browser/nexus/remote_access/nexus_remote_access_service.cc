@@ -467,8 +467,14 @@ void NexusRemoteAccessService::HandleProxyRequest(
     NexusRemoteAccessListener::ProxyDoneCallback done) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // Coalesce concurrent requests for the same path onto one upstream load.
-  auto it = in_flight_proxy_.find(url_path);
+  // Coalesce concurrent requests for the same path onto one upstream load —
+  // but only requests that would get the same answer: a conditional fetch
+  // may come back 304 with no body, which a joiner that sent no validator
+  // (a device with nothing cached) cannot use. The validators are therefore
+  // part of the key.
+  const std::string fetch_key =
+      url_path + '\n' + if_none_match + '\n' + if_modified_since;
+  auto it = in_flight_proxy_.find(fetch_key);
   if (it != in_flight_proxy_.end()) {
     it->second->waiters.push_back(std::move(done));
     return;
@@ -502,20 +508,17 @@ void NexusRemoteAccessService::HandleProxyRequest(
   fetch->loader->DownloadToString(
       url_loader_factory_.get(),
       base::BindOnce(&NexusRemoteAccessService::OnProxyComplete,
-                     weak_factory_.GetWeakPtr(), url_path, if_none_match,
-                     if_modified_since),
+                     weak_factory_.GetWeakPtr(), fetch_key),
       kMaxProxyBodyBytes);
-  in_flight_proxy_.emplace(url_path, std::move(fetch));
+  in_flight_proxy_.emplace(fetch_key, std::move(fetch));
 }
 
 void NexusRemoteAccessService::OnProxyComplete(
-    const std::string& url_path,
-    const std::string& if_none_match,
-    const std::string& if_modified_since,
+    const std::string& fetch_key,
     std::optional<std::string> body) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  auto it = in_flight_proxy_.find(url_path);
+  auto it = in_flight_proxy_.find(fetch_key);
   if (it == in_flight_proxy_.end()) {
     return;
   }

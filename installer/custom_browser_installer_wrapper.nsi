@@ -262,6 +262,14 @@ FunctionEnd
 ; (SetForegroundWindow + restore). Runs on every install, not just first
 ; install — this is what makes an overwrite install surface the window.
 Function LaunchInstalledChrome
+  ; A system-level install runs elevated, and Exec inherits this process's
+  ; token: the browser, its renderers and the shell utility process would all
+  ; run as administrator. setup.exe never launches on a system-level install
+  ; for the same reason — mirror it and let the user start Velloc themselves.
+  ${If} $InstallMode == "system"
+    DetailPrint "System-level install: not launching ${PRODUCT_NAME} from the elevated installer."
+    Return
+  ${EndIf}
   Call ResolveInstalledChromeExe
   ${If} $R7 != ""
     DetailPrint "Launching ${PRODUCT_NAME}..."

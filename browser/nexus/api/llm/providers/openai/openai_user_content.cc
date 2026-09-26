@@ -5,7 +5,9 @@
 #include <string>
 #include <utility>
 
+#include "base/files/file_path.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_result_messages.h"
+#include "net/base/mime_util.h"
 
 namespace nexus {
 
@@ -23,12 +25,20 @@ std::string DataUri(const std::string* mime_type,
          ";base64," + base64;
 }
 
-// The Responses API requires a filename next to `file_data`. The bridge's
-// document part carries none; the file's real path reaches the model in the
-// guest's text next to the part.
+// The Responses API requires a filename next to `file_data` and infers the
+// file type from its EXTENSION, so an extension-less name is rejected — and
+// since the part stays in the transcript, every later turn would be too. The
+// bridge's document part carries no filename; the file's real path reaches
+// the model in the guest's text next to the part.
 std::string DocumentFilename(const std::string* mime_type) {
   if (!mime_type || *mime_type == "application/pdf") {
     return "document.pdf";
+  }
+  base::FilePath::StringType extension;
+  if (net::GetPreferredExtensionForMimeType(*mime_type, &extension)) {
+    return base::FilePath(FILE_PATH_LITERAL("document"))
+        .AddExtension(extension)
+        .AsUTF8Unsafe();
   }
   return "document";
 }

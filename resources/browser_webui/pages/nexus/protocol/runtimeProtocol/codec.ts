@@ -51,7 +51,7 @@ import {
   type TopicsSubscribePayload,
   type TopicsUnsubscribePayload,
 } from './frames.js'
-import { isWireError } from './errors.js'
+import { ERROR_CODES, isWireError } from './errors.js'
 import { isRouteKey } from './route.js'
 
 type Dict = Record<string, unknown>
@@ -155,6 +155,77 @@ export function isFrame(value: unknown): value is Frame {
   return REQUIRED[value['kind']](value)
 }
 
+/**
+ * The RECEIVE gate: `isFrame`, except that an enumeration value this build
+ * does not know is read as its documented fallback instead of dropping the
+ * frame. A later version may add an error code, a scope, a bye code or an
+ * event form; a receiver built before it must degrade, not go silent — a
+ * dropped `res` hangs its request until the timeout, a dropped `welcome`
+ * never connects, a dropped `evt` leaves a seq hole that re-subscribes into
+ * the same frame. Only a STRING of the wrong value is tolerated; a missing
+ * or mistyped field still fails the frame. Fallbacks (D-2 invariant
+ * "receivers tolerate unknown values"):
+ *
+ * - `res.error.code` → `internal`; the wire's `retryable` is kept and the
+ *   original code travels as `unknownCode`.
+ * - `welcome.scope.mode`, `hello.scopeCeiling` → `observe` (least; the
+ *   advertised capabilities are already filtered by the sender).
+ * - `hello.client.kind` → `browser`.
+ * - `hello.auth.mode` → a `pair` with no pairing id, which the hub refuses
+ *   with `bye unauthorized` instead of leaving the client waiting.
+ * - `bye.code` → `shutting_down`: the peer left for a reason we cannot name;
+ *   a reconnecting client retries on its backoff, which is how it learns more.
+ * - `evt.form` → an empty `deltas` batch: the seq advances, no listener fires.
+ *
+ * An unknown frame KIND is still dropped: the protocol adds none (invariant 1).
+ * Returns a normalized copy when it had to change anything, else `value`.
+ */
+export function readFrame(value: unknown): Frame | null {
+  if (!isDict(value) || !isFrameKind(value['kind'])) return null
+  const frame = tolerateUnknownValues(value)
+  return REQUIRED[value['kind']](frame) ? (frame as Frame) : null
+}
+
+const unknownStr = (value: unknown, known: readonly string[]): value is string =>
+  isStr(value) && !known.includes(value)
+
+function tolerateUnknownValues(f: Dict): Dict {
+  switch (f['kind']) {
+    case 'res': {
+      const error = dictAt(f, 'error')
+      if (f['ok'] !== false || !error || !unknownStr(error['code'], ERROR_CODES)) return f
+      return { ...f, error: { ...error, code: 'internal', unknownCode: error['code'] } }
+    }
+    case 'welcome': {
+      const scope = dictAt(f, 'scope')
+      if (!scope || !unknownStr(scope['mode'], SCOPE_MODES)) return f
+      return { ...f, scope: { ...scope, mode: 'observe' } }
+    }
+    case 'hello': {
+      let out = f
+      const client = dictAt(f, 'client')
+      if (client && unknownStr(client['kind'], CLIENT_KINDS)) {
+        out = { ...out, client: { ...client, kind: 'browser' } }
+      }
+      if (unknownStr(f['scopeCeiling'], SCOPE_MODES)) out = { ...out, scopeCeiling: 'observe' }
+      const auth = dictAt(f, 'auth')
+      if (auth && unknownStr(auth['mode'], ['local', 'pair'])) {
+        out = { ...out, auth: { mode: 'pair', pairId: '' } }
+      }
+      return out
+    }
+    case 'bye':
+      return unknownStr(f['code'], BYE_CODES) ? { ...f, code: 'shutting_down' } : f
+    case 'evt': {
+      if (!unknownStr(f['form'], EVT_FORMS)) return f
+      const { more: _more, ...rest } = f
+      return { ...rest, form: 'deltas', payload: [] }
+    }
+    default:
+      return f
+  }
+}
+
 export function encodeFrame(frame: Frame): string {
   return JSON.stringify(frame)
 }
@@ -167,7 +238,7 @@ export function decodeFrame(text: string): Frame | null {
   } catch {
     return null
   }
-  return isFrame(parsed) ? parsed : null
+  return readFrame(parsed)
 }
 
 // ---- payloads of the hub's built-in requests ---------------------------------

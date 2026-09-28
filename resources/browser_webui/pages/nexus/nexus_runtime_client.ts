@@ -25,7 +25,7 @@
 
 // Straight from the mirrored files, not a barrel: the mirror carries the codec
 // and nothing else, so there is no index to re-export it.
-import {isFrame} from './protocol/runtimeProtocol/codec.js';
+import {readFrame} from './protocol/runtimeProtocol/codec.js';
 import {
   RUNTIME_PROTOCOL_VERSION,
   TOPICS_SUBSCRIBE_ROUTE,
@@ -76,8 +76,10 @@ export function connectPanelRuntime(options: RuntimeClientOptions):
   let subscribed = false;
 
   // On a MessagePort a frame travels as ITSELF (structured clone), and the
-  // receiver accepts it iff `isFrame` — the same rule both ends of the guest's
-  // transport follow. `encodeFrame` is for a byte pipe, which this is not.
+  // receiver accepts it iff `readFrame` — the same rule both ends of the guest's
+  // transport follow (a value this build does not know reads as its fallback;
+  // the guest is web-deployed and may be newer than this binary).
+  // `encodeFrame` is for a byte pipe, which this is not.
   const send = (frame: Frame): void => {
     try {
       port.postMessage(frame);
@@ -90,11 +92,10 @@ export function connectPanelRuntime(options: RuntimeClientOptions):
     if (disposed) {
       return;
     }
-    const data: unknown = event.data;
-    if (!isFrame(data)) {
+    const frame: Frame | null = readFrame(event.data);
+    if (!frame) {
       return;
     }
-    const frame: Frame = data;
     if (frame.kind === 'welcome') {
       options.onReady?.(frame);
       if (!subscribed) {

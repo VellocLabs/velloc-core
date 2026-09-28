@@ -39,6 +39,11 @@ export type WireError = {
   data?: unknown
   /** true = repeating the same request is meaningful (timeout, host busy). */
   retryable: boolean
+  /**
+   * Receive side only: the code the peer actually sent when this build does
+   * not know it (`code` then reads `internal`). Never set by a sender.
+   */
+  unknownCode?: string
 }
 
 /** Codes for which the identical request may be retried as-is. */

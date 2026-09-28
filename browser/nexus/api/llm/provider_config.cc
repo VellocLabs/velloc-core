@@ -66,6 +66,24 @@ bool StoredApiKeysDiffer(const std::string& stored_a,
   return crypt->Decrypt(stored_a) != crypt->Decrypt(stored_b);
 }
 
+void MergeStoredSecrets(const base::DictValue* settings_secrets,
+                        base::DictValue& config) {
+  if (!settings_secrets) {
+    return;
+  }
+  base::DictValue* stored = config.EnsureDict("secrets");
+  for (const auto [name, value] : *settings_secrets) {
+    if (!value.is_string()) {
+      continue;
+    }
+    if (value.GetString().empty()) {
+      stored->Remove(name);
+    } else {
+      stored->Set(name, SealApiKeyForPref(value.GetString()));
+    }
+  }
+}
+
 void SetStoredUserAgent(const std::string* user_agent,
                         base::DictValue& config) {
   if (user_agent && !user_agent->empty()) {

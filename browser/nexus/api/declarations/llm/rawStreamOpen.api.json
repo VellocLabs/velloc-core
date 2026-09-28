@@ -1,0 +1,64 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "rawStreamOpen",
+  "description": "Open a provider-scoped raw byte stream: one HTTP request (body sent whole) to the configured provider's domain, the response pulled with rawStreamRead. The host never parses the body, so any wire format works (OpenAI / Anthropic / Responses JSON+SSE, Connect/protobuf, ...). Secrets reach the request only through `{{secret:NAME}}` placeholders in header and query-parameter values, substituted host-side; NAME `api_key` is the provider's API key, any other NAME an entry of the provider config's `secrets`. Redirects are followed, but a hop that leaves the provider's domain drops every header a secret was substituted into. With `captureSecrets` the response is buffered (<= 1 MB), the named JSON fields are stored as provider secrets, and the guest receives the body with them redacted. Resolves with the response head. Additive action: a host without it answers unknown-action, and the guest treats the provider as unavailable.",
+  "inputs": [
+    {
+      "name": "providerId",
+      "type": "string",
+      "required": true,
+      "description": "Configured provider whose secrets may be referenced and whose active base URL bounds the target: `url` must share its scheme and registrable domain."
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "Absolute request URL. Must not contain secrets — put them in `queryParams`."
+    },
+    {
+      "name": "method",
+      "type": "string",
+      "required": false,
+      "description": "HTTP method. Default POST."
+    },
+    {
+      "name": "headers",
+      "type": "object",
+      "required": false,
+      "description": "Request headers, string -> string, values may contain `{{secret:NAME}}`. User-Agent and auth headers are the caller's; Cookie, Host, Content-Length and Proxy-Authorization are rejected (INVALID_ARGS). Without a User-Agent the provider's preset (if any) is sent."
+    },
+    {
+      "name": "queryParams",
+      "type": "object",
+      "required": false,
+      "description": "Query parameters appended (URL-encoded) after the domain check, string -> string, values may contain `{{secret:NAME}}` (e.g. `key` for Google)."
+    },
+    {
+      "name": "body",
+      "type": "bytes",
+      "required": true,
+      "description": "Request body bytes, sent whole; empty for none. Content-Type comes from `headers` (default application/octet-stream)."
+    },
+    {
+      "name": "captureSecrets",
+      "type": "array<object>",
+      "required": false,
+      "description": "[{pointer, secret}]: RFC 6901 JSON pointers into the response body whose string values are stored (sealed) as the provider secret `secret` (not `api_key`) and replaced by \"[captured]\" in the body the guest receives. The final read carries `captured: {secret: sealedValue}` for the guest to persist in settings.json. A 2xx body that is not JSON is withheld (CAPTURE_FAILED)."
+    },
+    {
+      "name": "idleTimeoutMs",
+      "type": "integer",
+      "required": false,
+      "description": "Abort when no response bytes arrive for this long. Default 90000. Keep it at or below 90000: the guest transport's `model` route fallback is 100 s, so a longer native wait on the response head would be cut off guest-side first."
+    },
+    {
+      "name": "maxResponseBytes",
+      "type": "integer",
+      "required": false,
+      "description": "Abort once the response body exceeds this. Default 200000000; capped at 1048576 with captureSecrets."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

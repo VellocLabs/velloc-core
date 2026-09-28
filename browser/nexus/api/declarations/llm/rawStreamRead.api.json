@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "rawStreamRead",
+  "description": "Pull the next bytes of a rawStreamOpen stream. Resolves {done, errorCode?, errorMessage?, captured?} with the bytes on the `chunk` port. `done` means the response ended and every byte was delivered; the host then forgets the stream. Error codes on the final read: NETWORK_ERROR, TIMEOUT, RESPONSE_TOO_LARGE, CAPTURE_FAILED, CANCELLED.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "Identifier returned by rawStreamOpen."
+    },
+    {
+      "name": "waitMs",
+      "type": "integer",
+      "required": false,
+      "description": "How long the host may hold the read for new bytes (capped at 30000). 0/absent = answer immediately."
+    },
+    {
+      "name": "maxBytes",
+      "type": "integer",
+      "required": false,
+      "description": "Upper bound on bytes returned by this read. Default 1048576."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

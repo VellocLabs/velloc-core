@@ -54,6 +54,16 @@ std::string SealApiKeyForPref(const std::string& api_key);
 bool StoredApiKeysDiffer(const std::string& stored_a,
                          const std::string& stored_b);
 
+// Merges settings.json `secrets` (name -> value) into the stored config's
+// `secrets` dict, sealing each value like the api key (SealApiKeyForPref).
+// MERGED, never replaced: a secret the host captured from a token response
+// (model.rawStreamOpen `captureSecrets`) sits in the pref before the guest
+// persisted it, so a publish that does not yet carry it must not drop it. An
+// empty value removes that one secret. Null |settings_secrets| is a no-op.
+// These are the names `{{secret:NAME}}` placeholders resolve against.
+void MergeStoredSecrets(const base::DictValue* settings_secrets,
+                        base::DictValue& config);
+
 // Stores |user_agent| as the provider config's pinned User-Agent (the
 // `user_agent` key `LlmProvider::ConfigureUserAgent` reads). Null or empty
 // REMOVES the key, so the provider falls back to the host default. The guest

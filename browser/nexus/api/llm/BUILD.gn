@@ -53,6 +53,22 @@ source_set("text_helpers") {
   public_deps = [ "//base" ]
 }
 
+# Target-domain check, forbidden-header list and byte queue behind the
+# `model.rawStream*` provider byte transport (nexus_llm_raw_stream.cc).
+# Pure; unit-tested via llm_raw_stream_policy_unittest.cc.
+source_set("raw_stream_policy") {
+  sources = [
+    "llm_raw_stream_policy.cc",
+    "llm_raw_stream_policy.h",
+  ]
+
+  public_deps = [ "//base" ]
+  deps = [
+    "//net",
+    "//url",
+  ]
+}
+
 # Incremental line splitter used by provider stream parsers to turn byte
 # chunks into whole LF/CRLF-terminated lines. Zero dependencies, fully
 # unit-tested via llm_line_splitter_unittest.cc.

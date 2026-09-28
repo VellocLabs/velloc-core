@@ -95,6 +95,37 @@ TEST_F(ProviderConfigSealTest, SealApiKeyForPrefEncryptsPlaintext) {
   EXPECT_EQ(NexusSecretCrypt::GetInstance()->Decrypt(sealed), "sk-live-plain");
 }
 
+// Named secrets for model.rawStreamOpen: sealed on the way into the pref,
+// merged (a host-captured secret survives a publish that lacks it), and
+// removable one at a time with an empty value.
+TEST_F(ProviderConfigSealTest, MergeStoredSecretsSealsMergesAndRemoves) {
+  base::DictValue config;
+  base::DictValue* stored = config.EnsureDict("secrets");
+  const std::string captured = SealApiKeyForPref("refresh-from-host");
+  stored->Set("refresh_token", captured);
+  stored->Set("old", SealApiKeyForPref("old-value"));
+
+  base::DictValue settings;
+  settings.Set("access_token", "at-plain");
+  settings.Set("old", "");
+  settings.Set("ignored", 42);
+  MergeStoredSecrets(&settings, config);
+
+  const base::DictValue* secrets = config.FindDict("secrets");
+  ASSERT_TRUE(secrets);
+  const std::string* access = secrets->FindString("access_token");
+  ASSERT_TRUE(access);
+  EXPECT_TRUE(NexusSecretCrypt::IsEncrypted(*access));
+  EXPECT_EQ(NexusSecretCrypt::GetInstance()->Decrypt(*access), "at-plain");
+  // Not in this publish: kept byte-for-byte.
+  EXPECT_EQ(*secrets->FindString("refresh_token"), captured);
+  EXPECT_FALSE(secrets->Find("old"));
+  EXPECT_FALSE(secrets->Find("ignored"));
+
+  MergeStoredSecrets(nullptr, config);  // no-op
+  EXPECT_EQ(config.FindDict("secrets")->size(), 2u);
+}
+
 TEST_F(ProviderConfigSealTest, SealApiKeyForPrefIsIdempotentAndKeepsEmpty) {
   // The guest persists ciphertext after `model.encryptSecret` and republishes
   // that exact string at boot — it must ride through untouched, never

@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "rawStreamCancel",
+  "description": "Cancel a rawStreamOpen stream; closes the upstream request. Unknown ids succeed (idempotent).",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "Identifier returned by rawStreamOpen."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

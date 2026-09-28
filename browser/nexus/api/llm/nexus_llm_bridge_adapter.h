@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/api/llm/llm_api.gen.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_support.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_llm_raw_stream.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
 class Profile;
@@ -104,6 +105,37 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
       ::nexus::generated::EncryptSecretInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // `model.rawStream{Open,Read,Cancel}`: a provider-scoped byte transport
+  // for providers whose wire protocol the guest implements (see
+  // NexusLlmRawStream). The host resolves the provider's active base URL
+  // and stored credential, injects the credential, and confines the
+  // request to the provider's domain — the guest never sees the secret.
+  void HandleRawStreamOpenOnUI(
+      ::nexus::generated::RawStreamOpenInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleRawStreamReadOnUI(
+      ::nexus::generated::RawStreamReadInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleRawStreamCancelOnUI(
+      ::nexus::generated::RawStreamCancelInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  // Buffered-mode transform for a request with `captureSecrets`: stores the
+  // captured values (sealed) under the provider's `secrets` and returns the
+  // redacted body plus `captured` (sealed copies) for the final read.
+  NexusLlmRawStream::TransformResult CaptureSecrets(
+      const std::string& provider_id,
+      const std::vector<SecretCapture>& captures,
+      std::string body,
+      int status);
+  void OnRawStreamOpened(std::string stream_id,
+                         ::nexus::BridgeResponseCallback done,
+                         NexusLlmRawStream::OpenResult result);
+  // Deferred erase: a stream may report its end from inside its own
+  // callbacks, so it is never deleted synchronously from them.
+  void EraseRawStreamSoon(const std::string& stream_id);
   // Phase 12f: `publishStatus` moved out of `llm/` into the new
   // `session/` capability — see
   // `api/session/nexus_session_bridge_adapter.{h,cc}`. The wire
@@ -112,6 +144,8 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
   raw_ptr<Profile> profile_;
   std::unique_ptr<NexusLlmHost> llm_host_;
   std::map<std::string, NexusLlmBridgeStreamState> bridge_stream_states_;
+  // Open raw streams by id. Bounded by kMaxRawStreams (the .cc).
+  std::map<std::string, std::unique_ptr<NexusLlmRawStream>> raw_streams_;
   // Token returned by `LlmBroker::AddPickEventPusher`. Stored so we
   // can remove our pusher in the destructor without leaving a dangling
   // entry in the broker's fan-out map.

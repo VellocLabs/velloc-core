@@ -176,6 +176,8 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   if (const std::string* api_key = settings.FindString("apiKey")) {
     out.Set("api_key", SealApiKeyForPref(*api_key));
   }
+  // Named secrets for the raw provider transport (`{{secret:NAME}}`).
+  MergeStoredSecrets(settings.FindDict("secrets"), out);
   copy_string("baseUrl", "base_url");
   copy_string("defaultModel", "default_model");
   copy_string("model", "model");

@@ -234,7 +234,6 @@ action("nexus_tools_codegen") {
     "api/declarations/llm/publishBinaryRegistry.api.json",
     "api/declarations/llm/publishCatalog.api.json",
     "api/declarations/llm/publishProviderConfigs.api.json",
-    "api/declarations/llm/registerToolDefs.api.json",
     "api/declarations/llm/rawStreamCancel.api.json",
     "api/declarations/llm/rawStreamOpen.api.json",
     "api/declarations/llm/rawStreamRead.api.json",
@@ -330,7 +329,6 @@ action("nexus_tools_codegen") {
     # single source of truth for tool-name knowledge.
     "api/declarations/catalog/listHostedTools.api.json",
     "api/declarations/catalog/listPromptSections.api.json",
-    "api/declarations/catalog/registerPromptOverrides.api.json",
     "api/declarations/catalog/renderPromptSection.api.json",
 
     # providers category — Approach 5 (A5): WebUI panel ↔ C++ bridge
@@ -779,8 +777,6 @@ source_set("bridge") {
     "api/browser_tools/nexus_browser_tools_bridge_adapter.h",
     "api/catalog/nexus_catalog_bridge_adapter.cc",
     "api/catalog/nexus_catalog_bridge_adapter.h",
-    "api/catalog/prompt_holder_registry.cc",
-    "api/catalog/prompt_holder_registry.h",
     "api/catalog/prompt_section_renderer.cc",
     "api/catalog/prompt_section_renderer.h",
     "api/fs/nexus_fs_bridge_adapter.cc",
@@ -1538,21 +1534,3 @@ test("custom_browser_nexus_browser_unittests") {
   ]
 }
 
-# Standalone test binary for the prompt-holder registry. The registry is a
-# self-contained leaf (only //base), so compile it directly here rather than
-# dragging the heavy :bridge source_set into a test binary (and to avoid an
-# ODR clash with bridge's copy in any binary that links both). Run with:
-#   autoninja -C out/Debug custom_browser_nexus_catalog_unittests
-#   out/Debug/custom_browser_nexus_catalog_unittests
-test("custom_browser_nexus_catalog_unittests") {
-  sources = [
-    "api/catalog/prompt_holder_registry.cc",
-    "api/catalog/prompt_holder_registry.h",
-    "api/catalog/prompt_holder_registry_unittest.cc",
-  ]
-  deps = [
-    "//base",
-    "//base/test:run_all_unittests",
-    "//testing/gtest",
-  ]
-}

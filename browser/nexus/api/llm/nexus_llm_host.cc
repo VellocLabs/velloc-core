@@ -19,8 +19,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/custom_browser_resources.h"
 #include "components/prefs/pref_service.h"
-#include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
-#include "custom_browser/browser/nexus/api/catalog/prompt_section_renderer.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
@@ -126,94 +124,8 @@ bool IsProviderVerified(PrefService* prefs, const std::string& provider_id) {
   return last_verification->Find("verifiedAtMs") != nullptr;
 }
 
-// Resolve a `{ "h": "a|b|c", "args": { "enabledToolNames": [...] } }`
-// system-prompt holder element into text. Splits the holder list on '|',
-// resolves each name via the prompt-section renderer (the browser owns
-// this prose — e.g. the `using-your-tools` catalog), and joins non-empty
-// pieces with "\n\n" — byte-identical to how the JS guest used to inline
-// the rendered catalog, but without the per-turn render round-trip.
-// Unknown holder names render empty (skipped), matching the renderer's
-// contract; section-holder names nexus_web hasn't migrated yet simply
-// don't appear as holders, so they keep flowing as literal text.
-// Build the prompt-registry resolution condition from the request: provider
-// from the resolved provider id, locale from the request's system-context
-// (already carried for the model).
-HolderCondition BuildHolderCondition(
-    const mojom::NexusLlmRequestParams& request,
-    const std::string& provider) {
-  HolderCondition condition;
-  condition.provider = provider;
-  if (request.system_context.has_value()) {
-    if (const std::string* locale =
-            request.system_context->FindString("locale")) {
-      condition.locale = *locale;
-    }
-  }
-  return condition;
-}
-
-std::string ResolveHolderElement(const base::DictValue& holder,
-                                 const HolderCondition& condition) {
-  const std::string* h = holder.FindString("h");
-  if (!h || h->empty()) {
-    return std::string();
-  }
-  std::vector<std::string> enabled_tool_names;
-  if (const base::DictValue* args = holder.FindDict("args")) {
-    if (const base::ListValue* names = args->FindList("enabledToolNames")) {
-      for (const base::Value& value : *names) {
-        if (const std::string* name = value.GetIfString()) {
-          enabled_tool_names.push_back(*name);
-        }
-      }
-    }
-  }
-  // Optional carried default — the literal content nexus_web ships for base
-  // prose sections so a single-name holder stays byte-parity when neither a
-  // registry override nor the built-in renderer produces text.
-  const std::string* fallback = holder.FindString("default");
-  std::vector<std::string> names;
-  for (std::string_view name : base::SplitStringPiece(
-           *h, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
-    names.emplace_back(name);
-  }
-  std::vector<std::string> parts;
-  for (const std::string& name : names) {
-    // Central management: a (provider, holder) override registered by
-    // nexus_web wins; then the built-in renderer (catalog / system-prompt-
-    // tools); then the carried default (base prose); else the holder is
-    // dropped (unknown holder, matching the renderer's contract).
-    std::optional<std::string> override_text =
-        PromptHolderRegistry::Get().ResolveOverride(name, condition);
-    std::string text = override_text.has_value()
-                           ? *override_text
-                           : RenderPromptSection(name, enabled_tool_names);
-    if (text.empty() && names.size() == 1 && fallback) {
-      text = *fallback;
-    }
-    // Every emitted holder must be resolvable by SOME path: a registered
-    // override, a known built-in renderer section (which may legitimately
-    // render empty when its tools are gated off), or a carried `default`. A
-    // name matching none would be silently dropped from the system prompt —
-    // almost always a typo or a holder nexus_web emitted without shipping its
-    // prose. (Multi-name `a|b` lists carry no `default`, so each name there
-    // must resolve via a registered/known section.)
-    DCHECK((fallback && names.size() == 1) || IsKnownPromptSection(name) ||
-           override_text.has_value())
-        << "unresolvable prompt holder '" << name
-        << "': no carried default, not a known renderer section, and no "
-           "registered override; it would be dropped from the system prompt";
-    if (!text.empty()) {
-      parts.push_back(std::move(text));
-    }
-  }
-  return base::JoinString(parts, "\n\n");
-}
-
 std::string BuildSystemInstruction(
-    const mojom::NexusLlmRequestParams& request,
-    const std::string& provider) {
-  const HolderCondition condition = BuildHolderCondition(request, provider);
+    const mojom::NexusLlmRequestParams& request) {
   std::vector<std::string> sections;
   if (request.system_prompt.has_value()) {
     // nexus_web sends systemPrompt as an array of independent prompt
@@ -226,13 +138,9 @@ std::string BuildSystemInstruction(
     const base::Value& sp = request.system_prompt.value();
     if (const base::ListValue* list = sp.GetIfList()) {
       for (const base::Value& entry : *list) {
-        // A `{ "h": ... }` element is a holder the browser LLM module
-        // resolves from its prompt registry; anything else is literal text.
-        const base::DictValue* holder = entry.GetIfDict();
-        const std::string flattened =
-            (holder && holder->contains("h"))
-                ? ResolveHolderElement(*holder, condition)
-                : FlattenTextValue(&entry);
+        // Every element is literal text: nexus_web resolves its prompt
+        // prose itself and sends the finished sections.
+        const std::string flattened = FlattenTextValue(&entry);
         if (!flattened.empty()) {
           sections.push_back(flattened);
         }
@@ -920,7 +828,7 @@ base::DictValue BuildCallOptions(
   base::ListValue messages = TranslateBridgeMessages(request.messages);
 
   const std::string system_instruction =
-      BuildSystemInstruction(request, provider_id);
+      BuildSystemInstruction(request);
   if (!system_instruction.empty()) {
     base::ListValue prefixed_messages;
     base::DictValue system_message;

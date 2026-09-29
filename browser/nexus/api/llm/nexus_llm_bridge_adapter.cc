@@ -5,7 +5,6 @@
 #include "base/functional/bind.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
-#include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
 #include "custom_browser/browser/nexus/binaries/nexus_binary_config_registry.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
@@ -382,25 +381,6 @@ void NexusLlmBridgeAdapter::HandleEncryptSecretOnUI(
         std::move(done).Success(std::move(result));
       },
       std::move(input.plaintext), std::move(done)));
-}
-
-void NexusLlmBridgeAdapter::HandleRegisterToolDefsOnUI(
-    ::nexus::generated::RegisterToolDefsInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Register/overwrite each full tool definition by name so its `{ ref }`
-  // resolves to the schema in ConvertBridgeTools (static-JS at session init,
-  // MCP on connect). Defs without a name are skipped.
-  PromptHolderRegistry& registry = PromptHolderRegistry::Get();
-  for (Dict& def : input.defs) {
-    const std::string* name = def.FindString("name");
-    if (!name || name->empty()) {
-      continue;
-    }
-    std::string name_copy = *name;
-    registry.RegisterToolDef(name_copy, std::move(def));
-  }
-  std::move(done).SuccessVoid();
 }
 
 void NexusLlmBridgeAdapter::HandlePublishBinaryRegistryOnUI(

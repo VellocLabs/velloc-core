@@ -11,7 +11,6 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
 #include "custom_browser/browser/nexus/api/catalog/prompt_section_renderer.h"
 #include "custom_browser/browser/nexus/api/shell/host_shell.h"
 #include "custom_browser/browser/nexus/tools/nexus_skills_registry.gen.h"
@@ -122,33 +121,6 @@ void NexusCatalogBridgeAdapter::HandleListSkillsOnUI(
   base::DictValue result;
   result.Set("hostedSkills", std::move(skills));
   std::move(done).Success(std::move(result));
-}
-
-void NexusCatalogBridgeAdapter::HandleRegisterPromptOverridesOnUI(
-    ::nexus::generated::RegisterPromptOverridesInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Replace the registry wholesale (a boot-time publish is authoritative),
-  // then apply each {provider?, holder, content} entry. Malformed entries
-  // (missing holder/content) are skipped.
-  PromptHolderRegistry& registry = PromptHolderRegistry::Get();
-  registry.Clear();
-  for (const base::DictValue& entry : input.entries) {
-    const std::string* holder = entry.FindString("holder");
-    const std::string* content = entry.FindString("content");
-    if (!holder || holder->empty() || !content) {
-      continue;
-    }
-    HolderCondition condition;
-    if (const std::string* provider = entry.FindString("provider")) {
-      condition.provider = *provider;
-    }
-    if (const std::string* locale = entry.FindString("locale")) {
-      condition.locale = *locale;
-    }
-    registry.Register(condition, *holder, *content);
-  }
-  std::move(done).SuccessVoid();
 }
 
 }  // namespace nexus

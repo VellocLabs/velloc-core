@@ -65,10 +65,6 @@ class NexusCatalogBridgeAdapter
       ::nexus::generated::ListSkillsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
-  void HandleRegisterPromptOverridesOnUI(
-      ::nexus::generated::RegisterPromptOverridesInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
 
   // UI-thread continuation of HandleListHostedToolsOnUI: filters the static
   // catalog by the off-thread-resolved shell availability and replies.

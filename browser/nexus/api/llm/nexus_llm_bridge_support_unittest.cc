@@ -482,6 +482,73 @@ TEST(NexusLlmBridgeSupportTest, BuildMojoLlmRequestAcceptsTopLevelDocumentPart) 
   EXPECT_EQ(part->mime_type, std::optional<std::string>("application/pdf"));
 }
 
+namespace {
+
+base::DictValue PayloadWithOneUserMessageAndTools(base::ListValue tools) {
+  base::DictValue payload;
+  base::ListValue messages;
+  base::DictValue user_message;
+  user_message.Set("role", "user");
+  user_message.Set("content", "hi");
+  messages.Append(std::move(user_message));
+  payload.Set("messages", std::move(messages));
+  payload.Set("tools", std::move(tools));
+  return payload;
+}
+
+}  // namespace
+
+// The guest sends every tool as a full definition; the host no longer
+// resolves `{ ref: name }` entries from a catalog/registry. A stray ref is a
+// malformed request, not a silently dropped (or silently resolved) tool.
+TEST(NexusLlmBridgeSupportTest, BuildMojoLlmRequestRejectsToolRefEntries) {
+  base::ListValue tools;
+  base::DictValue ref;
+  ref.Set("ref", "Bash");
+  tools.Append(std::move(ref));
+  base::DictValue payload = PayloadWithOneUserMessageAndTools(std::move(tools));
+
+  std::string error_message;
+  mojom::NexusLlmRequestParamsPtr request =
+      BuildMojoLlmRequest(payload, &error_message);
+
+  EXPECT_FALSE(request);
+  EXPECT_NE(error_message.find("type=\"function\""), std::string::npos)
+      << error_message;
+}
+
+// A full definition reaches the provider exactly as sent: the schema the
+// guest chose (strict or regular) and its `strict` flag. The payload-level
+// `strictTools` switch that used to pick a variant for refs is ignored.
+TEST(NexusLlmBridgeSupportTest, BuildMojoLlmRequestForwardsFullToolDefinition) {
+  base::ListValue tools;
+  base::DictValue def;
+  def.Set("type", "function");
+  def.Set("name", "Read");
+  def.Set("description", "Read a file");
+  base::DictValue parameters;
+  parameters.Set("type", "object");
+  parameters.Set("additionalProperties", false);
+  def.Set("parameters", std::move(parameters));
+  def.Set("strict", true);
+  tools.Append(std::move(def));
+  base::DictValue payload = PayloadWithOneUserMessageAndTools(std::move(tools));
+  payload.Set("strictTools", false);
+
+  std::string error_message;
+  mojom::NexusLlmRequestParamsPtr request =
+      BuildMojoLlmRequest(payload, &error_message);
+
+  ASSERT_TRUE(request) << error_message;
+  ASSERT_EQ(request->tools.size(), 1u);
+  const auto& tool = request->tools[0];
+  EXPECT_EQ(tool->name, "Read");
+  EXPECT_EQ(tool->description, "Read a file");
+  EXPECT_TRUE(tool->strict);
+  EXPECT_EQ(tool->input_schema.FindBool("additionalProperties"),
+            std::optional<bool>(false));
+}
+
 // A malformed tool-call part (empty toolCallId — the exact shape the
 // qwen/DashScope streaming-parse bug used to persist) must be rejected with a
 // graceful error, NOT crash the browser. Bridge payloads carry untrusted

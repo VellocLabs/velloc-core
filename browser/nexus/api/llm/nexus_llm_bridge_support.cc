@@ -8,11 +8,9 @@
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/uuid.h"
-#include "custom_browser/browser/nexus/api/catalog/prompt_holder_registry.h"
 #include "custom_browser/browser/nexus/mojom/nexus_llm.mojom.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
-#include "custom_browser/browser/nexus/tools/tool_catalog.h"
 
 namespace nexus {
 
@@ -21,23 +19,6 @@ namespace {
 using base::Value;
 using Dict = base::DictValue;
 using List = base::ListValue;
-
-// Resolve a tool `{ ref: "<WireName>" }` to the catalog's full definition
-// dict (name + description + parameters + parametersStrict + inputExamples).
-// nexus_web ships host browser/file/process tools as refs under symbolic
-// emission; the LLM module fills the whole definition here so the per-turn
-// schema never crosses the wire. Returns nullopt for an unknown name (the
-// entry is then skipped, matching the JS resolver contract). The dict
-// carries BOTH parameter variants; `ConvertBridgeTools` selects strict-vs-
-// regular per the request's `strictTools`.
-std::optional<Dict> ResolveToolRefToDict(const std::string& ref_name) {
-  for (const ToolSchema& schema : ToolCatalog::Get().schemas()) {
-    if (schema.name == ref_name) {
-      return BuildHostedToolDefinitionDict(schema);
-    }
-  }
-  return std::nullopt;
-}
 
 void AppendFormattedText(const Value& value, std::vector<std::string>* out) {
   if (const std::string* text = value.GetIfString(); text && !text->empty()) {
@@ -342,13 +323,6 @@ bool ValidateCanonicalBridgeTools(const Value* tools_value,
           error_message, "Bridge tool definitions must be objects");
     }
 
-    // A `{ ref: name }` entry is resolved to a full definition from the
-    // C++ ToolCatalog in ConvertBridgeTools; it is valid here without the
-    // full-def fields below.
-    if (bridge_support::FindNonEmptyString(*entry, "ref")) {
-      continue;
-    }
-
     const std::string* type = entry->FindString("type");
     if (!type || *type != "function") {
       return FailInvalidBridgeFormat(
@@ -579,7 +553,6 @@ bool ConvertBridgeMessages(const Value* messages_value,
 }
 
 bool ConvertBridgeTools(const Value* tools_value,
-                        bool strict_tools,
                         std::vector<mojom::NexusLlmToolPtr>* out,
                         std::string* error_message) {
   if (!ValidateCanonicalBridgeTools(tools_value, error_message)) {
@@ -595,30 +568,7 @@ bool ConvertBridgeTools(const Value* tools_value,
       continue;
     }
 
-    // Resolve a `{ ref: name }` to the catalog's full definition dict;
-    // otherwise the entry is already a full definition. An unknown ref is
-    // skipped (matches the JS resolver contract).
-    Dict resolved_storage;
     const Dict* def = entry;
-    bool was_ref = false;
-    if (std::optional<std::string> ref =
-            bridge_support::FindNonEmptyString(*entry, "ref");
-        ref && !entry->FindDict("parameters")) {
-      // Resolve from the C++ ToolCatalog (host tools) first, then the
-      // runtime registry (static-JS / MCP defs published via
-      // model.registerToolDefs). Unknown ref → skip.
-      if (std::optional<Dict> from_catalog = ResolveToolRefToDict(*ref)) {
-        resolved_storage = std::move(*from_catalog);
-      } else if (const Dict* registered =
-                     PromptHolderRegistry::Get().ResolveToolDef(*ref)) {
-        resolved_storage = registered->Clone();
-      } else {
-        continue;
-      }
-      def = &resolved_storage;
-      was_ref = true;
-    }
-
     std::optional<std::string> name =
         bridge_support::FindNonEmptyString(*def, "name");
     if (!name) {
@@ -632,17 +582,9 @@ bool ConvertBridgeTools(const Value* tools_value,
       tool->description = *description;
     }
 
-    // Schema selection: a resolved ref under a strict-eligible model uses the
-    // tool's strict `parametersStrict` variant (and sets strict=true);
-    // otherwise the regular `parameters`. Full (non-ref) defs already carry
-    // their chosen schema + strict flag from the JS side.
+    // nexus_web sends every tool as a full definition, having already chosen
+    // the strict-vs-regular schema and set `strict` accordingly.
     const Dict* schema_source = def->FindDict("parameters");
-    if (was_ref && strict_tools) {
-      if (const Dict* strict_schema = def->FindDict("parametersStrict")) {
-        schema_source = strict_schema;
-        tool->strict = true;
-      }
-    }
     if (schema_source) {
       tool->input_schema = schema_source->Clone();
     } else {
@@ -651,10 +593,7 @@ bool ConvertBridgeTools(const Value* tools_value,
       tool->input_schema = std::move(default_schema);
     }
 
-    // Forward an explicit `strict` flag when the definition carries one:
-    // non-ref full defs and registry-resolved JS/MCP refs both do. Catalog
-    // (`BuildHostedToolDefinitionDict`) refs carry none — their strict flag
-    // was decided above from `strict_tools` + `parametersStrict`.
+    // Forward an explicit `strict` flag when the definition carries one.
     if (auto strict = def->FindBool("strict")) {
       tool->strict = *strict;
     }
@@ -918,8 +857,7 @@ mojom::NexusLlmRequestParamsPtr BuildMojoLlmRequest(
                              error_message)) {
     return nullptr;
   }
-  const bool strict_tools = payload.FindBool("strictTools").value_or(false);
-  if (!ConvertBridgeTools(payload.Find("tools"), strict_tools, &request->tools,
+  if (!ConvertBridgeTools(payload.Find("tools"), &request->tools,
                           error_message)) {
     return nullptr;
   }

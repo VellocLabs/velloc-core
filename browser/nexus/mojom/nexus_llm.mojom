@@ -36,6 +36,10 @@ enum NexusLlmStreamEventType {
   kMessageStart,
   kTextDelta,
   kReasoningDelta,
+  // Opaque replay payload for the reasoning block of this message
+  // (reasoning_replay.h). Carried in |signature|; surfaces on the bridge as
+  // a `signature_delta` on the message's thinking block.
+  kReasoningSignature,
   kToolCallStart,
   kToolCallDelta,
   kToolCall,
@@ -188,6 +192,8 @@ struct NexusLlmStreamEvent {
   NexusLlmStreamEventType type;
   string? model_id;
   string? text_delta;
+  // kReasoningSignature only.
+  string? signature;
   string? tool_use_id;
   string? name;
   string? args_text_delta;

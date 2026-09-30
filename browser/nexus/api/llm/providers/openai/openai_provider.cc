@@ -20,6 +20,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_reasoning.h"
+#include "custom_browser/browser/nexus/api/llm/reasoning_replay.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_responses_error.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_result_messages.h"
@@ -180,6 +181,11 @@ struct OpenAiProvider::StreamContext {
 
   // Track in-flight tool calls by SSE index to correlate deltas.
   std::map<int, std::string> tool_call_ids;
+
+  // Streamed `reasoning_details` fragments, rebuilt into the array the next
+  // request must replay (openai_reasoning.h). Flushed as one
+  // `reasoning-replay` chunk when the finish_reason arrives.
+  ChatCompletionReasoningDetailsAccumulator reasoning_details;
 
   // With stream_options.include_usage=true OpenAI sends finish_reason and
   // usage in two separate SSE events. Buffer both so we can emit a single
@@ -537,6 +543,7 @@ base::ListValue OpenAiProvider::TranslateMessages(
     if (*role == "assistant") {
       std::string text_content;
       base::ListValue tool_calls;
+      base::ListValue reasoning_details;
       bool has_tool_calls = false;
 
       for (const auto& part_val : *content_parts) {
@@ -572,11 +579,23 @@ base::ListValue OpenAiProvider::TranslateMessages(
               text_content += '\n';
             text_content += *text;
           }
+        } else if (*pt == kReasoningReplayPartType) {
+          // Only ever present when the host matched it to this provider +
+          // model (reasoning_replay.h). Several parts would mean several
+          // reasoning blocks in one turn; their arrays concatenate.
+          const std::string* field = part->FindString("field");
+          const base::ListValue* value = part->FindList("value");
+          if (field && *field == "reasoning_details" && value) {
+            for (const auto& detail : *value)
+              reasoning_details.Append(detail.Clone());
+          }
         }
       }
 
       base::DictValue assistant_msg;
       assistant_msg.Set("role", "assistant");
+      if (!reasoning_details.empty())
+        assistant_msg.Set("reasoning_details", std::move(reasoning_details));
       if (!text_content.empty()) {
         assistant_msg.Set("content", std::move(text_content));
       } else if (!has_tool_calls) {
@@ -1867,6 +1886,7 @@ void OpenAiProvider::ProcessSseLine(StreamContext& ctx,
       chunk.Set("textDelta", std::move(thought));
       ctx.chunk_callback.Run(std::move(chunk));
     }
+    ctx.reasoning_details.Add(*delta);
 
     // Text content delta.
     if (const std::string* content = delta->FindString("content")) {
@@ -1897,6 +1917,16 @@ void OpenAiProvider::ProcessSseLine(StreamContext& ctx,
   // Finish reason (null for intermediate chunks, string for the final one).
   if (const std::string* fr = first->FindString("finish_reason")) {
     if (!fr->empty()) {
+      // The reasoning is complete once the choice finishes (the signature
+      // rides the last fragment, at the latest on this same chunk). Hand
+      // it over before the finish chunk so it lands on the open message.
+      if (!ctx.reasoning_details.empty()) {
+        base::DictValue chunk;
+        chunk.Set("type", kReasoningReplayPartType);
+        chunk.Set("field", "reasoning_details");
+        chunk.Set("value", ctx.reasoning_details.Take());
+        ctx.chunk_callback.Run(std::move(chunk));
+      }
       ctx.pending_finish_reason = *fr;
       // Usage may already be attached to this same SSE chunk (providers
       // without split usage/finish semantics).

@@ -28,6 +28,7 @@
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
+#include "custom_browser/browser/nexus/api/llm/reasoning_replay.h"
 #include "mojo/public/cpp/base/values_mojom_traits.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -220,7 +221,9 @@ std::string RoleToString(mojom::NexusLlmRole role) {
 
 base::ListValue TranslateBridgeParts(
     const std::vector<mojom::NexusLlmContentPartPtr>& raw_parts,
-    ToolNameMap* tool_names) {
+    ToolNameMap* tool_names,
+    const std::string& provider_id,
+    const std::string& model_id) {
   base::ListValue translated;
   for (const auto& part : raw_parts) {
     if (!part) {
@@ -316,6 +319,18 @@ base::ListValue TranslateBridgeParts(
       }
 
       case mojom::NexusLlmContentPartType::kThinking:
+        // Thinking is dropped at the wire (claude_code parity), except a
+        // replay payload the SAME provider + model produced
+        // (reasoning_replay.h), which goes back as a `reasoning-replay`
+        // part for the provider to put on the assistant message.
+        if (part->signature.has_value()) {
+          if (std::optional<base::DictValue> replay =
+                  DecodeReasoningReplaySignatureFor(*part->signature,
+                                                    provider_id, model_id)) {
+            translated.Append(std::move(*replay));
+          }
+        }
+        break;
       case mojom::NexusLlmContentPartType::kRedactedThinking:
         break;
     }
@@ -338,7 +353,9 @@ bool HasOnlyToolResultParts(const base::ListValue& parts) {
 }
 
 base::ListValue TranslateBridgeMessages(
-    const std::vector<mojom::NexusLlmMessagePtr>& raw_messages) {
+    const std::vector<mojom::NexusLlmMessagePtr>& raw_messages,
+    const std::string& provider_id,
+    const std::string& model_id) {
   base::ListValue translated;
   ToolNameMap tool_names;
   for (const auto& message : raw_messages) {
@@ -347,7 +364,8 @@ base::ListValue TranslateBridgeMessages(
     }
 
     std::string role = RoleToString(message->role);
-    base::ListValue content = TranslateBridgeParts(message->content, &tool_names);
+    base::ListValue content = TranslateBridgeParts(
+        message->content, &tool_names, provider_id, model_id);
     if (content.empty()) {
       continue;
     }
@@ -825,7 +843,8 @@ base::DictValue BuildCallOptions(
     call_options.Set("modelId", model_id);
   }
 
-  base::ListValue messages = TranslateBridgeMessages(request.messages);
+  base::ListValue messages =
+      TranslateBridgeMessages(request.messages, provider_id, model_id);
 
   const std::string system_instruction =
       BuildSystemInstruction(request);
@@ -2014,6 +2033,22 @@ void NexusLlmHost::OnStreamChunk(const std::string& stream_id,
     auto event = mojom::NexusLlmStreamEvent::New();
     event->type = mojom::NexusLlmStreamEventType::kReasoningDelta;
     event->text_delta = *text_delta;
+    EnqueueEvent(&state, std::move(event));
+    wake();
+    return;
+  }
+
+  if (*type == kReasoningReplayPartType) {
+    // Bind the provider's replay payload to the provider + model that made
+    // it, so the host hands it back to nothing else (reasoning_replay.h).
+    std::optional<std::string> signature = EncodeReasoningReplaySignature(
+        state.provider_id, state.model_id, chunk);
+    if (!signature) {
+      return;
+    }
+    auto event = mojom::NexusLlmStreamEvent::New();
+    event->type = mojom::NexusLlmStreamEventType::kReasoningSignature;
+    event->signature = std::move(*signature);
     EnqueueEvent(&state, std::move(event));
     wake();
     return;

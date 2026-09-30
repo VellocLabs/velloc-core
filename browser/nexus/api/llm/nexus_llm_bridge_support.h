@@ -45,6 +45,10 @@ struct NexusLlmBridgeStreamState {
 
   int next_content_block_index = 0;
   std::optional<NexusLlmBridgeOpenDeltaBlock> open_delta_block;
+  // Index of the most recent thinking block, open or closed: a
+  // kReasoningSignature arrives after the text that followed the thinking,
+  // and must land on the thinking block, not open a new one.
+  std::optional<int> last_thinking_block_index;
   std::map<std::string, NexusLlmBridgePendingToolCall> pending_tool_calls;
   std::vector<std::string> pending_tool_call_order;
   bool terminal_emitted = false;

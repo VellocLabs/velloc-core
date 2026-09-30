@@ -2,6 +2,7 @@
 
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_reasoning.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -81,6 +82,53 @@ std::string ExtractResponsesReasoningItemText(const base::DictValue& item) {
 bool IsResponsesReasoningTextDeltaEvent(std::string_view event_type) {
   return event_type == "response.reasoning_summary_text.delta" ||
          event_type == "response.reasoning_text.delta";
+}
+
+ChatCompletionReasoningDetailsAccumulator::
+    ChatCompletionReasoningDetailsAccumulator() = default;
+ChatCompletionReasoningDetailsAccumulator::
+    ~ChatCompletionReasoningDetailsAccumulator() = default;
+
+void ChatCompletionReasoningDetailsAccumulator::Add(
+    const base::DictValue& delta) {
+  const base::ListValue* details = delta.FindList("reasoning_details");
+  if (!details)
+    return;
+  for (const auto& detail_val : *details) {
+    const base::DictValue* fragment = detail_val.GetIfDict();
+    if (!fragment)
+      continue;
+    const int index =
+        fragment->FindInt("index").value_or(next_implicit_index_);
+    next_implicit_index_ = std::max(next_implicit_index_, index + 1);
+
+    auto [it, inserted] = details_.try_emplace(index);
+    base::DictValue& merged = it->second;
+    for (auto [key, value] : *fragment) {
+      const bool appendable =
+          key == "text" || key == "summary" || key == "data";
+      const std::string* piece = value.GetIfString();
+      if (appendable && piece) {
+        const std::string* existing = merged.FindString(key);
+        merged.Set(key, (existing ? *existing : std::string()) + *piece);
+        continue;
+      }
+      if (piece && piece->empty())
+        continue;
+      if (value.is_none())
+        continue;
+      merged.Set(key, value.Clone());
+    }
+  }
+}
+
+base::ListValue ChatCompletionReasoningDetailsAccumulator::Take() {
+  base::ListValue out;
+  for (auto& [index, detail] : details_)
+    out.Append(std::move(detail));
+  details_.clear();
+  next_implicit_index_ = 0;
+  return out;
 }
 
 }  // namespace nexus

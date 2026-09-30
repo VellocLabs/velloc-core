@@ -100,5 +100,45 @@ TEST(OpenAiReasoningTest, ResponsesReasoningDeltaEvents) {
       "response.reasoning_summary_text.done"));
 }
 
+TEST(OpenAiReasoningTest, AccumulatorMergesStreamedDetailsByIndex) {
+  // OpenRouter-style stream: text in pieces, the signature on the last piece
+  // of index 0, then an encrypted block at index 1.
+  ChatCompletionReasoningDetailsAccumulator acc;
+  EXPECT_TRUE(acc.empty());
+  acc.Add(Parse(R"({"reasoning_details": [{"type": "reasoning.text",
+    "text": "First ", "format": "anthropic-claude-v1", "index": 0}]})"));
+  acc.Add(Parse(R"({"content": "no details here"})"));
+  acc.Add(Parse(R"({"reasoning_details": [{"type": "reasoning.text",
+    "text": "I weigh it.", "signature": "", "index": 0}]})"));
+  acc.Add(Parse(R"({"reasoning_details": [{"type": "reasoning.text",
+    "text": "", "signature": "sig-1", "index": 0}]})"));
+  acc.Add(Parse(R"({"reasoning_details": [{"type": "reasoning.encrypted",
+    "data": "opaque", "index": 1}]})"));
+  ASSERT_FALSE(acc.empty());
+
+  base::ListValue merged = acc.Take();
+  EXPECT_TRUE(acc.empty());
+  ASSERT_EQ(2u, merged.size());
+  const base::DictValue& first = merged[0].GetDict();
+  EXPECT_EQ("reasoning.text", *first.FindString("type"));
+  EXPECT_EQ("First I weigh it.", *first.FindString("text"));
+  EXPECT_EQ("sig-1", *first.FindString("signature"));
+  EXPECT_EQ("anthropic-claude-v1", *first.FindString("format"));
+  const base::DictValue& second = merged[1].GetDict();
+  EXPECT_EQ("reasoning.encrypted", *second.FindString("type"));
+  EXPECT_EQ("opaque", *second.FindString("data"));
+}
+
+TEST(OpenAiReasoningTest, AccumulatorKeepsIndexlessFragmentsInOrder) {
+  ChatCompletionReasoningDetailsAccumulator acc;
+  acc.Add(Parse(R"({"reasoning_details": [
+    {"type": "reasoning.summary", "summary": "a"},
+    {"type": "reasoning.encrypted", "data": "b"}]})"));
+  base::ListValue merged = acc.Take();
+  ASSERT_EQ(2u, merged.size());
+  EXPECT_EQ("a", *merged[0].GetDict().FindString("summary"));
+  EXPECT_EQ("b", *merged[1].GetDict().FindString("data"));
+}
+
 }  // namespace
 }  // namespace nexus

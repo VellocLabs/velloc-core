@@ -224,6 +224,7 @@ source_set("webui_host") {
     ":broker",
     ":oauth",
     ":provider_config",
+    ":reasoning_replay",
     ":text_helpers",
     "//base",
     "//chrome/browser/profiles:profile",
@@ -242,6 +243,19 @@ source_set("openai_tool_call_stream") {
   sources = [
     "providers/openai/openai_tool_call_stream.cc",
     "providers/openai/openai_tool_call_stream.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# The `velloc-replay-v1:` envelope that carries a provider's reasoning replay
+# payload through the guest inside a thinking block's signature, bound to the
+# provider + model that produced it. Base-only so the lite unit-test binary
+# covers the binding rules.
+source_set("reasoning_replay") {
+  sources = [
+    "reasoning_replay.cc",
+    "reasoning_replay.h",
   ]
 
   public_deps = [ "//base" ]
@@ -349,6 +363,7 @@ source_set("openai_provider") {
     ":line_splitter",
     ":openai_reasoning",
     ":openai_responses_error",
+    ":reasoning_replay",
     ":openai_tool_call_stream",
     ":openai_tool_result_messages",
     ":openai_usage",

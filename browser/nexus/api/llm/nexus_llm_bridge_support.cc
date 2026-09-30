@@ -730,6 +730,9 @@ int EnsureDeltaBlockOpen(NexusLlmBridgeStreamState* state,
   chunks->Append(std::move(chunk));
 
   state->open_delta_block = NexusLlmBridgeOpenDeltaBlock{type, index};
+  if (type == NexusLlmBridgeDeltaBlockType::kThinking) {
+    state->last_thinking_block_index = index;
+  }
   return index;
 }
 
@@ -1108,6 +1111,30 @@ base::DictValue StreamReadResultToBridge(
         Dict delta;
         delta.Set("type", "thinking_delta");
         delta.Set("thinking", event->text_delta.value_or(std::string()));
+
+        Dict chunk;
+        chunk.Set("type", "content_block_delta");
+        chunk.Set("index", index);
+        chunk.Set("delta", std::move(delta));
+        chunks.Append(std::move(chunk));
+        break;
+      }
+
+      case mojom::NexusLlmStreamEventType::kReasoningSignature: {
+        if (!event->signature.has_value() || event->signature->empty()) {
+          break;
+        }
+        // Encrypted-only reasoning has no text, so no thinking block was
+        // opened; open one to carry the signature.
+        const int index =
+            state->last_thinking_block_index.has_value()
+                ? *state->last_thinking_block_index
+                : EnsureDeltaBlockOpen(state, &chunks,
+                                       NexusLlmBridgeDeltaBlockType::kThinking);
+
+        Dict delta;
+        delta.Set("type", "signature_delta");
+        delta.Set("signature", *event->signature);
 
         Dict chunk;
         chunk.Set("type", "content_block_delta");

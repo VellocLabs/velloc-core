@@ -6,6 +6,7 @@
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/test/bind.h"
@@ -727,6 +728,104 @@ TEST(NexusLlmBridgeSupportTest,
   }
   ASSERT_TRUE(delta);
   EXPECT_FALSE(delta->FindDict("usage"));
+}
+
+namespace {
+
+mojom::NexusLlmStreamEventPtr StreamEvent(mojom::NexusLlmStreamEventType type) {
+  auto event = mojom::NexusLlmStreamEvent::New();
+  event->type = type;
+  return event;
+}
+
+// The `content_block_delta` chunks of one read, as (index, delta) pairs.
+std::vector<std::pair<int, const base::DictValue*>> BlockDeltas(
+    const base::ListValue& chunks) {
+  std::vector<std::pair<int, const base::DictValue*>> out;
+  for (const auto& chunk_val : chunks) {
+    const base::DictValue* chunk = chunk_val.GetIfDict();
+    const std::string* type = chunk ? chunk->FindString("type") : nullptr;
+    if (type && *type == "content_block_delta") {
+      out.emplace_back(chunk->FindInt("index").value_or(-1),
+                       chunk->FindDict("delta"));
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+// A replay signature arrives after the text that followed the reasoning. It
+// must land on the THINKING block (a signature_delta the guest folds into
+// `block.signature`), not on the text block and not on a fresh block.
+TEST(NexusLlmBridgeSupportTest,
+     StreamReadResultPutsReasoningSignatureOnThinkingBlock) {
+  auto result = mojom::NexusLlmStreamReadResult::New();
+  auto thinking =
+      StreamEvent(mojom::NexusLlmStreamEventType::kReasoningDelta);
+  thinking->text_delta = "weigh it";
+  result->events.push_back(std::move(thinking));
+  auto text = StreamEvent(mojom::NexusLlmStreamEventType::kTextDelta);
+  text->text_delta = "Pick B.";
+  result->events.push_back(std::move(text));
+  auto signature =
+      StreamEvent(mojom::NexusLlmStreamEventType::kReasoningSignature);
+  signature->signature = "velloc-replay-v1:{}";
+  result->events.push_back(std::move(signature));
+
+  NexusLlmBridgeStreamState state;
+  bool done_out = false;
+  bool cancel_out = false;
+  base::DictValue response =
+      StreamReadResultToBridge(&state, *result, &done_out, &cancel_out);
+  const base::ListValue* chunks = response.FindList("chunks");
+  ASSERT_TRUE(chunks);
+
+  auto deltas = BlockDeltas(*chunks);
+  ASSERT_EQ(3u, deltas.size());
+  EXPECT_EQ(0, deltas[0].first);  // thinking
+  EXPECT_EQ(1, deltas[1].first);  // text
+  EXPECT_EQ(0, deltas[2].first);  // signature -> back on the thinking block
+  ASSERT_TRUE(deltas[2].second);
+  EXPECT_EQ("signature_delta", *deltas[2].second->FindString("type"));
+  EXPECT_EQ("velloc-replay-v1:{}",
+            *deltas[2].second->FindString("signature"));
+}
+
+// Encrypted-only reasoning streams no text: the signature opens a thinking
+// block of its own so the payload still reaches the transcript.
+TEST(NexusLlmBridgeSupportTest,
+     StreamReadResultOpensThinkingBlockForBareReasoningSignature) {
+  auto result = mojom::NexusLlmStreamReadResult::New();
+  auto signature =
+      StreamEvent(mojom::NexusLlmStreamEventType::kReasoningSignature);
+  signature->signature = "velloc-replay-v1:{}";
+  result->events.push_back(std::move(signature));
+
+  NexusLlmBridgeStreamState state;
+  bool done_out = false;
+  bool cancel_out = false;
+  base::DictValue response =
+      StreamReadResultToBridge(&state, *result, &done_out, &cancel_out);
+  const base::ListValue* chunks = response.FindList("chunks");
+  ASSERT_TRUE(chunks);
+
+  const base::DictValue* start = nullptr;
+  for (const auto& chunk_val : *chunks) {
+    const base::DictValue* chunk = chunk_val.GetIfDict();
+    const std::string* type = chunk ? chunk->FindString("type") : nullptr;
+    if (type && *type == "content_block_start") {
+      start = chunk;
+      break;
+    }
+  }
+  ASSERT_TRUE(start);
+  EXPECT_EQ("thinking",
+            *start->FindDict("content_block")->FindString("type"));
+  auto deltas = BlockDeltas(*chunks);
+  ASSERT_EQ(1u, deltas.size());
+  EXPECT_EQ(*start->FindInt("index"), deltas[0].first);
+  EXPECT_EQ("signature_delta", *deltas[0].second->FindString("type"));
 }
 
 TEST(NexusLlmBridgeSupportTest, CallResultToBridgeEmitsSnakeCaseUsage) {

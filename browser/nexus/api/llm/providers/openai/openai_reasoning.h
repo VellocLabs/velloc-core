@@ -3,6 +3,7 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_PROVIDERS_OPENAI_OPENAI_REASONING_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_PROVIDERS_OPENAI_OPENAI_REASONING_H_
 
+#include <map>
 #include <string>
 #include <string_view>
 
@@ -38,6 +39,41 @@ std::string ExtractResponsesReasoningItemText(const base::DictValue& item);
 // their `delta` field (`response.reasoning_summary_text.delta` and
 // `response.reasoning_text.delta`).
 bool IsResponsesReasoningTextDeltaEvent(std::string_view event_type);
+
+// Rebuilds the complete `reasoning_details` array of one /chat/completions
+// response from its streamed fragments, so it can be replayed on the
+// assistant message of the next request. OpenRouter and Vercel AI Gateway
+// require that replay across tool rounds: it carries the Anthropic thinking
+// signatures and the encrypted OpenAI / Gemini reasoning, and without it the
+// upstream drops or rejects the continued reasoning.
+//
+// Fragments are merged by their `index` (arrival order when absent). For an
+// index already seen, `text` / `summary` / `data` are appended, and every
+// other key (`signature`, `id`, `format`, `type`) takes the latest non-empty
+// value — the signature typically arrives on the last fragment.
+class ChatCompletionReasoningDetailsAccumulator {
+ public:
+  ChatCompletionReasoningDetailsAccumulator();
+  ChatCompletionReasoningDetailsAccumulator(
+      const ChatCompletionReasoningDetailsAccumulator&) = delete;
+  ChatCompletionReasoningDetailsAccumulator& operator=(
+      const ChatCompletionReasoningDetailsAccumulator&) = delete;
+  ~ChatCompletionReasoningDetailsAccumulator();
+
+  // Folds in the `reasoning_details` of one streaming `delta`, or of a whole
+  // non-streaming `message`. A chunk without the key is a no-op.
+  void Add(const base::DictValue& delta);
+
+  bool empty() const { return details_.empty(); }
+
+  // The merged array, in index order. Leaves the accumulator empty.
+  base::ListValue Take();
+
+ private:
+  // Keyed by index; std::map keeps them ordered.
+  std::map<int, base::DictValue> details_;
+  int next_implicit_index_ = 0;
+};
 
 }  // namespace nexus
 

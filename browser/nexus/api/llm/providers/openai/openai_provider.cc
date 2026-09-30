@@ -19,6 +19,7 @@
 #include "base/uuid.h"
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
 #include "custom_browser/browser/nexus/api/llm/llm_line_splitter.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_reasoning.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_responses_error.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_call_stream.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_result_messages.h"
@@ -726,6 +727,16 @@ GenerateResult OpenAiProvider::ParseResponse(
   if (const std::string* content = message->FindString("content"))
     result.text = *content;
 
+  if (std::string thought = ExtractChatCompletionReasoningText(*message);
+      !thought.empty()) {
+    base::DictValue part;
+    part.Set("type", "text");
+    part.Set("text", std::move(thought));
+    std::vector<base::DictValue> parts;
+    parts.push_back(std::move(part));
+    result.reasoning = std::move(parts);
+  }
+
   if (const base::ListValue* tool_calls =
           message->FindList("tool_calls")) {
     std::vector<base::DictValue> translated;
@@ -1104,6 +1115,7 @@ GenerateResult OpenAiProvider::ParseResponsesApiResponse(
 
   std::string text;
   std::vector<base::DictValue> translated_tool_calls;
+  std::vector<base::DictValue> reasoning_parts;
 
   if (const base::ListValue* output = response.FindList("output")) {
     for (const auto& item_val : *output) {
@@ -1146,13 +1158,20 @@ GenerateResult OpenAiProvider::ParseResponsesApiResponse(
             tc.Set("args", base::DictValue());
         }
         translated_tool_calls.push_back(std::move(tc));
+      } else if (*item_type == "reasoning") {
+        std::string thought = ExtractResponsesReasoningItemText(*item);
+        if (!thought.empty()) {
+          base::DictValue part;
+          part.Set("type", "text");
+          part.Set("text", std::move(thought));
+          reasoning_parts.push_back(std::move(part));
+        }
       }
-      // `reasoning` output items are intentionally dropped — the bridge
-      // does not surface reasoning summaries today. (See the streaming
-      // path for the same policy.)
     }
   }
 
+  if (!reasoning_parts.empty())
+    result.reasoning = std::move(reasoning_parts);
   result.text = std::move(text);
   if (!translated_tool_calls.empty()) {
     result.tool_calls = std::move(translated_tool_calls);
@@ -1177,8 +1196,8 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
     std::string_view event_type,
     const base::DictValue& data) {
   // We listen for the small set of events that map cleanly onto the bridge
-  // chunk vocabulary (text-delta, tool-call-streaming-start, tool-call-delta,
-  // finish). Everything else — reasoning summaries, refusal, content_part
+  // chunk vocabulary (text-delta, reasoning-delta, tool-call-streaming-start,
+  // tool-call-delta, finish). Everything else — refusal, content_part
   // boundaries, search/code-interpreter/image events — is currently silently
   // dropped. Add support here if/when the WebUI starts surfacing them.
 
@@ -1188,6 +1207,29 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
   // failing turn got through before it died). Names only, never payloads —
   // the deltas carry the user's conversation.
   VLOG(1) << "[responses] event: " << event_type;
+
+  if (IsResponsesReasoningTextDeltaEvent(event_type)) {
+    if (const std::string* delta = data.FindString("delta")) {
+      if (!delta->empty()) {
+        base::DictValue chunk;
+        chunk.Set("type", "reasoning-delta");
+        chunk.Set("textDelta", *delta);
+        ctx.chunk_callback.Run(std::move(chunk));
+      }
+    }
+    return;
+  }
+
+  // A reasoning summary arrives as several parts; without a separator the
+  // second part's first word runs into the first part's last one.
+  if (event_type == "response.reasoning_summary_part.added" &&
+      data.FindInt("summary_index").value_or(0) > 0) {
+    base::DictValue chunk;
+    chunk.Set("type", "reasoning-delta");
+    chunk.Set("textDelta", "\n\n");
+    ctx.chunk_callback.Run(std::move(chunk));
+    return;
+  }
 
   if (event_type == "response.output_text.delta") {
     if (const std::string* delta = data.FindString("delta")) {
@@ -1359,7 +1401,7 @@ void OpenAiProvider::ProcessResponsesApiSseEvent(
   }
 
   // Silently ignore everything else (response.created, in_progress,
-  // output_item.done, content_part.added/done, reasoning_*, refusal_*,
+  // output_item.done, content_part.added/done, reasoning_*.done, refusal_*,
   // file_search_*, web_search_*, code_interpreter_*, image_*, mcp_*,
   // custom_tool_*, audio_*). They carry no information we surface today.
 }
@@ -1814,6 +1856,18 @@ void OpenAiProvider::ProcessSseLine(StreamContext& ctx,
     return;
 
   if (const base::DictValue* delta = first->FindDict("delta")) {
+    // Reasoning delta. Backends name the field differently
+    // (`reasoning_content` / `reasoning` / `reasoning_details`); the helper
+    // picks one so a thought is never rendered twice. Emitted before the
+    // text on the same chunk, matching the order the model produced them.
+    if (std::string thought = ExtractChatCompletionReasoningText(*delta);
+        !thought.empty()) {
+      base::DictValue chunk;
+      chunk.Set("type", "reasoning-delta");
+      chunk.Set("textDelta", std::move(thought));
+      ctx.chunk_callback.Run(std::move(chunk));
+    }
+
     // Text content delta.
     if (const std::string* content = delta->FindString("content")) {
       if (!content->empty()) {

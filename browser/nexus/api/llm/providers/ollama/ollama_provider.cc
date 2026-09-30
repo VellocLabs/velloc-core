@@ -19,6 +19,7 @@
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "custom_browser/browser/nexus/api/llm/llm_error_extract.h"
+#include "custom_browser/browser/nexus/api/llm/providers/openai/openai_reasoning.h"
 #include "custom_browser/browser/nexus/api/llm/providers/openai/openai_tool_result_messages.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -124,6 +125,16 @@ void EmitStreamEvents(OllamaProvider::StreamContext& ctx,
 
   const auto* delta = choice.FindDict("delta");
   if (delta) {
+    // Thinking models (qwen3, deepseek-r1, gpt-oss) stream their reasoning in
+    // `delta.reasoning` on Ollama's OpenAI-compatible endpoint.
+    if (std::string thought = ExtractChatCompletionReasoningText(*delta);
+        !thought.empty()) {
+      base::DictValue reasoning_event;
+      reasoning_event.Set("type", "reasoning-delta");
+      reasoning_event.Set("textDelta", std::move(thought));
+      ctx.chunk_callback.Run(std::move(reasoning_event));
+    }
+
     const auto* content = delta->FindString("content");
     if (content && !content->empty()) {
       base::DictValue text_event;
@@ -782,6 +793,16 @@ GenerateResult OllamaProvider::ParseResponse(
     const auto* content = message->FindString("content");
     if (content) {
       result.text = *content;
+    }
+
+    if (std::string thought = ExtractChatCompletionReasoningText(*message);
+        !thought.empty()) {
+      base::DictValue part;
+      part.Set("type", "text");
+      part.Set("text", std::move(thought));
+      std::vector<base::DictValue> parts;
+      parts.push_back(std::move(part));
+      result.reasoning = std::move(parts);
     }
 
     const auto* tool_calls = message->FindList("tool_calls");

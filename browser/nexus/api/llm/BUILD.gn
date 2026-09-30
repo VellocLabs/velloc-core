@@ -247,6 +247,20 @@ source_set("openai_tool_call_stream") {
   public_deps = [ "//base" ]
 }
 
+# Extracts readable reasoning text from OpenAI-compatible /chat/completions
+# deltas and Responses API reasoning items (each backend names the field
+# differently). Tiny base-only source_set (same pattern as
+# :openai_tool_call_stream) so the lite unit-test binary covers the
+# per-backend field precedence without linking the full provider.
+source_set("openai_reasoning") {
+  sources = [
+    "providers/openai/openai_reasoning.cc",
+    "providers/openai/openai_reasoning.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 # Normalizes an OpenAI-compatible /chat/completions usage block into the
 # bridge's camelCase stream-usage vocabulary, emitting the cache-EXCLUSIVE
 # prompt count (see openai_usage.h). Tiny base-only source_set (same pattern as
@@ -333,6 +347,7 @@ source_set("openai_provider") {
   deps = [
     ":error_extract",
     ":line_splitter",
+    ":openai_reasoning",
     ":openai_responses_error",
     ":openai_tool_call_stream",
     ":openai_tool_result_messages",
@@ -418,6 +433,7 @@ source_set("ollama_provider") {
   deps = [
     ":error_extract",
     ":line_splitter",
+    ":openai_reasoning",
     ":openai_tool_result_messages",
     ":provider",
     ":types",

@@ -61,13 +61,14 @@ bool IsModelEnabled(PrefService* prefs,
   return false;
 }
 
-// Mirror of `deriveModelId` in nexus_quick_settings.ts. The TS curated
+// Flattens a TS curated-catalog `model` pattern into a literal id. The
 // catalog stores each model's `model` field as either a plain id or a
 // regex source (anchored, optionally suffixed with a date pattern that
 // the OpenAI/Anthropic helpers add). The worker's `isSelectionEnabled`
 // gate compares against the literal id the picker sends — so we strip
 // the anchors / common date suffixes, then bail if the result still has
-// regex metacharacters we don't know how to flatten.
+// regex metacharacters we don't know how to flatten. (Originally a mirror
+// of the retired Lit popup's `deriveModelId`; no guest twin remains.)
 std::string DeriveTsModelId(const std::string& pattern) {
   if (pattern.empty()) return std::string();
   std::string s = pattern;
@@ -84,8 +85,7 @@ std::string DeriveTsModelId(const std::string& pattern) {
       s.compare(s.size() - kDate8.size(), kDate8.size(), kDate8) == 0) {
     s.resize(s.size() - kDate8.size());
   }
-  // If anything regex-y remains, skip — the picker won't synthesize this
-  // entry on the WebUI side either, so the catalog stays in sync.
+  // If anything regex-y remains, skip — no literal id can be derived.
   if (s.find_first_of("()[]{}|?+*") != std::string::npos) {
     return std::string();
   }
@@ -101,28 +101,6 @@ std::string DeriveTsModelId(const std::string& pattern) {
     }
   }
   return out;
-}
-
-bool IsProviderVerified(PrefService* prefs, const std::string& provider_id) {
-  const base::DictValue* config = GetStoredProviderConfig(prefs, provider_id);
-  if (!config) {
-    return false;
-  }
-
-  const base::DictValue* last_verification =
-      config->FindDict("last_verification");
-  if (!last_verification) {
-    return false;
-  }
-
-  if (const std::string* verified_provider_id =
-          last_verification->FindString("providerId");
-      verified_provider_id && !verified_provider_id->empty() &&
-      *verified_provider_id != provider_id) {
-    return false;
-  }
-
-  return last_verification->Find("verifiedAtMs") != nullptr;
 }
 
 std::string BuildSystemInstruction(
@@ -527,9 +505,9 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
   // curated models into providers whose own `info.models` came back
   // empty (the common case after we removed `RefreshAllCatalogs` —
   // `GetSupportedModels()` returns nothing). Without this, the worker's
-  // `isSelectionEnabled` gate (BrowserRuntimeWorker.ts:73) refuses
-  // every pick the WebUI quick-settings popup makes because no model
-  // is "enabled" in the bridge catalog the worker consumes.
+  // `isSelectionEnabled` gate refuses every pick the guest's React model
+  // picker (via `providers.setActive` in the SharedWorker) makes, because
+  // no model is "enabled" in the bridge catalog the worker consumes.
   const base::DictValue& ts_catalog = broker->GetTsModelCatalog();
   std::map<std::string, const base::DictValue*> ts_by_provider;
   if (const base::ListValue* providers = ts_catalog.FindList("providers")) {
@@ -619,16 +597,15 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
       models.push_back(std::move(model_ptr));
     }
 
-    // Always splice in TS-curated models — the popup picks from this
-    // list, so the worker's `isSelectionEnabled` gate must accept every
-    // id the popup advertises. Previously this graft only ran when
+    // Always splice in TS-curated models — the guest's picker offers
+    // them, so the worker's `isSelectionEnabled` gate must accept every
+    // curated id. Previously this graft only ran when
     // `info.models` was empty, which silently dropped curated entries
     // for any provider whose `/v1/models` returned a non-empty list
     // that didn't already contain the curated ids (e.g. an OpenAI
     // endpoint that doesn't yet list gpt-5.5, or a Gemini endpoint that
-    // names models with a `models/` prefix). Mirrors `deriveModelId` on
-    // the WebUI side so the ids the picker sends match the ids the
-    // worker accepts.
+    // names models with a `models/` prefix). DeriveTsModelId flattens
+    // each curated pattern to the literal id the worker accepts.
     auto it = ts_by_provider.find(info.id);
     if (it != ts_by_provider.end() && it->second) {
       if (const base::ListValue* ts_models =
@@ -2241,23 +2218,6 @@ void NexusLlmHost::OnStreamDone(const std::string& stream_id,
   if (ResolveHeldRead(it->second, "done")) {
     streams_.erase(it);
   }
-}
-
-// --- Public helpers re-exported from the anonymous namespace ----------------
-
-bool IsNexusProviderVerified(PrefService* prefs,
-                             const std::string& provider_id) {
-  return IsProviderVerified(prefs, provider_id);
-}
-
-bool IsNexusModelEnabled(PrefService* prefs,
-                         const std::string& provider_id,
-                         const std::string& model_id) {
-  return IsModelEnabled(prefs, provider_id, model_id);
-}
-
-std::string GetNexusProviderIconSvg(const std::string& provider_id) {
-  return ResolveProviderIconSvg(provider_id);
 }
 
 }  // namespace nexus

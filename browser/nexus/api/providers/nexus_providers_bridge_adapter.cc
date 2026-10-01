@@ -362,16 +362,6 @@ void NexusProvidersBridgeAdapter::HandleUpdateOnUI(
     }
   }
 
-  // NOTE on `BroadcastEnrichedCatalog_`: the legacy
-  // `HandleUpdateProviderConfig` fires `nexusCatalogChanged` to refresh
-  // the quick-settings popup. That helper lives on
-  // `NexusSettingsHandler`, not the broker — so the new adapter can't
-  // fire it directly without a refactor. For now both handlers stay
-  // registered: the WebUI calls THIS one (panel bridge), but the
-  // quick-settings popup keeps receiving `nexusCatalogChanged` through
-  // other call sites (verify, refresh, broker pick events). A follow-up
-  // moves the broadcast to the broker so this is eventually clean.
-
   base::DictValue result;
   result.Set("success", success);
   result.Set("isConfigured", provider->IsConfigured());
@@ -692,13 +682,6 @@ void NexusProvidersBridgeAdapter::HandleResetOnUI(
   }
   broker->ReloadProvidersFromPrefs();
 
-  // NOTE on `BroadcastEnrichedCatalog_`: same caveat as `HandleUpdateOnUI`.
-  // The legacy chrome.send `HandleResetProviderConfig` re-emits
-  // `nexusCatalogChanged` from `NexusSettingsHandler`; the new adapter
-  // can't reach that helper. The legacy handler stays registered so the
-  // popup still gets refreshed via its broadcast path until P6 moves the
-  // broadcast source to the broker.
-
   base::DictValue result;
   result.Set("success", true);
   result.Set("activeProviderId", broker->GetActiveProviderId());
@@ -744,8 +727,7 @@ void NexusProvidersBridgeAdapter::HandleSetActiveOnUI(
   }
 
   // Extract + validate the selection dict — mirrors the legacy
-  // `HandlePickNexusSelection` checks (the quick-settings popup
-  // populates the dict; e2e harnesses may pass through bad shapes).
+  // `HandlePickNexusSelection` checks (callers may pass bad shapes).
   const std::string* provider_id = input.selection.FindString("providerId");
   const std::string* model_id = input.selection.FindString("modelId");
   if (!provider_id || provider_id->empty() || !model_id || model_id->empty()) {
@@ -771,7 +753,7 @@ void NexusProvidersBridgeAdapter::HandleSetActiveOnUI(
     // Echo whether the bridge-event pusher was registered + invoked.
     // Lets the WebUI / e2e harness distinguish "C++ accepted but
     // nexus_web isn't subscribed yet" from "C++ accepted and event
-    // pushed". When false, the popup pick is durable in prefs but the
+    // pushed". When false, the pick is durable in prefs but the
     // active-session rebind is not happening (guest webview not ready
     // or its bridge port isn't alive).
     result.Set("pusherInvoked", dispatch.pusher_invoked);

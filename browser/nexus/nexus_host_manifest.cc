@@ -35,8 +35,8 @@ constexpr std::array<const char*, 11> kBridgeCapabilities = {
     // `setAgentLoopSettings`) moved to the dedicated `session`
     // capability in Phase 12f.
     "browser",
-    // Phase 12f: dedicated session capability. `publishStatus` (cache
-    // for the WebUI quick-settings popup), `onStop` (LLM-session
+    // Phase 12f: dedicated session capability. `publishStatus`
+    // (SessionStatus cache in LlmBroker), `onStop` (LLM-session
     // OnStop cascade — renamed from `browser.endSession`),
     // `setAgentLoopSettings` (per-session wall-clock budgets). See
     // custom_browser/browser/nexus/api/session/.

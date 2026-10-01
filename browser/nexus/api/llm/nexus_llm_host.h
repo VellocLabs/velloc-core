@@ -17,33 +17,9 @@
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "custom_browser/browser/nexus/mojom/nexus_llm.mojom.h"
 
-class PrefService;
 class Profile;
 
 namespace nexus {
-
-// Returns the brand SVG for the given provider id (e.g. the `openai`,
-// `anthropic`, `kimi`, `glm` etc. icons baked into the browser_webui
-// resource bundle), or a generic placeholder badge if `provider_id` is
-// unknown or no resource bundle is loaded. Defined in nexus_llm_host.cc;
-// thin wrapper around the in-file helper of the same name.
-std::string GetNexusProviderIconSvg(const std::string& provider_id);
-
-// True when the user has saved a successful "verify connection" result
-// for `provider_id` (i.e. `nexus.provider_configs[provider_id].
-// last_verification.verifiedAtMs` is set). REPORTING only — it says whether
-// the settings probe has ever passed, and nothing about whether the provider
-// is usable. `BuildCatalog` deliberately does NOT consult it: a saved
-// connection is pickable whether or not it was ever probed (see the
-// `provider_set_up` gate there).
-bool IsNexusProviderVerified(PrefService* prefs,
-                             const std::string& provider_id);
-
-// True when `model_id` is in the user's per-provider `enabled_models`
-// allowlist (or the allowlist is empty / unset, which means "show all").
-bool IsNexusModelEnabled(PrefService* prefs,
-                         const std::string& provider_id,
-                         const std::string& model_id);
 
 // Direct bridge LLM host that adapts the browser bridge contract to the Nexus
 // broker/provider layer.

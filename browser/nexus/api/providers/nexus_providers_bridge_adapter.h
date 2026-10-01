@@ -66,12 +66,7 @@ class NexusProvidersBridgeAdapter
   // Synchronous update — merges the partial `updates` dict over the
   // stored Profile pref, encrypts api_key at rest, and applies the
   // result to the broker. Returns `{ success, isConfigured, baseUrl }`
-  // mirroring the legacy `HandleUpdateProviderConfig` response. The
-  // existing `BroadcastEnrichedCatalog_` fan-out continues to fire
-  // through the legacy handler path for now — that broadcast lives on
-  // `NexusSettingsHandler` which the new adapter can't reach
-  // directly. P6 will move the broadcast to the broker so this
-  // duplication retires.
+  // mirroring the legacy `HandleUpdateProviderConfig` response.
   void HandleUpdateOnUI(
       ::nexus::generated::UpdateInput input,
       std::vector<blink::MessagePortDescriptor> ports,
@@ -149,16 +144,8 @@ class NexusProvidersBridgeAdapter
       std::string error);
 
   // Synchronous: clears the stored config dict, drops the cached
-  // catalogue, unpins as active if it was, and re-emits
-  // `nexusCatalogChanged` so the popup hides the now-unverified
-  // provider. Mirrors `NexusSettingsHandler::HandleResetProviderConfig`.
-  // Note on the catalog re-emit: `BroadcastEnrichedCatalog_` lives on
-  // `NexusSettingsHandler`, not the broker — same caveat documented on
-  // `HandleUpdateOnUI`. Until P6 moves the broadcast to the broker, the
-  // legacy handler stays registered to keep `nexusCatalogChanged`
-  // firing from the chrome.send code path too; once both code paths
-  // agree on a single broadcast source, the chrome.send handler can
-  // retire.
+  // catalogue, and unpins as active if it was. Mirrors
+  // `NexusSettingsHandler::HandleResetProviderConfig`.
   void HandleResetOnUI(
       ::nexus::generated::ResetInput input,
       std::vector<blink::MessagePortDescriptor> ports,
@@ -174,10 +161,9 @@ class NexusProvidersBridgeAdapter
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 
-  // Tier 3b: pin the active provider/model selection — the quick-
-  // settings popup's pick button. Mirrors
-  // `NexusSettingsHandler::HandlePickNexusSelection` (the legacy
-  // chrome.send `pickNexusSelection` route): validates the dict shape,
+  // Tier 3b: pin the active provider/model selection. Replaced the legacy
+  // chrome.send `pickNexusSelection` route (the retired Lit quick-settings
+  // popup's pick button): validates the dict shape,
   // calls `LlmBroker::DispatchUserPick`, returns `{ok, requestId?,
   // pusherInvoked?, errorCode?, error?}`. The broker's pusher fans a
   // `session.applySelection` event to the live SharedWorker so the

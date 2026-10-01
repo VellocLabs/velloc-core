@@ -43,11 +43,10 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
   NexusLlmBridgeAdapter(const NexusLlmBridgeAdapter&) = delete;
   NexusLlmBridgeAdapter& operator=(const NexusLlmBridgeAdapter&) = delete;
 
-  // Pushes a `session.applySelection` event to nexus_web. Called by the
-  // settings handler when the user picks a model in the WebUI quick-
-  // settings popup. nexus_web responds by rebinding the active session
-  // and re-publishing its status (which loops back here as a normal
-  // request via HandlePublishStatusOnUI).
+  // Pushes a `session.applySelection` event to nexus_web. Registered as a
+  // `LlmBroker` pick-event pusher; runs on every
+  // `LlmBroker::DispatchUserPick` (the C++ `providers.setActive` route).
+  // Inert today: the guest no longer subscribes to this event.
   void PushSessionApplySelection(const std::string& request_id,
                                  const std::string& provider_id,
                                  const std::string& model_id,

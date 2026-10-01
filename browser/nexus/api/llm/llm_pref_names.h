@@ -78,10 +78,11 @@ inline constexpr char kNexusProviderCatalogs[] = "nexus.provider_catalogs";
 // Cached copy of the curated TS-side `NEXUS_MODEL_CONFIG`, pushed by
 // nexus_web at boot via the `model.publishCatalog` bridge route. The TS
 // app remains the source of truth for the catalogue (it ships online and
-// updates independently of chrome.exe); this pref exists so the WebUI
-// `<nexus-quick-settings>` popup has a usable catalogue available at the
-// next browser start *before* the guest finishes loading. Stored as a
-// dictionary value (not raw JSON) so we can copy/clone without re-parsing.
+// updates independently of chrome.exe); this pref keeps the last snapshot
+// for the next browser start, so LlmBroker can apply the guest-owned
+// default base URLs (and NexusLlmHost's BuildCatalog can graft curated
+// models) *before* the guest finishes loading. Stored as a dictionary
+// value (not raw JSON) so we can copy/clone without re-parsing.
 inline constexpr char kNexusTsModelCatalogCache[] =
     "nexus.ts_model_catalog_cache";
 
@@ -93,11 +94,10 @@ inline constexpr char kNexusBakedDefaultBaseUrlsCleared[] =
     "nexus.baked_default_base_urls_cleared";
 
 // Last `SessionStatus` payload pushed by nexus_web via
-// `session.publishStatus`. Cached so the WebUI quick-settings popup can
-// render the most-recent selection on cold boot before the guest comes
-// online. Schema is intentionally open-ended (provider+model+thinkingTier
-// today; agentRunning/threadTitle/etc. tomorrow) — both sides ignore
-// unknown keys.
+// `session.publishStatus`. Write-only today: LlmBroker warm-loads it into
+// memory, but nothing reads it since the Lit quick-settings popup (its only
+// consumer) was retired. TODO(nexus): remove it together with the
+// `session.publishStatus` chain (separate follow-up).
 inline constexpr char kNexusLastSessionStatus[] = "nexus.last_session_status";
 
 // Single authoritative store of natively-configured MCP servers. Each key

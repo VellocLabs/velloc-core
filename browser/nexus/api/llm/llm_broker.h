@@ -8,8 +8,6 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
-#include "base/observer_list_types.h"
 #include "base/sequence_checker.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
@@ -35,32 +33,6 @@ class NexusOAuthManager;
 // active provider can be switched at any time via SetActiveProvider().
 class LlmBroker : public KeyedService {
  public:
-  // Observers are notified when the TS-pushed catalogue or the session
-  // status changes. Used by the WebUI settings handler to forward updates
-  // to the Lit `<nexus-quick-settings>` popup via FireWebUIListener.
-  class Observer : public base::CheckedObserver {
-   public:
-    ~Observer() override = default;
-
-    // Fired when nexus_web publishes a new `NEXUS_MODEL_CONFIG` snapshot
-    // (typically once at boot, plus any time the online TS bundle hot-
-    // reloads). The payload mirrors what the TS layer sent.
-    virtual void OnTsModelCatalogChanged(const base::DictValue& catalog) {}
-
-    // Fired when nexus_web publishes a new SessionStatus — either because
-    // the user switched sessions, or the current session's selection /
-    // other status fields changed.
-    virtual void OnSessionStatusChanged(const base::DictValue& status) {}
-
-    // Fired after a provider's model list is (re)discovered from its backend,
-    // regardless of which code path triggered the fetch (guest catalog refresh,
-    // login, or a settings connect test). Lets the WebUI rebuild the topbar
-    // quick-switch popup once async discovery lands — notably for OAuth
-    // providers (chatgpt-pro) whose models are fetched lazily after cold boot,
-    // which would otherwise stay hidden until the user opened settings.
-    virtual void OnProviderModelsRefreshed(const std::string& provider_id) {}
-  };
-
   LlmBroker(
       PrefService* prefs,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
@@ -76,9 +48,10 @@ class LlmBroker : public KeyedService {
   //
   // The curated model catalogue (`NEXUS_MODEL_CONFIG`) lives in the
   // online-updateable nexus_web bundle. nexus_web POSTs it to C++ at boot
-  // via the `model.publishCatalog` bridge route; we cache it here so the
-  // browser-side WebUI quick-settings popup can render it without a
-  // round-trip to the guest. Same pattern for the per-session status.
+  // via the `model.publishCatalog` bridge route; we cache it here (and in
+  // prefs) because it carries the guest-owned default base URLs the
+  // providers need, and because `NexusLlmHost`'s bridge catalog grafts its
+  // curated models. The per-session status is cached the same way.
   void SetTsModelCatalog(base::DictValue catalog);
   const base::DictValue& GetTsModelCatalog() const;
 
@@ -98,17 +71,13 @@ class LlmBroker : public KeyedService {
   void SetSessionStatus(base::DictValue status);
   const base::DictValue& GetSessionStatus() const;
 
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
-
-  // --- Reverse flow: WebUI quick-settings popup → nexus_web ---
+  // --- Reverse flow: host-side pick → nexus_web ---
   //
-  // The bridge adapter registers a pusher at construction. When the user
-  // picks a model in the WebUI popup, the settings handler calls
-  // `DispatchUserPick`; the broker validates + persists the global
-  // default, then invokes the pusher so nexus_web receives a
-  // `session.applySelection` event. nexus_web responds by rebinding the
-  // active session and re-publishing its status.
+  // The bridge adapter registers a pusher at construction. The panel
+  // bridge's `providers.setActive` handler calls `DispatchUserPick`; the
+  // broker validates + persists the global default, then invokes the
+  // pusher so nexus_web receives a `session.applySelection` event (inert
+  // today — see the DEPRECATED note in DispatchUserPick).
   using PickEventPusher = base::RepeatingCallback<void(
       const std::string& request_id,
       const std::string& provider_id,
@@ -151,9 +120,8 @@ class LlmBroker : public KeyedService {
     // false, nexus_web never receives the rebind event because the
     // bridge port adapter that owns the pusher isn't alive yet (the
     // guest webview hasn't completed GuestReady, or it's been torn
-    // down). Surfaced through `pickNexusSelection`'s response so the
-    // WebUI can warn / retry instead of waiting forever for an event
-    // that will never come.
+    // down). Surfaced as `pusherInvoked` in `providers.setActive`'s
+    // response.
     bool pusher_invoked = false;
   };
   DispatchPickResult DispatchUserPick(const std::string& provider_id,
@@ -305,11 +273,9 @@ class LlmBroker : public KeyedService {
 
   std::unique_ptr<NexusOAuthManager> oauth_manager_;
 
-  // In-memory mirrors of the prefs-backed caches. Populated lazily from
-  // prefs on first access and overwritten by SetTsModelCatalog /
-  // SetSessionStatus. Both are kept as `base::DictValue` so the WebUI
-  // settings handler can forward them straight to FireWebUIListener
-  // without re-parsing.
+  // In-memory mirrors of the prefs-backed caches. Warm-loaded from prefs
+  // at construction and overwritten by SetTsModelCatalog /
+  // SetSessionStatus.
   base::DictValue ts_model_catalog_;
   base::DictValue session_status_;
 
@@ -320,8 +286,6 @@ class LlmBroker : public KeyedService {
   // up; pre-bootstrap picks are still durable in prefs.
   std::map<PickEventPusherToken, PickEventPusher> pick_event_pushers_;
   PickEventPusherToken next_pusher_token_ = 0;
-
-  base::ObserverList<Observer> observers_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<LlmBroker> weak_factory_{this};

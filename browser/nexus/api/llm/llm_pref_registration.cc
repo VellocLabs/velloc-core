@@ -43,8 +43,8 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kNexusProviderCatalogs);
 
   // Curated TS-side catalogue mirror — see kNexusTsModelCatalogCache for the
-  // full rationale. Stored as a dict so the WebUI can read it directly via
-  // GetDict without a JSON parse hop.
+  // full rationale. Stored as a dict so it can be read via GetDict without a
+  // JSON parse hop.
   registry->RegisterDictionaryPref(prefs::kNexusTsModelCatalogCache);
 
   // One-shot marker for the legacy default-base-URL cleanup — see
@@ -52,8 +52,8 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kNexusBakedDefaultBaseUrlsCleared,
                                 false);
 
-  // Most-recent SessionStatus published by nexus_web. Lets the WebUI quick-
-  // settings popup render the active selection on cold boot.
+  // Most-recent SessionStatus published by nexus_web — write-only today; see
+  // kNexusLastSessionStatus.
   registry->RegisterDictionaryPref(prefs::kNexusLastSessionStatus);
 
   // Natively-configured MCP servers (id -> {transport, command, args, env,

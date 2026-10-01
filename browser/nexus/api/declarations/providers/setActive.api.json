@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "setActive",
-  "description": "Pin the active provider/model selection. Goes through LlmBroker::DispatchUserPick which (a) writes the active selection to prefs and (b) pushes a `session.applySelection` event to the live nexus_web SharedWorker so the in-flight session rebinds without a reload. Mirrors the legacy chrome.send `pickNexusSelection` route (the quick-settings popup's pick button). Exposed on the panel WebUI bridge port only. No secret in payload or response.",
+  "description": "Pin the active provider/model selection. Goes through LlmBroker::DispatchUserPick which (a) writes the active selection to prefs and (b) pushes a `session.applySelection` event to the live nexus_web SharedWorker so the in-flight session rebinds without a reload. Replaced the legacy chrome.send `pickNexusSelection` route of the retired WebUI quick-settings popup. Exposed on the panel WebUI bridge port only. No secret in payload or response.",
   "inputs": [
     {
       "name": "selection",

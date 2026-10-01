@@ -26,7 +26,6 @@
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider.h"
-#include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
 #include "custom_browser/browser/nexus/api/llm/llm_provider_factory.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
@@ -303,17 +302,8 @@ void NexusSettingsHandler::RegisterMessages() {
   // agent-config: subscribe to the new `agent.changed` bridge event
   // instead.
   //
-  // Quick-settings popup support — read-side handlers + the
-  // user-pick write-side handler. See nexus_settings_handler.h for
-  // full contracts.
-  web_ui()->RegisterMessageCallback(
-      "getNexusCatalog",
-      base::BindRepeating(&NexusSettingsHandler::HandleGetNexusCatalog,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "getNexusSessionStatus",
-      base::BindRepeating(&NexusSettingsHandler::HandleGetNexusSessionStatus,
-                          base::Unretained(this)));
+  // `getNexusCatalog` / `getNexusSessionStatus` routes removed with the
+  // Lit `<nexus-quick-settings>` popup they served (F-18 Phase 4).
   // `pickNexusSelection` route removed: migrated to `providers.setActive`
   // on the panel WebUI bridge port (A5 Tier 3b). See
   // api/providers/nexus_providers_bridge_adapter.cc::HandleSetActiveOnUI.
@@ -332,13 +322,6 @@ void NexusSettingsHandler::RegisterMessages() {
 }
 
 void NexusSettingsHandler::OnJavascriptAllowed() {
-  // Subscribe to broker change signals so we can fan them out to the
-  // Lit `<nexus-quick-settings>` popup. The observation only fires while
-  // JS is allowed; if JS gets disabled (page reload mid-session) we
-  // tear down in OnJavascriptDisallowed.
-  if (nexus::LlmBroker* broker = GetBroker()) {
-    broker_observation_.Observe(broker);
-  }
   // Prime the at-rest secret encryptor so api_key / MCP-secret writes from
   // this settings page store ciphertext rather than degrading to plaintext.
   nexus::NexusSecretCrypt::GetInstance()->EnsureAcquired(
@@ -346,40 +329,10 @@ void NexusSettingsHandler::OnJavascriptAllowed() {
 }
 
 void NexusSettingsHandler::OnJavascriptDisallowed() {
-  broker_observation_.Reset();
   pending_verifications_.clear();
   // `pending_mcp_tests_.clear()` removed: the transient-host map moved
   // to NexusMcpBridgeAdapter (A5 Tier 3a) which owns its own teardown.
   weak_factory_.InvalidateWeakPtrs();
-}
-
-void NexusSettingsHandler::OnTsModelCatalogChanged(
-    const base::DictValue& /*catalog*/) {
-  // The popup wants the *enriched* catalog (with iconSvg, isVerified,
-  // etc.), not the raw TS-pushed dict. Rebuild it the same way
-  // HandleGetNexusCatalog does and broadcast.
-  BroadcastEnrichedCatalog_();
-}
-
-void NexusSettingsHandler::OnSessionStatusChanged(
-    const base::DictValue& /*status*/) {
-  // The model selection is now broadcast as part of the unified
-  // `nexusCurrentSessionState` event sourced from the SharedWorker's
-  // session manager (see `SharedWorkerSessionManager.setModel`). The
-  // legacy `nexusSessionStatusChanged` fan-out is retired; the broker's
-  // session-status cache is still updated for any non-WebUI consumer
-  // that reads it via `LlmBroker::GetSessionStatus`.
-}
-
-void NexusSettingsHandler::OnProviderModelsRefreshed(
-    const std::string& /*provider_id*/) {
-  // A provider's model list was just discovered from its backend (the guest's
-  // cold-boot catalog refresh, a login, or a connect test). Rebuild the
-  // always-mounted topbar quick-switch popup so lazily-discovered OAuth models
-  // (chatgpt-pro) appear immediately — without this the popup keeps the empty
-  // catalog it captured before discovery finished, and the only way to refresh
-  // it was to open the provider settings page.
-  BroadcastEnrichedCatalog_();
 }
 
 Profile* NexusSettingsHandler::GetProfile() {
@@ -496,9 +449,7 @@ void NexusSettingsHandler::HandleGetAgentProviders(
 
 // HandleGetNexusViewState removed — registered + impl'd but never
 // called from JS. Was a leftover wrapper around
-// `broker->GetActiveProviderId()` from an earlier UI iteration; the
-// quick-settings popup reads the active provider from
-// `getNexusCatalog`'s response instead.
+// `broker->GetActiveProviderId()` from an earlier UI iteration.
 
 void NexusSettingsHandler::HandleUpdateProviderConfig(
     const base::ListValue& args) {
@@ -555,11 +506,6 @@ void NexusSettingsHandler::HandleUpdateProviderConfig(
       broker->SetActiveProvider(provider_id);
     }
   }
-
-  // Re-emit the enriched catalog so the WebUI quick-settings popup sees
-  // the new isVerified / enabledModels / baseUrl state without waiting
-  // for the next open.
-  BroadcastEnrichedCatalog_();
 
   base::DictValue result;
   result.Set("success", success);
@@ -703,10 +649,6 @@ void NexusSettingsHandler::HandleResetProviderConfig(
   result.Set("success", true);
   result.Set("activeProviderId", broker->GetActiveProviderId());
   ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
-
-  // The reset cleared verification + enabled-models — re-emit so the
-  // popup hides the now-unverified provider without a re-open.
-  BroadcastEnrichedCatalog_();
 }
 
 // HandleGetMcpServers / HandleUpsertMcpServer / HandleRemoveMcpServer
@@ -729,17 +671,6 @@ void NexusSettingsHandler::HandleResetProviderConfig(
 // `api/providers/nexus_providers_bridge_adapter.cc::HandleRefreshOnUI`
 // for the replacement (and its `OnOAuthTokenForRefresh` /
 // `OnRefreshModelsFetched` continuations).
-//
-// Behavioural delta vs. the legacy path: the new adapter does NOT
-// re-fire `nexusCatalogChanged` after the refresh resolves. The legacy
-// path did so via `BroadcastEnrichedCatalog_` to refresh the
-// always-mounted topbar quick-switch popup. The quick-switch popup
-// will pick up newly-discovered models on its next catalog read (e.g.
-// reopen, or any other `nexusCatalogChanged` trigger like
-// `HandleUpdateProviderConfig` / `HandleResetProviderConfig`). The
-// followup is to move `BroadcastEnrichedCatalog_` itself onto the
-// broker so any caller — chrome.send handler or bridge adapter — can
-// fire it uniformly.
 //
 // HandleSetProviderApiKey, HandleValidateProviderConnection,
 // HandleGetOllamaModels + OnOllamaModelsFetched removed earlier — all
@@ -782,12 +713,9 @@ void NexusSettingsHandler::OnVerifyProviderModelsFetched(
   ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
 }
 
-// HandleSetActiveProvider removed — vapor. The active provider is
-// pinned via the unified pick flow (`HandlePickNexusSelection`),
-// which calls `broker->DispatchUserPick` and ALSO writes
-// `nexus.active_provider_id` indirectly through
-// `LlmBroker::SetDefaultSelection`. This standalone setter had no
-// callers in the WebUI.
+// HandleSetActiveProvider removed — vapor. This standalone setter had no
+// callers in the WebUI; the active provider is pinned through the panel
+// bridge (`providers.setActive`) instead.
 
 // HandleBeginProviderOAuth + OnDeviceCodeStarted +
 // HandleGetProviderOAuthStatus removed — `beginProviderOAuth` and
@@ -932,154 +860,6 @@ void NexusSettingsHandler::HandleSetNexusLauncherEnabled(
 // JS-side broadcast for log/trace/maxTurns/stepTimeoutSec. A future
 // PR can move `model` into settings.json too and finally retire the
 // C++ observer.)
-
-// --- Quick-settings popup handlers ------------------------------------------
-
-base::DictValue NexusSettingsHandler::BuildEnrichedNexusCatalog_() {
-  base::DictValue result;
-  Profile* profile = GetProfile();
-  nexus::LlmBroker* broker = GetBroker();
-  if (!profile || !broker) {
-    return result;
-  }
-  PrefService* prefs = profile->GetPrefs();
-
-  // The wire-from-TS catalog is the source of truth for the model list.
-  // Index it by providerId so we can splice each provider's curated
-  // models into the enriched response below.
-  const base::DictValue& ts_catalog = broker->GetTsModelCatalog();
-  std::map<std::string, const base::DictValue*> ts_by_provider;
-  if (const base::ListValue* providers = ts_catalog.FindList("providers")) {
-    for (const base::Value& entry : *providers) {
-      const base::DictValue* provider = entry.GetIfDict();
-      if (!provider) continue;
-      const std::string* id = provider->FindString("providerId");
-      if (id) ts_by_provider[*id] = provider;
-    }
-  }
-
-  base::ListValue providers;
-  for (const nexus::ProviderInfo& info : broker->GetRegisteredProviders()) {
-    nexus::LlmProvider* provider = broker->GetProvider(info.id);
-    // OAuth providers: "signed in" (tokens present) is the source of truth for
-    // configured/verified, since the in-memory api_key / prefs last_verification
-    // can lag and would otherwise hide a working provider from the quick-switch.
-    const bool oauth_connected =
-        nexus::IsOAuthProvider(info.id) && broker->oauth_manager() &&
-        broker->oauth_manager()->IsConnected(info.id);
-    const bool is_configured =
-        (provider && provider->IsConfigured()) || oauth_connected;
-    const bool is_verified =
-        is_configured &&
-        (oauth_connected || nexus::IsNexusProviderVerified(prefs, info.id));
-
-    base::DictValue provider_dict;
-    provider_dict.Set("providerId", info.id);
-    provider_dict.Set("label", info.name);
-    provider_dict.Set("iconSvg", nexus::GetNexusProviderIconSvg(info.id));
-    provider_dict.Set("isConfigured", is_configured);
-    provider_dict.Set("isVerified", is_verified);
-
-    // Pass through the user's enabled-models allowlist so the popup can
-    // hide models the user explicitly turned off in Settings.
-    base::DictValue stored_config = GetStoredProviderConfigCopy(prefs, info.id);
-    if (const base::ListValue* enabled =
-            stored_config.FindList("enabled_models")) {
-      provider_dict.Set("enabledModels", enabled->Clone());
-    }
-
-    // Splice the model list (+ any filterMode) from the TS-pushed catalog.
-    // OAuth providers (chatgpt-pro, github-copilot, qwen-code) have no TS
-    // config — their models are discovered live — so when the TS catalog has
-    // none, fall back to the provider's fetched model list. Without this the
-    // topbar quick-switch popup shows no models for those providers even after
-    // discovery populated them.
-    base::ListValue model_list;
-    bool have_models = false;
-    bool passthrough = false;
-    auto it = ts_by_provider.find(info.id);
-    if (it != ts_by_provider.end() && it->second) {
-      if (const std::string* filter_mode =
-              it->second->FindString("filterMode")) {
-        provider_dict.Set("filterMode", *filter_mode);
-        passthrough = (*filter_mode == "passthrough");
-      }
-      // For a `curated` provider the TS list IS the catalog. For a
-      // `passthrough` provider (e.g. chatgpt-pro, whose models are discovered
-      // live from the Codex /models endpoint) the TS `models` are only a
-      // guest-side config OVERLAY — token limits / display names applied in
-      // `createPassthroughProvider` — and must NOT shrink the popup's list.
-      // So skip adopting the TS list when passthrough, and fall through to the
-      // discovered `info.models` below so the popup still shows every model.
-      if (!passthrough) {
-        if (const base::ListValue* models = it->second->FindList("models");
-            models && !models->empty()) {
-          model_list = models->Clone();
-          have_models = true;
-        }
-      }
-    }
-    if (!have_models) {
-      for (const nexus::ModelInfo& model : info.models) {
-        base::DictValue model_dict;
-        model_dict.Set("model", model.id);
-        model_dict.Set("name", model.name.empty() ? model.id : model.name);
-        if (model.context_window > 0) {
-          model_dict.Set("contextWindow", model.context_window);
-        }
-        if (model.default_thinking_tier &&
-            !model.default_thinking_tier->empty()) {
-          model_dict.Set("defaultThinkingTier", *model.default_thinking_tier);
-        }
-        if (!model.available_thinking_tiers.empty()) {
-          base::ListValue tiers;
-          for (const std::string& tier : model.available_thinking_tiers) {
-            tiers.Append(tier);
-          }
-          model_dict.Set("availableThinkingTiers", std::move(tiers));
-        }
-        model_list.Append(std::move(model_dict));
-      }
-    }
-    provider_dict.Set("models", std::move(model_list));
-
-    providers.Append(std::move(provider_dict));
-  }
-
-  result.Set("providers", std::move(providers));
-  result.Set("activeProviderId", broker->GetActiveProviderId());
-  return result;
-}
-
-void NexusSettingsHandler::BroadcastEnrichedCatalog_() {
-  if (!IsJavascriptAllowed()) return;
-  FireWebUIListener("nexusCatalogChanged",
-                    base::Value(BuildEnrichedNexusCatalog_()));
-}
-
-void NexusSettingsHandler::HandleGetNexusCatalog(const base::ListValue& args) {
-  AllowJavascript();
-  CHECK_GE(args.size(), 1u);
-  const std::string& callback_id = args[0].GetString();
-  ResolveJavascriptCallback(base::Value(callback_id),
-                            base::Value(BuildEnrichedNexusCatalog_()));
-}
-
-void NexusSettingsHandler::HandleGetNexusSessionStatus(
-    const base::ListValue& args) {
-  AllowJavascript();
-  CHECK_GE(args.size(), 1u);
-  const std::string& callback_id = args[0].GetString();
-
-  nexus::LlmBroker* broker = GetBroker();
-  if (!broker) {
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(base::DictValue()));
-    return;
-  }
-  ResolveJavascriptCallback(base::Value(callback_id),
-                            base::Value(broker->GetSessionStatus().Clone()));
-}
 
 // HandlePickNexusSelection removed: migrated to `providers.setActive` on
 // the panel WebUI bridge port (A5 Tier 3b). See

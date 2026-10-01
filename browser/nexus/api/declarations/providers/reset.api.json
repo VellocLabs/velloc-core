@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "reset",
-  "description": "Clear all stored configuration for a provider: remove the api_key/base_url/last_verification dict, drop the cached catalogue, and unpin it as active if it was. Mirrors the legacy chrome.send 'resetProviderConfig' route used by the Models settings page's Reset button. Re-emits nexusCatalogChanged so the quick-settings popup hides the now-unverified provider. Exposed on the panel WebUI bridge port only.",
+  "description": "Clear all stored configuration for a provider: remove the api_key/base_url/last_verification dict, drop the cached catalogue, and unpin it as active if it was. Mirrors the legacy chrome.send 'resetProviderConfig' route used by the Models settings page's Reset button. Exposed on the panel WebUI bridge port only.",
   "inputs": [
     {
       "name": "providerId",

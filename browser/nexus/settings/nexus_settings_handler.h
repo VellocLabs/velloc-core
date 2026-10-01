@@ -13,10 +13,8 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/scoped_observation.h"
 #include "base/values.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
-#include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 
@@ -41,21 +39,21 @@ namespace settings {
 //     resetProviderConfig — provider CRUD still on chrome.send because the
 //     e2e harness uses these routes directly (`harness/settingsRoundtrip.ts`
 //     etc.); production WebUI calls them through the panel bridge.
-//   - testMcpServer — live connect probe with side-channel state; stays.
 //   - getWebappUrl / setWebappUrl — launch-time C++ read; stays.
+//   - restartBrowser — guest-recovery overlay's "Restart client" button.
 //   - getBackgroundModeEnabled / setBackgroundModeEnabled — local_state pref.
 //   - getNexusLauncherEnabled / setNexusLauncherEnabled — local_state pref.
-//   - pickNexusSelection — quick-settings model picker (C++ owns the
-//     enriched catalog state; popup talks directly to it).
 //
-// Routes RETIRED in A5 (now exclusive to the panel ↔ C++ bridge,
-// `nexus.providers.*` capability — see
-// api/providers/nexus_providers_bridge_adapter.cc): refreshProviderModels,
-// beginProviderOAuth, getProviderOAuthStatus. Also vapor-retired:
-// setProviderApiKey, validateProviderConnection, getOllamaModels,
-// setActiveProvider, getNexusViewState — none had a JS caller.
-class NexusSettingsHandler : public SettingsPageUIHandler,
-                             public nexus::LlmBroker::Observer {
+// Routes RETIRED in A5 (now exclusive to the panel ↔ C++ bridge — see
+// api/providers/nexus_providers_bridge_adapter.cc and
+// api/mcp/nexus_mcp_bridge_adapter.cc): refreshProviderModels,
+// beginProviderOAuth, getProviderOAuthStatus, pickNexusSelection,
+// testMcpServer. Also vapor-retired: setProviderApiKey,
+// validateProviderConnection, getOllamaModels, setActiveProvider,
+// getNexusViewState — none had a JS caller. getNexusCatalog /
+// getNexusSessionStatus died with the Lit `<nexus-quick-settings>` popup
+// (F-18 Phase 4; the guest's React model picker replaced it).
+class NexusSettingsHandler : public SettingsPageUIHandler {
  public:
   NexusSettingsHandler();
 
@@ -68,11 +66,6 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   void RegisterMessages() override;
   void OnJavascriptAllowed() override;
   void OnJavascriptDisallowed() override;
-
-  // nexus::LlmBroker::Observer:
-  void OnTsModelCatalogChanged(const base::DictValue& catalog) override;
-  void OnSessionStatusChanged(const base::DictValue& status) override;
-  void OnProviderModelsRefreshed(const std::string& provider_id) override;
 
  private:
   // Returns the LlmBroker for the current profile. May return nullptr
@@ -213,33 +206,9 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // `mcp.testConnect` on the panel WebUI bridge port (A5 Tier 3a). See
   // api/mcp/nexus_mcp_bridge_adapter.h::HandleTestConnectOnUI.
 
-  // --- WebUI quick-settings popup support ---
-  //
-  // The Lit `<nexus-quick-settings>` popup in the Nexus topbar reads the
-  // catalog + session status that nexus_web has pushed into the broker,
-  // and writes user picks back into the system. The webui side never
-  // talks to the broker directly — these handlers do the relay.
-  //
-  // Returns the cached NEXUS_MODEL_CONFIG snapshot pushed by nexus_web.
-  // JS: cr.sendWithPromise('getNexusCatalog')
-  void HandleGetNexusCatalog(const base::ListValue& args);
-
-  // Returns the most-recent SessionStatus pushed by nexus_web.
-  // JS: cr.sendWithPromise('getNexusSessionStatus')
-  void HandleGetNexusSessionStatus(const base::ListValue& args);
-
   // HandlePickNexusSelection removed: migrated to `providers.setActive`
   // on the panel WebUI bridge port (A5 Tier 3b). See
   // api/providers/nexus_providers_bridge_adapter.h::HandleSetActiveOnUI.
-
-  // Builds the enriched popup catalog (TS-pushed model list +
-  // per-provider iconSvg / isConfigured / isVerified / enabledModels)
-  // used by both `getNexusCatalog` and the live-broadcast path.
-  base::DictValue BuildEnrichedNexusCatalog_();
-
-  // Re-emits `nexusCatalogChanged` with the enriched catalog. Called
-  // on TS catalog updates and on provider-config writes.
-  void BroadcastEnrichedCatalog_();
 
   // OnOllamaModelsFetched removed alongside HandleGetOllamaModels.
   // OnProviderModelsFetched / OnOAuthTokenForModels removed alongside
@@ -271,13 +240,6 @@ class NexusSettingsHandler : public SettingsPageUIHandler,
   // `pending_mcp_tests_` + `mcp_test_launcher_` removed: the transient-
   // host probe lives in NexusMcpBridgeAdapter now (A5 Tier 3a). See
   // api/mcp/nexus_mcp_bridge_adapter.{h,cc}.
-
-  // Observes the broker so we can fan out catalog + session-status changes
-  // to the WebUI quick-settings popup via FireWebUIListener. The
-  // observation is set up in OnJavascriptAllowed (after JS is ready) and
-  // torn down in OnJavascriptDisallowed.
-  base::ScopedObservation<nexus::LlmBroker, nexus::LlmBroker::Observer>
-      broker_observation_{this};
 
   base::WeakPtrFactory<NexusSettingsHandler> weak_factory_{this};
 };

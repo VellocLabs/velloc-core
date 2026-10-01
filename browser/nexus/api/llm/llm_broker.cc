@@ -59,14 +59,11 @@ LlmBroker::LlmBroker(
     crypt->WhenReady(base::BindOnce(&LlmBroker::LoadProviderConfigs,
                                     weak_factory_.GetWeakPtr()));
   }
-  // Warm-load the TS-pushed caches from prefs so the WebUI quick-settings
-  // popup can render *something* on cold boot before nexus_web has had a
-  // chance to push fresh data via `model.publishCatalog` /
-  // `session.publishStatus`.
+  // Warm-load the TS-pushed caches from prefs, ahead of nexus_web's fresh
+  // `model.publishCatalog` / `session.publishStatus` pushes. The cached
+  // catalog carries the guest-owned default base URLs, so providers can
+  // reach their endpoint on a cold boot before the guest republishes.
   ts_model_catalog_ = prefs_->GetDict(prefs::kNexusTsModelCatalogCache).Clone();
-  // The cached catalog also carries the guest-owned default base URLs, so
-  // providers can reach their endpoint on a cold boot before the guest
-  // republishes.
   ApplyCatalogDefaultBaseUrls();
   session_status_ = prefs_->GetDict(prefs::kNexusLastSessionStatus).Clone();
   // Model catalogues are TS-authoritative (see
@@ -109,15 +106,10 @@ void LlmBroker::RegisterProfilePrefs(PrefRegistrySimple* registry) {
 void LlmBroker::SetTsModelCatalog(base::DictValue catalog) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   ts_model_catalog_ = std::move(catalog);
-  // Persist a clone so cold-boot has the latest snapshot ready before the
-  // guest reconnects. Cheap (catalog is small JSON) and keeps the WebUI
-  // popup correct across browser restarts.
+  // Persist a clone so cold-boot has the latest snapshot (and its default
+  // base URLs) ready before the guest reconnects. Cheap (small JSON).
   prefs_->SetDict(prefs::kNexusTsModelCatalogCache, ts_model_catalog_.Clone());
   ApplyCatalogDefaultBaseUrls();
-
-  for (auto& observer : observers_) {
-    observer.OnTsModelCatalogChanged(ts_model_catalog_);
-  }
 }
 
 void LlmBroker::ApplyCatalogDefaultBaseUrls() {
@@ -300,25 +292,11 @@ void LlmBroker::SetSessionStatus(base::DictValue status) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   session_status_ = std::move(status);
   prefs_->SetDict(prefs::kNexusLastSessionStatus, session_status_.Clone());
-
-  for (auto& observer : observers_) {
-    observer.OnSessionStatusChanged(session_status_);
-  }
 }
 
 const base::DictValue& LlmBroker::GetSessionStatus() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return session_status_;
-}
-
-void LlmBroker::AddObserver(Observer* observer) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  observers_.AddObserver(observer);
-}
-
-void LlmBroker::RemoveObserver(Observer* observer) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  observers_.RemoveObserver(observer);
 }
 
 LlmBroker::PickEventPusherToken LlmBroker::AddPickEventPusher(
@@ -396,13 +374,13 @@ LlmBroker::DispatchPickResult LlmBroker::DispatchUserPick(
   result.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
 
   // DEPRECATED legacy delivery (kept for the `pusherInvoked` diagnostic that
-  // pickNexusSelection still surfaces). The authoritative live delivery is now
-  // the `nexus.agent_config.model` write above, which the session adapter's
-  // PrefChangeRegistrar fans out as `session.applyAgentConfig`. The guest no
-  // longer subscribes to `session.applySelection`, so these pushes are inert.
-  // TODO(nexus): remove the PickEventPusher infra + pusherInvoked once the
-  //   quick-settings popup's "no guest listening" diagnostic is reworked to
-  //   key off the agent-config push (best done with a build to verify).
+  // `providers.setActive` still surfaces). The authoritative live delivery is
+  // now the `nexus.agent_config.model` write above, which the session
+  // adapter's PrefChangeRegistrar fans out as `session.applyAgentConfig`. The
+  // guest no longer subscribes to `session.applySelection`, so these pushes
+  // are inert.
+  // TODO(nexus): remove the PickEventPusher infra + pusherInvoked (its only
+  //   consumer, the Lit quick-settings popup, is gone).
   for (const auto& [token, pusher] : pick_event_pushers_) {
     pusher.Run(result.request_id, provider_id, model_id, thinking_tier,
                /*also_update_default=*/true);
@@ -601,8 +579,8 @@ void LlmBroker::RefreshCatalogForProvider(const std::string& provider_id) {
   }
 
   // Delegate to RefreshModels so OAuth providers get a fresh/exchanged token
-  // before discovery (RefreshModels persists the raw catalog + notifies
-  // observers via the same OnCatalogRefreshed path). Without this, login-time
+  // before discovery (RefreshModels persists the raw catalog via the same
+  // OnCatalogRefreshed path). Without this, login-time
   // discovery for github-copilot would fetch with the raw GitHub token (401).
   RefreshModels(provider_id, base::DoNothing());
 }
@@ -805,15 +783,6 @@ void LlmBroker::OnCatalogRefreshed(const std::string& provider_id,
       prefs_->GetDict(prefs::kNexusProviderCatalogs).Clone();
   all_catalogs.Set(provider_id, std::move(raw));
   prefs_->SetDict(prefs::kNexusProviderCatalogs, std::move(all_catalogs));
-
-  // Notify observers (the WebUI settings handler) so the topbar quick-switch
-  // popup rebuilds now that `provider`'s fetched_models_ are populated. This is
-  // what surfaces lazily-discovered OAuth models (chatgpt-pro) on cold boot —
-  // the guest's catalog refresh triggers the fetch, but only this signal tells
-  // the always-mounted popup to pick the results up.
-  for (auto& observer : observers_) {
-    observer.OnProviderModelsRefreshed(provider_id);
-  }
 }
 
 }  // namespace nexus

@@ -1430,6 +1430,9 @@ source_set("unit_tests") {
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_guest_config_unittest.cc",
     "panel/nexus_background_panel_host_unittest.cc",
+    # A guard on upstream behaviour: a held Web Lock is a CannotFreezeReason
+    # for every FreezingType — what the guest's runtime keep-alive relies on.
+    "panel/nexus_runtime_freeze_exemption_unittest.cc",
     # The embedded-relay listener: start/stop/port-in-use/destructor. Needs a
     # real IO-capable task environment, so it lives here not in unit_tests_lite.
     "remote_access/nexus_remote_access_listener_unittest.cc",
@@ -1482,6 +1485,9 @@ source_set("unit_tests") {
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/test:test_support",
     "//components/keep_alive_registry",
+    # FreezingPolicy::CannotFreezeReasonsForType
+    # (panel/nexus_runtime_freeze_exemption_unittest.cc).
+    "//components/performance_manager",
     "//components/prefs",
     "//components/prefs:test_support",
     "//components/sync_preferences:test_support",

@@ -61,6 +61,10 @@ export const topic = {
   presence: (): TopicId => 'presence',
   /** Worker-realm tracer spans (full scope only). */
   diagTrace: (): TopicId => 'diag/trace',
+  /** What became of every session's mods (hooks modules): `mods/state`. */
+  mods: (): TopicId => 'mods/state',
+  /** One session's mod-authored lines (status, notices) and toasts. */
+  modsUi: (sessionId: string): TopicId => `mods/ui/${segment(sessionId, 'sessionId')}`,
 } as const
 
 export type ParsedTopic =
@@ -74,6 +78,8 @@ export type ParsedTopic =
   | { family: 'workspace' }
   | { family: 'presence' }
   | { family: 'diagTrace' }
+  | { family: 'mods' }
+  | { family: 'modsUi'; sessionId: string }
 
 function isSessionTopicKind(value: string): value is SessionTopicKind {
   return (SESSION_TOPIC_KINDS as readonly string[]).includes(value)
@@ -87,6 +93,7 @@ export function parseTopic(id: string): ParsedTopic | null {
   if (id === 'workspace') return { family: 'workspace' }
   if (id === 'presence') return { family: 'presence' }
   if (id === 'diag/trace') return { family: 'diagTrace' }
+  if (id === 'mods/state') return { family: 'mods' }
 
   const parts = id.split('/')
   if (!parts.every(isTopicSegment)) return null
@@ -110,6 +117,9 @@ export function parseTopic(id: string): ParsedTopic | null {
   }
   if (head === 'shell' && parts.length === 2 && second) {
     return { family: 'shell', panelId: second }
+  }
+  if (head === 'mods' && second === 'ui' && parts.length === 3 && third) {
+    return { family: 'modsUi', sessionId: third }
   }
   return null
 }

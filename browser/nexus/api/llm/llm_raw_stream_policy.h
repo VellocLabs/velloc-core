@@ -92,6 +92,39 @@ std::optional<std::string> ApplySecretCaptures(
     const std::vector<SecretCapture>& captures,
     std::map<std::string, std::string>* captured);
 
+// ---- Caller-chosen stream ids ----------------------------------------------
+//
+// `rawStreamOpen` may name its own stream id, so the guest can cancel the
+// request before the response head arrives (the id it would otherwise learn
+// only from the head). See
+// internal/docs/investigations/2026/2026-10-02-raw-stream-cancel-before-head.md.
+
+// A caller-chosen stream id: 8-64 chars of [A-Za-z0-9_-].
+bool IsValidClientStreamId(std::string_view id);
+
+// Ids cancelled before the host saw their open. `rawStreamOpen` ships its
+// body on a separate transferred port, so a `rawStreamCancel` sent right
+// after it can be handled first; the open then finds its id here and is
+// refused. FIFO-bounded: the oldest entry is evicted past kCapacity.
+class RecentIdSet {
+ public:
+  static constexpr size_t kCapacity = 64;
+
+  RecentIdSet();
+  ~RecentIdSet();
+  RecentIdSet(const RecentIdSet&) = delete;
+  RecentIdSet& operator=(const RecentIdSet&) = delete;
+
+  // No-op when |id| is already present.
+  void Insert(std::string_view id);
+  // Removes |id|; true when it was present.
+  bool Take(std::string_view id);
+  size_t size() const { return ids_.size(); }
+
+ private:
+  base::circular_deque<std::string> ids_;
+};
+
 // Byte queue between the network consumer and the guest's pulls. Appends
 // are unbounded (the stream enforces the total-bytes cap); `Take` drains up
 // to |max_bytes| from the front.

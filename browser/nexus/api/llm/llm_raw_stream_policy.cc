@@ -170,6 +170,40 @@ std::optional<std::string> ApplySecretCaptures(
   return redacted;
 }
 
+bool IsValidClientStreamId(std::string_view id) {
+  if (id.size() < 8 || id.size() > 64) {
+    return false;
+  }
+  for (char c : id) {
+    if (!base::IsAsciiAlphaNumeric(c) && c != '_' && c != '-') {
+      return false;
+    }
+  }
+  return true;
+}
+
+RecentIdSet::RecentIdSet() = default;
+RecentIdSet::~RecentIdSet() = default;
+
+void RecentIdSet::Insert(std::string_view id) {
+  if (std::find(ids_.begin(), ids_.end(), id) != ids_.end()) {
+    return;
+  }
+  if (ids_.size() >= kCapacity) {
+    ids_.pop_front();
+  }
+  ids_.emplace_back(id);
+}
+
+bool RecentIdSet::Take(std::string_view id) {
+  auto it = std::find(ids_.begin(), ids_.end(), id);
+  if (it == ids_.end()) {
+    return false;
+  }
+  ids_.erase(it);
+  return true;
+}
+
 RawStreamChunkQueue::RawStreamChunkQueue() = default;
 RawStreamChunkQueue::~RawStreamChunkQueue() = default;
 

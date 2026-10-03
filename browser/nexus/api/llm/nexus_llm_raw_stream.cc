@@ -104,12 +104,21 @@ NexusLlmRawStream::NexusLlmRawStream(
       body_transform_(std::move(body_transform)) {}
 
 NexusLlmRawStream::~NexusLlmRawStream() {
+  // An open still waiting for its response head (a `rawStreamCancel` that
+  // named a caller-chosen id) must be answered too: a BridgeResponseCallback
+  // destroyed unfired sends nothing, so the guest's request would hang until
+  // its transport timeout. On adapter teardown the callback's bound WeakPtr
+  // is already dead and this is a no-op.
+  if (open_) {
+    FinishOpenWithError(kCancelledErrorCode,
+                        "Stream was cancelled before it opened.");
+  }
   // A read still held when the owner drops the stream (cancel, adapter
   // teardown) must still be answered — the guest is awaiting it.
   if (pending_read_) {
     ReadResult result;
     result.done = true;
-    result.error_code = "CANCELLED";
+    result.error_code = kCancelledErrorCode;
     result.error_message = "Stream was cancelled.";
     std::move(pending_read_).Run(std::move(result));
   }

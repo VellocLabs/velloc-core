@@ -442,6 +442,27 @@ void NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI(
                           "Too many raw streams are open.");
     return;
   }
+  // A caller-chosen id lets the guest cancel before the response head
+  // (rawStreamCancel by that id). Omitted: the host mints one below.
+  if (input.streamId.has_value()) {
+    const std::string& client_id = *input.streamId;
+    if (!IsValidClientStreamId(client_id)) {
+      std::move(done).InvalidArgs(
+          "streamId must be 8-64 chars of [A-Za-z0-9_-].");
+      return;
+    }
+    if (raw_streams_.contains(client_id)) {
+      std::move(done).InvalidArgs("stream id in use: " + client_id);
+      return;
+    }
+    // Its cancel overtook it: the body travels on its own port, so the
+    // cancel (main port) can be handled before this handler runs.
+    if (cancelled_raw_stream_ids_.Take(client_id)) {
+      std::move(done).Error(NexusLlmRawStream::kCancelledErrorCode,
+                            "Stream was cancelled before it opened.");
+      return;
+    }
+  }
 
   // Base URL: the live provider's active URL (user override, else the
   // guest-published default). A provider whose dialect the host does not
@@ -621,7 +642,9 @@ void NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI(
           base),
       std::move(secret_headers), std::move(transform));
   const std::string stream_id =
-      base::Uuid::GenerateRandomV4().AsLowercaseString();
+      input.streamId.has_value()
+          ? *input.streamId
+          : base::Uuid::GenerateRandomV4().AsLowercaseString();
   NexusLlmRawStream* stream_ptr = stream.get();
   raw_streams_[stream_id] = std::move(stream);
   stream_ptr->Start(base::BindOnce(&NexusLlmBridgeAdapter::OnRawStreamOpened,
@@ -676,7 +699,12 @@ void NexusLlmBridgeAdapter::OnRawStreamOpened(
     ::nexus::BridgeResponseCallback done,
     NexusLlmRawStream::OpenResult result) {
   if (!result.error_code.empty()) {
-    EraseRawStreamSoon(stream_id);
+    // CANCELLED: the stream was deleted (rawStreamCancel already removed the
+    // entry). A posted erase could otherwise remove a later stream that
+    // reuses the id.
+    if (result.error_code != NexusLlmRawStream::kCancelledErrorCode) {
+      EraseRawStreamSoon(stream_id);
+    }
     std::move(done).Error(std::move(result.error_code),
                           std::move(result.error_message));
     return;
@@ -710,7 +738,10 @@ void NexusLlmBridgeAdapter::HandleRawStreamReadOnUI(
           [](base::WeakPtr<NexusLlmBridgeAdapter> self, std::string stream_id,
              ::nexus::BridgeResponseCallback done,
              NexusLlmRawStream::ReadResult result) {
-            if (result.done && self) {
+            // A CANCELLED read comes from a stream already removed from the
+            // map (see OnRawStreamOpened).
+            if (result.done && self &&
+                result.error_code != NexusLlmRawStream::kCancelledErrorCode) {
               self->EraseRawStreamSoon(stream_id);
             }
             Dict envelope = std::move(result.extra);
@@ -731,8 +762,18 @@ void NexusLlmBridgeAdapter::HandleRawStreamCancelOnUI(
     ::nexus::generated::RawStreamCancelInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  // Destroying the stream cancels its loader and answers any held read.
-  raw_streams_.erase(input.streamId);
+  // Destroying the stream cancels its loader and answers any held read, or
+  // the open itself while it still waits for the response head. Extract
+  // first, so the map is consistent before those callbacks run.
+  {
+    auto node = raw_streams_.extract(input.streamId);
+    if (node.empty()) {
+      // Not open (yet): remember it, so an open that arrives after its own
+      // cancel is refused. Ids never opened or already finished are harmless
+      // here — the set is FIFO-bounded.
+      cancelled_raw_stream_ids_.Insert(input.streamId);
+    }
+  }  // `node` (and the stream) dies here.
   std::move(done).SuccessVoid();
 }
 

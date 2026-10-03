@@ -5,6 +5,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 
 #include "base/functional/bind.h"
+#include "base/strings/string_number_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -154,6 +155,43 @@ TEST(LlmRawStreamPolicyTest, ChunkQueuePreservesBinaryBytes) {
   const std::string framed("\x00\x00\x00\x00\x02\x08\x01", 7);
   queue.Append(framed);
   EXPECT_EQ(queue.Take(7), framed);
+}
+
+TEST(LlmRawStreamPolicyTest, ClientStreamIdBoundsAndCharset) {
+  EXPECT_TRUE(IsValidClientStreamId("0123abcd"));
+  EXPECT_TRUE(IsValidClientStreamId("3f2b9c1e-6a4d-4e8b-9f00-1a2b3c4d5e6f"));
+  EXPECT_TRUE(IsValidClientStreamId("raw_Stream-ID_9"));
+  EXPECT_TRUE(IsValidClientStreamId(std::string(64, 'a')));
+  EXPECT_FALSE(IsValidClientStreamId(""));
+  EXPECT_FALSE(IsValidClientStreamId("1234567"));
+  EXPECT_FALSE(IsValidClientStreamId(std::string(65, 'a')));
+  EXPECT_FALSE(IsValidClientStreamId("abcd efgh"));
+  EXPECT_FALSE(IsValidClientStreamId("abcd/efgh"));
+  EXPECT_FALSE(IsValidClientStreamId("abcd.efgh"));
+  EXPECT_FALSE(IsValidClientStreamId("abcdefgÃ©"));
+}
+
+TEST(LlmRawStreamPolicyTest, RecentIdSetTakesOnce) {
+  RecentIdSet set;
+  EXPECT_FALSE(set.Take("stream-a"));
+  set.Insert("stream-a");
+  set.Insert("stream-a");
+  EXPECT_EQ(set.size(), 1u);
+  EXPECT_TRUE(set.Take("stream-a"));
+  EXPECT_FALSE(set.Take("stream-a"));
+  EXPECT_EQ(set.size(), 0u);
+}
+
+TEST(LlmRawStreamPolicyTest, RecentIdSetEvictsOldestPastCapacity) {
+  RecentIdSet set;
+  for (size_t i = 0; i <= RecentIdSet::kCapacity; ++i) {
+    set.Insert("id-" + base::NumberToString(i));
+  }
+  EXPECT_EQ(set.size(), RecentIdSet::kCapacity);
+  // The first one inserted is gone; the rest are all still there.
+  EXPECT_FALSE(set.Take("id-0"));
+  EXPECT_TRUE(set.Take("id-1"));
+  EXPECT_TRUE(set.Take("id-" + base::NumberToString(RecentIdSet::kCapacity)));
 }
 
 }  // namespace

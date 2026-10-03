@@ -10,6 +10,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/api/llm/llm_api.gen.h"
+#include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_support.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_raw_stream.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
@@ -141,6 +142,8 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
   std::map<std::string, NexusLlmBridgeStreamState> bridge_stream_states_;
   // Open raw streams by id. Bounded by kMaxRawStreams (the .cc).
   std::map<std::string, std::unique_ptr<NexusLlmRawStream>> raw_streams_;
+  // Ids a rawStreamCancel named before their rawStreamOpen was handled.
+  RecentIdSet cancelled_raw_stream_ids_;
   // Token returned by `LlmBroker::AddPickEventPusher`. Stored so we
   // can remove our pusher in the destructor without leaving a dangling
   // entry in the broker's fan-out map.

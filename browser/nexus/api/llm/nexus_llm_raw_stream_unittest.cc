@@ -200,5 +200,28 @@ TEST_F(NexusLlmRawStreamTest, DestroyingAnswersAHeldRead) {
   EXPECT_EQ(result->error_code, "CANCELLED");
 }
 
+TEST_F(NexusLlmRawStreamTest, DestroyingAnswersAPendingOpen) {
+  // No response registered: the open waits for a head that never comes. A
+  // cancel by a caller-chosen id deletes the stream in this state; the open
+  // must still be answered (a dropped bridge callback answers nothing).
+  auto stream = MakeStream();
+  int calls = 0;
+  std::optional<NexusLlmRawStream::OpenResult> result;
+  stream->Start(base::BindOnce(
+      [](int* calls, std::optional<NexusLlmRawStream::OpenResult>* out,
+         NexusLlmRawStream::OpenResult r) {
+        ++*calls;
+        *out = std::move(r);
+      },
+      &calls, &result));
+  task_environment_.RunUntilIdle();
+  EXPECT_FALSE(result.has_value());
+  stream.reset();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(calls, 1);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->error_code, "CANCELLED");
+}
+
 }  // namespace
 }  // namespace nexus

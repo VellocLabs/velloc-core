@@ -63,7 +63,9 @@ namespace nexus {
 //
 // Lifecycle: Start() → `open` fires once, with the response head or an
 // error → Read() drains the queue until it reports `done` → the owner
-// deletes the stream. Deleting it at any point cancels the network request.
+// deletes the stream. Deleting it at any point cancels the network request;
+// deleting it before the head answers a still-pending `open` (and a held
+// read) with `CANCELLED`.
 // All methods run on the UI thread.
 class NexusLlmRawStream : public network::SimpleURLLoaderStreamConsumer {
  public:
@@ -125,6 +127,8 @@ class NexusLlmRawStream : public network::SimpleURLLoaderStreamConsumer {
   static constexpr size_t kHighWaterBytes = 4 * 1024 * 1024;
   // Upper bound on how long a single Read may be held.
   static constexpr base::TimeDelta kMaxReadHold = base::Seconds(30);
+  // Error code of an open or read answered because the stream was deleted.
+  static constexpr char kCancelledErrorCode[] = "CANCELLED";
 
   NexusLlmRawStream(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,

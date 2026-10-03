@@ -506,6 +506,31 @@ void NexusProvidersBridgeAdapter::HandleVerifyOnUI(
       persisted_provider->GetDefaultBaseUrl());
   base::DictValue verification_config =
       BuildVerificationConfig(prefs, input.providerId, input.updates);
+  // A saved custom provider is probed through its dialect's shared backend
+  // slot, whose stored config carries whatever key that slot last held — not
+  // the record's own. The WebUI only knows the record HAS a key, so with an
+  // empty draft key it names the record (`keyProviderId`) and the probe takes
+  // that record's stored, still-sealed key; Configure() decrypts it. The key
+  // never travels back to the WebUI. A record with no stored key probes
+  // keyless rather than with the slot's (another provider's) key.
+  if (input.keyProviderId && !input.keyProviderId->empty()) {
+    const std::string* draft_key = input.updates.FindString("api_key");
+    if (!draft_key || draft_key->empty()) {
+      if (!broker->GetProvider(*input.keyProviderId)) {
+        std::move(done).Success(base::Value(BuildVerificationFailure(
+            "Unknown provider: " + *input.keyProviderId,
+            kErrorCodeSystemUnexpected)));
+        return;
+      }
+      base::DictValue key_source =
+          GetStoredProviderConfigCopy(prefs, *input.keyProviderId);
+      if (HasStoredApiKey(key_source)) {
+        verification_config.Set("api_key", *key_source.FindString("api_key"));
+      } else {
+        verification_config.Remove("api_key");
+      }
+    }
+  }
   if (!transient_provider->Configure(verification_config)) {
     std::move(done).Success(base::Value(BuildVerificationFailure(
         "Provider is not configured. Check the required connection "

@@ -14,6 +14,12 @@
       "type": "object",
       "required": true,
       "description": "Partial dict of fields to combine over the stored config for this verification only (api_key, base_url, etc.). Snake_case keys."
+    },
+    {
+      "name": "keyProviderId",
+      "type": "string",
+      "required": false,
+      "description": "Optional id of a SAVED provider record whose stored (sealed) api_key the probe uses when `updates.api_key` is absent or empty. A user-created custom provider is probed through its dialect's shared backend slot (`providerId`), whose stored config holds whatever key that slot last carried — never the custom record's own; the WebUI only knows the record HAS a key (`hasApiKey`), so it names the record here and the host substitutes the record's key without it ever crossing the bridge. A named record with no stored key probes keyless (the slot's key is dropped). An unknown id fails the probe. Additive: an older host ignores the field and probes with the slot's stored key, as before."
     }
   ],
   "runtime": {

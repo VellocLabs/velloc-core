@@ -25,7 +25,7 @@
       "name": "env",
       "type": "object",
       "required": false,
-      "description": "Environment variables laid over the host's: a map of string -> string."
+      "description": "Environment variables laid over the host's: a map of string -> string. A value may carry `{{secret:NAME}}` for a secret stored with processEnv (secrets.set); the host substitutes it and the plaintext never comes back to the guest. SECRET_UNAVAILABLE / SECRET_NOT_PERMITTED / INVALID_ARGS refuse the spawn. Advertised as shell.spawn.secretEnv (an older host would pass the placeholder text through)."
     },
     {
       "name": "stdinText",

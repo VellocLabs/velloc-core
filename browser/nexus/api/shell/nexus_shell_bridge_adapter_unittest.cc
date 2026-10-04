@@ -114,6 +114,29 @@ TEST_F(NexusShellBridgeAdapterTest, AWellFormedArgvSpawnPassesValidation) {
   EXPECT_EQ(delegate_.last_error_code, "SHELL_UNAVAILABLE");
 }
 
+// `{{secret:NAME}}` in an env value is resolved before the launch, and a
+// secret that cannot be resolved refuses the spawn instead of passing the
+// placeholder text to the child. (No profile here, so no secret resolves; the
+// resolving and the processEnv rule are NexusSecretStoreTest's.)
+TEST_F(NexusShellBridgeAdapterTest, EnvSecretPlaceholdersResolveOrRefuse) {
+  auto spawn_with_env = [&](const char* value) {
+    base::DictValue payload;
+    payload.Set("file", "node");
+    payload.Set("args", base::ListValue());
+    base::DictValue env;
+    env.Set("API_TOKEN", value);
+    payload.Set("env", std::move(env));
+    Dispatch("spawn", std::move(payload));
+  };
+  spawn_with_env("{{secret:mcp:server:API_TOKEN}}");
+  EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
+  spawn_with_env("{{secret:mcp:unterminated");
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+  // A plain value is not a placeholder: the spawn reaches the launch step.
+  spawn_with_env("plain");
+  EXPECT_EQ(delegate_.last_error_code, "SHELL_UNAVAILABLE");
+}
+
 TEST_F(NexusShellBridgeAdapterTest, EnvReadsSetAndUnsetVariables) {
   std::unique_ptr<base::Environment> env = base::Environment::Create();
   ASSERT_TRUE(env->SetVar("NEXUS_SHELL_ENV_TEST", "value-1"));

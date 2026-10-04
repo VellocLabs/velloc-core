@@ -11,10 +11,12 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_host.h"
+#include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
@@ -23,6 +25,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace nexus {
 
@@ -152,6 +155,57 @@ bool ValidateRequestUrl(const std::string& url,
   return true;
 }
 
+// Expands `{{secret:NAME}}` in every string value of `values` (headers or
+// query parameters) for a request to `url`: a secret is substituted only
+// when `url`'s origin is the one it is bound to (NexusSecretStore). Names
+// of entries that carried a secret are appended to `expanded_names`. Header
+// values are re-validated after expansion so a secret with a CR/LF cannot
+// split the header block. Returns false after answering `done`.
+bool ExpandSecretsInValues(PrefService* prefs,
+                           const GURL& url,
+                           bool are_headers,
+                           base::DictValue& values,
+                           std::vector<std::string>* expanded_names,
+                           ::nexus::BridgeResponseCallback& done) {
+  bool any = false;
+  for (const auto [name, value] : values) {
+    if (value.is_string() && HasSecretPlaceholder(value.GetString())) {
+      any = true;
+      break;
+    }
+  }
+  if (!any) {
+    return true;
+  }
+  NexusSecretStore store(prefs);
+  const NamespacedSecretLookup lookup =
+      store.LookupFor(url::Origin::Create(url));
+  for (auto [name, value] : values) {
+    if (!value.is_string() || !HasSecretPlaceholder(value.GetString())) {
+      continue;
+    }
+    std::string expanded;
+    if (std::optional<SecretExpansionError> error =
+            ExpandSecretPlaceholders(value.GetString(), lookup, &expanded)) {
+      if (error->code == "INVALID_ARGS") {
+        std::move(done).InvalidArgs(std::move(error->message));
+      } else {
+        std::move(done).Error(std::move(error->code),
+                              std::move(error->message));
+      }
+      return false;
+    }
+    if (are_headers && !net::HttpUtil::IsValidHeaderValue(expanded)) {
+      std::move(done).InvalidArgs("Invalid header value after secret "
+                                  "substitution: " + name);
+      return false;
+    }
+    value = base::Value(std::move(expanded));
+    expanded_names->push_back(name);
+  }
+  return true;
+}
+
 }  // namespace
 
 NexusNetworkBridgeAdapter::NexusNetworkBridgeAdapter(
@@ -166,6 +220,7 @@ NexusNetworkBridgeAdapter::NexusNetworkBridgeAdapter(
   if (browser_context) {
     url_loader_factory_ = browser_context->GetDefaultStoragePartition()
                               ->GetURLLoaderFactoryForBrowserProcess();
+    prefs_ = Profile::FromBrowserContext(browser_context)->GetPrefs();
   }
 }
 
@@ -245,8 +300,36 @@ void NexusNetworkBridgeAdapter::HandleHttpRequestOnUI(
       return;
     }
   }
-  StartRequest(NexusHttpRequestSpec::FromHttpRequest(std::move(input)),
-               std::move(done));
+  // `{{secret:NAME}}` in header and query values, for this URL's origin
+  // only (the query is appended after the URL was validated, so a secret
+  // can only add to the query of an already-approved URL).
+  GURL target(input.url);
+  std::vector<std::string> secret_headers;
+  if (input.headers.has_value() &&
+      !ExpandSecretsInValues(prefs_, target, /*are_headers=*/true,
+                             *input.headers, &secret_headers, done)) {
+    return;
+  }
+  if (input.queryParams.has_value()) {
+    std::vector<std::string> secret_params;
+    if (!ExpandSecretsInValues(prefs_, target, /*are_headers=*/false,
+                               *input.queryParams, &secret_params, done)) {
+      return;
+    }
+    for (const auto [name, value] : *input.queryParams) {
+      if (value.is_string()) {
+        target = net::AppendQueryParameter(target, name, value.GetString());
+      }
+    }
+  }
+  NexusHttpRequestSpec spec =
+      NexusHttpRequestSpec::FromHttpRequest(std::move(input));
+  spec.url = target.spec();
+  if (!secret_headers.empty()) {
+    spec.secret_headers = std::move(secret_headers);
+    spec.secret_origin = url::Origin::Create(target).Serialize();
+  }
+  StartRequest(std::move(spec), std::move(done));
 }
 
 void NexusNetworkBridgeAdapter::StartRequest(NexusHttpRequestSpec spec,
@@ -344,7 +427,20 @@ void NexusNetworkBridgeAdapter::HandleStreamOpenOnUI(
     return;
   }
 
+  // `{{secret:NAME}}`: only for the URL's own origin (see
+  // ExpandSecretsInValues). The query is appended after validation.
+  std::vector<std::string> secret_headers;
+  if (input.headers.has_value() &&
+      !ExpandSecretsInValues(prefs_, target, /*are_headers=*/true,
+                             *input.headers, &secret_headers, done)) {
+    return;
+  }
   if (input.queryParams.has_value()) {
+    std::vector<std::string> secret_params;
+    if (!ExpandSecretsInValues(prefs_, target, /*are_headers=*/false,
+                               *input.queryParams, &secret_params, done)) {
+      return;
+    }
     for (const auto [name, value] : *input.queryParams) {
       if (!value.is_string()) {
         continue;
@@ -352,6 +448,7 @@ void NexusNetworkBridgeAdapter::HandleStreamOpenOnUI(
       target = net::AppendQueryParameter(target, name, value.GetString());
     }
   }
+  const url::Origin secret_origin = url::Origin::Create(target);
 
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = target;
@@ -394,8 +491,15 @@ void NexusNetworkBridgeAdapter::HandleStreamOpenOnUI(
       url_loader_factory_, std::move(request),
       std::string(input.body.begin(), input.body.end()),
       std::move(content_type), max_bytes, base::Milliseconds(idle_ms),
-      NexusHttpByteStream::RedirectCheck(), std::vector<std::string>(),
-      NexusHttpByteStream::BodyTransform(), kStreamTrafficAnnotation);
+      // A hop that leaves the secrets' origin drops the headers they went
+      // into (a no-op when none did).
+      base::BindRepeating(
+          [](const url::Origin& origin, const GURL& next) {
+            return origin.IsSameOriginWith(next);
+          },
+          secret_origin),
+      std::move(secret_headers), NexusHttpByteStream::BodyTransform(),
+      kStreamTrafficAnnotation);
   if (!allow_private) {
     stream->EnableEgressPolicy();
   }

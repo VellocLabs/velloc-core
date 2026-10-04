@@ -2,7 +2,7 @@
   "$schema": "../../../codegen/api_schema.json",
   "name": "streamOpen",
   "struct_name": "NetworkStreamOpen",
-  "description": "Open a general streaming HTTP request: the request body is sent whole and the response body is pulled with network.streamRead as raw bytes, never parsed by the host — the general form of model.rawStreamOpen, not provider-scoped. Runs under the egress policy unless allowPrivateNetwork (the network service refuses a loopback / private peer before the request is written; the connected IP is re-checked at the head and at every redirect hop, skipped through a proxy; refusal: EGRESS_BLOCKED). Redirects are followed. No response-size cap unless maxResponseBytes is given (the guest's pulls are the backpressure). Resolves with the response head { streamId, status, statusText, finalUrl, headers }. At most 32 open streams per connection; every stream is cancelled when the connection goes away. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "description": "Open a general streaming HTTP request: the request body is sent whole and the response body is pulled with network.streamRead as raw bytes, never parsed by the host — the general form of model.rawStreamOpen, not provider-scoped. Runs under the egress policy unless allowPrivateNetwork (the network service refuses a loopback / private peer before the request is written; the connected IP is re-checked at the head and at every redirect hop, skipped through a proxy; refusal: EGRESS_BLOCKED). Redirects are followed. No response-size cap unless maxResponseBytes is given (the guest's pulls are the backpressure). Resolves with the response head { streamId, status, statusText, finalUrl, headers }. At most 32 open streams per connection; every stream is cancelled when the connection goes away. Additive action: an older host answers NOT_IMPLEMENTED. Header and query values may carry `{{secret:NAME}}` placeholders for secrets stored with secrets.set; each is substituted host-side only when the request URL's origin is the secret's bound origin (SECRET_ORIGIN_MISMATCH otherwise, SECRET_UNAVAILABLE for a missing one — the request is not sent), and a header a secret went into is dropped on a redirect that leaves that origin.",
   "inputs": [
     {
       "name": "url",
@@ -20,13 +20,13 @@
       "name": "headers",
       "type": "object",
       "required": false,
-      "description": "Request headers, string -> string. Host, Content-Length, Cookie, Connection and the other hop-by-hop / browser-owned headers are refused (INVALID_ARGS)."
+      "description": "Request headers, string -> string. Host, Content-Length, Cookie, Connection and the other hop-by-hop / browser-owned headers are refused (INVALID_ARGS). Values may carry {{secret:NAME}}."
     },
     {
       "name": "queryParams",
       "type": "object",
       "required": false,
-      "description": "Query parameters appended (URL-encoded), string -> string."
+      "description": "Query parameters appended (URL-encoded), string -> string. Values may carry {{secret:NAME}}."
     },
     {
       "name": "body",

@@ -157,6 +157,14 @@ inline constexpr char kNexusRemoteAccessPort[] = "nexus.remote_access.port";
 inline constexpr char kNexusRemoteAccessPairings[] =
     "nexus.remote_access.pairings";
 
+// The `secrets` bridge capability's store (api/secrets/). A dict keyed by
+// the namespaced secret name (`provider:…`, `plugin:…`, `mcp:…`); each
+// value is {value: NexusSecretCrypt-sealed string, origin: the serialized
+// url::Origin the secret is bound to}. Written only by NexusSecretStore;
+// the plaintext never leaves the browser process — there is no `get`, a
+// secret is only substituted into a request to its bound origin.
+inline constexpr char kNexusSecrets[] = "nexus.secrets";
+
 }  // namespace nexus::prefs
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_LLM_PREF_NAMES_H_

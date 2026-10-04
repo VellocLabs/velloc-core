@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 11> kBridgeCapabilities = {
+constexpr std::array<const char*, 12> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -64,6 +64,12 @@ constexpr std::array<const char*, 11> kBridgeCapabilities = {
     // makes ZERO calls, which is exactly why adding it needs no
     // interface-version bump. See custom_browser/browser/nexus/remote_access/.
     "remoteAccess",
+    // Namespaced, origin-bound secrets (set / has / delete / listNames; no
+    // get). Additive: the guest gates every call — and every
+    // `{{secret:NAME}}` it puts in a network request — on this
+    // advertisement, so an older binary simply has no secret store. See
+    // custom_browser/browser/nexus/api/secrets/.
+    "secrets",
 };
 
 // Additive native primitives this host serves, by `<capability>.<action>`
@@ -87,7 +93,14 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     "shell.persistentList",
     "shell.persistentKill",
     "shell.env",
+    // {{secret:NAME}} in shell.spawn env values, for secrets stored with
+    // secrets.set processEnv (an older host would pass the placeholder text
+    // through, and refuse a process-only secret's missing origin).
+    "shell.spawn.secretEnv",
     "network.streamOpen",
+    // httpRequest / streamOpen substitute {{secret:NAME}} for the bound
+    // origin (an older host would send the placeholder text verbatim).
+    "network.secretTemplates",
 });
 
 template <size_t N>

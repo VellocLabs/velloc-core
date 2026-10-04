@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "httpRequest",
-  "description": "Issue an HTTP request of any method against a public URL via the Chromium net stack — the general form of network.httpGet, for the plugin $.http.fetch noun and the settings `http` hooks. Runs in the browser process (NOT subject to renderer CORS), under the egress policy: the IP the socket connects to, at the first response and at every redirect hop, must be publicly routable — loopback, private (RFC 1918 / 4193), link-local (incl. 169.254.169.254), carrier-grade NAT and multicast are refused with EGRESS_BLOCKED; an IP-literal host in one of those ranges is refused before dialing. Through a proxy the socket's peer is the proxy, so only the literal-host check applies. Response body returned as bytes via the bridge's binary transport. Redirects: by default a 3xx comes back as-is; followRedirects=true follows up to maxRedirects hops, each hop re-checked.",
+  "description": "Issue an HTTP request of any method against a public URL via the Chromium net stack — the general form of network.httpGet, for the plugin $.http.fetch noun and the settings `http` hooks. Runs in the browser process (NOT subject to renderer CORS), under the egress policy: the IP the socket connects to, at the first response and at every redirect hop, must be publicly routable — loopback, private (RFC 1918 / 4193), link-local (incl. 169.254.169.254), carrier-grade NAT and multicast are refused with EGRESS_BLOCKED; an IP-literal host in one of those ranges is refused before dialing. Through a proxy the socket's peer is the proxy, so only the literal-host check applies. Response body returned as bytes via the bridge's binary transport. Redirects: by default a 3xx comes back as-is; followRedirects=true follows up to maxRedirects hops, each hop re-checked. Header and query values may carry `{{secret:NAME}}` placeholders for secrets stored with secrets.set; each is substituted host-side only when the request URL's origin is the secret's bound origin (SECRET_ORIGIN_MISMATCH otherwise, SECRET_UNAVAILABLE for a missing one — the request is not sent), and a header a secret went into is dropped on a redirect that leaves that origin.",
   "inputs": [
     {
       "name": "url",
@@ -19,7 +19,7 @@
       "name": "headers",
       "type": "object",
       "required": false,
-      "description": "Optional request headers — a map of string -> string. Hop-by-hop and the forbidden request headers (Host, Content-Length, Connection, Cookie, ...) are dropped. Content-Type defaults to application/octet-stream when a body is present and none is given."
+      "description": "Optional request headers — a map of string -> string. Hop-by-hop and the forbidden request headers (Host, Content-Length, Connection, Cookie, ...) are dropped. Content-Type defaults to application/octet-stream when a body is present and none is given. Values may carry {{secret:NAME}}."
     },
     {
       "name": "body",
@@ -56,6 +56,12 @@
       "type": "boolean",
       "required": false,
       "description": "Opt out of the egress policy for this request (a local dev server the person named). Default false. The guest exposes this only where a person, not a plugin or the model, asked."
+    },
+    {
+      "name": "queryParams",
+      "type": "object",
+      "required": false,
+      "description": "Query parameters appended (URL-encoded) after the URL was validated, string -> string. Values may carry {{secret:NAME}}."
     }
   ],
   "runtime": {

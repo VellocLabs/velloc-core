@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
@@ -20,6 +21,8 @@ class MessagePortDescriptor;
 namespace content {
 class BrowserContext;
 }
+
+class PrefService;
 
 namespace network {
 class SharedURLLoaderFactory;
@@ -78,6 +81,8 @@ class NexusNetworkBridgeAdapter
   void SetURLLoaderFactoryForTesting(
       scoped_refptr<network::SharedURLLoaderFactory> factory);
   size_t stream_count_for_testing() const { return streams_.size(); }
+  // Test seam: the prefs the `{{secret:NAME}}` placeholders resolve from.
+  void SetPrefsForTesting(PrefService* prefs) { prefs_ = prefs; }
 
  private:
   // Override of generated::NetworkApiBase pure virtual. Runs on UI.
@@ -133,6 +138,11 @@ class NexusNetworkBridgeAdapter
   // Acquired once at construction from the profile's default storage
   // partition. Outlives every per-request host.
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
+
+  // The profile's prefs: where `{{secret:NAME}}` placeholders resolve
+  // (NexusSecretStore). Null without a profile — a placeholder then fails
+  // SECRET_UNAVAILABLE.
+  raw_ptr<PrefService> prefs_ = nullptr;
 
   // Active in-flight requests. Inserted in `HandleHttpGetOnUi`,
   // removed in `OnHttpGetComplete`. The raw `NexusNetworkHost*`

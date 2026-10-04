@@ -19,6 +19,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/profiles/profile.h"
+#include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
 #include "custom_browser/browser/nexus/api/shell/nexus_persistent_shells.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/browser/nexus/tools/process_tool/nexus_shell_service_launcher.h"
@@ -394,11 +396,33 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
     options->cwd = base::FilePath::FromUTF8Unsafe(*input.cwd);
   }
   if (input.env.has_value()) {
+    // `{{secret:NAME}}` in a value is a secret stored with processEnv
+    // (advertised as shell.spawn.secretEnv). Expanded here, into the options
+    // the service gets; the plaintext never goes back to the guest.
+    std::optional<NexusSecretStore> store;
     for (const auto entry : *input.env) {
       if (!entry.second.is_string() || entry.first.empty()) continue;
       auto env_entry = mojom::ShellEnvEntry::New();
       env_entry->name = entry.first;
-      env_entry->value = entry.second.GetString();
+      const std::string& value = entry.second.GetString();
+      if (HasSecretPlaceholder(value)) {
+        if (!store) {
+          store.emplace(profile_ ? profile_->GetPrefs() : nullptr);
+        }
+        if (std::optional<SecretExpansionError> error =
+                ExpandSecretPlaceholders(value, store->ProcessEnvLookup(),
+                                         &env_entry->value)) {
+          if (error->code == "INVALID_ARGS") {
+            std::move(done).InvalidArgs(std::move(error->message));
+          } else {
+            std::move(done).Error(std::move(error->code),
+                                  std::move(error->message));
+          }
+          return;
+        }
+      } else {
+        env_entry->value = value;
+      }
       options->env.push_back(std::move(env_entry));
     }
   }

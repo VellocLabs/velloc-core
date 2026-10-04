@@ -25,6 +25,7 @@
 #include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/remote_access/nexus_remote_access_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/search/nexus_search_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/secrets/nexus_secrets_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/shell/nexus_shell_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
@@ -192,6 +193,12 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   RegisterCapability("search", search_adapter_.get());
   RegisterCapability("shell", shell_adapter_.get());
   RegisterCapability("sqlite", sqlite_adapter_.get());
+  // Guest `secrets` capability — namespaced, origin-bound secrets sealed in
+  // the profile prefs; no get (native-primitives.md). The network adapter
+  // reads the same store to substitute `{{secret:NAME}}`.
+  secrets_adapter_ = std::make_unique<NexusSecretsBridgeAdapter>(
+      this, profile ? profile->GetPrefs() : nullptr);
+  RegisterCapability("secrets", secrets_adapter_.get());
   // Guest `remoteAccess` capability — status + configure for the embedded
   // relay. The runtime gates its getStatus call on the manifest advertisement
   // (the no-version-bump gate), so registering unconditionally is safe.

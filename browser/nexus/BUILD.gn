@@ -307,6 +307,12 @@ action("nexus_tools_codegen") {
     # search category — span-index transcript search (Ctrl+K dialog).
     "api/declarations/search/queryTranscripts.api.json",
 
+    # secrets category — namespaced, origin-bound secrets (no get).
+    "api/declarations/secrets/delete.api.json",
+    "api/declarations/secrets/has.api.json",
+    "api/declarations/secrets/listNames.api.json",
+    "api/declarations/secrets/set.api.json",
+
     # remote_access category — the desktop's embedded-relay status +
     # configure (remote-browser-client plan §8.4). getStatus is the
     # full-trust snapshot (carries the control token); configure applies a
@@ -468,6 +474,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/session/session_api.gen.cc",
     "$target_gen_dir/api/search/search_api.gen.h",
     "$target_gen_dir/api/search/search_api.gen.cc",
+    "$target_gen_dir/api/secrets/secrets_api.gen.h",
+    "$target_gen_dir/api/secrets/secrets_api.gen.cc",
     "$target_gen_dir/api/remote_access/remote_access_api.gen.h",
     "$target_gen_dir/api/remote_access/remote_access_api.gen.cc",
     "$target_gen_dir/api/providers/providers_api.gen.h",
@@ -746,6 +754,27 @@ source_set("secret_crypt") {
   deps = [ "//components/os_crypt/async/browser" ]
 }
 
+# The `secrets` capability's store + the `{{secret:NAME}}` rules
+# (namespaced names, origin binding, placeholder expansion). //base, prefs,
+# url and the at-rest crypt only, so the lite test binary links it; both the
+# secrets adapter and the network adapter (substitution) use it.
+source_set("secret_store") {
+  sources = [
+    "api/secrets/nexus_secret_store.cc",
+    "api/secrets/nexus_secret_store.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [
+    ":secret_crypt",
+    "//components/prefs",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
+    "//net",
+    "//url",
+  ]
+}
+
 # Native MCP server config store (prefs reader). Deliberately tiny — only
 # //base + //components/prefs + the pref-name header — so the lite unit
 # test binary can link it without dragging in the whole `bridge` set
@@ -840,6 +869,8 @@ source_set("bridge") {
     "api/remote_access/nexus_remote_access_bridge_adapter.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter.h",
     "api/search/nexus_search_bridge_adapter.cc",
+    "api/secrets/nexus_secrets_bridge_adapter.cc",
+    "api/secrets/nexus_secrets_bridge_adapter.h",
     "api/search/nexus_search_bridge_adapter.h",
     "api/session/nexus_session_bridge_adapter.cc",
     "api/session/nexus_session_bridge_adapter.h",
@@ -943,6 +974,7 @@ source_set("bridge") {
     "$target_gen_dir/api/providers/providers_api.gen.cc",
     "$target_gen_dir/api/remote_access/remote_access_api.gen.cc",
     "$target_gen_dir/api/search/search_api.gen.cc",
+    "$target_gen_dir/api/secrets/secrets_api.gen.cc",
     "$target_gen_dir/api/session/session_api.gen.cc",
     "$target_gen_dir/api/shell/shell_api.gen.cc",
     "$target_gen_dir/api/sqlite/sqlite_api.gen.cc",
@@ -987,6 +1019,9 @@ source_set("bridge") {
     # The remoteAccess bridge adapter forwards onto the per-Profile
     # NexusRemoteAccessService (listener start/stop, proxy, LNA grant).
     ":remote_access_service",
+
+    # secrets adapter + the network adapter's {{secret:NAME}} substitution.
+    ":secret_store",
     ":sqlite",
 
     # ProcessTool's Grep path ensures the pinned `rg` binary is present
@@ -1382,6 +1417,7 @@ source_set("unit_tests_lite") {
     "api/fs/nexus_fs_watcher_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
     "api/network/network_egress_policy_unittest.cc",
+    "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1416,6 +1452,7 @@ source_set("unit_tests_lite") {
     ":nexus_tools_codegen",
     ":permissions",
     ":secret_crypt",
+    ":secret_store",
     ":session_tab_counts",
 
     # The schema-shape assertions construct a `nexus::ToolSchema`,
@@ -1477,6 +1514,7 @@ source_set("unit_tests") {
     "api/network/nexus_http_byte_stream_unittest.cc",
     "api/network/nexus_network_bridge_adapter_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
+    "api/secrets/nexus_secrets_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",
     "api/shell/nexus_shell_bridge_adapter_unittest.cc",
     "api/sqlite/nexus_sqlite_bridge_adapter_unittest.cc",
@@ -1540,6 +1578,9 @@ source_set("unit_tests") {
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/test:test_support",
     "//components/keep_alive_registry",
+
+    # GetTestEncryptorForTesting (the secrets / network secret tests).
+    "//components/os_crypt/async/browser:test_support",
     # FreezingPolicy::CannotFreezeReasonsForType
     # (panel/nexus_runtime_freeze_exemption_unittest.cc).
     "//components/performance_manager",

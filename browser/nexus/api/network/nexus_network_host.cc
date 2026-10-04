@@ -28,6 +28,7 @@
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace nexus {
 
@@ -427,7 +428,7 @@ void NexusNetworkHost::OnRedirect(
     const GURL& /*url_before_redirect*/,
     const net::RedirectInfo& redirect_info,
     const network::mojom::URLResponseHead& response_head,
-    std::vector<std::string>* /*removed_headers*/) {
+    std::vector<std::string>* removed_headers) {
   if (completed_) return;
   // The hop that answered the 3xx was dialed: judge its endpoint. Then
   // the next location, when its host is a literal, before the dial; a
@@ -444,6 +445,13 @@ void NexusNetworkHost::OnRedirect(
                                         refusal->c_str()));
       return;
     }
+  }
+  if (!spec_.secret_headers.empty() &&
+      url::Origin::Create(redirect_info.new_url).Serialize() !=
+          spec_.secret_origin) {
+    removed_headers->insert(removed_headers->end(),
+                            spec_.secret_headers.begin(),
+                            spec_.secret_headers.end());
   }
   redirect_count_++;
   if (redirect_count_ > max_redirects_) {

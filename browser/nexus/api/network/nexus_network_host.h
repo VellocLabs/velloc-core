@@ -52,6 +52,12 @@ struct NexusHttpRequestSpec {
   // proxy, whose address is the socket's peer). The default is per route:
   // false for `httpRequest`, true for `httpGet` (its pre-policy reach).
   bool allow_private_network = false;
+  // Headers a `{{secret:NAME}}` was substituted into, and the origin those
+  // secrets are bound to (serialized). A followed redirect that leaves the
+  // origin goes ahead without these headers, the way Fetch drops
+  // Authorization on a cross-origin redirect.
+  std::vector<std::string> secret_headers;
+  std::string secret_origin;
 
   // The GET surface as the spec: every GET field mapped, no method / body.
   static NexusHttpRequestSpec FromHttpGet(::nexus::generated::HttpGetInput in);

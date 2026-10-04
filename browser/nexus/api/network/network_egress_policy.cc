@@ -122,7 +122,7 @@ std::optional<std::string> EgressRefusalForLiteralHost(const GURL& url) {
   if (!refusal) {
     return std::nullopt;
   }
-  return base::StringPrintf("host %s is a %s", url.host().c_str(),
+  return base::StringPrintf("host %s is a %s", std::string(url.host()).c_str(),
                             refusal->c_str());
 }
 

@@ -41,11 +41,11 @@ struct NexusHttpRequestSpec {
   std::optional<int32_t> max_response_bytes;
   std::optional<bool> follow_redirects;
   std::optional<int32_t> max_redirects;
-  // Egress policy opt-out (`allowPrivateNetwork`): a request the person,
-  // not a plugin or the model, aimed at a local server. Default off: the
-  // IP the socket connects to must be publicly routable
-  // (`network_egress_policy.h`), at the first response and at every
-  // followed redirect.
+  // Egress policy opt-out (`allowPrivateNetwork`). When false, the IP the
+  // socket connects to must be publicly routable (`network_egress_policy.h`),
+  // at the first response and at every followed redirect (skipped through a
+  // proxy, whose address is the socket's peer). The default is per route:
+  // false for `httpRequest`, true for `httpGet` (its pre-policy reach).
   bool allow_private_network = false;
 
   // The GET surface as the spec: every GET field mapped, no method / body.

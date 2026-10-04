@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "httpGet",
-  "description": "Issue an HTTP GET against a public URL via the Chromium net stack. Runs in the browser process (NOT subject to renderer CORS). Used by WebFetch's URL retrieval and available to any future TS-side tool that needs to fetch a URL through the same network stack the LLM providers use. Response body returned as bytes via the bridge's binary transport. Redirects: by default the loader returns a 3xx response with the Location header intact; pass followRedirects=true to follow up to maxRedirects hops. Egress policy: the IP the socket connects to (first response and every followed redirect) must be publicly routable — loopback, private, link-local (incl. 169.254.169.254), carrier-grade NAT and multicast are refused with EGRESS_BLOCKED, an IP-literal host in those ranges before dialing — unless allowPrivateNetwork=true.",
+  "description": "Issue an HTTP GET against a public URL via the Chromium net stack. Runs in the browser process (NOT subject to renderer CORS). Used by WebFetch's URL retrieval and available to any future TS-side tool that needs to fetch a URL through the same network stack the LLM providers use. Response body returned as bytes via the bridge's binary transport. Redirects: by default the loader returns a 3xx response with the Location header intact; pass followRedirects=true to follow up to maxRedirects hops. Egress policy (opt-in on this route: allowPrivateNetwork defaults to true, so WebFetch and marketplace / skill downloads keep reaching local and LAN servers as in CC): when allowPrivateNetwork=false, the IP the socket connects to (first response and every followed redirect) must be publicly routable — loopback, private, link-local (incl. 169.254.169.254), carrier-grade NAT and multicast are refused with EGRESS_BLOCKED, an IP-literal host in those ranges before dialing (the endpoint check is skipped when the request went through a proxy, whose address is the socket's peer).",
   "inputs": [
     {
       "name": "url",
@@ -43,7 +43,7 @@
       "name": "allowPrivateNetwork",
       "type": "boolean",
       "required": false,
-      "description": "Opt out of the egress policy for this request (a local dev server the person named). Default false. The guest exposes this only where a person, not a plugin or the model, asked."
+      "description": "false runs this request under the egress policy (publicly routable endpoints only). Default true on httpGet: the route keeps its pre-policy reach; network.httpRequest is the policy-by-default surface."
     }
   ],
   "runtime": {

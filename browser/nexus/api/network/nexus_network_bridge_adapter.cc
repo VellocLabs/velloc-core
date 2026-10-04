@@ -125,7 +125,10 @@ void NexusNetworkBridgeAdapter::HandleHttpGetOnUI(
         "acquired at construction (was the BrowserContext null?).");
     return;
   }
-  if (!ValidateRequestUrl(input.url, input.allowPrivateNetwork.value_or(false),
+  // httpGet keeps its pre-policy reach by default (WebFetch, marketplace
+  // and skill downloads may name a local or LAN server, as in CC); a
+  // caller opts into the policy with allowPrivateNetwork=false.
+  if (!ValidateRequestUrl(input.url, input.allowPrivateNetwork.value_or(true),
                           done)) {
     return;
   }
@@ -158,17 +161,19 @@ void NexusNetworkBridgeAdapter::HandleHttpRequestOnUI(
         base::StringPrintf("Unsupported HTTP method: %s", method.c_str()));
     return;
   }
-  if (input.body.has_value() && !input.body->empty()) {
+  // An optional `bytes` input is generated as a plain vector: empty when
+  // absent.
+  if (!input.body.empty()) {
     if (method == "GET" || method == "HEAD") {
       std::move(done).Error("INVALID_REQUEST",
                             "A GET or HEAD request may not carry a body.");
       return;
     }
-    if (input.body->size() > kMaxRequestBodyBytes) {
+    if (input.body.size() > kMaxRequestBodyBytes) {
       std::move(done).Error(
           "REQUEST_TOO_LARGE",
           base::StringPrintf("Request body of %zu bytes exceeds the cap of %zu.",
-                             input.body->size(), kMaxRequestBodyBytes));
+                             input.body.size(), kMaxRequestBodyBytes));
       return;
     }
   }

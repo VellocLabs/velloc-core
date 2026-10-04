@@ -124,7 +124,8 @@ NexusHttpRequestSpec NexusHttpRequestSpec::FromHttpGet(
   spec.max_response_bytes = in.maxResponseBytes;
   spec.follow_redirects = in.followRedirects;
   spec.max_redirects = in.maxRedirects;
-  spec.allow_private_network = in.allowPrivateNetwork.value_or(false);
+  // Opted out unless the caller asks for the policy (see the adapter).
+  spec.allow_private_network = in.allowPrivateNetwork.value_or(true);
   return spec;
 }
 
@@ -135,7 +136,9 @@ NexusHttpRequestSpec NexusHttpRequestSpec::FromHttpRequest(
   spec.url = std::move(in.url);
   spec.method = base::ToUpperASCII(in.method.value_or("GET"));
   spec.headers = std::move(in.headers);
-  spec.body = std::move(in.body);
+  if (!in.body.empty()) {  // generated as a plain vector, empty when absent
+    spec.body = std::move(in.body);
+  }
   spec.timeout_ms = in.timeoutMs;
   spec.max_response_bytes = in.maxResponseBytes;
   spec.follow_redirects = in.followRedirects;
@@ -454,6 +457,12 @@ std::optional<std::string> NexusNetworkHost::EgressRefusalForEndpoint(
   if (spec_.allow_private_network) {
     return std::nullopt;
   }
+  // Through a proxy the socket's peer is the proxy (often a local one,
+  // 127.0.0.1:7890), and the proxy resolves the origin's name: there is
+  // no origin IP to judge. The pre-dial literal-host check still runs.
+  if (!response_head.proxy_chain.is_direct()) {
+    return std::nullopt;
+  }
   // `remote_endpoint` is the peer the socket connected to; invalid
   // (no address) for a response served without a dial (the cache, a
   // service worker — neither applies to this loader), which the policy
@@ -464,7 +473,7 @@ std::optional<std::string> NexusNetworkHost::EgressRefusalForEndpoint(
     return std::nullopt;
   }
   return base::StringPrintf("%s resolved to %s, a %s",
-                            GURL(spec_.url).host().c_str(),
+                            std::string(GURL(spec_.url).host()).c_str(),
                             address.ToString().c_str(), refusal->c_str());
 }
 

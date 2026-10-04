@@ -28,16 +28,16 @@
       "description": "Environment variables laid over the host's: a map of string -> string."
     },
     {
-      "name": "stdin",
+      "name": "stdinText",
       "type": "string",
       "required": false,
-      "description": "Text written to the child's stdin right after launch. Combine with closeStdin=true for a one-shot input."
+      "description": "Text written to the child's stdin right after launch. Combine with closeStdin=true for a one-shot input. (Not named `stdin`: that is a CRT macro on Windows and breaks the generated struct.)"
     },
     {
       "name": "closeStdin",
       "type": "boolean",
       "required": false,
-      "description": "Close the child's stdin right after launch (after `stdin`, when given). Default false: the guest closes it with shell.closeStdin, or the child reads until killed."
+      "description": "Close the child's stdin right after launch (after `stdinText`, when given). Default false: the guest closes it with shell.closeStdin, or the child reads until killed."
     }
   ],
   "runtime": {

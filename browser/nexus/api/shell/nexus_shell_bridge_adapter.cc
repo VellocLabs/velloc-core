@@ -387,9 +387,9 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
       child->BindClient();
   // The initial stdin rides the controller: queued by the service until
   // the launch completes (StreamingChildProcess buffers pre-launch writes).
-  if (input.stdin.has_value() && !input.stdin->empty()) {
+  if (input.stdinText.has_value() && !input.stdinText->empty()) {
     child->controller()->WriteStdin(
-        std::vector<uint8_t>(input.stdin->begin(), input.stdin->end()));
+        std::vector<uint8_t>(input.stdinText->begin(), input.stdinText->end()));
   }
   if (input.closeStdin.value_or(false)) {
     child->controller()->CloseStdin();

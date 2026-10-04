@@ -29,6 +29,16 @@ namespace nexus {
 // and again at every redirect hop, plus a cheap pre-dial check on URLs whose
 // host is an IP literal.
 //
+// Pre-send enforcement: a hostname is not resolved here, so the checks
+// above alone would see a private address only once the server answers,
+// after the request (a POST's side effect included) was already delivered.
+// The host therefore also loads with
+// `network::mojom::kURLLoadOptionBlockLocalRequest`, which makes the network
+// service refuse the connection when the socket's peer is loopback or
+// private, before any byte of the request is written. The load then fails
+// with `net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, which
+// `EgressRefusalForNetError` turns into the policy's refusal.
+//
 // Pure functions — no I/O, no threading requirements — so the unit test
 // covers them without a network service.
 
@@ -42,6 +52,12 @@ std::optional<std::string> EgressRefusalFor(const net::IPAddress& address);
 // Pre-dial check: when `url`'s host is an IP literal, the refusal for it;
 // nullopt for a hostname (checked after resolution) or an allowed literal.
 std::optional<std::string> EgressRefusalForLiteralHost(const GURL& url);
+
+// The refusal for a load that failed with `net_error`, or nullopt when the
+// failure is not the egress policy's. `url` is the requested URL, named in
+// the text.
+std::optional<std::string> EgressRefusalForNetError(int net_error,
+                                                    const GURL& url);
 
 }  // namespace nexus
 

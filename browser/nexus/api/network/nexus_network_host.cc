@@ -25,6 +25,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
 
@@ -241,6 +242,16 @@ void NexusNetworkHost::Start() {
   loader_ = network::SimpleURLLoader::Create(std::move(resource_request),
                                              kTrafficAnnotation);
   loader_->SetAllowHttpErrorResults(true);  // surface 4xx / 5xx as-is
+  // Pre-send egress enforcement (`network_egress_policy.h`): the network
+  // service refuses a connection whose peer is loopback or private before
+  // the request is written, so a hostname that resolves to a LAN device
+  // never receives it. Covers every redirect hop too. The response-time
+  // checks below stay for the ranges Chromium counts as public
+  // (carrier-grade NAT, multicast).
+  if (!spec_.allow_private_network) {
+    loader_->SetURLLoaderFactoryOptions(
+        network::mojom::kURLLoadOptionBlockLocalRequest);
+  }
   if (has_body) {
     loader_->AttachStringForUpload(
         std::string(spec_.body->begin(), spec_.body->end()), content_type);
@@ -300,6 +311,14 @@ void NexusNetworkHost::OnDownloadComplete(
   if (!loader_->ResponseInfo() ||
       !loader_->ResponseInfo()->headers) {
     const int net_error = loader_->NetError();
+    if (!spec_.allow_private_network) {
+      if (std::optional<std::string> refusal =
+              EgressRefusalForNetError(net_error, GURL(spec_.url))) {
+        completed_ = false;  // AbortForEgress owns completion.
+        AbortForEgress(*refusal);
+        return;
+      }
+    }
     CompleteWithError(
         "NETWORK_ERROR",
         base::StringPrintf("Request failed with net error %d.", net_error));

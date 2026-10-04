@@ -8,6 +8,7 @@
 
 #include "base/strings/stringprintf.h"
 #include "net/base/ip_address.h"
+#include "net/base/net_errors.h"
 #include "net/base/url_util.h"
 #include "url/gurl.h"
 
@@ -124,6 +125,17 @@ std::optional<std::string> EgressRefusalForLiteralHost(const GURL& url) {
   }
   return base::StringPrintf("host %s is a %s", std::string(url.host()).c_str(),
                             refusal->c_str());
+}
+
+std::optional<std::string> EgressRefusalForNetError(int net_error,
+                                                    const GURL& url) {
+  if (net_error != net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS) {
+    return std::nullopt;
+  }
+  return base::StringPrintf(
+      "%s resolved to a loopback or private network address; the "
+      "connection was refused before the request was sent",
+      std::string(url.host()).c_str());
 }
 
 }  // namespace nexus

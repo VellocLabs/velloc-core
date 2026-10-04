@@ -7,6 +7,7 @@
 #include <string>
 
 #include "net/base/ip_address.h"
+#include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -85,6 +86,22 @@ TEST(NetworkEgressPolicyTest, LiteralHostsAreCheckedBeforeDialing) {
   EXPECT_FALSE(EgressRefusalForLiteralHost(GURL("https://localhost/")).has_value());
   EXPECT_FALSE(EgressRefusalForLiteralHost(GURL("https://example.com/")).has_value());
   EXPECT_FALSE(EgressRefusalForLiteralHost(GURL("not a url")).has_value());
+}
+
+// The network service refuses a loopback / private peer before the request
+// is written (kURLLoadOptionBlockLocalRequest); that failure is the policy's
+// refusal, any other net error is not.
+TEST(NetworkEgressPolicyTest, LocalNetworkBlockNetErrorIsARefusal) {
+  EXPECT_EQ(
+      "lan.example resolved to a loopback or private network address; the "
+      "connection was refused before the request was sent",
+      *EgressRefusalForNetError(net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS,
+                                GURL("http://lan.example:8080/cmd")));
+  EXPECT_FALSE(EgressRefusalForNetError(net::ERR_CONNECTION_REFUSED,
+                                        GURL("http://lan.example/"))
+                   .has_value());
+  EXPECT_FALSE(
+      EgressRefusalForNetError(net::OK, GURL("http://lan.example/")).has_value());
 }
 
 }  // namespace

@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "readlink",
+  "struct_name": "FsReadlink",
+  "description": "Read a symbolic link. Returns { target }: on POSIX the raw stored target (a relative target stays relative); on Windows the fully resolved final path of a symlink or junction (GetFinalPathNameByHandle). A path that is not a link answers `EINVAL: not a symbolic link`. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "The link; relative paths resolve against the host cwd."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

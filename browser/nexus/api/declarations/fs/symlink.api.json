@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "symlink",
+  "struct_name": "FsSymlink",
+  "description": "Create a symbolic link at `path` pointing to `target`. The target is stored verbatim, so a relative target is relative to the link's directory. On Windows this needs Developer Mode or elevation; without it the call fails with an `EPERM: …` message. An existing `path` is refused (`EEXIST: …`). Returns { ok: true }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "target",
+      "type": "string",
+      "required": true,
+      "description": "What the link points to (absolute, or relative to the link's directory)."
+    },
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "Where the link is created; relative paths resolve against the host cwd."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

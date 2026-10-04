@@ -787,5 +787,151 @@ TEST(NexusFsHostTest, RealpathResolveLinksFollowsALinkOutOfTheDirectory) {
 #endif
 }
 
+// ---- copyFile / symlink / readlink / chmod / writeFile ifMatch ------------
+
+scoped_refptr<NexusFsHost> MakeHost(const base::FilePath& cwd) {
+  auto host = base::MakeRefCounted<NexusFsHost>(cwd);
+  base::RunLoop().RunUntilIdle();  // the ctor's CreateDirectory hop
+  return host;
+}
+
+mojo_base::BigBuffer Bytes(const std::string& text) {
+  std::vector<uint8_t> bytes(text.begin(), text.end());
+  return mojo_base::BigBuffer(base::span(bytes));
+}
+
+TEST(NexusFsHostTest, CopyFileRefusesAnExistingDestinationUnlessOverwrite) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  auto host = MakeHost(temp_dir.GetPath());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaa"));
+
+  EXPECT_TRUE(host->CopyFile("a.txt", "b.txt", false).success);
+  std::string copied;
+  ASSERT_TRUE(base::ReadFileToString(temp_dir.GetPath().AppendASCII("b.txt"),
+                                     &copied));
+  EXPECT_EQ(copied, "aaa");
+
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "new"));
+  NexusFsHost::SimpleResult refused = host->CopyFile("a.txt", "b.txt", false);
+  EXPECT_FALSE(refused.success);
+  EXPECT_EQ(refused.error.rfind("EEXIST:", 0), 0u) << refused.error;
+  EXPECT_TRUE(host->CopyFile("a.txt", "b.txt", true).success);
+  ASSERT_TRUE(base::ReadFileToString(temp_dir.GetPath().AppendASCII("b.txt"),
+                                     &copied));
+  EXPECT_EQ(copied, "new");
+
+  NexusFsHost::SimpleResult missing = host->CopyFile("nope", "c.txt", false);
+  EXPECT_FALSE(missing.success);
+  EXPECT_EQ(missing.error.rfind("ENOENT:", 0), 0u) << missing.error;
+  EXPECT_FALSE(host->CopyFile(".", "d", false).success);  // a directory
+}
+
+TEST(NexusFsHostTest, WriteFileIfMatchWritesOnlyWhileTheStatMatches) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  auto host = MakeHost(temp_dir.GetPath());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("doc.txt");
+  ASSERT_TRUE(base::WriteFile(file, "v1"));
+  base::File::Info info;
+  ASSERT_TRUE(base::GetFileInfo(file, &info));
+
+  NexusFsHost::WriteIfMatch seen;
+  seen.size = static_cast<double>(info.size);
+  seen.mtime_ms = info.last_modified.InMillisecondsFSinceUnixEpoch();
+  NexusFsHost::WriteIfMatchResult ok =
+      host->WriteFileIfMatch("doc.txt", Bytes("v2-longer"), false, seen);
+  ASSERT_TRUE(ok.success) << ok.error;
+  EXPECT_EQ(ok.size, 9);
+  std::string content;
+  ASSERT_TRUE(base::ReadFileToString(file, &content));
+  EXPECT_EQ(content, "v2-longer");
+
+  // The stale stat (size 2) no longer matches: nothing is written and the
+  // code is the distinct one the guest branches on.
+  NexusFsHost::WriteIfMatchResult stale =
+      host->WriteFileIfMatch("doc.txt", Bytes("v3"), false, seen);
+  EXPECT_FALSE(stale.success);
+  EXPECT_EQ(stale.error_code, NexusFsHost::kPreconditionFailedCode);
+  ASSERT_TRUE(base::ReadFileToString(file, &content));
+  EXPECT_EQ(content, "v2-longer");
+
+  // The stat the successful write returned is the next ifMatch.
+  NexusFsHost::WriteIfMatch next;
+  next.size = ok.size;
+  next.mtime_ms = ok.mtime_ms;
+  EXPECT_TRUE(
+      host->WriteFileIfMatch("doc.txt", Bytes("v3"), false, next).success);
+
+  NexusFsHost::WriteIfMatchResult gone =
+      host->WriteFileIfMatch("missing.txt", Bytes("x"), false, next);
+  EXPECT_FALSE(gone.success);
+  EXPECT_EQ(gone.error_code, NexusFsHost::kPreconditionFailedCode);
+  EXPECT_FALSE(base::PathExists(temp_dir.GetPath().AppendASCII("missing.txt")));
+}
+
+TEST(NexusFsHostTest, ChmodSetsBitsOnPosixAndIsANoOpOnWindows) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  auto host = MakeHost(temp_dir.GetPath());
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("run.sh"), "x"));
+
+  NexusFsHost::ChmodResult result = host->Chmod("run.sh", 0700);
+  ASSERT_TRUE(result.success) << result.error;
+#if BUILDFLAG(IS_POSIX)
+  EXPECT_TRUE(result.applied);
+  int mode = 0;
+  ASSERT_TRUE(base::GetPosixFilePermissions(
+      temp_dir.GetPath().AppendASCII("run.sh"), &mode));
+  EXPECT_EQ(mode & 0777, 0700);
+#else
+  EXPECT_FALSE(result.applied);
+#endif
+  NexusFsHost::ChmodResult missing = host->Chmod("nope", 0644);
+  EXPECT_FALSE(missing.success);
+  EXPECT_EQ(missing.error.rfind("ENOENT:", 0), 0u) << missing.error;
+}
+
+TEST(NexusFsHostTest, SymlinkThenReadlinkRoundTrips) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  auto host = MakeHost(temp_dir.GetPath());
+  const base::FilePath target = temp_dir.GetPath().AppendASCII("target.txt");
+  ASSERT_TRUE(base::WriteFile(target, "t"));
+
+  NexusFsHost::SimpleResult made =
+      host->Symlink(target.AsUTF8Unsafe(), "link.txt");
+#if BUILDFLAG(IS_WIN)
+  // Without Developer Mode or elevation Windows refuses — with the
+  // documented EPERM wording, not a generic failure.
+  if (!made.success) {
+    EXPECT_EQ(made.error.rfind("EPERM:", 0), 0u) << made.error;
+    return;
+  }
+#endif
+  ASSERT_TRUE(made.success) << made.error;
+  NexusFsHost::ReadlinkResult read = host->Readlink("link.txt");
+  ASSERT_TRUE(read.success) << read.error;
+  base::FilePath normalized_target;
+  ASSERT_TRUE(base::NormalizeFilePath(target, &normalized_target));
+  base::FilePath normalized_read;
+  ASSERT_TRUE(base::NormalizeFilePath(base::FilePath::FromUTF8Unsafe(read.target),
+                                      &normalized_read));
+  EXPECT_EQ(normalized_read, normalized_target);
+
+  // An existing path is refused; a plain file is not a link.
+  NexusFsHost::SimpleResult again =
+      host->Symlink(target.AsUTF8Unsafe(), "link.txt");
+  EXPECT_FALSE(again.success);
+  EXPECT_EQ(again.error.rfind("EEXIST:", 0), 0u) << again.error;
+  NexusFsHost::ReadlinkResult plain = host->Readlink("target.txt");
+  EXPECT_FALSE(plain.success);
+  EXPECT_EQ(plain.error.rfind("EINVAL:", 0), 0u) << plain.error;
+}
+
 }  // namespace
 }  // namespace nexus

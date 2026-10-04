@@ -287,6 +287,17 @@ void NexusBridgePortService::ResetPort() {
   browser_port_->Close();
   browser_port_.reset();
   LOG(INFO) << "[NexusTrace][PortService] Reset direct bridge port";
+  NotifyConnectionClosed();
+}
+
+void NexusBridgePortService::NotifyConnectionClosed() {
+  // OnBridgeConnectionClosed is idempotent, so an adapter registered under
+  // two wire names being told twice is harmless.
+  for (const auto& [capability, handler] : capability_handlers_) {
+    if (handler) {
+      handler->OnBridgeConnectionClosed();
+    }
+  }
 }
 
 bool NexusBridgePortService::IsConnected() const {
@@ -314,6 +325,9 @@ void NexusBridgePortService::OnControlPortMessage(
 
 void NexusBridgePortService::OnControlPortError() {
   LOG(WARNING) << "[NexusBridgePort] Browser bridge port disconnected";
+  // The guest went away: release what its connection held (fs watches,
+  // sockets). A later CreatePortPair starts the next connection clean.
+  NotifyConnectionClosed();
 }
 
 void NexusBridgePortService::DispatchRequest(

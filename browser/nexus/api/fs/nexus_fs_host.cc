@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string>
 #include <utility>
@@ -26,6 +27,10 @@
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/api/shell/host_shell.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
 
 // NEXUS_FS_ATOMIC_WRITE is defined in nexus_fs_host.h — see the flag's comment
 // there for why it is off and what turning it back on restores.
@@ -716,6 +721,185 @@ NexusFsHost::SimpleResult NexusFsHost::WriteFile(
                    FsFailureMessage(base::File::GetLastFileError()) + ")";
     return result;
   }
+  result.success = true;
+  return result;
+}
+
+NexusFsHost::WriteIfMatchResult NexusFsHost::WriteFileIfMatch(
+    const std::string& path,
+    mojo_base::BigBuffer content,
+    bool atomic,
+    const WriteIfMatch& if_match) const {
+  WriteIfMatchResult result;
+  const base::FilePath resolved = ResolvePath(cwd_, path);
+  base::File::Info info;
+  if (!base::GetFileInfo(resolved, &info) || info.is_directory) {
+    result.error_code = kPreconditionFailedCode;
+    result.error = "The file no longer exists.";
+    return result;
+  }
+  const double mtime_ms =
+      info.last_modified.is_null()
+          ? 0
+          : info.last_modified.InMillisecondsFSinceUnixEpoch();
+  if (static_cast<double>(info.size) != if_match.size ||
+      std::abs(mtime_ms - if_match.mtime_ms) > kIfMatchMtimeToleranceMs) {
+    result.error_code = kPreconditionFailedCode;
+    result.error = "The file changed since it was read (size " +
+                   base::NumberToString(info.size) + ", mtimeMs " +
+                   base::NumberToString(mtime_ms) + ").";
+    return result;
+  }
+
+  SimpleResult written = WriteFile(path, std::move(content), atomic);
+  if (!written.success) {
+    result.error = std::move(written.error);
+    return result;
+  }
+  // The stat the caller's next ifMatch compares against. A failed re-stat
+  // (the file vanished at once) is still a successful write.
+  base::File::Info after;
+  if (base::GetFileInfo(resolved, &after)) {
+    result.size = static_cast<double>(after.size);
+    result.mtime_ms = after.last_modified.is_null()
+                          ? 0
+                          : after.last_modified.InMillisecondsFSinceUnixEpoch();
+  }
+  result.success = true;
+  return result;
+}
+
+NexusFsHost::SimpleResult NexusFsHost::CopyFile(const std::string& src,
+                                                const std::string& dst,
+                                                bool overwrite) const {
+  SimpleResult result;
+  const base::FilePath from = ResolvePath(cwd_, src);
+  const base::FilePath to = ResolvePath(cwd_, dst);
+  base::File::Info info;
+  if (!base::GetFileInfo(from, &info)) {
+    result.error = FsFailureMessage(base::File::GetLastFileError());
+    return result;
+  }
+  if (info.is_directory) {
+    result.error = "EISDIR: the source is a directory";
+    return result;
+  }
+  if (!overwrite && base::PathExists(to)) {
+    result.error = "EEXIST: the destination already exists";
+    return result;
+  }
+  if (!base::CopyFile(from, to)) {
+    result.error = "Failed to copy file (" +
+                   FsFailureMessage(base::File::GetLastFileError()) + ")";
+    return result;
+  }
+  result.success = true;
+  return result;
+}
+
+NexusFsHost::SimpleResult NexusFsHost::Symlink(const std::string& target,
+                                               const std::string& path) const {
+  SimpleResult result;
+  const base::FilePath link = ResolvePath(cwd_, path);
+  const base::FilePath link_target = base::FilePath::FromUTF8Unsafe(target);
+  if (target.empty()) {
+    result.error = "EINVAL: the link target is empty";
+    return result;
+  }
+  base::File::Info existing;
+  if (base::GetFileInfo(link, &existing)) {
+    result.error = "EEXIST: the link path already exists";
+    return result;
+  }
+#if BUILDFLAG(IS_WIN)
+  // base::CreateSymbolicLink is POSIX-only. A directory target needs the
+  // directory flag; resolve a relative target against the link's directory
+  // to find out what it names.
+  const base::FilePath resolved_target =
+      link_target.IsAbsolute() ? link_target
+                               : link.DirName().Append(link_target);
+  DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+  if (base::DirectoryExists(resolved_target)) {
+    flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+  }
+  if (!::CreateSymbolicLinkW(link.value().c_str(), link_target.value().c_str(),
+                             flags)) {
+    const DWORD error = ::GetLastError();
+    result.error =
+        error == ERROR_PRIVILEGE_NOT_HELD
+            ? "EPERM: creating a symbolic link needs Developer Mode or "
+              "elevation on Windows"
+            : "Failed to create symbolic link (" +
+                  FsFailureMessage(base::File::OSErrorToFileError(error)) +
+                  ")";
+    return result;
+  }
+#else
+  if (!base::CreateSymbolicLink(link_target, link)) {
+    result.error = "Failed to create symbolic link (" +
+                   FsFailureMessage(base::File::GetLastFileError()) + ")";
+    return result;
+  }
+#endif
+  result.success = true;
+  return result;
+}
+
+NexusFsHost::ReadlinkResult NexusFsHost::Readlink(
+    const std::string& path) const {
+  ReadlinkResult result;
+  const base::FilePath link = ResolvePath(cwd_, path);
+#if BUILDFLAG(IS_WIN)
+  const DWORD attributes = ::GetFileAttributesW(link.value().c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    result.error = FsFailureMessage(
+        base::File::OSErrorToFileError(::GetLastError()));
+    return result;
+  }
+  if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+    result.error = "EINVAL: not a symbolic link";
+    return result;
+  }
+  base::FilePath target;
+  if (!base::NormalizeFilePath(link, &target)) {
+    result.error = "Failed to resolve the link target";
+    return result;
+  }
+#else
+  base::FilePath target;
+  if (!base::ReadSymbolicLink(link, &target)) {
+    const base::File::Error error = base::File::GetLastFileError();
+    result.error = base::PathExists(link) ? "EINVAL: not a symbolic link"
+                                          : FsFailureMessage(error);
+    return result;
+  }
+#endif
+  result.success = true;
+  result.target = target.AsUTF8Unsafe();
+  return result;
+}
+
+NexusFsHost::ChmodResult NexusFsHost::Chmod(const std::string& path,
+                                            int32_t mode) const {
+  ChmodResult result;
+  const base::FilePath resolved = ResolvePath(cwd_, path);
+  if (!base::PathExists(resolved)) {
+    result.error = kEnoentMessage;
+    return result;
+  }
+#if BUILDFLAG(IS_POSIX)
+  if (!base::SetPosixFilePermissions(resolved, mode & 07777)) {
+    result.error = "Failed to change permissions (" +
+                   FsFailureMessage(base::File::GetLastFileError()) + ")";
+    return result;
+  }
+  result.applied = true;
+#else
+  // POSIX modes do not exist here; the path exists, so the call succeeds
+  // without changing anything and says so.
+  (void)mode;
+  result.applied = false;
+#endif
   result.success = true;
   return result;
 }

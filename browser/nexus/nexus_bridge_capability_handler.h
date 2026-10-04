@@ -56,6 +56,14 @@ class NexusBridgeCapabilityHandler {
                 const base::DictValue& payload,
                 std::vector<blink::MessagePortDescriptor> ports);
 
+  // The guest end of the bridge port went away (its page reloaded, the port
+  // was replaced, or it disconnected). The adapter itself lives on with the
+  // port service, so per-connection resources — fs watches, open sockets —
+  // are released here rather than in the destructor. Called on UI by
+  // NexusBridgePortService; may run more than once and must be idempotent.
+  // Default: nothing to release.
+  virtual void OnBridgeConnectionClosed() {}
+
   // Returns a WeakPtr<NexusBridgeCapabilityHandler> bound to this object's
   // home sequence (UI). Used by the codegen-emitted dispatcher to
   // manufacture BridgeResponseCallbacks; those callbacks are safe to

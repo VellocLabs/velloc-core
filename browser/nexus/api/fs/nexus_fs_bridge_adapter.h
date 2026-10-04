@@ -1,14 +1,19 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_FS_NEXUS_FS_BRIDGE_ADAPTER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_FS_NEXUS_FS_BRIDGE_ADAPTER_H_
 
+#include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/threading/sequence_bound.h"
 #include "custom_browser/browser/nexus/api/fs/fs_api.gen.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_host.h"
+#include "custom_browser/browser/nexus/api/fs/nexus_fs_watcher.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
 namespace blink {
@@ -50,6 +55,17 @@ class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
 
   NexusFsBridgeAdapter(const NexusFsBridgeAdapter&) = delete;
   NexusFsBridgeAdapter& operator=(const NexusFsBridgeAdapter&) = delete;
+
+  // The guest connection ended: every fs.watch it held is released.
+  void OnBridgeConnectionClosed() override;
+
+  // Most watches one connection may hold.
+  static constexpr size_t kMaxWatches = 64;
+
+  // Make every later fs.watch a poll watch (tests: a native watch's timing
+  // is the OS's, a poll's is the test's).
+  void set_force_poll_for_testing(bool force) { force_poll_ = force; }
+  size_t watch_count_for_testing() const { return watch_ids_.size(); }
 
  private:
   // Overrides of generated::FsApiBase pure virtuals. The codegen
@@ -134,11 +150,52 @@ class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
       ::nexus::generated::SystemInfoInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // fs.copyFile / symlink / readlink / chmod — the same pool hop as above.
+  void HandleCopyFileOnUI(
+      ::nexus::generated::FsCopyFileInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleSymlinkOnUI(
+      ::nexus::generated::FsSymlinkInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleReadlinkOnUI(
+      ::nexus::generated::FsReadlinkInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleChmodOnUI(
+      ::nexus::generated::FsChmodInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  // fs.watch / fs.unwatch: the watch set lives on a MayBlock sequence
+  // (`watch_core_`); changes come back as `fs.onChange` events.
+  void HandleWatchOnUI(
+      ::nexus::generated::FsWatchInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleUnwatchOnUI(
+      ::nexus::generated::FsUnwatchInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+
+  // Delivers one coalesced burst as an `fs.onChange` event (UI).
+  void PushFsChangeEvent(FsWatchEvent event);
 
   // RefCounted so an in-flight thread-pool task (which binds a
   // scoped_refptr copy) keeps the host alive even if this adapter is
   // destroyed mid-op by port-service teardown.
   scoped_refptr<NexusFsHost> fs_host_;
+
+  // Created on the first fs.watch, reset when the connection closes (which
+  // cancels every watch on its own sequence).
+  base::SequenceBound<NexusFsWatchCore> watch_core_;
+  // Ids the guest may still unwatch — the UI-side mirror that enforces
+  // kMaxWatches without a round trip to the watch sequence.
+  std::set<std::string> watch_ids_;
+  uint64_t next_watch_seq_ = 0;
+  bool force_poll_ = false;
+
+  base::WeakPtrFactory<NexusFsBridgeAdapter> weak_factory_{this};
 };
 
 }  // namespace nexus

@@ -66,6 +66,23 @@ constexpr std::array<const char*, 11> kBridgeCapabilities = {
     "remoteAccess",
 };
 
+// Additive native primitives this host serves, by `<capability>.<action>`
+// (or a named variant: `fs.writeFile.ifMatch`). Each one shipped on interface
+// 1 without a bump (internal/docs/P-platform/P-3-bridge/native-primitives.md):
+// the guest's wrappers check this list before calling, so on an older host
+// — which lacks both the list and the actions — they report "not supported"
+// instead of sending a request that host would mishandle. A variant whose
+// absence an older host would IGNORE rather than refuse (a new optional
+// input) MUST be listed here: the guest cannot learn it any other way.
+constexpr auto kNativePrimitives = std::to_array<const char*>({
+    "fs.watch",
+    "fs.copyFile",
+    "fs.symlink",
+    "fs.readlink",
+    "fs.chmod",
+    "fs.writeFile.ifMatch",
+});
+
 template <size_t N>
 base::ListValue BuildStringList(const std::array<const char*, N>& entries) {
   base::ListValue list;
@@ -88,6 +105,9 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   // ProcessTool calls into NexusShellService directly via its own
   // launcher; nothing in the bridge serializes those calls.
   manifest.Set("capabilities", std::move(capabilities));
+
+  // The additive primitives (see kNativePrimitives).
+  manifest.Set("primitives", BuildStringList(kNativePrimitives));
 
   // The LLM bridge accepts a `document` part at the top level of a message
   // (nexus_llm.mojom kDocument), not only inside a tool result. The guest

@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "unwatch",
+  "struct_name": "FsUnwatch",
+  "description": "Stop a watch started by fs.watch. Returns { found } — false for an unknown or already released id (idempotent). Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "watchId",
+      "type": "string",
+      "required": true,
+      "description": "The id fs.watch returned."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

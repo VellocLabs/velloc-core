@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "copyFile",
+  "struct_name": "FsCopyFile",
+  "description": "Copy one file (not a directory) to a new path. Without `overwrite` an existing destination is refused with an `EEXIST: …` message; a missing source answers the Node-style `ENOENT: …`. Returns { ok: true }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "src",
+      "type": "string",
+      "required": true,
+      "description": "Existing file to copy; relative paths resolve against the host cwd."
+    },
+    {
+      "name": "dst",
+      "type": "string",
+      "required": true,
+      "description": "Destination path."
+    },
+    {
+      "name": "overwrite",
+      "type": "boolean",
+      "required": false,
+      "description": "Replace an existing destination. Default false."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

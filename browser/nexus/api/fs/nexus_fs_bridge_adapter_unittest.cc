@@ -8,11 +8,13 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "custom_browser/browser/nexus/api/fs/nexus_fs_watcher.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -37,6 +39,9 @@ class RecordingDelegate : public NexusBridgeResponseDelegate {
   int binary_count = 0;
   int error_count = 0;
   base::Value last_success;
+  std::string last_error_code;
+  // Host-pushed events, as (action, payload).
+  std::vector<std::pair<std::string, base::Value>> events;
 
   void SendSuccessResponse(const std::string& /*id*/,
                            const base::DictValue& /*route*/,
@@ -53,12 +58,15 @@ class RecordingDelegate : public NexusBridgeResponseDelegate {
   }
   void SendErrorResponse(const std::string& /*id*/,
                          const base::DictValue& /*route*/,
-                         const std::string& /*code*/,
+                         const std::string& code,
                          const std::string& /*message*/) override {
     ++error_count;
+    last_error_code = code;
   }
-  void SendEvent(const base::DictValue& /*route*/,
-                 base::Value /*payload*/) override {}
+  void SendEvent(const base::DictValue& route, base::Value payload) override {
+    const std::string* action = route.FindString("action");
+    events.emplace_back(action ? *action : std::string(), std::move(payload));
+  }
 };
 
 base::DictValue FsRoute(std::string_view action) {
@@ -399,6 +407,96 @@ TEST(NexusFsBridgeAdapterTest, RealpathResolveLinksKeyFollowsALink) {
   ASSERT_TRUE(normalized);
   EXPECT_EQ(base::MakeAbsoluteFilePath(link).AsUTF8Unsafe(), *normalized);
 #endif
+}
+
+// fs.watch end to end through the adapter: the watch answers with an id, a
+// change arrives as one `fs.onChange` event naming it, and closing the guest
+// connection releases the watch (no event after it).
+TEST(NexusFsBridgeAdapterTest, WatchPushesOnChangeUntilTheConnectionCloses) {
+  content::BrowserTaskEnvironment task_environment(
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  adapter->set_force_poll_for_testing(true);
+  task_environment.RunUntilIdle();
+
+  base::DictValue payload;
+  payload.Set("path", temp_dir.GetPath().AsUTF8Unsafe());
+  EXPECT_TRUE(adapter->Dispatch("watch", "req-1", FsRoute("watch"), payload,
+                                {}));
+  task_environment.RunUntilIdle();
+  ASSERT_EQ(delegate.success_count, 1);
+  ASSERT_TRUE(delegate.last_success.is_dict());
+  const std::string* watch_id =
+      delegate.last_success.GetDict().FindString("watchId");
+  ASSERT_TRUE(watch_id);
+  const std::string id = *watch_id;
+  EXPECT_EQ(*delegate.last_success.GetDict().FindString("mode"), "poll");
+  EXPECT_EQ(adapter->watch_count_for_testing(), 1u);
+
+  ASSERT_TRUE(
+      base::WriteFile(temp_dir.GetPath().AppendASCII("touched.txt"), "x"));
+  task_environment.FastForwardBy(NexusFsWatchCore::kPollInterval +
+                                 NexusFsWatchCore::kDebounce);
+  task_environment.RunUntilIdle();
+  ASSERT_EQ(delegate.events.size(), 1u);
+  EXPECT_EQ(delegate.events[0].first, "onChange");
+  const base::DictValue& event = delegate.events[0].second.GetDict();
+  EXPECT_EQ(*event.FindString("watchId"), id);
+  EXPECT_EQ(*event.FindString("kind"), "created");
+  ASSERT_TRUE(event.FindList("paths"));
+  EXPECT_EQ(event.FindList("paths")->size(), 1u);
+
+  adapter->OnBridgeConnectionClosed();
+  EXPECT_EQ(adapter->watch_count_for_testing(), 0u);
+  ASSERT_TRUE(
+      base::WriteFile(temp_dir.GetPath().AppendASCII("after.txt"), "x"));
+  task_environment.FastForwardBy(NexusFsWatchCore::kPollInterval * 2);
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.events.size(), 1u);
+}
+
+TEST(NexusFsBridgeAdapterTest, UnwatchIsIdempotentAndTheCapHolds) {
+  content::BrowserTaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  RecordingDelegate delegate;
+  auto adapter =
+      std::make_unique<NexusFsBridgeAdapter>(&delegate, temp_dir.GetPath());
+  adapter->set_force_poll_for_testing(true);
+  task_environment.RunUntilIdle();
+
+  base::DictValue payload;
+  payload.Set("path", temp_dir.GetPath().AsUTF8Unsafe());
+  for (size_t i = 0; i < NexusFsBridgeAdapter::kMaxWatches; ++i) {
+    EXPECT_TRUE(adapter->Dispatch("watch", "req", FsRoute("watch"), payload,
+                                  {}));
+  }
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.success_count,
+            static_cast<int>(NexusFsBridgeAdapter::kMaxWatches));
+  EXPECT_TRUE(
+      adapter->Dispatch("watch", "req", FsRoute("watch"), payload, {}));
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.error_count, 1);
+  EXPECT_EQ(delegate.last_error_code, "TOO_MANY_WATCHES");
+
+  base::DictValue unwatch;
+  unwatch.Set("watchId", "w1");
+  EXPECT_TRUE(
+      adapter->Dispatch("unwatch", "req", FsRoute("unwatch"), unwatch, {}));
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.last_success.GetDict().FindBool("found"), true);
+  EXPECT_TRUE(
+      adapter->Dispatch("unwatch", "req", FsRoute("unwatch"), unwatch, {}));
+  task_environment.RunUntilIdle();
+  EXPECT_EQ(delegate.last_success.GetDict().FindBool("found"), false);
+  EXPECT_EQ(adapter->watch_count_for_testing(),
+            NexusFsBridgeAdapter::kMaxWatches - 1);
 }
 
 }  // namespace

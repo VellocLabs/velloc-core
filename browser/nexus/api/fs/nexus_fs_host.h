@@ -171,6 +171,46 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   struct SimpleResult {
     bool success = false;
     std::string error;
+    // The bridge error code when it is not the generic FS_ERROR — set only
+    // for a failure the guest must tell apart by code, not by message
+    // (PRECONDITION_FAILED from WriteFileIfMatch).
+    std::string error_code;
+  };
+
+  // `fs.writeFile({ifMatch})`: the stat the caller last saw. The write
+  // goes ahead only while the file still has exactly this size and an mtime
+  // within kIfMatchMtimeToleranceMs of it.
+  struct WriteIfMatch {
+    double mtime_ms = 0;
+    double size = 0;
+  };
+  static constexpr double kIfMatchMtimeToleranceMs = 1.0;
+  static constexpr char kPreconditionFailedCode[] = "PRECONDITION_FAILED";
+
+  struct WriteIfMatchResult {
+    bool success = false;
+    std::string error;
+    std::string error_code;
+    // The file's stat after the write, for the caller's next ifMatch.
+    double mtime_ms = 0;
+    double size = 0;
+  };
+
+  struct ReadlinkResult {
+    bool success = false;
+    // POSIX: the link's raw target (relative targets stay relative).
+    // Windows: the fully resolved final path (GetFinalPathNameByHandle) —
+    // the raw reparse data is not read.
+    std::string target;
+    std::string error;
+  };
+
+  struct ChmodResult {
+    bool success = false;
+    // False on Windows, where POSIX modes do not exist and chmod is a no-op
+    // on an existing path.
+    bool applied = false;
+    std::string error;
   };
 
   struct ExistsResult {
@@ -270,6 +310,28 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
                          bool atomic = false) const;
   SimpleResult AppendFile(const std::string& path,
                           mojo_base::BigBuffer data) const;
+  // Compare-and-swap write: refuses with kPreconditionFailedCode when the
+  // file is missing or its size / mtime no longer match `if_match`, then
+  // writes like WriteFile. Best effort against OTHER processes (stat and
+  // write are two syscalls); exact against writers that also use it, since
+  // each sees the stat the previous one returned.
+  WriteIfMatchResult WriteFileIfMatch(const std::string& path,
+                                      mojo_base::BigBuffer content,
+                                      bool atomic,
+                                      const WriteIfMatch& if_match) const;
+  // Copy a file (not a directory). `overwrite` false refuses an existing
+  // destination with "EEXIST: …".
+  SimpleResult CopyFile(const std::string& src,
+                        const std::string& dst,
+                        bool overwrite) const;
+  // Create a symbolic link at `path` pointing to `target` (used verbatim, so
+  // a relative target is relative to the link's directory). Windows needs
+  // Developer Mode or elevation; without it the error is "EPERM: …".
+  SimpleResult Symlink(const std::string& target,
+                       const std::string& path) const;
+  ReadlinkResult Readlink(const std::string& path) const;
+  // POSIX permission bits (mode & 07777). A no-op on Windows (applied=false).
+  ChmodResult Chmod(const std::string& path, int32_t mode) const;
   SimpleResult Mkdir(const std::string& path) const;
   // Rename/move a file or directory via base::Move — a true rename on the
   // same volume (atomic, O(1), carries whole directory trees), an internal

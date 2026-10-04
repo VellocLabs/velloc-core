@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "watch",
+  "struct_name": "FsWatch",
+  "description": "Watch a file or directory for changes (base::FilePathWatcher; a snapshot poll every 2 s where the platform cannot watch recursively or the native watch fails). Changes are debounced host-side (150 ms) and arrive as one coalesced fs.onChange event { watchId, paths, kind, overflow? } per burst: `paths` are the changed paths (a platform that names only the watched directory — Windows' recursive watch — is resolved against a snapshot; the root itself is reported only when that tree is too big to snapshot, over 20000 entries), capped at 256 per event (`overflow: true` when more were dropped); `kind` is created | deleted | modified | moved when every change in the burst agreed, else change. A watch is released by fs.unwatch or when the guest connection goes away. At most 64 watches per connection (TOO_MANY_WATCHES). Returns { watchId, mode: 'native' | 'poll' }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "File or directory to watch; relative paths resolve against the host cwd. It need not exist yet (native watches observe its ancestors; a poll sees it appear)."
+    },
+    {
+      "name": "recursive",
+      "type": "boolean",
+      "required": false,
+      "description": "Also report changes in every descendant of a directory. Default false: the directory's direct children only."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -202,6 +202,8 @@ action("nexus_tools_codegen") {
 
     # fs category — 19 actions, all proxied through NexusFsHost.
     "api/declarations/fs/appendFile.api.json",
+    "api/declarations/fs/chmod.api.json",
+    "api/declarations/fs/copyFile.api.json",
     "api/declarations/fs/cwd.api.json",
     "api/declarations/fs/exists.api.json",
     "api/declarations/fs/mkdir.api.json",
@@ -211,14 +213,18 @@ action("nexus_tools_codegen") {
     "api/declarations/fs/readRange.api.json",
     "api/declarations/fs/readdir.api.json",
     "api/declarations/fs/readdirTree.api.json",
+    "api/declarations/fs/readlink.api.json",
     "api/declarations/fs/realpath.api.json",
     "api/declarations/fs/rename.api.json",
     "api/declarations/fs/rm.api.json",
     "api/declarations/fs/stat.api.json",
     "api/declarations/fs/statBatch.api.json",
+    "api/declarations/fs/symlink.api.json",
     "api/declarations/fs/userHome.api.json",
     "api/declarations/fs/systemInfo.api.json",
     "api/declarations/fs/unlink.api.json",
+    "api/declarations/fs/unwatch.api.json",
+    "api/declarations/fs/watch.api.json",
     "api/declarations/fs/writeFile.api.json",
     "api/declarations/sqlite/batch.api.json",
     "api/declarations/sqlite/close.api.json",
@@ -561,6 +567,11 @@ source_set("fs") {
   sources = [
     "api/fs/nexus_fs_host.cc",
     "api/fs/nexus_fs_host.h",
+
+    # fs.watch: the per-connection watch set (base::FilePathWatcher + a
+    # snapshot-poll fallback, debounced). //base only.
+    "api/fs/nexus_fs_watcher.cc",
+    "api/fs/nexus_fs_watcher.h",
   ]
 
   deps = [
@@ -1357,6 +1368,7 @@ source_set("unit_tests_lite") {
     "api/llm/providers/openai/openai_tool_result_messages_unittest.cc",
     "api/llm/providers/openai/openai_usage_unittest.cc",
     "api/llm/providers/openai/openai_user_content_unittest.cc",
+    "api/fs/nexus_fs_watcher_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
     "api/network/network_egress_policy_unittest.cc",
     "api/shell/host_shell_unittest.cc",
@@ -1374,6 +1386,9 @@ source_set("unit_tests_lite") {
 
   deps = [
     ":domain",
+
+    # nexus_fs_watcher_unittest.cc — the fs.watch core (//base only).
+    ":fs",
     ":host_shell",
     ":mcp_server_store",
     ":network_egress_policy",

@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <optional>
 #include <string>
 #include <utility>
@@ -14,6 +15,9 @@
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
@@ -190,10 +194,52 @@ void RespondSimple(BridgeResponseCallback done,
                    NexusFsHost::SimpleResult result) {
   if (!result.success) {
     std::move(done).Error(
-        "FS_ERROR", !result.error.empty() ? result.error : error_label);
+        !result.error_code.empty() ? result.error_code : "FS_ERROR",
+        !result.error.empty() ? result.error : error_label);
     return;
   }
   std::move(done).SuccessVoid();
+}
+
+// fs.writeFile with ifMatch: PRECONDITION_FAILED is its own code (the guest
+// branches on it), and a success carries the new stat.
+void RespondWriteIfMatch(BridgeResponseCallback done,
+                         NexusFsHost::WriteIfMatchResult result) {
+  if (!result.success) {
+    std::move(done).Error(
+        !result.error_code.empty() ? result.error_code : "FS_ERROR",
+        !result.error.empty() ? result.error : "WriteFile failed");
+    return;
+  }
+  Dict envelope;
+  envelope.Set("ok", true);
+  envelope.Set("mtimeMs", result.mtime_ms);
+  envelope.Set("size", result.size);
+  std::move(done).Success(Value(std::move(envelope)));
+}
+
+void RespondReadlink(BridgeResponseCallback done,
+                     NexusFsHost::ReadlinkResult result) {
+  if (!result.success) {
+    std::move(done).Error(
+        "FS_ERROR", !result.error.empty() ? result.error : "Readlink failed");
+    return;
+  }
+  Dict envelope;
+  envelope.Set("target", result.target);
+  std::move(done).Success(Value(std::move(envelope)));
+}
+
+void RespondChmod(BridgeResponseCallback done,
+                  NexusFsHost::ChmodResult result) {
+  if (!result.success) {
+    std::move(done).Error(
+        "FS_ERROR", !result.error.empty() ? result.error : "Chmod failed");
+    return;
+  }
+  Dict envelope;
+  envelope.Set("applied", result.applied);
+  std::move(done).Success(Value(std::move(envelope)));
 }
 
 void RespondExists(BridgeResponseCallback done,
@@ -426,6 +472,34 @@ void NexusFsBridgeAdapter::HandleWriteFileOnUI(
   // `atomic` is an additive, ignore-if-absent input (no interface bump): a
   // guest that does not send it gets the in-place write it always got.
   const bool atomic = input.atomic.value_or(false);
+  if (input.ifMatch.has_value()) {
+    // Compare-and-swap (additive; advertised as fs.writeFile.ifMatch in the
+    // manifest because an older host would ignore the field and write).
+    const std::optional<double> mtime_ms = input.ifMatch->FindDouble("mtimeMs");
+    const std::optional<double> size = input.ifMatch->FindDouble("size");
+    if (!mtime_ms.has_value() || !size.has_value()) {
+      std::move(done).InvalidArgs(
+          "writeFile: ifMatch needs numeric mtimeMs and size");
+      return;
+    }
+    NexusFsHost::WriteIfMatch if_match;
+    if_match.mtime_ms = *mtime_ms;
+    if_match.size = *size;
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(
+            [](scoped_refptr<NexusFsHost> host, std::string path,
+               std::vector<uint8_t> content, bool atomic,
+               NexusFsHost::WriteIfMatch if_match) {
+              return host->WriteFileIfMatch(
+                  path, mojo_base::BigBuffer(base::span(content)), atomic,
+                  if_match);
+            },
+            fs_host_, std::move(input.path), std::move(input.content), atomic,
+            if_match),
+        base::BindOnce(&RespondWriteIfMatch, std::move(done)));
+    return;
+  }
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
@@ -531,6 +605,156 @@ void NexusFsBridgeAdapter::HandleSystemInfoOnUI(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&NexusFsHost::SystemInfo, fs_host_),
       base::BindOnce(&RespondSystemInfo, std::move(done)));
+}
+
+void NexusFsBridgeAdapter::HandleCopyFileOnUI(
+    ::nexus::generated::FsCopyFileInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::CopyFile, fs_host_, std::move(input.src),
+                     std::move(input.dst), input.overwrite.value_or(false)),
+      base::BindOnce(&RespondSimple, std::move(done), "CopyFile failed"));
+}
+
+void NexusFsBridgeAdapter::HandleSymlinkOnUI(
+    ::nexus::generated::FsSymlinkInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::Symlink, fs_host_, std::move(input.target),
+                     std::move(input.path)),
+      base::BindOnce(&RespondSimple, std::move(done), "Symlink failed"));
+}
+
+void NexusFsBridgeAdapter::HandleReadlinkOnUI(
+    ::nexus::generated::FsReadlinkInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::Readlink, fs_host_, std::move(input.path)),
+      base::BindOnce(&RespondReadlink, std::move(done)));
+}
+
+void NexusFsBridgeAdapter::HandleChmodOnUI(
+    ::nexus::generated::FsChmodInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::Chmod, fs_host_, std::move(input.path),
+                     input.mode),
+      base::BindOnce(&RespondChmod, std::move(done)));
+}
+
+// ===========================================================================
+// fs.watch / fs.unwatch / the fs.onChange event
+// ===========================================================================
+
+void NexusFsBridgeAdapter::HandleWatchOnUI(
+    ::nexus::generated::FsWatchInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.path.empty()) {
+    std::move(done).InvalidArgs("fs.watch: path must be non-empty");
+    return;
+  }
+  if (watch_ids_.size() >= kMaxWatches) {
+    std::move(done).Error(
+        "TOO_MANY_WATCHES",
+        base::StringPrintf("fs.watch: at most %zu watches per connection",
+                           kMaxWatches));
+    return;
+  }
+  if (watch_core_.is_null()) {
+    // One sequence for every watch of this connection: FilePathWatcher must
+    // live and die on the sequence it was started on, and the poll walks the
+    // disk (MayBlock). Events hop back here to UI, weak-guarded.
+    watch_core_ = base::SequenceBound<NexusFsWatchCore>(
+        base::ThreadPool::CreateSequencedTaskRunner(
+            {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+             base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}),
+        base::BindPostTask(
+            base::SequencedTaskRunner::GetCurrentDefault(),
+            base::BindRepeating(&NexusFsBridgeAdapter::PushFsChangeEvent,
+                                weak_factory_.GetWeakPtr())));
+  }
+
+  base::FilePath path = base::FilePath::FromUTF8Unsafe(input.path);
+  if (!path.IsAbsolute()) {
+    path = base::FilePath::FromUTF8Unsafe(fs_host_->Cwd()).Append(path);
+  }
+  const std::string watch_id =
+      base::StringPrintf("w%" PRIu64, ++next_watch_seq_);
+  watch_ids_.insert(watch_id);
+  watch_core_.AsyncCall(&NexusFsWatchCore::Add)
+      .WithArgs(watch_id, path, input.recursive.value_or(false), force_poll_)
+      .Then(base::BindOnce(
+          [](base::WeakPtr<NexusFsBridgeAdapter> self, std::string id,
+             ::nexus::BridgeResponseCallback done,
+             NexusFsWatchCore::AddResult result) {
+            if (!result.ok) {
+              if (self) {
+                self->watch_ids_.erase(id);
+              }
+              std::move(done).Error(
+                  "FS_ERROR",
+                  result.error.empty() ? "fs.watch failed" : result.error);
+              return;
+            }
+            Dict out;
+            out.Set("watchId", id);
+            out.Set("mode", result.mode);
+            std::move(done).Success(std::move(out));
+          },
+          weak_factory_.GetWeakPtr(), watch_id, std::move(done)));
+}
+
+void NexusFsBridgeAdapter::HandleUnwatchOnUI(
+    ::nexus::generated::FsUnwatchInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  const bool found = watch_ids_.erase(input.watchId) > 0;
+  if (found && !watch_core_.is_null()) {
+    watch_core_.AsyncCall(base::IgnoreResult(&NexusFsWatchCore::Remove))
+        .WithArgs(input.watchId);
+  }
+  Dict out;
+  out.Set("found", found);
+  std::move(done).Success(std::move(out));
+}
+
+void NexusFsBridgeAdapter::PushFsChangeEvent(FsWatchEvent event) {
+  // A burst that raced an unwatch (or the connection closing) is dropped.
+  if (!watch_ids_.contains(event.watch_id)) {
+    return;
+  }
+  Dict route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "fs");
+  route.Set("action", "onChange");
+
+  base::ListValue paths;
+  for (std::string& changed : event.paths) {
+    paths.Append(std::move(changed));
+  }
+  Dict payload;
+  payload.Set("watchId", std::move(event.watch_id));
+  payload.Set("paths", std::move(paths));
+  payload.Set("kind", std::move(event.kind));
+  if (event.overflow) {
+    payload.Set("overflow", true);
+  }
+  SendEvent(route, Value(std::move(payload)));
+}
+
+void NexusFsBridgeAdapter::OnBridgeConnectionClosed() {
+  // Destroying the core (on its own sequence) cancels every watch.
+  watch_core_.Reset();
+  watch_ids_.clear();
 }
 
 }  // namespace nexus

@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "chmod",
+  "struct_name": "FsChmod",
+  "description": "Set POSIX permission bits (mode & 07777). Returns { applied }: true where the bits were set; false on Windows, where POSIX modes do not exist and the call is a successful no-op on an existing path. A missing path answers `ENOENT: …`. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "path",
+      "type": "string",
+      "required": true,
+      "description": "File or directory; relative paths resolve against the host cwd."
+    },
+    {
+      "name": "mode",
+      "type": "integer",
+      "required": true,
+      "description": "Permission bits, e.g. 493 (0o755)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

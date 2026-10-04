@@ -247,6 +247,7 @@ action("nexus_tools_codegen") {
     # need to fetch URLs without renderer-CORS gating. Wraps
     # `network::SimpleURLLoader` in `NexusNetworkHost`.
     "api/declarations/network/httpGet.api.json",
+    "api/declarations/network/httpRequest.api.json",
 
     # mcp category — native-backed (stdio) MCP server lifecycle. The C++
     # side owns the full MCP client for locally-spawned servers (process
@@ -268,8 +269,12 @@ action("nexus_tools_codegen") {
     # they reach the same utility-process registry ProcessTool spawned into.
     # Lets the TS layer surface a backgrounded Bash in the Background Tasks
     # drawer (live status + Stop) WITHOUT going through the model tool loop.
+    "api/declarations/shell/closeStdin.api.json",
     "api/declarations/shell/kill.api.json",
+    "api/declarations/shell/spawn.api.json",
     "api/declarations/shell/status.api.json",
+    "api/declarations/shell/streamKill.api.json",
+    "api/declarations/shell/writeStdin.api.json",
 
     # session category — 4 actions (Phase 12f, +setActiveSession).
     # Dedicated capability for SessionStatus + LLM-session lifecycle.
@@ -533,6 +538,23 @@ source_set("host_shell") {
   ]
 
   deps = [ "//base" ]
+}
+
+# The egress policy every network.* request runs under (public hosts only:
+# loopback / private / link-local / CGNAT / multicast refused on the IP the
+# socket connected to). Pure functions over net::IPAddress and GURL — a leaf
+# so the lite test binary links it without the bridge.
+source_set("network_egress_policy") {
+  sources = [
+    "api/network/network_egress_policy.cc",
+    "api/network/network_egress_policy.h",
+  ]
+
+  deps = [
+    "//base",
+    "//net",
+    "//url",
+  ]
 }
 
 source_set("fs") {
@@ -938,6 +960,7 @@ source_set("bridge") {
 
     # The listHostedTools shell gate (catalog adapter).
     ":host_shell",
+    ":network_egress_policy",
 
     # The remoteAccess bridge adapter forwards onto the per-Profile
     # NexusRemoteAccessService (listener start/stop, proxy, LNA grant).
@@ -1335,6 +1358,7 @@ source_set("unit_tests_lite") {
     "api/llm/providers/openai/openai_usage_unittest.cc",
     "api/llm/providers/openai/openai_user_content_unittest.cc",
     "api/mcp/nexus_mcp_server_store_unittest.cc",
+    "api/network/network_egress_policy_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1352,6 +1376,7 @@ source_set("unit_tests_lite") {
     ":domain",
     ":host_shell",
     ":mcp_server_store",
+    ":network_egress_policy",
     # Pure routing logic for remote access; a leaf (//base only) so it links
     # into the lite binary without dragging in the listener's net::HttpServer.
     ":remote_access",

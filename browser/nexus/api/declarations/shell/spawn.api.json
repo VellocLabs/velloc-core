@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "spawn",
+  "description": "Start a child process whose stdout and stderr STREAM to the guest as they arrive, for the plugin $.process.spawn noun. Maps onto NexusShellService.StreamSpawn (the live-pipe path the utility service already has): the shell is run by its tool id (bash, sh, pwsh, powershell) with the command line as its one argument, so bash syntax works and the service's command allowlist and cwd policy apply unchanged. Returns { streamId }. Output then arrives as shell.onStreamOutput events { streamId, stream: 'stdout'|'stderr', dataBase64 } (raw bytes, base64 — the guest decodes with a streaming TextDecoder so a multi-byte character split across two pushes still decodes), and the exit as one shell.onStreamExit event { streamId, exitCode, signal?, timedOut, killed, durationMs }. The guest drives the child's life with shell.writeStdin / shell.closeStdin / shell.streamKill. A stream whose adapter is torn down (the guest went away) is killed.",
+  "inputs": [
+    {
+      "name": "shell",
+      "type": "string",
+      "required": true,
+      "description": "The shell tool id to run the command line with: bash, sh, pwsh or powershell. Resolved by the service against its allowlist; BINARY_NOT_FOUND when the host has none of it."
+    },
+    {
+      "name": "command",
+      "type": "string",
+      "required": true,
+      "description": "The command line the shell runs (`bash -c <command>`; `pwsh -NoProfile -NonInteractive -Command <command>`)."
+    },
+    {
+      "name": "cwd",
+      "type": "string",
+      "required": false,
+      "description": "Working directory, absolute. Default: the service's default cwd policy."
+    },
+    {
+      "name": "env",
+      "type": "object",
+      "required": false,
+      "description": "Environment variables laid over the host's: a map of string -> string."
+    },
+    {
+      "name": "stdin",
+      "type": "string",
+      "required": false,
+      "description": "Text written to the child's stdin right after launch. Combine with closeStdin=true for a one-shot input."
+    },
+    {
+      "name": "closeStdin",
+      "type": "boolean",
+      "required": false,
+      "description": "Close the child's stdin right after launch (after `stdin`, when given). Default false: the guest closes it with shell.closeStdin, or the child reads until killed."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

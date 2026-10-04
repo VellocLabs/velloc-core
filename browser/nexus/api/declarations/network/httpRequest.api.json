@@ -1,0 +1,64 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "httpRequest",
+  "description": "Issue an HTTP request of any method against a public URL via the Chromium net stack — the general form of network.httpGet, for the plugin $.http.fetch noun and the settings `http` hooks. Runs in the browser process (NOT subject to renderer CORS), under the egress policy: the IP the socket connects to, at the first response and at every redirect hop, must be publicly routable — loopback, private (RFC 1918 / 4193), link-local (incl. 169.254.169.254), carrier-grade NAT and multicast are refused with EGRESS_BLOCKED; an IP-literal host in one of those ranges is refused before dialing. Response body returned as bytes via the bridge's binary transport. Redirects: by default a 3xx comes back as-is; followRedirects=true follows up to maxRedirects hops, each hop re-checked.",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "Absolute http(s) URL. Length-capped at 2000, no embedded credentials."
+    },
+    {
+      "name": "method",
+      "type": "string",
+      "required": false,
+      "description": "HTTP method, upper-cased token (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS). Default GET. CONNECT, TRACE and TRACK are refused."
+    },
+    {
+      "name": "headers",
+      "type": "object",
+      "required": false,
+      "description": "Optional request headers — a map of string -> string. Hop-by-hop and the forbidden request headers (Host, Content-Length, Connection, Cookie, ...) are dropped. Content-Type defaults to application/octet-stream when a body is present and none is given."
+    },
+    {
+      "name": "body",
+      "type": "bytes",
+      "required": false,
+      "description": "Optional request body (inline array<integer> or a transferred port carrying an ArrayBuffer). Refused on GET and HEAD. Capped at 16 MiB (REQUEST_TOO_LARGE)."
+    },
+    {
+      "name": "timeoutMs",
+      "type": "integer",
+      "required": false,
+      "description": "Hard timeout in milliseconds. Default 60_000."
+    },
+    {
+      "name": "maxResponseBytes",
+      "type": "integer",
+      "required": false,
+      "description": "Cap on response-body size. Default 50_000_000."
+    },
+    {
+      "name": "followRedirects",
+      "type": "boolean",
+      "required": false,
+      "description": "Follow 3xx responses up to maxRedirects hops (each hop re-checked against the egress policy). Default false."
+    },
+    {
+      "name": "maxRedirects",
+      "type": "integer",
+      "required": false,
+      "description": "Maximum redirect hops when followRedirects=true. Default 10."
+    },
+    {
+      "name": "allowPrivateNetwork",
+      "type": "boolean",
+      "required": false,
+      "description": "Opt out of the egress policy for this request (a local dev server the person named). Default false. The guest exposes this only where a person, not a plugin or the model, asked."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

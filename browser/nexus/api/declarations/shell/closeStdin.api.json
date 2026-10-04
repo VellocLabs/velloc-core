@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "closeStdin",
+  "description": "Close a streaming child's stdin (started by shell.spawn) so a child reading to EOF finishes. Returns { found }.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "The streamId shell.spawn returned."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

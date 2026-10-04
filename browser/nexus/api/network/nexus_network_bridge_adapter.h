@@ -24,9 +24,11 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 class NexusNetworkHost;
+struct NexusHttpRequestSpec;
 
 // Concrete adapter implementing the generated `NetworkApiBase`
-// virtuals. Adds a general-purpose HTTP-GET surface to the bridge so
+// virtuals. Adds a general-purpose HTTP surface (`httpGet`, and
+// `httpRequest` for any method) to the bridge so
 // TS-side tools (WebFetch in V1; future MCP-server pinging /
 // webhook-callback / registry-lookup tools) can issue requests
 // through the Chromium net stack — NOT subject to renderer CORS,
@@ -71,6 +73,18 @@ class NexusNetworkBridgeAdapter
       ::nexus::generated::HttpGetInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+
+  // `network.httpRequest`: the general surface — any method, an optional
+  // body — under the same URL validation and the egress policy. Used by
+  // the plugin `$.http.fetch` noun and the settings `http` hooks.
+  void HandleHttpRequestOnUI(
+      ::nexus::generated::HttpRequestInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+
+  // Shared tail of both handlers: build the per-request host and start it.
+  void StartRequest(NexusHttpRequestSpec spec,
+                    ::nexus::BridgeResponseCallback done);
 
   // Per-request host completion. Looks up the host by its raw
   // pointer, fires the response (already wrapped in `done`), erases

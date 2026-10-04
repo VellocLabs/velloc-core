@@ -12,11 +12,14 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/base/ip_endpoint.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -47,16 +50,19 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
           "network.httpGet through the bridge). The model invokes "
           "the tool with a user-visible URL; the bridge dispatches "
           "the request through this code path. No authentication "
-          "headers are attached; the request runs in the browser "
-          "process so it is not subject to renderer CORS."
+          "headers are attached by the bridge; the request runs in "
+          "the browser process so it is not subject to renderer "
+          "CORS, and only publicly routable endpoints are dialed "
+          "(network_egress_policy.h) unless the person opted out."
         trigger:
           "User asks the AI assistant to fetch / read / summarise a "
           "web page, which prompts the model to invoke the WebFetch "
           "tool."
         data:
           "The URL the user (or assistant on their behalf) asked to "
-          "fetch. No conversation history or other PII is included "
-          "in the request body — this is a GET-only surface."
+          "fetch, and for network.httpRequest the request body the "
+          "calling tool or plugin composed. No conversation history "
+          "is attached by the bridge itself."
         destination: OTHER
         internal {
           contacts {
@@ -79,15 +85,72 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
       }
     )");
 
+// Request headers the caller may not set: the loader owns the framing
+// and connection headers, and the cookie jar is off for this surface
+// (`cookies_allowed: NO`). Compared case-insensitively.
+bool IsReservedRequestHeader(const std::string& name) {
+  static constexpr const char* kReserved[] = {
+      "host",       "content-length",    "connection",      "keep-alive",
+      "transfer-encoding", "upgrade",   "te",              "trailer",
+      "proxy-connection",  "proxy-authorization",            "cookie",
+      "cookie2",    "origin",            "via",             "expect",
+  };
+  for (const char* reserved : kReserved) {
+    if (base::EqualsCaseInsensitiveASCII(name, reserved)) {
+      return true;
+    }
+  }
+  // `sec-*` and `proxy-*` are the browser's own.
+  return base::StartsWith(name, "sec-", base::CompareCase::INSENSITIVE_ASCII) ||
+         base::StartsWith(name, "proxy-", base::CompareCase::INSENSITIVE_ASCII);
+}
+
 }  // namespace
+
+NexusHttpRequestSpec::NexusHttpRequestSpec() = default;
+NexusHttpRequestSpec::NexusHttpRequestSpec(NexusHttpRequestSpec&&) = default;
+NexusHttpRequestSpec& NexusHttpRequestSpec::operator=(NexusHttpRequestSpec&&) =
+    default;
+NexusHttpRequestSpec::~NexusHttpRequestSpec() = default;
+
+// static
+NexusHttpRequestSpec NexusHttpRequestSpec::FromHttpGet(
+    ::nexus::generated::HttpGetInput in) {
+  NexusHttpRequestSpec spec;
+  spec.url = std::move(in.url);
+  spec.method = "GET";
+  spec.headers = std::move(in.headers);
+  spec.timeout_ms = in.timeoutMs;
+  spec.max_response_bytes = in.maxResponseBytes;
+  spec.follow_redirects = in.followRedirects;
+  spec.max_redirects = in.maxRedirects;
+  spec.allow_private_network = in.allowPrivateNetwork.value_or(false);
+  return spec;
+}
+
+// static
+NexusHttpRequestSpec NexusHttpRequestSpec::FromHttpRequest(
+    ::nexus::generated::HttpRequestInput in) {
+  NexusHttpRequestSpec spec;
+  spec.url = std::move(in.url);
+  spec.method = base::ToUpperASCII(in.method.value_or("GET"));
+  spec.headers = std::move(in.headers);
+  spec.body = std::move(in.body);
+  spec.timeout_ms = in.timeoutMs;
+  spec.max_response_bytes = in.maxResponseBytes;
+  spec.follow_redirects = in.followRedirects;
+  spec.max_redirects = in.maxRedirects;
+  spec.allow_private_network = in.allowPrivateNetwork.value_or(false);
+  return spec;
+}
 
 NexusNetworkHost::NexusNetworkHost(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-    ::nexus::generated::HttpGetInput input,
+    NexusHttpRequestSpec spec,
     ::nexus::BridgeResponseCallback done,
     CompletionCallback on_complete)
     : url_loader_factory_(std::move(url_loader_factory)),
-      input_(std::move(input)),
+      spec_(std::move(spec)),
       done_(std::move(done)),
       on_complete_(std::move(on_complete)) {}
 
@@ -97,29 +160,29 @@ void NexusNetworkHost::Start() {
   // Resolve per-call options against defaults. The .api.json marks
   // all of these optional with no default — the C++ codegen wraps
   // them in std::optional<T>.
-  if (input_.timeoutMs.has_value() && *input_.timeoutMs > 0) {
-    timeout_ms_ = *input_.timeoutMs;
+  if (spec_.timeout_ms.has_value() && *spec_.timeout_ms > 0) {
+    timeout_ms_ = *spec_.timeout_ms;
   }
-  if (input_.maxResponseBytes.has_value() && *input_.maxResponseBytes > 0) {
+  if (spec_.max_response_bytes.has_value() && *spec_.max_response_bytes > 0) {
     max_response_bytes_ =
-        base::checked_cast<size_t>(*input_.maxResponseBytes);
+        base::checked_cast<size_t>(*spec_.max_response_bytes);
   }
   // V2: no longer clamped to SimpleURLLoader's 5 MB
   // `kMaxBoundedStringDownloadSize`. We switched the body-fetch path
   // to `DownloadToStringOfUnboundedSizeUntilCrashAndDie` and enforce
   // the cap ourselves via OnResponseStarted (Content-Length
   // pre-check) and OnDownloadProgress (mid-stream guard).
-  if (input_.followRedirects.has_value()) {
-    follow_redirects_ = *input_.followRedirects;
+  if (spec_.follow_redirects.has_value()) {
+    follow_redirects_ = *spec_.follow_redirects;
   }
-  if (input_.maxRedirects.has_value() && *input_.maxRedirects >= 0) {
-    max_redirects_ = *input_.maxRedirects;
+  if (spec_.max_redirects.has_value() && *spec_.max_redirects >= 0) {
+    max_redirects_ = *spec_.max_redirects;
   }
 
   // Build the ResourceRequest.
   auto resource_request = std::make_unique<network::ResourceRequest>();
-  resource_request->url = GURL(input_.url);
-  resource_request->method = "GET";
+  resource_request->url = GURL(spec_.url);
+  resource_request->method = spec_.method;
   // No cookies — matches the traffic annotation (`cookies_allowed: NO`).
   resource_request->credentials_mode =
       network::mojom::CredentialsMode::kOmit;
@@ -131,19 +194,34 @@ void NexusNetworkHost::Start() {
   // Apply user-supplied request headers, if any. The .api.json
   // declares `headers` as `object` (passthrough dict). The codegen
   // delivers it as a `base::DictValue` field on the input struct.
-  if (input_.headers.has_value()) {
-    for (const auto entry : *input_.headers) {
+  if (spec_.headers.has_value()) {
+    for (const auto entry : *spec_.headers) {
       if (!entry.second.is_string()) continue;
-      // Reject hop-by-hop / control headers that Chromium would
-      // strip anyway. Letting them through silently means the model
-      // sees the header in its tool args but never on the wire —
-      // confusing.
       const std::string& name = entry.first;
       if (name.empty()) continue;
+      // Drop the headers the loader owns or Chromium would strip
+      // anyway (hop-by-hop, framing, the cookie jar). Letting them
+      // through silently means the caller sees the header in its
+      // arguments but never on the wire — confusing; and a caller
+      // must not smuggle a Host or a Cookie through this surface.
+      if (IsReservedRequestHeader(name)) continue;
       // The HTTP request header API takes a string-string map; the
       // SimpleURLLoader will forward verbatim.
       resource_request->headers.SetHeader(name, entry.second.GetString());
     }
+  }
+  // A body's Content-Type: the caller's, else octet-stream.
+  const bool has_body = spec_.body.has_value() && !spec_.body->empty();
+  std::string content_type = "application/octet-stream";
+  if (has_body) {
+    std::optional<std::string> given =
+        resource_request->headers.GetHeader(net::HttpRequestHeaders::kContentType);
+    if (given.has_value() && !given->empty()) {
+      content_type = *given;
+    }
+    // The loader sets Content-Type / Content-Length itself from the
+    // attached upload; a copy in the header map would duplicate it.
+    resource_request->headers.RemoveHeader(net::HttpRequestHeaders::kContentType);
   }
 
   // Default User-Agent for WebFetch-style requests. CC sends
@@ -160,6 +238,10 @@ void NexusNetworkHost::Start() {
   loader_ = network::SimpleURLLoader::Create(std::move(resource_request),
                                              kTrafficAnnotation);
   loader_->SetAllowHttpErrorResults(true);  // surface 4xx / 5xx as-is
+  if (has_body) {
+    loader_->AttachStringForUpload(
+        std::string(spec_.body->begin(), spec_.body->end()), content_type);
+  }
 
   if (follow_redirects_) {
     loader_->SetOnRedirectCallback(
@@ -279,6 +361,13 @@ void NexusNetworkHost::OnResponseStarted(
     const GURL& /*final_url*/,
     const network::mojom::URLResponseHead& response_head) {
   if (completed_) return;
+  // The egress policy on the IP the socket connected to. Headers are
+  // in, no body byte has been read: aborting here leaks nothing of
+  // the body to the caller.
+  if (std::optional<std::string> refusal = EgressRefusalForEndpoint(response_head)) {
+    AbortForEgress(*refusal);
+    return;
+  }
   // Content-Length is the cheapest cap signal. When present and
   // honest, we abort before pulling any body bytes. When missing
   // or wrong, OnDownloadProgress catches the overrun mid-stream.
@@ -314,9 +403,26 @@ void NexusNetworkHost::OnDownloadProgress(uint64_t current_bytes) {
 
 void NexusNetworkHost::OnRedirect(
     const GURL& /*url_before_redirect*/,
-    const net::RedirectInfo& /*redirect_info*/,
-    const network::mojom::URLResponseHead& /*response_head*/,
+    const net::RedirectInfo& redirect_info,
+    const network::mojom::URLResponseHead& response_head,
     std::vector<std::string>* /*removed_headers*/) {
+  if (completed_) return;
+  // The hop that answered the 3xx was dialed: judge its endpoint. Then
+  // the next location, when its host is a literal, before the dial; a
+  // hostname is judged when it answers (OnRedirect again, or
+  // OnResponseStarted at the end).
+  if (std::optional<std::string> refusal = EgressRefusalForEndpoint(response_head)) {
+    AbortForEgress(*refusal);
+    return;
+  }
+  if (!spec_.allow_private_network) {
+    if (std::optional<std::string> refusal =
+            EgressRefusalForLiteralHost(redirect_info.new_url)) {
+      AbortForEgress(base::StringPrintf("redirect target refused: %s",
+                                        refusal->c_str()));
+      return;
+    }
+  }
   redirect_count_++;
   if (redirect_count_ > max_redirects_) {
     if (completed_) return;
@@ -341,6 +447,39 @@ void NexusNetworkHost::OnTimeout() {
   CompleteWithError(
       "TIMEOUT",
       base::StringPrintf("Request exceeded the %d-ms timeout.", timeout_ms_));
+}
+
+std::optional<std::string> NexusNetworkHost::EgressRefusalForEndpoint(
+    const network::mojom::URLResponseHead& response_head) const {
+  if (spec_.allow_private_network) {
+    return std::nullopt;
+  }
+  // `remote_endpoint` is the peer the socket connected to; invalid
+  // (no address) for a response served without a dial (the cache, a
+  // service worker — neither applies to this loader), which the policy
+  // lets through: nothing was reached.
+  const net::IPAddress& address = response_head.remote_endpoint.address();
+  std::optional<std::string> refusal = EgressRefusalFor(address);
+  if (!refusal) {
+    return std::nullopt;
+  }
+  return base::StringPrintf("%s resolved to %s, a %s",
+                            GURL(spec_.url).host().c_str(),
+                            address.ToString().c_str(), refusal->c_str());
+}
+
+void NexusNetworkHost::AbortForEgress(const std::string& reason) {
+  if (completed_) return;
+  completed_ = true;
+  timeout_timer_.Stop();
+  loader_.reset();  // tears down the connection before any body read
+  CompleteWithError(
+      "EGRESS_BLOCKED",
+      base::StringPrintf(
+          "Refused by the egress policy: %s. Only publicly routable "
+          "hosts are reachable through network.* (allowPrivateNetwork "
+          "opts a person's own request out).",
+          reason.c_str()));
 }
 
 void NexusNetworkHost::CompleteWithError(const std::string& code,

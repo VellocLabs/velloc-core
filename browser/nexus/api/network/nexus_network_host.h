@@ -1,13 +1,17 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_NETWORK_NEXUS_NETWORK_HOST_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_NETWORK_NEXUS_NETWORK_HOST_H_
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "base/values.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -18,26 +22,60 @@ class SharedURLLoaderFactory;
 
 namespace nexus {
 
+// One HTTP request as the host runs it: the common form of
+// `network.httpGet` (GET, no body) and `network.httpRequest` (any method,
+// an optional body). Built by the adapter from the generated inputs.
+struct NexusHttpRequestSpec {
+  NexusHttpRequestSpec();
+  NexusHttpRequestSpec(NexusHttpRequestSpec&&);
+  NexusHttpRequestSpec& operator=(NexusHttpRequestSpec&&);
+  ~NexusHttpRequestSpec();
+
+  std::string url;
+  // Upper-cased HTTP method token. GET by default.
+  std::string method = "GET";
+  std::optional<base::DictValue> headers;
+  // Request body; absent for GET / HEAD and when the caller sent none.
+  std::optional<std::vector<uint8_t>> body;
+  std::optional<int32_t> timeout_ms;
+  std::optional<int32_t> max_response_bytes;
+  std::optional<bool> follow_redirects;
+  std::optional<int32_t> max_redirects;
+  // Egress policy opt-out (`allowPrivateNetwork`): a request the person,
+  // not a plugin or the model, aimed at a local server. Default off: the
+  // IP the socket connects to must be publicly routable
+  // (`network_egress_policy.h`), at the first response and at every
+  // followed redirect.
+  bool allow_private_network = false;
+
+  // The GET surface as the spec: every GET field mapped, no method / body.
+  static NexusHttpRequestSpec FromHttpGet(::nexus::generated::HttpGetInput in);
+  // The general surface as the spec. `method` is upper-cased here; the
+  // adapter validated the token and the body / method pairing.
+  static NexusHttpRequestSpec FromHttpRequest(
+      ::nexus::generated::HttpRequestInput in);
+};
+
 // Per-request worker that wraps a single `network::SimpleURLLoader`
-// to fulfil one `network.httpGet` bridge call.
+// to fulfil one `network.httpGet` / `network.httpRequest` bridge call.
 //
 // Lifetime: owned by `NexusNetworkBridgeAdapter::in_flight_`. The
 // host fires `done` (its captured `BridgeResponseCallback`) once
-// the request completes (success / failure / timeout / abort), then
-// invokes the `OnComplete` cleanup callback so the adapter can drop
-// its `unique_ptr` (which destroys the loader and cancels any
-// in-flight network work).
+// the request completes (success / failure / timeout / abort /
+// egress refusal), then invokes the `OnComplete` cleanup callback so
+// the adapter can drop its `unique_ptr` (which destroys the loader
+// and cancels any in-flight network work).
 //
 // All members live on the UI thread — `SimpleURLLoader` and
 // `SharedURLLoaderFactory` are UI-thread objects, and the adapter's
-// `HandleHttpGetOnUi` is the only entry point.
+// `Handle*OnUI` are the only entry points.
 class NexusNetworkHost {
  public:
   using CompletionCallback = base::OnceCallback<void(NexusNetworkHost*)>;
 
   NexusNetworkHost(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      ::nexus::generated::HttpGetInput input,
+      NexusHttpRequestSpec spec,
       ::nexus::BridgeResponseCallback done,
       CompletionCallback on_complete);
   ~NexusNetworkHost();
@@ -46,8 +84,9 @@ class NexusNetworkHost {
   NexusNetworkHost& operator=(const NexusNetworkHost&) = delete;
 
   // Kick off the request. Constructs the `network::ResourceRequest`
-  // with the configured headers / redirect mode, hands it to a fresh
-  // `SimpleURLLoader`, and starts the download. Safe to call once.
+  // with the configured method / headers / body / redirect mode, hands
+  // it to a fresh `SimpleURLLoader`, and starts the download. Safe to
+  // call once.
   void Start();
 
  private:
@@ -69,11 +108,6 @@ class NexusNetworkHost {
   //   (3) `SetOnDownloadProgressCallback` — abort mid-stream if
   //       accumulated bytes exceed the ceiling (catches servers
   //       that lie about Content-Length or omit it).
-  // The 50 MB ceiling beats CC's 10 MB (CC has no streaming and
-  // uses axios's `maxContentLength` which throws on overrun) and
-  // covers most real-world WebFetch invocations: research-paper
-  // PDFs (5-30 MB), large API JSON exports (typically <20 MB),
-  // chunky documentation pages (<2 MB markdown after Turndown).
   static constexpr int kDefaultTimeoutMs = 60'000;
   static constexpr size_t kDefaultMaxResponseBytes = 50 * 1024 * 1024;
   static constexpr int kDefaultMaxRedirects = 10;
@@ -90,12 +124,12 @@ class NexusNetworkHost {
   // so the body still flows through.
   void OnDownloadComplete(std::optional<std::string> response_body);
 
-  // Fires once when response headers are received. We use it to
-  // early-abort downloads whose advertised `Content-Length` would
-  // exceed `max_response_bytes_`. Saves the cost of pulling the
-  // body bytes when the server told us up-front the body is too
-  // large. Servers that omit Content-Length or lie about it are
-  // caught by `OnDownloadProgress` instead.
+  // Fires once when response headers are received. Two checks:
+  //   - the egress policy on `response_head.remote_endpoint`, the IP
+  //     the socket actually connected to (the only check that holds
+  //     against DNS rebinding — the guest never sees an IP);
+  //   - early-abort downloads whose advertised `Content-Length`
+  //     would exceed `max_response_bytes_`.
   void OnResponseStarted(const GURL& final_url,
                          const network::mojom::URLResponseHead& response_head);
 
@@ -107,7 +141,11 @@ class NexusNetworkHost {
 
   // Called by `SimpleURLLoader::SetOnRedirectCallback` for each
   // 3xx redirect when `follow_redirects_` is true. Tracks hop count;
-  // cancels with an error when the hop budget is exceeded.
+  // cancels with an error when the hop budget is exceeded. Applies
+  // the egress policy twice per hop: to the endpoint that answered
+  // the 3xx (`response_head.remote_endpoint`) and, when the new
+  // location's host is an IP literal, to that literal before the
+  // next dial (a hostname is judged when it answers).
   //
   // When `follow_redirects_` is false, this callback is NOT
   // registered — the loader instead delivers the 3xx response to
@@ -123,12 +161,20 @@ class NexusNetworkHost {
   // a TIMEOUT error envelope.
   void OnTimeout();
 
+  // The egress refusal for the endpoint a response came from, or
+  // nullopt when it is allowed (or the policy is opted out).
+  std::optional<std::string> EgressRefusalForEndpoint(
+      const network::mojom::URLResponseHead& response_head) const;
+
+  // Cancel the loader and fire `EGRESS_BLOCKED` with `reason`.
+  void AbortForEgress(const std::string& reason);
+
   // Fire `done_` with a typed error and unblock the adapter cleanup.
   void CompleteWithError(const std::string& code, const std::string& message);
 
   // Acquired once at construction.
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
-  ::nexus::generated::HttpGetInput input_;
+  NexusHttpRequestSpec spec_;
   ::nexus::BridgeResponseCallback done_;
   CompletionCallback on_complete_;
 

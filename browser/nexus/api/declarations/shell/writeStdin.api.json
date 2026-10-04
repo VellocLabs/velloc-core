@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "writeStdin",
+  "description": "Write bytes to a streaming child's stdin (started by shell.spawn). Returns { found }. Writes before the launch completes are buffered by the service; a write after closeStdin or exit is dropped with found=false.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "The streamId shell.spawn returned."
+    },
+    {
+      "name": "data",
+      "type": "bytes",
+      "required": true,
+      "description": "The bytes to write (inline array<integer> or a transferred port carrying an ArrayBuffer)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

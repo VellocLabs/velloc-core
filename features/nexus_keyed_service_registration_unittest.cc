@@ -46,6 +46,7 @@ TEST(NexusKeyedServiceRegistrationTest, HookRegistersEveryNexusFactory) {
   EXPECT_TRUE(names.contains("NexusLlmBroker"));
   EXPECT_TRUE(names.contains("NexusSessionTabTracker"));
   EXPECT_TRUE(names.contains("NexusBackgroundPanelHost"));
+  EXPECT_TRUE(names.contains("NexusAlarmService"));
 }
 
 // The hook is built inside RegisterAllHooks(), which runs from

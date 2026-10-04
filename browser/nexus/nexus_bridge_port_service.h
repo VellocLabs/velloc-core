@@ -32,6 +32,7 @@ class NexusProvidersBridgeAdapter;
 class NexusRemoteAccessBridgeAdapter;
 class NexusSearchBridgeAdapter;
 class NexusSecretsBridgeAdapter;
+class NexusAlarmsBridgeAdapter;
 class NexusSessionBridgeAdapter;
 class NexusShellBridgeAdapter;
 class NexusSqliteBridgeAdapter;
@@ -194,6 +195,8 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   std::unique_ptr<NexusSqliteBridgeAdapter> sqlite_adapter_;
   // Guest `secrets` capability (set / has / delete / listNames).
   std::unique_ptr<NexusSecretsBridgeAdapter> secrets_adapter_;
+  // Guest `alarms` capability (create / clear / list + alarms.onAlarm).
+  std::unique_ptr<NexusAlarmsBridgeAdapter> alarms_adapter_;
   // Guest `remoteAccess` capability — status + configure for the desktop's
   // embedded relay (remote-browser-client plan §8). Forwards onto the
   // per-Profile NexusRemoteAccessService. Manifest-gated: the runtime calls

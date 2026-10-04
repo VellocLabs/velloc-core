@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "list",
+  "struct_name": "AlarmsList",
+  "description": "The alarms, and the fires that found no connected runtime since the last call: { alarms: [{ name, whenMs, periodMs? }], fired: [{ name, scheduledMs }] } — `fired` is drained by this call, so the runtime calls list once at boot to catch up.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

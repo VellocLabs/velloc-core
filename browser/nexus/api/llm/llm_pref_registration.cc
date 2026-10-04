@@ -74,6 +74,9 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // The `secrets` capability's sealed, origin-bound store (see
   // llm_pref_names.h). Starts empty.
   registry->RegisterDictionaryPref(prefs::kNexusSecrets);
+
+  // The `alarms` capability's persisted alarm set (see llm_pref_names.h).
+  registry->RegisterDictionaryPref(prefs::kNexusAlarms);
 }
 
 }  // namespace nexus

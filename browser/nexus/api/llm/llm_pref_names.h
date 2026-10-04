@@ -165,6 +165,12 @@ inline constexpr char kNexusRemoteAccessPairings[] =
 // secret is only substituted into a request to its bound origin.
 inline constexpr char kNexusSecrets[] = "nexus.secrets";
 
+// The `alarms` capability's alarm set (api/alarms/): {name: {whenMs,
+// periodMs?}}, wall-clock ms since the epoch. NexusAlarmService is the only
+// writer; it survives a restart, and alarms that came due while the browser
+// was not running fire once when the profile loads.
+inline constexpr char kNexusAlarms[] = "nexus.alarms";
+
 }  // namespace nexus::prefs
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_LLM_PREF_NAMES_H_

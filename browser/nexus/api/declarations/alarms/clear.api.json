@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "clear",
+  "struct_name": "AlarmsClear",
+  "description": "Delete an alarm (and any of its queued fires). Returns { cleared } (false when there was none).",
+  "inputs": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "description": "The alarm."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

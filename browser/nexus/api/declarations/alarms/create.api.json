@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "create",
+  "struct_name": "AlarmsCreate",
+  "description": "Create (or replace) a named wall-clock alarm. It fires as an `alarms.onAlarm { name, scheduledMs }` event on every connected bridge; with no runtime connected the fire is queued (returned by the next alarms.list as `fired`) and the Nexus window is opened to boot one. Alarms persist in the profile prefs across a restart; one that came due while the browser was not running fires ONCE when the profile loads, a periodic one then resumes on its original grid. A missing `whenMs` with a `periodMs` means one period from now. At most 256 alarms. Returns { ok: true }. Additive capability: an older host answers NOT_IMPLEMENTED (and does not advertise `alarms`).",
+  "inputs": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "description": "1 to 64 characters; an existing alarm by this name is replaced."
+    },
+    {
+      "name": "whenMs",
+      "type": "number",
+      "required": false,
+      "description": "First fire, wall-clock ms since the Unix epoch (Date.now()). A past time fires at once."
+    },
+    {
+      "name": "periodMs",
+      "type": "number",
+      "required": false,
+      "description": "Repeat interval in ms, at least 30000. Absent: a one-shot alarm."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -13,6 +13,7 @@ source_set("nexus_keyed_service_registration") {
   deps = [
     "//base",
     "//chrome/browser:browser_process",
+    "//custom_browser/browser/nexus:alarms",
     "//custom_browser/browser/nexus:session_tab_management",
     "//custom_browser/browser/nexus/api/llm:broker",
     "//custom_browser/browser/nexus/panel:background_panel_host",

@@ -6,6 +6,7 @@
 
 #include "base/check.h"
 #include "chrome/browser/browser_process.h"
+#include "custom_browser/browser/nexus/api/alarms/nexus_alarm_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
@@ -22,6 +23,9 @@ void RegisterNexusKeyedServiceFactories() {
   LlmBrokerFactory::GetInstance();
   NexusSessionTabTrackerFactory::GetInstance();
   NexusBackgroundPanelHostFactory::GetInstance();
+  // Created with the profile: alarms missed while the browser was off fire
+  // at startup (api/alarms/nexus_alarm_service.h).
+  NexusAlarmServiceFactory::GetInstance();
 }
 
 NexusKeyedServiceLifecycleHook::NexusKeyedServiceLifecycleHook() = default;

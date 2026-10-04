@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 12> kBridgeCapabilities = {
+constexpr std::array<const char*, 13> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -70,6 +70,11 @@ constexpr std::array<const char*, 12> kBridgeCapabilities = {
     // advertisement, so an older binary simply has no secret store. See
     // custom_browser/browser/nexus/api/secrets/.
     "secrets",
+    // Persisted wall-clock alarms (create / clear / list + the
+    // alarms.onAlarm event). Additive: the runtime's scheduler uses it only
+    // when advertised, so an older binary keeps the in-page timers. See
+    // custom_browser/browser/nexus/api/alarms/.
+    "alarms",
 };
 
 // Additive native primitives this host serves, by `<capability>.<action>`

@@ -12,6 +12,8 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "custom_browser/browser/nexus/api/alarms/nexus_alarm_service.h"
+#include "custom_browser/browser/nexus/api/alarms/nexus_alarms_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/catalog/nexus_catalog_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/sqlite/nexus_sqlite_bridge_adapter.h"
@@ -199,6 +201,12 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   secrets_adapter_ = std::make_unique<NexusSecretsBridgeAdapter>(
       this, profile ? profile->GetPrefs() : nullptr);
   RegisterCapability("secrets", secrets_adapter_.get());
+  // Guest `alarms` capability — persisted wall-clock alarms over the
+  // per-Profile NexusAlarmService; this adapter is the service's sink while
+  // the guest is connected (alarms.onAlarm).
+  alarms_adapter_ = std::make_unique<NexusAlarmsBridgeAdapter>(
+      this, NexusAlarmServiceFactory::GetForProfile(profile));
+  RegisterCapability("alarms", alarms_adapter_.get());
   // Guest `remoteAccess` capability — status + configure for the embedded
   // relay. The runtime gates its getStatus call on the manifest advertisement
   // (the no-version-bump gate), so registering unconditionally is safe.

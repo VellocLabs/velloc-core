@@ -307,6 +307,11 @@ action("nexus_tools_codegen") {
     # search category — span-index transcript search (Ctrl+K dialog).
     "api/declarations/search/queryTranscripts.api.json",
 
+    # alarms category — persisted wall-clock alarms.
+    "api/declarations/alarms/clear.api.json",
+    "api/declarations/alarms/create.api.json",
+    "api/declarations/alarms/list.api.json",
+
     # secrets category — namespaced, origin-bound secrets (no get).
     "api/declarations/secrets/delete.api.json",
     "api/declarations/secrets/has.api.json",
@@ -456,6 +461,8 @@ action("nexus_tools_codegen") {
     # (api/<cat>/nexus_<cat>_bridge_adapter.h); the .cc is compiled
     # into the `bridge` source_set so its FsApiBase / LlmApiBase
     # ctor symbols satisfy the linker.
+    "$target_gen_dir/api/alarms/alarms_api.gen.h",
+    "$target_gen_dir/api/alarms/alarms_api.gen.cc",
     "$target_gen_dir/api/fs/fs_api.gen.h",
     "$target_gen_dir/api/fs/fs_api.gen.cc",
     "$target_gen_dir/api/llm/llm_api.gen.h",
@@ -754,6 +761,43 @@ source_set("secret_crypt") {
   deps = [ "//components/os_crypt/async/browser" ]
 }
 
+# The `alarms` capability's schedule rules (due / catch-up / grid / prefs
+# form) as pure functions — //base only, so the lite binary tests them.
+source_set("alarm_schedule") {
+  sources = [
+    "api/alarms/alarm_schedule.cc",
+    "api/alarms/alarm_schedule.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# The per-Profile alarm clock (KeyedService, created with the profile so
+# missed alarms fire at startup). Wakes a runtime through the launcher
+# delegate — the dependency-free leaf the tray icon uses — so no cycle
+# through //chrome/browser/ui.
+source_set("alarms") {
+  sources = [
+    "api/alarms/nexus_alarm_service.cc",
+    "api/alarms/nexus_alarm_service.h",
+  ]
+
+  public_deps = [
+    ":alarm_schedule",
+    "//base",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
+  ]
+
+  deps = [
+    "//chrome/browser/profiles:profile",
+    "//components/prefs",
+    "//content/public/browser",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
+    "//custom_browser/browser/nexus/launcher:delegate",
+  ]
+}
+
 # The `secrets` capability's store + the `{{secret:NAME}}` rules
 # (namespaced names, origin binding, placeholder expansion). //base, prefs,
 # url and the at-rest crypt only, so the lite test binary links it; both the
@@ -838,6 +882,8 @@ source_set("mcp_host") {
 
 source_set("bridge") {
   sources = [
+    "api/alarms/nexus_alarms_bridge_adapter.cc",
+    "api/alarms/nexus_alarms_bridge_adapter.h",
     "api/app_info/nexus_app_info_bridge_adapter.cc",
     "api/app_info/nexus_app_info_bridge_adapter.h",
     "api/appearance/nexus_appearance_bridge_adapter.cc",
@@ -964,6 +1010,7 @@ source_set("bridge") {
     # because the adapters (also in bridge) inherit those bases and
     # need their ctors/dtors to link.
     "$target_gen_dir/api/fs/fs_api.gen.cc",
+    "$target_gen_dir/api/alarms/alarms_api.gen.cc",
     "$target_gen_dir/api/app_info/app_info_api.gen.cc",
     "$target_gen_dir/api/appearance/appearance_api.gen.cc",
     "$target_gen_dir/api/browser_tools/browser_tools_api.gen.cc",
@@ -1022,6 +1069,9 @@ source_set("bridge") {
 
     # secrets adapter + the network adapter's {{secret:NAME}} substitution.
     ":secret_store",
+
+    # The alarms adapter's per-Profile clock.
+    ":alarms",
     ":sqlite",
 
     # ProcessTool's Grep path ensures the pinned `rg` binary is present
@@ -1394,6 +1444,7 @@ source_set("unit_tests_lite") {
   testonly = true
 
   sources = [
+    "api/alarms/alarm_schedule_unittest.cc",
     "api/llm/llm_error_extract_unittest.cc",
     "api/llm/llm_line_splitter_unittest.cc",
     "api/llm/llm_observation_unittest.cc",
@@ -1432,6 +1483,7 @@ source_set("unit_tests_lite") {
   ]
 
   deps = [
+    ":alarm_schedule",
     ":domain",
 
     # nexus_fs_watcher_unittest.cc — the fs.watch core (//base only).
@@ -1506,6 +1558,7 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
+    "api/alarms/nexus_alarm_service_unittest.cc",
     "api/appearance/nexus_appearance_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_host_unittest.cc",
@@ -1563,6 +1616,7 @@ source_set("unit_tests") {
 
   deps = [
     ":agent_notice",
+    ":alarms",
     ":bridge",
     ":fs",
     ":sqlite",

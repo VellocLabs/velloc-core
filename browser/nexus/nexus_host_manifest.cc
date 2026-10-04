@@ -87,6 +87,7 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     "shell.persistentList",
     "shell.persistentKill",
     "shell.env",
+    "network.streamOpen",
 });
 
 template <size_t N>

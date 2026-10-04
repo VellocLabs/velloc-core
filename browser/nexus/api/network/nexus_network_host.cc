@@ -86,10 +86,12 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
       }
     )");
 
+}  // namespace
+
 // Request headers the caller may not set: the loader owns the framing
 // and connection headers, and the cookie jar is off for this surface
 // (`cookies_allowed: NO`). Compared case-insensitively.
-bool IsReservedRequestHeader(const std::string& name) {
+bool IsReservedNetworkRequestHeader(const std::string& name) {
   static constexpr const char* kReserved[] = {
       "host",       "content-length",    "connection",      "keep-alive",
       "transfer-encoding", "upgrade",   "te",              "trailer",
@@ -105,8 +107,6 @@ bool IsReservedRequestHeader(const std::string& name) {
   return base::StartsWith(name, "sec-", base::CompareCase::INSENSITIVE_ASCII) ||
          base::StartsWith(name, "proxy-", base::CompareCase::INSENSITIVE_ASCII);
 }
-
-}  // namespace
 
 NexusHttpRequestSpec::NexusHttpRequestSpec() = default;
 NexusHttpRequestSpec::NexusHttpRequestSpec(NexusHttpRequestSpec&&) = default;
@@ -208,7 +208,7 @@ void NexusNetworkHost::Start() {
       // through silently means the caller sees the header in its
       // arguments but never on the wire — confusing; and a caller
       // must not smuggle a Host or a Cookie through this surface.
-      if (IsReservedRequestHeader(name)) continue;
+      if (IsReservedNetworkRequestHeader(name)) continue;
       // The HTTP request header API takes a string-string map; the
       // SimpleURLLoader will forward verbatim.
       resource_request->headers.SetHeader(name, entry.second.GetString());

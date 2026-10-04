@@ -255,6 +255,9 @@ action("nexus_tools_codegen") {
     # `network::SimpleURLLoader` in `NexusNetworkHost`.
     "api/declarations/network/httpGet.api.json",
     "api/declarations/network/httpRequest.api.json",
+    "api/declarations/network/streamCancel.api.json",
+    "api/declarations/network/streamOpen.api.json",
+    "api/declarations/network/streamRead.api.json",
 
     # mcp category — native-backed (stdio) MCP server lifecycle. The C++
     # side owns the full MCP client for locally-spawned servers (process
@@ -824,6 +827,8 @@ source_set("bridge") {
     "api/llm/nexus_llm_bridge_support.h",
     "api/llm/nexus_llm_raw_stream.cc",
     "api/llm/nexus_llm_raw_stream.h",
+    "api/network/nexus_http_byte_stream.cc",
+    "api/network/nexus_http_byte_stream.h",
     "api/mcp/nexus_mcp_bridge_adapter.cc",
     "api/mcp/nexus_mcp_bridge_adapter.h",
     "api/network/nexus_network_bridge_adapter.cc",
@@ -1469,6 +1474,8 @@ source_set("unit_tests") {
     "api/fs/nexus_fs_host_unittest.cc",
     "api/llm/nexus_llm_bridge_support_unittest.cc",
     "api/llm/nexus_llm_raw_stream_unittest.cc",
+    "api/network/nexus_http_byte_stream_unittest.cc",
+    "api/network/nexus_network_bridge_adapter_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",
     "api/shell/nexus_shell_bridge_adapter_unittest.cc",
@@ -1547,6 +1554,9 @@ source_set("unit_tests") {
     "//custom_browser/browser/nexus/launcher:prefs",
     "//custom_browser/browser/nexus/panel:background_panel_host",
     "//net",
+
+    # TRAFFIC_ANNOTATION_FOR_TESTS (nexus_http_byte_stream_unittest.cc).
+    "//net/traffic_annotation:test_support",
     "//services/network:test_support",
     "//skia",
     "//testing/gtest",

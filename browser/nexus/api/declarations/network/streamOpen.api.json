@@ -1,0 +1,65 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "streamOpen",
+  "struct_name": "NetworkStreamOpen",
+  "description": "Open a general streaming HTTP request: the request body is sent whole and the response body is pulled with network.streamRead as raw bytes, never parsed by the host — the general form of model.rawStreamOpen, not provider-scoped. Runs under the egress policy unless allowPrivateNetwork (the network service refuses a loopback / private peer before the request is written; the connected IP is re-checked at the head and at every redirect hop, skipped through a proxy; refusal: EGRESS_BLOCKED). Redirects are followed. No response-size cap unless maxResponseBytes is given (the guest's pulls are the backpressure). Resolves with the response head { streamId, status, statusText, finalUrl, headers }. At most 32 open streams per connection; every stream is cancelled when the connection goes away. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "Absolute http(s) URL, at most 8192 chars, no embedded credentials."
+    },
+    {
+      "name": "method",
+      "type": "string",
+      "required": false,
+      "description": "HTTP method. Default GET; CONNECT / TRACE / TRACK are refused."
+    },
+    {
+      "name": "headers",
+      "type": "object",
+      "required": false,
+      "description": "Request headers, string -> string. Host, Content-Length, Cookie, Connection and the other hop-by-hop / browser-owned headers are refused (INVALID_ARGS)."
+    },
+    {
+      "name": "queryParams",
+      "type": "object",
+      "required": false,
+      "description": "Query parameters appended (URL-encoded), string -> string."
+    },
+    {
+      "name": "body",
+      "type": "bytes",
+      "required": true,
+      "description": "Request body bytes, sent whole; empty for none (and must be empty on GET / HEAD). Content-Type comes from `headers` (default application/octet-stream)."
+    },
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": false,
+      "description": "Caller-chosen id, 8-64 chars [A-Za-z0-9_-], so network.streamCancel can cancel before the head; omitted: the host mints one."
+    },
+    {
+      "name": "idleTimeoutMs",
+      "type": "integer",
+      "required": false,
+      "description": "Abort when no response bytes arrive for this long. Default 90000."
+    },
+    {
+      "name": "maxResponseBytes",
+      "type": "number",
+      "required": false,
+      "description": "Abort once the response body exceeds this many bytes (RESPONSE_TOO_LARGE). Default: no cap."
+    },
+    {
+      "name": "allowPrivateNetwork",
+      "type": "boolean",
+      "required": false,
+      "description": "Opt this request out of the egress policy (a local server a person named). Default false."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

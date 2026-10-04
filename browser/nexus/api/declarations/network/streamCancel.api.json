@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "streamCancel",
+  "struct_name": "NetworkStreamCancel",
+  "description": "Cancel a network.streamOpen stream — before its head too (a pending open then fails CANCELLED, and an id cancelled before its open arrives refuses that open). Idempotent; returns { ok: true }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "The stream."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "streamRead",
+  "struct_name": "NetworkStreamRead",
+  "description": "Pull the next bytes of a network.streamOpen response. Answers at once when bytes are queued or the response ended; otherwise holds up to waitMs (capped at 30 s). The bytes arrive on the binary transport as `chunk`; the envelope carries `done` and, when the response ended abnormally, `errorCode` / `errorMessage` (NETWORK_ERROR, TIMEOUT, RESPONSE_TOO_LARGE, EGRESS_BLOCKED, CANCELLED). After `done` the stream is gone. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "The stream."
+    },
+    {
+      "name": "waitMs",
+      "type": "integer",
+      "required": false,
+      "description": "How long to hold the read for data. Default 0."
+    },
+    {
+      "name": "maxBytes",
+      "type": "integer",
+      "required": false,
+      "description": "Most bytes to return. Default 1048576."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

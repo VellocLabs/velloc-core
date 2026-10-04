@@ -22,6 +22,11 @@ class SharedURLLoaderFactory;
 
 namespace nexus {
 
+// Request headers a `network.*` caller may not set (hop-by-hop, framing,
+// Host, Cookie, Origin, `sec-*`, `proxy-*`; case-insensitive). httpGet /
+// httpRequest drop them; streamOpen refuses them.
+bool IsReservedNetworkRequestHeader(const std::string& name);
+
 // One HTTP request as the host runs it: the common form of
 // `network.httpGet` (GET, no body) and `network.httpRequest` (any method,
 // an optional body). Built by the adapter from the generated inputs.

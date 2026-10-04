@@ -1,11 +1,16 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_NETWORK_NEXUS_NETWORK_BRIDGE_ADAPTER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_NETWORK_NEXUS_NETWORK_BRIDGE_ADAPTER_H_
 
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
+#include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
+#include "custom_browser/browser/nexus/api/network/nexus_http_byte_stream.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
 namespace blink {
@@ -63,6 +68,17 @@ class NexusNetworkBridgeAdapter
   NexusNetworkBridgeAdapter& operator=(const NexusNetworkBridgeAdapter&) =
       delete;
 
+  // The guest connection ended: every open network.stream* is cancelled.
+  void OnBridgeConnectionClosed() override;
+
+  // Most streams one connection may hold open.
+  static constexpr size_t kMaxStreams = 32;
+
+  // Test seam: a factory that is not a profile's (TestURLLoaderFactory).
+  void SetURLLoaderFactoryForTesting(
+      scoped_refptr<network::SharedURLLoaderFactory> factory);
+  size_t stream_count_for_testing() const { return streams_.size(); }
+
  private:
   // Override of generated::NetworkApiBase pure virtual. Runs on UI.
   // Validates the input URL (length, scheme, no embedded creds),
@@ -81,6 +97,27 @@ class NexusNetworkBridgeAdapter
       ::nexus::generated::HttpRequestInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+
+  // `network.streamOpen` / `streamRead` / `streamCancel`: general streaming
+  // HTTP over NexusHttpByteStream (the core `model.rawStream*` shares),
+  // under the egress policy, with no response-size cap by default.
+  void HandleStreamOpenOnUI(
+      ::nexus::generated::NetworkStreamOpenInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleStreamReadOnUI(
+      ::nexus::generated::NetworkStreamReadInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleStreamCancelOnUI(
+      ::nexus::generated::NetworkStreamCancelInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void OnStreamOpened(std::string stream_id,
+                      ::nexus::BridgeResponseCallback done,
+                      NexusHttpByteStream::OpenResult result);
+  // Erase after the current callback frame (the stream may be on the stack).
+  void EraseStreamSoon(const std::string& stream_id);
 
   // Shared tail of both handlers: build the per-request host and start it.
   void StartRequest(NexusHttpRequestSpec spec,
@@ -102,6 +139,14 @@ class NexusNetworkBridgeAdapter
   // returned by `host_ptr` is stable for the host's lifetime —
   // it's the key into this map.
   std::vector<std::unique_ptr<NexusNetworkHost>> in_flight_;
+
+  // Open network.stream* streams by id.
+  std::map<std::string, std::unique_ptr<NexusHttpByteStream>> streams_;
+  // Ids cancelled before their open arrived (the body rides its own port,
+  // so a cancel can overtake the open).
+  RecentIdSet cancelled_stream_ids_;
+
+  base::WeakPtrFactory<NexusNetworkBridgeAdapter> weak_factory_{this};
 };
 
 }  // namespace nexus

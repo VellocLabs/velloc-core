@@ -274,6 +274,17 @@ void RespondSystemInfo(BridgeResponseCallback done,
   std::move(done).Success(Value(std::move(envelope)));
 }
 
+void RespondPaths(BridgeResponseCallback done,
+                  NexusFsHost::PathsResult result) {
+  // Always Success: an empty field means "not resolvable here".
+  Dict envelope;
+  envelope.Set("home", result.home);
+  envelope.Set("temp", result.temp);
+  envelope.Set("appData", result.app_data);
+  envelope.Set("cache", result.cache);
+  std::move(done).Success(Value(std::move(envelope)));
+}
+
 }  // namespace
 
 NexusFsBridgeAdapter::NexusFsBridgeAdapter(
@@ -605,6 +616,16 @@ void NexusFsBridgeAdapter::HandleSystemInfoOnUI(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&NexusFsHost::SystemInfo, fs_host_),
       base::BindOnce(&RespondSystemInfo, std::move(done)));
+}
+
+void NexusFsBridgeAdapter::HandlePathsOnUI(
+    ::nexus::generated::FsPathsInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&NexusFsHost::Paths, fs_host_),
+      base::BindOnce(&RespondPaths, std::move(done)));
 }
 
 void NexusFsBridgeAdapter::HandleCopyFileOnUI(

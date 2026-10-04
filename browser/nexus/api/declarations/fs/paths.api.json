@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "paths",
+  "struct_name": "FsPaths",
+  "description": "Well-known host directories, absolute: { home, temp, appData, cache } — appData is %APPDATA% / ~/Library/Application Support / $XDG_CONFIG_HOME (default ~/.config); cache is %LOCALAPPDATA% / ~/Library/Caches / $XDG_CACHE_HOME (default ~/.cache). An empty string means the host could not resolve that one. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

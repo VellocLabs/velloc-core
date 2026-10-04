@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "persistentList",
+  "struct_name": "ShellPersistentList",
+  "description": "List the persistent children (shell.spawn with `persist`) this browser profile started — running ones and the most recent exited ones (up to 64 records). Returns { shells: [{ id, command, logPath, startedMs, running, exitCode?, signal?, killed?, timedOut?, endedMs?, durationMs? }] }. The children live as long as the browser process (they run in the shell utility's job object), not past it. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

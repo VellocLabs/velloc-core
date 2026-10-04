@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "persistentKill",
+  "struct_name": "ShellPersistentKill",
+  "description": "Kill a persistent child by the id shell.spawn returned (`persistentId`). Returns { found, wasRunning }; the exit is then recorded (killed: true) in shell.persistentList. Idempotent. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "id",
+      "type": "string",
+      "required": true,
+      "description": "The persistentId."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

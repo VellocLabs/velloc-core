@@ -246,6 +246,22 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
     std::string shell;
   };
 
+  // `fs.paths`: well-known per-user directories, absolute and UTF-8. An
+  // empty field means it could not be resolved on this host.
+  struct PathsResult {
+    PathsResult();
+    PathsResult(const PathsResult&);
+    PathsResult& operator=(const PathsResult&);
+    ~PathsResult();
+
+    std::string home;
+    std::string temp;
+    // Roaming app data / Application Support / $XDG_CONFIG_HOME.
+    std::string app_data;
+    // Local app data / ~/Library/Caches / $XDG_CACHE_HOME.
+    std::string cache;
+  };
+
   // ----------------------------------------------------------------------
 
   explicit NexusFsHost(const base::FilePath& cwd);
@@ -368,6 +384,9 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   // current thread, so callers must allow base::MayBlock() like the
   // other methods in this class.
   SystemInfoResult SystemInfo() const;
+
+  // Blocking (PathService may touch the disk); MayBlock like the rest.
+  PathsResult Paths() const;
 
  private:
   friend class base::RefCountedThreadSafe<NexusFsHost>;

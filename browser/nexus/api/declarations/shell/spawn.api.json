@@ -1,19 +1,19 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "spawn",
-  "description": "Start a child process whose stdout and stderr STREAM to the guest as they arrive, for the plugin $.process.spawn noun. Maps onto NexusShellService.StreamSpawn (the live-pipe path the utility service already has): the shell is run by its tool id (bash, sh, pwsh, powershell) with the command line as its one argument, so bash syntax works and the service's command allowlist and cwd policy apply unchanged. Returns { streamId }. Output then arrives as shell.onStreamOutput events { streamId, stream: 'stdout'|'stderr', dataBase64 } (raw bytes, base64 — the guest decodes with a streaming TextDecoder so a multi-byte character split across two pushes still decodes), and the exit as one shell.onStreamExit event { streamId, exitCode, signal?, timedOut, killed, durationMs }. The guest drives the child's life with shell.writeStdin / shell.closeStdin / shell.streamKill. A stream whose adapter is torn down (the guest went away) is killed.",
+  "description": "Start a child process whose stdout and stderr STREAM to the guest as they arrive, for the plugin $.process.spawn noun. Maps onto NexusShellService.StreamSpawn (the live-pipe path the utility service already has): the shell is run by its tool id (bash, sh, pwsh, powershell) with the command line as its one argument, so bash syntax works and the service's command allowlist and cwd policy apply unchanged. Returns { streamId }. Output then arrives as shell.onStreamOutput events { streamId, stream: 'stdout'|'stderr', dataBase64 } (raw bytes, base64 — the guest decodes with a streaming TextDecoder so a multi-byte character split across two pushes still decodes), and the exit as one shell.onStreamExit event { streamId, exitCode, signal?, timedOut, killed, durationMs }. The guest drives the child's life with shell.writeStdin / shell.closeStdin / shell.streamKill. A stream whose adapter is torn down (the guest went away) is killed. Two forms, exactly one per call (INVALID_ARGS otherwise): the shell form {shell, command} above, or the argv form {file, args} — `file` (a tool id or an absolute path, resolved against the same command allowlist) runs with `args` verbatim, no shell parsing; advertised as shell.spawn.argv in the manifest's `primitives` (an older host refuses it as a missing `shell`). With `persist: {logPath}` the child is NOT tied to this connection: it keeps running after the guest goes away, its stdout and stderr are appended to logPath (no onStreamOutput / onStreamExit events), and it is found again with shell.persistentList and stopped with shell.persistentKill. The result is then { persistentId } instead of { streamId }. Advertised as shell.spawn.persist: an older host would ignore the field and run a connection-bound child, so the guest must not send it unless that entry is present.",
   "inputs": [
     {
       "name": "shell",
       "type": "string",
-      "required": true,
-      "description": "The shell tool id to run the command line with: bash, sh, pwsh or powershell. Resolved by the service against its allowlist; BINARY_NOT_FOUND when the host has none of it."
+      "required": false,
+      "description": "The shell tool id to run the command line with: bash, sh, pwsh or powershell. Resolved by the service against its allowlist; BINARY_NOT_FOUND when the host has none of it. Shell form only."
     },
     {
       "name": "command",
       "type": "string",
-      "required": true,
-      "description": "The command line the shell runs (`bash -c <command>`; `pwsh -NoProfile -NonInteractive -Command <command>`)."
+      "required": false,
+      "description": "The command line the shell runs (`bash -c <command>`; `pwsh -NoProfile -NonInteractive -Command <command>`). Shell form only."
     },
     {
       "name": "cwd",
@@ -38,6 +38,24 @@
       "type": "boolean",
       "required": false,
       "description": "Close the child's stdin right after launch (after `stdinText`, when given). Default false: the guest closes it with shell.closeStdin, or the child reads until killed."
+    },
+    {
+      "name": "file",
+      "type": "string",
+      "required": false,
+      "description": "Argv form: the program — a tool id (node, npx, uvx, git, …) or an absolute path; resolved against the service's command allowlist exactly like the MCP stdio servers' commands."
+    },
+    {
+      "name": "args",
+      "type": "array<string>",
+      "required": false,
+      "description": "Argv form: the arguments, passed verbatim (no shell interpolation)."
+    },
+    {
+      "name": "persist",
+      "type": "object",
+      "required": false,
+      "description": "{ logPath }: run the child detached from this connection, appending its stdout and stderr to logPath (an absolute path; parent directories are created). See the action description."
     }
   ],
   "runtime": {

@@ -72,6 +72,9 @@ class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
   NexusShellBridgeAdapter(const NexusShellBridgeAdapter&) = delete;
   NexusShellBridgeAdapter& operator=(const NexusShellBridgeAdapter&) = delete;
 
+  // Most names one shell.env call may read.
+  static constexpr size_t kMaxEnvNames = 64;
+
  private:
   void HandleStatusOnUI(
       ::nexus::generated::StatusInput input,
@@ -95,6 +98,21 @@ class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
       ::nexus::BridgeResponseCallback done) override;
   void HandleStreamKillOnUI(
       ::nexus::generated::StreamKillInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  // The persistent children (`spawn` with `persist`) — see
+  // NexusPersistentShells.
+  void HandlePersistentListOnUI(
+      ::nexus::generated::ShellPersistentListInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandlePersistentKillOnUI(
+      ::nexus::generated::ShellPersistentKillInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  // shell.env: read browser-process environment variables.
+  void HandleEnvOnUI(
+      ::nexus::generated::ShellEnvInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 

@@ -19,12 +19,17 @@
 #include "base/process/process_handle.h"
 #include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner.h"
+#include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/utility/nexus/shell/child_process_runner.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/win/scoped_handle.h"
+#endif
 
 namespace nexus {
 
@@ -89,6 +94,10 @@ class StreamingChildProcess : public mojom::NexusStreamingProcess {
     LaunchResult& operator=(LaunchResult&&);
 
     base::Process process;
+#if BUILDFLAG(IS_WIN)
+    // KILL_ON_JOB_CLOSE job the child (and every descendant) runs in.
+    base::win::ScopedHandle job;
+#endif
     base::File stdin_write;
     base::File stdout_read;
     base::File stderr_read;
@@ -152,6 +161,15 @@ class StreamingChildProcess : public mojom::NexusStreamingProcess {
   // by Kill() to killpg() the whole tree. Unused on Windows (tree-kill
   // there is a TODO via Job Object), hence [[maybe_unused]].
   [[maybe_unused]] base::ProcessId child_pgid_ = 0;
+
+#if BUILDFLAG(IS_WIN)
+  // Windows: Kill() terminates the child's job (the whole tree) — and
+  // closing it (this object going away) kills the tree too — falling back to
+  // the child alone when the job could not be set up. The wait sequence owns
+  // the original Process; this is a duplicate handle for Terminate().
+  base::win::ScopedHandle job_;
+  base::Process kill_process_;
+#endif
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<StreamingChildProcess> weak_factory_{this};

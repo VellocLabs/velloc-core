@@ -349,6 +349,50 @@ NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
   return result;
 }
 
+NexusFsHost::PathsResult::PathsResult() = default;
+NexusFsHost::PathsResult::PathsResult(const PathsResult&) = default;
+NexusFsHost::PathsResult& NexusFsHost::PathsResult::operator=(
+    const PathsResult&) = default;
+NexusFsHost::PathsResult::~PathsResult() = default;
+
+NexusFsHost::PathsResult NexusFsHost::Paths() const {
+  PathsResult result;
+  result.home = UserHome();
+  base::FilePath dir;
+  if (base::GetTempDir(&dir)) {
+    result.temp = dir.AsUTF8Unsafe();
+  }
+#if BUILDFLAG(IS_WIN)
+  if (base::PathService::Get(base::DIR_ROAMING_APP_DATA, &dir)) {
+    result.app_data = dir.AsUTF8Unsafe();
+  }
+  if (base::PathService::Get(base::DIR_LOCAL_APP_DATA, &dir)) {
+    result.cache = dir.AsUTF8Unsafe();
+  }
+#elif BUILDFLAG(IS_MAC)
+  if (base::PathService::Get(base::DIR_APP_DATA, &dir)) {
+    result.app_data = dir.AsUTF8Unsafe();
+  }
+  if (base::PathService::Get(base::DIR_CACHE, &dir)) {
+    result.cache = dir.AsUTF8Unsafe();
+  }
+#elif BUILDFLAG(IS_POSIX)
+  // XDG base directories, with the spec's defaults under home.
+  auto env = base::Environment::Create();
+  std::optional<std::string> config_home = env->GetVar("XDG_CONFIG_HOME");
+  if (config_home.has_value() && !config_home->empty()) {
+    result.app_data = *config_home;
+  } else if (!result.home.empty()) {
+    result.app_data =
+        base::FilePath::FromUTF8Unsafe(result.home).Append(".config").value();
+  }
+  if (base::PathService::Get(base::DIR_CACHE, &dir)) {
+    result.cache = dir.AsUTF8Unsafe();
+  }
+#endif
+  return result;
+}
+
 NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
   StatResult result;
   const base::FilePath resolved = ResolvePath(cwd_, path);

@@ -594,6 +594,89 @@ TEST(NexusShellServiceImplTest, KillTerminatesRunningBackgroundShellPromptly) {
   EXPECT_FALSE(terminal->exit->timed_out);
 }
 
+// A streaming child's Kill must end it — on Windows too, where it used to be
+// a no-op (the persistent children of shell.spawn({persist}) depend on it).
+// The exit then arrives through the client as killed.
+class RecordingStreamClient : public mojom::NexusStreamingProcessClient {
+ public:
+  void OnStdout(const std::vector<uint8_t>& data) override {
+    stdout_text.append(data.begin(), data.end());
+  }
+  void OnStderr(const std::vector<uint8_t>& data) override {}
+  void OnExit(mojom::ShellExitInfoPtr exit) override {
+    exited = std::move(exit);
+    if (on_exit) std::move(on_exit).Run();
+  }
+  std::string stdout_text;
+  mojom::ShellExitInfoPtr exited;
+  base::OnceClosure on_exit;
+};
+
+TEST(NexusShellServiceImplTest, StreamSpawnKillEndsALongRunningChild) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+  const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+  const std::string shell_id_tool = FindAllowlistedShellId(caps);
+  if (shell_id_tool.empty()) {
+    GTEST_SKIP() << "No allowlisted shell on host; cannot exercise StreamSpawn";
+  }
+
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = shell_id_tool;
+#if BUILDFLAG(IS_WIN)
+  options->args = {"/C", "echo nexus-stream-start & ping -n 60 127.0.0.1 >NUL"};
+#else
+  options->args = {"-c", "echo nexus-stream-start; sleep 60"};
+#endif
+  options->cwd = tmp.GetPath();
+  options->use_shell = false;
+
+  RecordingStreamClient client;
+  mojo::Receiver<mojom::NexusStreamingProcessClient> client_receiver(&client);
+  mojo::Remote<mojom::NexusStreamingProcess> controller;
+  base::RunLoop spawn_loop;
+  remote->StreamSpawn(
+      std::move(options), controller.BindNewPipeAndPassReceiver(),
+      client_receiver.BindNewPipeAndPassRemote(),
+      base::BindLambdaForTesting(
+          [&](bool ok, const std::optional<std::string>& error_code,
+              const std::optional<std::string>& error_message,
+              const std::optional<std::string>& install_hint) {
+            ASSERT_TRUE(ok) << error_code.value_or("") << ": "
+                            << error_message.value_or("");
+            spawn_loop.Quit();
+          }));
+  spawn_loop.Run();
+
+  // Running: the marker arrived.
+  for (int i = 0; i < 200 &&
+                  client.stdout_text.find("nexus-stream-start") ==
+                      std::string::npos;
+       ++i) {
+    base::RunLoop wait;
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, wait.QuitClosure(), base::Milliseconds(50));
+    wait.Run();
+  }
+  ASSERT_NE(client.stdout_text.find("nexus-stream-start"), std::string::npos);
+  ASSERT_FALSE(client.exited);
+
+  const base::TimeTicks kill_at = base::TimeTicks::Now();
+  base::RunLoop exit_loop;
+  client.on_exit = exit_loop.QuitClosure();
+  controller->Kill();
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE, exit_loop.QuitClosure(), base::Seconds(10));
+  exit_loop.Run();
+  ASSERT_TRUE(client.exited) << "a killed streaming child never exited";
+  EXPECT_TRUE(client.exited->killed);
+  EXPECT_LT(base::TimeTicks::Now() - kill_at, base::Seconds(5));
+}
+
 // Kill on an unknown id and on an already-completed shell must stay
 // idempotent — `{found:false}` / `{found:true, was_running:false}` — the
 // guest surfaces these as 'not_found' / 'already_finished', never a crash.

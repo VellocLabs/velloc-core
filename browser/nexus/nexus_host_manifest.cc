@@ -81,6 +81,12 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     "fs.readlink",
     "fs.chmod",
     "fs.writeFile.ifMatch",
+    "fs.paths",
+    "shell.spawn.argv",
+    "shell.spawn.persist",
+    "shell.persistentList",
+    "shell.persistentKill",
+    "shell.env",
 });
 
 template <size_t N>

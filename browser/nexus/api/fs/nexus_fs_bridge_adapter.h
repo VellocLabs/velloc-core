@@ -150,6 +150,11 @@ class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
       ::nexus::generated::SystemInfoInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // fs.paths — well-known per-user directories.
+  void HandlePathsOnUI(
+      ::nexus::generated::FsPathsInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   // fs.copyFile / symlink / readlink / chmod — the same pool hop as above.
   void HandleCopyFileOnUI(
       ::nexus::generated::FsCopyFileInput input,

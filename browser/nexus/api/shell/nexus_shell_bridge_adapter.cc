@@ -12,12 +12,14 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "custom_browser/browser/nexus/api/shell/nexus_persistent_shells.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/browser/nexus/tools/process_tool/nexus_shell_service_launcher.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -340,22 +342,49 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
     ::nexus::generated::SpawnInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  if (!profile_) {
-    std::move(done).Error(kShellUnavailableCode, kShellUnavailableMessage);
+  // The arguments are validated first, so a malformed call is INVALID_ARGS
+  // whether or not a profile is attached. Exactly one form: the shell form {shell, command} (a command line the
+  // shell parses) or the argv form {file, args} (run verbatim, no shell).
+  const bool shell_form = input.shell.has_value() || input.command.has_value();
+  const bool argv_form = input.file.has_value() || input.args.has_value();
+  if (shell_form == argv_form) {
+    std::move(done).InvalidArgs(
+        "shell.spawn takes exactly one of {shell, command} or {file, args}");
     return;
   }
   auto options = mojom::ShellSpawnOptions::New();
-  if (!BuildSpawnInvocation(input.shell, input.command, &options->command,
-                            &options->args)) {
-    std::move(done).Error(
-        "INVALID_SHELL",
-        base::StringPrintf("shell must be bash, sh, pwsh or powershell (got %s)",
-                           input.shell.c_str()));
-    return;
-  }
-  if (input.command.empty()) {
-    std::move(done).Error("INVALID_ARGS", "command must be a non-empty string");
-    return;
+  std::string display_command;
+  if (shell_form) {
+    const std::string shell = input.shell.value_or(std::string());
+    const std::string command_line = input.command.value_or(std::string());
+    if (!BuildSpawnInvocation(shell, command_line, &options->command,
+                              &options->args)) {
+      std::move(done).Error(
+          "INVALID_SHELL",
+          base::StringPrintf(
+              "shell must be bash, sh, pwsh or powershell (got %s)",
+              shell.c_str()));
+      return;
+    }
+    if (command_line.empty()) {
+      std::move(done).Error("INVALID_ARGS",
+                            "command must be a non-empty string");
+      return;
+    }
+    display_command = shell + " -c " + command_line;
+  } else {
+    if (!input.file.has_value() || input.file->empty()) {
+      std::move(done).InvalidArgs("file must be a non-empty string");
+      return;
+    }
+    // Resolved by the service against the same allowlist as every other
+    // command it runs (a tool id, or an absolute path that canonicalises to
+    // a resolved tool); `args` are passed verbatim.
+    options->command = *input.file;
+    options->args = input.args.value_or(std::vector<std::string>());
+    std::vector<std::string> parts{options->command};
+    parts.insert(parts.end(), options->args.begin(), options->args.end());
+    display_command = base::JoinString(parts, " ");
   }
   // The same policy as the Bash tool's hook path: the shell is run
   // directly (use_shell=false), the service resolves the tool id, applies
@@ -378,6 +407,42 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
   // life of the child; the guest bounds what it keeps of the output.
   options->background_on_timeout = false;
 
+  if (input.persist.has_value()) {
+    // Detached from this connection: the profile-wide registry owns it and
+    // its output goes to the log file (advertised as shell.spawn.persist).
+    const std::string* log_path = input.persist->FindString("logPath");
+    const base::FilePath log_file =
+        log_path ? base::FilePath::FromUTF8Unsafe(*log_path) : base::FilePath();
+    if (log_file.empty() || !log_file.IsAbsolute()) {
+      std::move(done).InvalidArgs("persist.logPath must be an absolute path");
+      return;
+    }
+    if (!profile_) {
+      std::move(done).Error(kShellUnavailableCode, kShellUnavailableMessage);
+      return;
+    }
+    GetPersistentShells(profile_).Start(
+        std::move(options), log_file, std::move(display_command),
+        input.stdinText, input.closeStdin.value_or(false),
+        base::BindOnce(
+            [](::nexus::BridgeResponseCallback done,
+               NexusPersistentShells::StartResult result) {
+              if (!result.ok) {
+                std::move(done).Error(result.error_code, result.error_message);
+                return;
+              }
+              Dict dict;
+              dict.Set("persistentId", result.id);
+              std::move(done).Success(std::move(dict));
+            },
+            std::move(done)));
+    return;
+  }
+
+  if (!profile_) {
+    std::move(done).Error(kShellUnavailableCode, kShellUnavailableMessage);
+    return;
+  }
   const std::string stream_id =
       base::StringPrintf("stream-%" PRIu64, ++next_stream_seq_);
   auto child = std::make_unique<StreamingChild>(this, stream_id);
@@ -527,6 +592,91 @@ void NexusShellBridgeAdapter::HandleKillOnUI(
   }
   GetSharedShellLauncher(profile_).GetService()->Kill(
       std::move(input.shellId), base::BindOnce(&RespondKill, std::move(done)));
+}
+
+void NexusShellBridgeAdapter::HandlePersistentListOnUI(
+    ::nexus::generated::ShellPersistentListInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (!profile_) {
+    std::move(done).Error(kShellUnavailableCode, kShellUnavailableMessage);
+    return;
+  }
+  base::ListValue shells;
+  for (const NexusPersistentShells::Record& record :
+       GetPersistentShells(profile_).List()) {
+    Dict row;
+    row.Set("id", record.id);
+    row.Set("command", EnsureUtf8(record.command));
+    row.Set("logPath", record.log_path);
+    row.Set("startedMs", record.started_ms);
+    row.Set("running", record.running);
+    if (record.exit_code.has_value()) {
+      row.Set("exitCode", *record.exit_code);
+    }
+    if (record.signal.has_value()) {
+      row.Set("signal", *record.signal);
+    }
+    if (!record.running) {
+      row.Set("killed", record.killed);
+      row.Set("timedOut", record.timed_out);
+    }
+    if (record.ended_ms.has_value()) {
+      row.Set("endedMs", *record.ended_ms);
+    }
+    if (record.duration_ms.has_value()) {
+      row.Set("durationMs", *record.duration_ms);
+    }
+    shells.Append(std::move(row));
+  }
+  Dict dict;
+  dict.Set("shells", std::move(shells));
+  std::move(done).Success(std::move(dict));
+}
+
+void NexusShellBridgeAdapter::HandlePersistentKillOnUI(
+    ::nexus::generated::ShellPersistentKillInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (!profile_) {
+    std::move(done).Error(kShellUnavailableCode, kShellUnavailableMessage);
+    return;
+  }
+  const std::pair<bool, bool> killed =
+      GetPersistentShells(profile_).Kill(input.id);
+  Dict dict;
+  dict.Set("found", killed.first);
+  dict.Set("wasRunning", killed.second);
+  std::move(done).Success(std::move(dict));
+}
+
+void NexusShellBridgeAdapter::HandleEnvOnUI(
+    ::nexus::generated::ShellEnvInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.names.size() > kMaxEnvNames) {
+    std::move(done).InvalidArgs(
+        base::StringPrintf("shell.env: at most %zu names", kMaxEnvNames));
+    return;
+  }
+  // Read-only and allowlist-free by design: the browser process's own
+  // environment, which any local program of this user can read anyway.
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  Dict values;
+  for (const std::string& name : input.names) {
+    if (name.empty()) {
+      continue;
+    }
+    std::optional<std::string> value = env->GetVar(name);
+    if (value.has_value()) {
+      values.Set(name, EnsureUtf8(std::move(*value)));
+    } else {
+      values.Set(name, Value());
+    }
+  }
+  Dict dict;
+  dict.Set("values", std::move(values));
+  std::move(done).Success(std::move(dict));
 }
 
 }  // namespace nexus

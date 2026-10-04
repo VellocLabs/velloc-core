@@ -239,6 +239,29 @@ StreamingChildProcess::LaunchResult StreamingChildProcess::LaunchOnWorker(
   out_child.Close();
   err_child.Close();
 
+  // A KILL_ON_JOB_CLOSE job, so Kill() (and teardown) take the whole tree —
+  // a shell's grandchildren included — the way child_process_runner.cc does
+  // for the one-shot path. Best effort: without it Kill() terminates the
+  // child alone.
+  if (process.IsValid()) {
+    HANDLE raw_job = ::CreateJobObjectW(nullptr, nullptr);
+    if (raw_job) {
+      base::win::ScopedHandle job(raw_job);
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+      limits.BasicLimitInformation.LimitFlags =
+          JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      if (::SetInformationJobObject(job.get(),
+                                    JobObjectExtendedLimitInformation, &limits,
+                                    sizeof(limits)) &&
+          ::AssignProcessToJobObject(job.get(), process.Handle())) {
+        result.job = std::move(job);
+      } else {
+        PLOG(WARNING) << "[StreamingChildProcess] job setup failed; Kill() "
+                         "will terminate the child only";
+      }
+    }
+  }
+
   if (!process.IsValid()) {
     result.error_code = "LAUNCH_FAILED";
     result.error_message =
@@ -329,6 +352,14 @@ void StreamingChildProcess::OnLaunched(LaunchResult result) {
   // wait sequence to block on exit; Kill() signals via the captured id.
 #if BUILDFLAG(IS_POSIX)
   child_pgid_ = result.process.Pid();
+#elif BUILDFLAG(IS_WIN)
+  job_ = std::move(result.job);
+  kill_process_ = result.process.Duplicate();
+  if (kill_requested_) {
+    // Killed before the launch finished: honour it now.
+    kill_requested_ = false;
+    Kill();
+  }
 #endif
   const base::TimeTicks start = base::TimeTicks::Now();
   wait_runner_->PostTaskAndReplyWithResult(
@@ -430,11 +461,15 @@ void StreamingChildProcess::Kill() {
     ::killpg(child_pgid_, SIGKILL);
   }
 #elif BUILDFLAG(IS_WIN)
-  // NOTE (build-pending): for full descendant-tree teardown on Windows,
-  // assign the child to a KILL_ON_JOB_CLOSE Job Object in LaunchOnWorker
-  // (mirror child_process_runner.cc) and TerminateJobObject here. Until
-  // then the wait sequence still observes exit once the immediate child
-  // dies; closing our pipe ends signals EOF to a well-behaved child.
+  // Until 2026-10 this was a no-op on Windows (a "build-pending" note), so
+  // shell.streamKill — and every streaming child's Kill — never ended a
+  // Windows child that did not exit on its own. Terminate the job (the
+  // whole tree) or, without one, the child.
+  if (job_.is_valid()) {
+    ::TerminateJobObject(job_.get(), 1);
+  } else if (kill_process_.IsValid()) {
+    kill_process_.Terminate(1, /*wait=*/false);
+  }
 #endif
   // The wait sequence observes the exit and fires OnExit + RequestClose.
 }

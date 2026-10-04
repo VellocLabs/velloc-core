@@ -12,6 +12,8 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/scoped_environment_variable_override.h"
+#include "base/base_paths.h"
+#include "base/test/scoped_path_override.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
 #include "custom_browser/common/nexus_runtime_paths.h"
@@ -57,6 +59,30 @@ TEST(ShellResolverTest, FindOnPathResolvesManagedBinary) {
   const std::optional<base::FilePath> found = ShellResolver::FindOnPath(id);
   ASSERT_TRUE(found.has_value());
   EXPECT_EQ(*found, exe);
+}
+
+TEST(ShellResolverTest, FindOnPathPrefersBundledRgNextToExe) {
+  // The installer ships rg.exe in the version folder, next to chrome.dll; that copy wins over a
+  // managed download and over any rg on the host PATH.
+  ScopedManagedHome home;
+  home.CreateManagedBinary("rg");
+  base::ScopedTempDir exe_dir;
+  ASSERT_TRUE(exe_dir.CreateUniqueTempDir());
+  base::ScopedPathOverride exe_override(base::DIR_MODULE, exe_dir.GetPath(),
+                                        /*is_absolute=*/true,
+                                        /*create=*/false);
+  const base::FilePath bundled = custom_browser::GetBundledBinaryPath("rg");
+  ASSERT_EQ(bundled.DirName(), exe_dir.GetPath());
+  ASSERT_TRUE(base::WriteFile(bundled, "binary"));
+  const std::optional<base::FilePath> found = ShellResolver::FindOnPath("rg");
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, bundled);
+}
+
+TEST(ShellResolverTest, GetBundledBinaryPathOnlyForBundledIds) {
+  EXPECT_FALSE(custom_browser::GetBundledBinaryPath("rg").empty());
+  EXPECT_TRUE(custom_browser::GetBundledBinaryPath("node").empty());
+  EXPECT_TRUE(custom_browser::GetBundledBinaryPath("chrome").empty());
 }
 
 TEST(ShellResolverTest, FindOnPathReturnsNulloptForAbsentManagedBinary) {

@@ -1,0 +1,16 @@
+# Copyright 2026 The Custom Browser Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Third-party binaries packed into the mini_installer archive. Each is
+# listed in //chrome/installer/mini_installer/chrome.release under
+# %(VersionDir)s, so setup.exe installs it into Application\<version>\ next
+# to chrome.dll (custom_browser::GetBundledBinaryPath), removes it with the
+# old version on upgrade, and build.sh's payload signing signs it like every
+# other .exe the manifest lists. Provenance: bundled/README.md.
+assert(is_win)
+
+copy("bundled_binaries") {
+  sources = [ "bundled/rg.exe" ]
+  outputs = [ "$root_out_dir/{{source_file_part}}" ]
+}

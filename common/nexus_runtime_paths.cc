@@ -4,6 +4,8 @@
 
 #include "custom_browser/common/nexus_runtime_paths.h"
 
+#include <algorithm>
+#include <iterator>
 #include <optional>
 #include <string>
 
@@ -19,6 +21,10 @@
 namespace custom_browser {
 
 namespace {
+
+// Binaries the Windows installer drops into the version folder, next to
+// chrome.dll (custom_browser/installer/custom_browser_installer_wrapper.nsi).
+constexpr std::string_view kBundledBinaryIds[] = {"rg"};
 
 // "Velloc" -> ".velloc". Lowercased dotfile, matching the guest's
 // `RUNTIME_DIR_NAME` (branding/runtimeDir.ts). Uses the stable path
@@ -98,6 +104,36 @@ bool IsUnderManagedBinDir(const base::FilePath& path) {
     return false;
   }
   return managed == candidate || managed.IsParent(candidate);
+}
+
+base::FilePath GetBundledBinaryPath(std::string_view id) {
+  if (std::ranges::find(kBundledBinaryIds, id) == std::end(kBundledBinaryIds)) {
+    return base::FilePath();
+  }
+  // DIR_MODULE is chrome.dll's directory — the installed version folder
+  // (Application\<version>\), in the browser and utility processes alike.
+  base::FilePath module_dir;
+  if (!base::PathService::Get(base::DIR_MODULE, &module_dir)) {
+    return base::FilePath();
+  }
+  std::string exe(id);
+#if BUILDFLAG(IS_WIN)
+  exe += ".exe";
+#endif
+  return module_dir.AppendASCII(exe);
+}
+
+bool IsBundledBinaryPath(const base::FilePath& path) {
+  if (path.empty() || path.ReferencesParent()) {
+    return false;
+  }
+  for (std::string_view id : kBundledBinaryIds) {
+    base::FilePath bundled = GetBundledBinaryPath(id);
+    if (!bundled.empty() && bundled == path.StripTrailingSeparators()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace custom_browser

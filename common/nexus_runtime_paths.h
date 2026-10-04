@@ -49,6 +49,18 @@ base::FilePath GetManagedBinaryPath(std::string_view id);
 // canonicalized (parent) directories so `..` tricks can't escape.
 bool IsUnderManagedBinDir(const base::FilePath& path);
 
+// Absolute path of the copy of binary `id` that the Windows installer ships
+// in the version folder next to chrome.dll (`<DIR_MODULE>/<id>[.exe]`, i.e.
+// `Application\<version>\rg.exe`), signed with the product certificate.
+// Empty for an id the installer does not bundle (only "rg" today) or when
+// DIR_MODULE can't be resolved. Callers must still check the
+// file exists: a dev build's out/ dir carries no bundled copy, and needs rg
+// on PATH — rg is no longer in the compiled download registry.
+base::FilePath GetBundledBinaryPath(std::string_view id);
+
+// True when `path` is exactly the bundled path of some bundled id.
+bool IsBundledBinaryPath(const base::FilePath& path);
+
 }  // namespace custom_browser
 
 #endif  // CUSTOM_BROWSER_COMMON_NEXUS_RUNTIME_PATHS_H_

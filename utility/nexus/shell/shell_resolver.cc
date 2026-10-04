@@ -229,6 +229,15 @@ std::optional<base::FilePath> ShellResolver::FindGitBashForWindows() {
 // static
 std::optional<base::FilePath> ShellResolver::FindOnPath(
     const std::string& tool_id) {
+  // Bundled binaries first: the Windows installer ships a signed rg.exe in the
+  // version folder (next to chrome.dll), and that pinned copy wins over whatever rg the host PATH
+  // carries — Grep's flags are written against that version, and a packaged
+  // build never needs the ~/.velloc/bin download below.
+  base::FilePath bundled = custom_browser::GetBundledBinaryPath(tool_id);
+  if (!bundled.empty() && IsCandidateUsable(bundled)) {
+    return bundled;
+  }
+
   // Special-case `cmd` on Windows: it lives in %SystemRoot%\System32 and
   // PATH lookup will normally find it, but System32 is sometimes pruned
   // from sandboxed environments. Fall through to the PATH walk first and

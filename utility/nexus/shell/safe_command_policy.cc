@@ -192,7 +192,10 @@ PolicyDecision SafeCommandPolicy::ResolveCommand(
     // cached PATH-resolved capability set — this is how a freshly
     // downloaded `rg` runs on the FIRST Grep call without waiting for the
     // service's capability cache (which is never invalidated) to refresh.
-    if (custom_browser::IsUnderManagedBinDir(candidate) &&
+    // The same holds for the copy the installer ships next to chrome.dll
+    // (signed with the product certificate at package time).
+    if ((custom_browser::IsUnderManagedBinDir(candidate) ||
+         custom_browser::IsBundledBinaryPath(candidate)) &&
         base::PathExists(candidate)) {
       decision.resolved_path = candidate;
       return decision;

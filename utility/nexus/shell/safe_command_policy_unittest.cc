@@ -11,6 +11,8 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/scoped_environment_variable_override.h"
+#include "base/base_paths.h"
+#include "base/test/scoped_path_override.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "custom_browser/common/nexus_runtime_paths.h"
@@ -197,6 +199,35 @@ TEST(SafeCommandPolicyTest, RejectsAbsolutePathUnderManagedBinDirThatIsAbsent) {
       SafeCommandPolicy::ResolveCommand(rg.AsUTF8Unsafe(), caps);
   ASSERT_FALSE(decision.ok());
   EXPECT_EQ(decision.error_code, "COMMAND_NOT_ALLOWED");
+}
+
+TEST(SafeCommandPolicyTest, AcceptsExistingBundledRgNextToExe) {
+  // The installer-shipped rg.exe next to chrome.dll is trusted like a
+  // managed download; a sibling file that is not a bundled id is not.
+  base::ScopedTempDir exe_dir;
+  ASSERT_TRUE(exe_dir.CreateUniqueTempDir());
+  base::ScopedPathOverride exe_override(base::DIR_MODULE, exe_dir.GetPath(),
+                                        /*is_absolute=*/true,
+                                        /*create=*/false);
+  const ResolvedCapabilities caps = BuildFakeCaps();
+  const base::FilePath rg = custom_browser::GetBundledBinaryPath("rg");
+  ASSERT_FALSE(rg.empty());
+
+  // Absent -> rejected (no blind allow of the exe dir).
+  EXPECT_FALSE(SafeCommandPolicy::ResolveCommand(rg.AsUTF8Unsafe(), caps).ok());
+
+  ASSERT_TRUE(base::WriteFile(rg, "binary"));
+  PolicyDecision decision =
+      SafeCommandPolicy::ResolveCommand(rg.AsUTF8Unsafe(), caps);
+  EXPECT_TRUE(decision.ok()) << decision.error_message;
+  EXPECT_EQ(decision.resolved_path, rg);
+
+  const base::FilePath other = exe_dir.GetPath().AppendASCII("evil.exe");
+  ASSERT_TRUE(base::WriteFile(other, "binary"));
+  PolicyDecision rejected =
+      SafeCommandPolicy::ResolveCommand(other.AsUTF8Unsafe(), caps);
+  ASSERT_FALSE(rejected.ok());
+  EXPECT_EQ(rejected.error_code, "COMMAND_NOT_ALLOWED");
 }
 
 TEST(SafeCommandPolicyTest, ResolveCommandRejectsEmpty) {

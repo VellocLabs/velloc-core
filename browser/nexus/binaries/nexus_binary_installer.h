@@ -90,6 +90,11 @@ class NexusBinaryInstaller {
   NexusBinaryInstaller();
   ~NexusBinaryInstaller();
 
+  void OnBundledChecked(
+      std::string id,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      EnsureCallback callback,
+      base::FilePath bundled);
   void OnUpToDateChecked(std::string id, bool up_to_date);
   void OnDownloaded(std::string id, std::optional<std::string> body);
   void OnInstalled(std::string id, bool success);

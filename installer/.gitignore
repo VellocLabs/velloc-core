@@ -1,1 +1,2 @@
 *.exe
+!bundled/rg.exe

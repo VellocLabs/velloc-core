@@ -132,6 +132,43 @@ void NexusBinaryInstaller::EnsureBinary(
     return;
   }
 
+  // A packaged build ships the binary next to chrome.dll — use it and never
+  // download. The existence check is blocking I/O, so it runs on the pool;
+  // in practice the shell resolver already found this copy and the Grep
+  // path never gets here.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(
+          [](base::FilePath bundled) {
+            return !bundled.empty() && base::PathExists(bundled)
+                       ? bundled
+                       : base::FilePath();
+          },
+          custom_browser::GetBundledBinaryPath(id)),
+      base::BindOnce(&NexusBinaryInstaller::OnBundledChecked,
+                     base::Unretained(this), id,
+                     std::move(url_loader_factory), std::move(callback)));
+}
+
+void NexusBinaryInstaller::OnBundledChecked(
+    std::string id,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    EnsureCallback callback,
+    base::FilePath bundled) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!bundled.empty()) {
+    EnsureBinaryResult result{EnsureBinaryStatus::kPresent, bundled};
+    cached_[id] = result;
+    std::move(callback).Run(result);
+    return;
+  }
+  // A concurrent call may have started the download meanwhile.
+  auto inflight = in_flight_.find(id);
+  if (inflight != in_flight_.end()) {
+    inflight->second->callbacks.push_back(std::move(callback));
+    return;
+  }
+
   std::optional<ResolvedBinaryAsset> asset = ResolveBinaryAssetForHost(id);
   base::FilePath path = custom_browser::GetManagedBinaryPath(id);
   if (!asset.has_value() || path.empty()) {

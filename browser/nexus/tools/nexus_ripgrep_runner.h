@@ -68,10 +68,12 @@ struct RipgrepRunOptions {
 
 // Shared orchestrator for "run the managed ripgrep and hand back its lines".
 // Encapsulates the flow ProcessTool::Grep pioneered: exec `rg` through the
-// sandboxed NexusShellService; on BINARY_NOT_FOUND auto-download the pinned
-// rg into ~/.velloc/bin via NexusBinaryInstaller and retry once against its
-// absolute path; parse stdout into lines. Used by both ProcessTool::Grep
-// (content search) and FileTool::Glob (`rg --files`).
+// sandboxed NexusShellService (which resolves the installer-bundled rg.exe
+// next to chrome.dll first); on BINARY_NOT_FOUND ask NexusBinaryInstaller for
+// rg and retry once against its absolute path — today that finds no
+// download pin for rg (it is bundled, not downloaded) unless an online
+// registry publishes one; parse stdout into lines. Used by both
+// ProcessTool::Grep (content search) and FileTool::Glob (`rg --files`).
 //
 // The runner does NOT own a launcher — the caller passes its own per-session
 // NexusShellServiceLauncher so a session keeps a single utility process

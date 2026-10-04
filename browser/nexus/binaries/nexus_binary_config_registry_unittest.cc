@@ -120,15 +120,13 @@ TEST_F(NexusBinaryConfigRegistryTest, EmptyOrInvalidPublishKeepsPreviousConfig) 
 }
 
 TEST_F(NexusBinaryConfigRegistryTest,
-       ResolveBinaryAssetForHostPrefersPublishedOverCompiled) {
-  // With nothing published, the host resolves the compiled-in rg asset.
-  std::optional<ResolvedBinaryAsset> compiled = ResolveBinaryAssetForHost("rg");
-  ASSERT_TRUE(compiled.has_value());
-  EXPECT_NE(compiled->url.find("github.com/BurntSushi/ripgrep"),
-            std::string::npos);
+       ResolveBinaryAssetForHostUsesPublishedConfig) {
+  // With nothing published there is nothing to download: rg ships with the
+  // installer, so the compiled-in registry carries no asset for it.
+  EXPECT_FALSE(ResolveBinaryAssetForHost("rg").has_value());
 
-  // Publish an override for THIS host's platform/arch; the resolver must
-  // now return the published URL instead of the compiled one.
+  // Publish an asset for THIS host's platform/arch; the download path stays
+  // live, so the resolver must now return the published URL.
   base::DictValue dict;
   base::ListValue assets;
   base::DictValue asset;

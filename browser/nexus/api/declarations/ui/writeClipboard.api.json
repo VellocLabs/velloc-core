@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "writeClipboard",
+  "description": "Put plain text on the OS clipboard from the browser process, for a mod's $.ui.copy (F-25). Unlike the page's navigator.clipboard it needs neither the document's focus nor a user gesture, so it is the first path a copy takes. The text is read back after the write; a clipboard that did not take it (another process holding it) answers UI_ERROR, and the guest falls back to the page's clipboard paths.",
+  "inputs": [
+    {
+      "name": "text",
+      "type": "string",
+      "required": true,
+      "description": "The text to copy, as the mod asked (after any ui.copy hook rewrote it)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -35,6 +35,9 @@
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
+#include "ui/base/clipboard/clipboard.h"
+#include "ui/base/clipboard/clipboard_buffer.h"
+#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/models/image_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -388,6 +391,49 @@ void NexusUiBridgeAdapter::HandleOpenLanguageSettingsOnUI(
   custom_browser::window_util::OpenUrlInNormalWindow(
       profile_, GURL("chrome://settings/languages"));
   std::move(done).SuccessVoid();
+}
+
+void WriteNexusClipboardText(const std::string& text,
+                             base::OnceCallback<void(bool)> done) {
+  ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
+  if (!clipboard) {
+    std::move(done).Run(false);
+    return;
+  }
+  std::u16string wanted = base::UTF8ToUTF16(text);
+  {
+    // The write lands when the writer goes out of scope.
+    ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
+    writer.WriteText(wanted);
+  }
+  clipboard->ReadText(
+      ui::ClipboardBuffer::kCopyPaste, /*data_dst=*/std::nullopt,
+      base::BindOnce(
+          [](std::u16string wanted, base::OnceCallback<void(bool)> done,
+             std::u16string held) { std::move(done).Run(held == wanted); },
+          std::move(wanted), std::move(done)));
+}
+
+void NexusUiBridgeAdapter::HandleWriteClipboardOnUI(
+    ::nexus::generated::WriteClipboardInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // A mod's `$.ui.copy` (F-25): the first of the copy's paths, the one that
+  // needs neither the guest document's focus nor a user gesture. A failure
+  // is an error, not a quiet success, so the guest tries the page's paths.
+  WriteNexusClipboardText(
+      input.text, base::BindOnce(
+                      [](::nexus::BridgeResponseCallback done, bool is_copied) {
+                        if (is_copied) {
+                          std::move(done).SuccessVoid();
+                        } else {
+                          std::move(done).Error(
+                              "UI_ERROR",
+                              "writeClipboard: the clipboard did not take the "
+                              "text");
+                        }
+                      },
+                      std::move(done)));
 }
 
 void NexusUiBridgeAdapter::HandleSetActiveSessionTitleOnUI(

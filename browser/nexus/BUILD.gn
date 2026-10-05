@@ -306,6 +306,7 @@ action("nexus_tools_codegen") {
     "api/declarations/ui/setInspectMenuEnabled.api.json",
     "api/declarations/ui/setWindowDragRegions.api.json",
     "api/declarations/ui/showNotification.api.json",
+    "api/declarations/ui/writeClipboard.api.json",
 
     # catalog category — 3 actions; replaces the bootstrap manifest's
     # hostedTools field with a lazy-pull API and moves prompt-section
@@ -1066,6 +1067,9 @@ source_set("bridge") {
     # bridge action.
     "//ui/message_center/public/cpp",
 
+    # ui::ScopedClipboardWriter for the ui.writeClipboard bridge action.
+    "//ui/base/clipboard",
+
     # ui::SelectFileDialog (native folder picker) for the ui.pickProjectFolder
     # bridge action.
     "//ui/shell_dialogs",
@@ -1479,6 +1483,9 @@ source_set("unit_tests") {
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/test:test_support",
     "//components/keep_alive_registry",
+
+    # ui::TestClipboard (nexus_ui_bridge_adapter_unittest.cc).
+    "//ui/base/clipboard:clipboard_test_support",
 
     # GetTestEncryptorForTesting (the secrets / network secret tests).
     "//components/os_crypt/async/browser:test_support",

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "custom_browser/browser/nexus/api/ui/ui_api.gen.h"
@@ -51,6 +52,14 @@ message_center::Notification BuildNexusToastNotification(
     const std::string& message,
     const std::optional<std::string>& notification_type,
     scoped_refptr<message_center::NotificationDelegate> delegate);
+
+// Writes `text` to the copy/paste clipboard of the current thread and reads it
+// back: `done(true)` only when the clipboard holds exactly `text` afterwards.
+// On Windows another process holding the clipboard makes the write a silent
+// no-op, so the read-back is what tells ui.writeClipboard's caller to fall
+// back to the page's clipboard paths. Exposed for the unit test.
+void WriteNexusClipboardText(const std::string& text,
+                             base::OnceCallback<void(bool)> done);
 
 // Concrete adapter implementing the generated `UiApiBase` virtuals.
 //
@@ -115,6 +124,10 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
       ::nexus::BridgeResponseCallback done) override;
   void HandleOpenLanguageSettingsOnUI(
       ::nexus::generated::OpenLanguageSettingsInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleWriteClipboardOnUI(
+      ::nexus::generated::WriteClipboardInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void HandleSetActiveSessionTitleOnUI(

@@ -8,8 +8,13 @@
 #include <string>
 
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/task_environment.h"
+#include "base/test/test_future.h"
 #include "custom_browser/common/branding_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/clipboard/clipboard.h"
+#include "ui/base/clipboard/clipboard_buffer.h"
+#include "ui/base/clipboard/test/test_clipboard.h"
 #include "ui/gfx/image/image.h"
 #include "ui/message_center/public/cpp/notification.h"
 
@@ -60,6 +65,33 @@ TEST(NexusNotificationBrandingTest, ToastHeaderUsesBrandedProductName) {
   EXPECT_EQ(without_title.display_source(), product_name);
   EXPECT_EQ(without_title.title(), product_name);
   EXPECT_EQ(without_title.id(), "nexus.default");
+}
+
+// ui.writeClipboard (a mod's `$.ui.copy`): the text lands on the copy/paste
+// clipboard, read back as written — non-ASCII included — and the callback says
+// so. A later write replaces it.
+TEST(NexusWriteClipboardTest, WritesTextAndConfirmsByReadBack) {
+  base::test::TaskEnvironment task_environment;
+  ui::TestClipboard::CreateForCurrentThread();
+
+  base::test::TestFuture<bool> first;
+  WriteNexusClipboardText("copied by a mod \xE2\x9C\x93", first.GetCallback());
+  EXPECT_TRUE(first.Get());
+
+  base::test::TestFuture<std::u16string> held;
+  ui::Clipboard::GetForCurrentThread()->ReadText(
+      ui::ClipboardBuffer::kCopyPaste, std::nullopt, held.GetCallback());
+  EXPECT_EQ(held.Get(), u"copied by a mod \u2713");
+
+  base::test::TestFuture<bool> second;
+  WriteNexusClipboardText("second", second.GetCallback());
+  EXPECT_TRUE(second.Get());
+  base::test::TestFuture<std::u16string> again;
+  ui::Clipboard::GetForCurrentThread()->ReadText(
+      ui::ClipboardBuffer::kCopyPaste, std::nullopt, again.GetCallback());
+  EXPECT_EQ(again.Get(), u"second");
+
+  ui::Clipboard::DestroyClipboardForCurrentThread();
 }
 
 }  // namespace

@@ -4,6 +4,7 @@
 #include <limits>
 #include <utility>
 
+#include "base/base64.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
@@ -24,6 +25,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -217,6 +219,7 @@ NexusNetworkBridgeAdapter::NexusNetworkBridgeAdapter(
   // use (see api/llm/llm_broker_factory.cc:44-45) — i.e. requests
   // here will use the same cookie jar, same proxy config, same
   // network-service routing.
+  browser_context_ = browser_context;
   if (browser_context) {
     url_loader_factory_ = browser_context->GetDefaultStoragePartition()
                               ->GetURLLoaderFactoryForBrowserProcess();
@@ -235,6 +238,8 @@ void NexusNetworkBridgeAdapter::OnBridgeConnectionClosed() {
   // Deleting a stream cancels its request (and answers a pending open or a
   // held read, whose callbacks the gone connection drops anyway).
   streams_.clear();
+  // Dropping a socket closes it; nobody is left to tell.
+  sockets_.clear();
 }
 
 void NexusNetworkBridgeAdapter::HandleHttpGetOnUI(
@@ -597,6 +602,230 @@ void NexusNetworkBridgeAdapter::EraseStreamSoon(const std::string& stream_id) {
             }
           },
           weak_factory_.GetWeakPtr(), stream_id));
+}
+
+// ===========================================================================
+// network.wsOpen / wsSend / wsClose
+// ===========================================================================
+
+network::mojom::NetworkContext* NexusNetworkBridgeAdapter::GetNetworkContext() {
+  if (network_context_for_testing_) {
+    return network_context_for_testing_;
+  }
+  return browser_context_
+             ? browser_context_->GetDefaultStoragePartition()
+                   ->GetNetworkContext()
+             : nullptr;
+}
+
+void NexusNetworkBridgeAdapter::HandleWsOpenOnUI(
+    ::nexus::generated::NetworkWsOpenInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  network::mojom::NetworkContext* context = GetNetworkContext();
+  if (!context) {
+    std::move(done).Error("NETWORK_ERROR",
+                          "Network capability not initialised.");
+    return;
+  }
+  if (sockets_.size() >= kMaxSockets) {
+    std::move(done).Error("TOO_MANY_SOCKETS", "Too many sockets are open.");
+    return;
+  }
+  if (input.socketId.has_value()) {
+    if (!IsValidClientStreamId(*input.socketId)) {
+      std::move(done).InvalidArgs(
+          "socketId must be 8-64 chars of [A-Za-z0-9_-].");
+      return;
+    }
+    if (sockets_.contains(*input.socketId)) {
+      std::move(done).InvalidArgs("socket id in use: " + *input.socketId);
+      return;
+    }
+  }
+
+  const GURL url(input.url);
+  if (input.url.empty() || input.url.size() > kMaxStreamUrlChars ||
+      !url.is_valid() || !url.SchemeIsWSOrWSS() || url.has_username() ||
+      url.has_password()) {
+    std::move(done).Error(
+        "INVALID_URL", "A WebSocket URL is ws:// or wss://, at most 8192 "
+                       "chars, without credentials.");
+    return;
+  }
+  // The http(s) twin of the URL: the egress literal-host check and the
+  // secrets' origin binding are both expressed for http(s).
+  GURL::Replacements to_http;
+  to_http.SetSchemeStr(url.SchemeIs("wss") ? "https" : "http");
+  const GURL http_url = url.ReplaceComponents(to_http);
+  const bool allow_private = input.allowPrivateNetwork.value_or(false);
+  if (!allow_private) {
+    if (std::optional<std::string> refusal =
+            EgressRefusalForLiteralHost(http_url)) {
+      std::move(done).Error(
+          "EGRESS_BLOCKED",
+          base::StringPrintf("Refused by the egress policy: %s.",
+                             refusal->c_str()));
+      return;
+    }
+  }
+
+  std::vector<network::mojom::HttpHeaderPtr> headers;
+  if (input.headers.has_value()) {
+    std::vector<std::string> secret_headers;
+    if (!ExpandSecretsInValues(prefs_, http_url, /*are_headers=*/true,
+                               *input.headers, &secret_headers, done)) {
+      return;
+    }
+    for (const auto [name, value] : *input.headers) {
+      if (!value.is_string()) {
+        continue;
+      }
+      if (name.empty() || IsReservedNetworkRequestHeader(name) ||
+          !net::HttpUtil::IsValidHeaderName(name) ||
+          !net::HttpUtil::IsValidHeaderValue(value.GetString())) {
+        std::move(done).InvalidArgs("Header not allowed: " + name);
+        return;
+      }
+      headers.push_back(
+          network::mojom::HttpHeader::New(name, value.GetString()));
+    }
+  }
+
+  const std::string socket_id =
+      input.socketId.has_value()
+          ? *input.socketId
+          : base::Uuid::GenerateRandomV4().AsLowercaseString();
+  auto socket = std::make_unique<NexusWebSocketConnection>(
+      context, url, input.protocols.value_or(std::vector<std::string>()),
+      std::move(headers), !allow_private,
+      base::BindOnce(&NexusNetworkBridgeAdapter::OnWsOpened,
+                     weak_factory_.GetWeakPtr(), socket_id, std::move(done)),
+      base::BindRepeating(&NexusNetworkBridgeAdapter::OnWsMessage,
+                          weak_factory_.GetWeakPtr(), socket_id),
+      base::BindOnce(&NexusNetworkBridgeAdapter::OnWsClosed,
+                     weak_factory_.GetWeakPtr(), socket_id));
+  NexusWebSocketConnection* socket_ptr = socket.get();
+  sockets_[socket_id] = std::move(socket);
+  socket_ptr->Start();
+}
+
+void NexusNetworkBridgeAdapter::OnWsOpened(std::string socket_id,
+                                           ::nexus::BridgeResponseCallback done,
+                                           std::string error_code,
+                                           std::string error_message,
+                                           std::string protocol) {
+  if (!error_code.empty()) {
+    EraseSocketSoon(socket_id);
+    std::move(done).Error(std::move(error_code), std::move(error_message));
+    return;
+  }
+  base::DictValue out;
+  out.Set("socketId", socket_id);
+  out.Set("protocol", std::move(protocol));
+  std::move(done).Success(std::move(out));
+}
+
+void NexusNetworkBridgeAdapter::OnWsMessage(std::string socket_id,
+                                            bool binary,
+                                            std::string data) {
+  base::DictValue route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "network");
+  route.Set("action", "onWsMessage");
+  base::DictValue payload;
+  payload.Set("socketId", std::move(socket_id));
+  if (binary || !base::IsStringUTF8AllowingNoncharacters(data)) {
+    // base::Value strings must be UTF-8; a text frame that is not (the
+    // server's bug) travels as bytes rather than being dropped.
+    payload.Set("dataBase64", base::Base64Encode(data));
+  } else {
+    payload.Set("text", std::move(data));
+  }
+  SendEvent(route, base::Value(std::move(payload)));
+}
+
+void NexusNetworkBridgeAdapter::OnWsClosed(std::string socket_id,
+                                           uint16_t code,
+                                           std::string reason,
+                                           bool was_clean) {
+  base::DictValue route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "network");
+  route.Set("action", "onWsClose");
+  base::DictValue payload;
+  payload.Set("socketId", socket_id);
+  payload.Set("code", static_cast<int>(code));
+  payload.Set("reason", base::IsStringUTF8AllowingNoncharacters(reason)
+                            ? std::move(reason)
+                            : std::string());
+  payload.Set("wasClean", was_clean);
+  SendEvent(route, base::Value(std::move(payload)));
+  EraseSocketSoon(socket_id);
+}
+
+void NexusNetworkBridgeAdapter::HandleWsSendOnUI(
+    ::nexus::generated::NetworkWsSendInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.text.has_value() == input.dataBase64.has_value()) {
+    std::move(done).InvalidArgs("wsSend takes exactly one of text or "
+                                "dataBase64.");
+    return;
+  }
+  std::string data;
+  bool binary = false;
+  if (input.text.has_value()) {
+    data = std::move(*input.text);
+  } else {
+    std::optional<std::vector<uint8_t>> decoded =
+        base::Base64Decode(*input.dataBase64);
+    if (!decoded.has_value()) {
+      std::move(done).InvalidArgs("dataBase64 is not valid base64.");
+      return;
+    }
+    data.assign(decoded->begin(), decoded->end());
+    binary = true;
+  }
+  if (data.size() > NexusWebSocketConnection::kMaxMessageBytes) {
+    std::move(done).Error("MESSAGE_TOO_LARGE",
+                          "A message is at most 16 MiB.");
+    return;
+  }
+  auto it = sockets_.find(input.socketId);
+  const bool sent =
+      it != sockets_.end() && it->second->Send(binary, std::move(data));
+  base::DictValue out;
+  out.Set("sent", sent);
+  std::move(done).Success(std::move(out));
+}
+
+void NexusNetworkBridgeAdapter::HandleWsCloseOnUI(
+    ::nexus::generated::NetworkWsCloseInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  auto it = sockets_.find(input.socketId);
+  const bool found = it != sockets_.end();
+  if (found) {
+    const int code = input.code.value_or(1000);
+    it->second->Close(static_cast<uint16_t>(std::clamp(code, 1000, 4999)),
+                      input.reason.value_or(std::string()));
+  }
+  base::DictValue out;
+  out.Set("found", found);
+  std::move(done).Success(std::move(out));
+}
+
+void NexusNetworkBridgeAdapter::EraseSocketSoon(const std::string& socket_id) {
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](base::WeakPtr<NexusNetworkBridgeAdapter> self, std::string id) {
+            if (self) {
+              self->sockets_.erase(id);
+            }
+          },
+          weak_factory_.GetWeakPtr(), socket_id));
 }
 
 }  // namespace nexus

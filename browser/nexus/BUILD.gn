@@ -258,6 +258,9 @@ action("nexus_tools_codegen") {
     "api/declarations/network/streamCancel.api.json",
     "api/declarations/network/streamOpen.api.json",
     "api/declarations/network/streamRead.api.json",
+    "api/declarations/network/wsClose.api.json",
+    "api/declarations/network/wsOpen.api.json",
+    "api/declarations/network/wsSend.api.json",
 
     # mcp category — native-backed (stdio) MCP server lifecycle. The C++
     # side owns the full MCP client for locally-spawned servers (process
@@ -904,6 +907,8 @@ source_set("bridge") {
     "api/llm/nexus_llm_raw_stream.h",
     "api/network/nexus_http_byte_stream.cc",
     "api/network/nexus_http_byte_stream.h",
+    "api/network/nexus_websocket_connection.cc",
+    "api/network/nexus_websocket_connection.h",
     "api/mcp/nexus_mcp_bridge_adapter.cc",
     "api/mcp/nexus_mcp_bridge_adapter.h",
     "api/network/nexus_network_bridge_adapter.cc",
@@ -1566,6 +1571,7 @@ source_set("unit_tests") {
     "api/llm/nexus_llm_raw_stream_unittest.cc",
     "api/network/nexus_http_byte_stream_unittest.cc",
     "api/network/nexus_network_bridge_adapter_unittest.cc",
+    "api/network/nexus_websocket_connection_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
     "api/secrets/nexus_secrets_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",

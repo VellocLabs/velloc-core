@@ -12,6 +12,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
 #include "custom_browser/browser/nexus/api/network/nexus_http_byte_stream.h"
+#include "custom_browser/browser/nexus/api/network/nexus_websocket_connection.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
 namespace blink {
@@ -26,6 +27,10 @@ class PrefService;
 
 namespace network {
 class SharedURLLoaderFactory;
+}
+
+namespace network::mojom {
+class NetworkContext;
 }
 
 namespace nexus {
@@ -76,6 +81,8 @@ class NexusNetworkBridgeAdapter
 
   // Most streams one connection may hold open.
   static constexpr size_t kMaxStreams = 32;
+  // Most WebSockets one connection may hold open.
+  static constexpr size_t kMaxSockets = 16;
 
   // Test seam: a factory that is not a profile's (TestURLLoaderFactory).
   void SetURLLoaderFactoryForTesting(
@@ -83,6 +90,11 @@ class NexusNetworkBridgeAdapter
   size_t stream_count_for_testing() const { return streams_.size(); }
   // Test seam: the prefs the `{{secret:NAME}}` placeholders resolve from.
   void SetPrefsForTesting(PrefService* prefs) { prefs_ = prefs; }
+  // Test seam: the network context WebSockets are created on.
+  void SetNetworkContextForTesting(network::mojom::NetworkContext* context) {
+    network_context_for_testing_ = context;
+  }
+  size_t socket_count_for_testing() const { return sockets_.size(); }
 
  private:
   // Override of generated::NetworkApiBase pure virtual. Runs on UI.
@@ -124,6 +136,34 @@ class NexusNetworkBridgeAdapter
   // Erase after the current callback frame (the stream may be on the stack).
   void EraseStreamSoon(const std::string& stream_id);
 
+  // `network.wsOpen` / `wsSend` / `wsClose` and the onWsMessage / onWsClose
+  // events, over NexusWebSocketConnection.
+  void HandleWsOpenOnUI(
+      ::nexus::generated::NetworkWsOpenInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleWsSendOnUI(
+      ::nexus::generated::NetworkWsSendInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleWsCloseOnUI(
+      ::nexus::generated::NetworkWsCloseInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void OnWsOpened(std::string socket_id,
+                  ::nexus::BridgeResponseCallback done,
+                  std::string error_code,
+                  std::string error_message,
+                  std::string protocol);
+  void OnWsMessage(std::string socket_id, bool binary, std::string data);
+  void OnWsClosed(std::string socket_id,
+                  uint16_t code,
+                  std::string reason,
+                  bool was_clean);
+  // Erase after the current callback frame (the socket is on the stack).
+  void EraseSocketSoon(const std::string& socket_id);
+  network::mojom::NetworkContext* GetNetworkContext();
+
   // Shared tail of both handlers: build the per-request host and start it.
   void StartRequest(NexusHttpRequestSpec spec,
                     ::nexus::BridgeResponseCallback done);
@@ -138,6 +178,11 @@ class NexusNetworkBridgeAdapter
   // Acquired once at construction from the profile's default storage
   // partition. Outlives every per-request host.
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
+
+  // Where WebSockets are created (the profile's default storage partition).
+  raw_ptr<content::BrowserContext> browser_context_ = nullptr;
+  raw_ptr<network::mojom::NetworkContext> network_context_for_testing_ =
+      nullptr;
 
   // The profile's prefs: where `{{secret:NAME}}` placeholders resolve
   // (NexusSecretStore). Null without a profile — a placeholder then fails
@@ -155,6 +200,9 @@ class NexusNetworkBridgeAdapter
   // Ids cancelled before their open arrived (the body rides its own port,
   // so a cancel can overtake the open).
   RecentIdSet cancelled_stream_ids_;
+
+  // Open (or opening) network.ws* sockets by id.
+  std::map<std::string, std::unique_ptr<NexusWebSocketConnection>> sockets_;
 
   base::WeakPtrFactory<NexusNetworkBridgeAdapter> weak_factory_{this};
 };

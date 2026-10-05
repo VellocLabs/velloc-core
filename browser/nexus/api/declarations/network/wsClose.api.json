@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "wsClose",
+  "struct_name": "NetworkWsClose",
+  "description": "Close a socket (the closing handshake; network.onWsClose follows). A socket still connecting is abandoned and its wsOpen fails CANCELLED. Returns { found }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "socketId",
+      "type": "string",
+      "required": true,
+      "description": "The socket."
+    },
+    {
+      "name": "code",
+      "type": "integer",
+      "required": false,
+      "description": "Close code, default 1000."
+    },
+    {
+      "name": "reason",
+      "type": "string",
+      "required": false,
+      "description": "Close reason (at most 123 bytes)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

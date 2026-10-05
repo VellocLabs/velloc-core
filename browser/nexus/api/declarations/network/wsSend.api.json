@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "wsSend",
+  "struct_name": "NetworkWsSend",
+  "description": "Send one message on an open socket: `text` for a text message, or `dataBase64` for a binary one (exactly one). Returns { sent } — false when the socket is not open (unknown, still connecting, or closed). Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "socketId",
+      "type": "string",
+      "required": true,
+      "description": "The socket."
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "required": false,
+      "description": "A text message."
+    },
+    {
+      "name": "dataBase64",
+      "type": "string",
+      "required": false,
+      "description": "A binary message, base64."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

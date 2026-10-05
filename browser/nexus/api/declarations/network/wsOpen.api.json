@@ -1,0 +1,41 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "wsOpen",
+  "struct_name": "NetworkWsOpen",
+  "description": "Open a WebSocket from the browser process (the network service's WebSocket API; cookies never sent). Resolves once the handshake completed: { socketId, protocol }. Messages then arrive as network.onWsMessage { socketId, text } or { socketId, dataBase64 } (one event per whole message, at most 16 MiB, else the socket closes with 1009), and the end as one network.onWsClose { socketId, code, reason, wasClean }. Runs under the egress policy unless allowPrivateNetwork: an IP-literal host in a refused range is refused before dialing, and the peer the handshake connected to is judged unless a proxy lookup says the socket goes through a proxy (EGRESS_BLOCKED). Header values may carry `{{secret:NAME}}` for a secret bound to the socket's origin (wss://host matches a secret bound to https://host). At most 16 sockets per connection; every socket is closed when the connection goes away. Errors: INVALID_URL, EGRESS_BLOCKED, WS_CONNECT_FAILED, TOO_MANY_SOCKETS, SECRET_*. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "ws:// or wss:// URL, at most 8192 chars, no embedded credentials."
+    },
+    {
+      "name": "protocols",
+      "type": "array<string>",
+      "required": false,
+      "description": "Requested subprotocols (Sec-WebSocket-Protocol)."
+    },
+    {
+      "name": "headers",
+      "type": "object",
+      "required": false,
+      "description": "Extra handshake headers, string -> string; the reserved ones (Host, Cookie, Origin, Sec-*, …) are refused. Values may carry {{secret:NAME}}."
+    },
+    {
+      "name": "socketId",
+      "type": "string",
+      "required": false,
+      "description": "Caller-chosen id, 8-64 chars [A-Za-z0-9_-]; omitted: the host mints one."
+    },
+    {
+      "name": "allowPrivateNetwork",
+      "type": "boolean",
+      "required": false,
+      "description": "Opt this socket out of the egress policy (a local server a person named). Default false."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -106,6 +106,7 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // httpRequest / streamOpen substitute {{secret:NAME}} for the bound
     // origin (an older host would send the placeholder text verbatim).
     "network.secretTemplates",
+    "network.wsOpen",
 });
 
 template <size_t N>

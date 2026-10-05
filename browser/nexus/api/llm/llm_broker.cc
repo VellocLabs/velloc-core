@@ -59,13 +59,12 @@ LlmBroker::LlmBroker(
     crypt->WhenReady(base::BindOnce(&LlmBroker::LoadProviderConfigs,
                                     weak_factory_.GetWeakPtr()));
   }
-  // Warm-load the TS-pushed caches from prefs, ahead of nexus_web's fresh
-  // `model.publishCatalog` / `session.publishStatus` pushes. The cached
+  // Warm-load the TS-pushed catalog cache from prefs, ahead of nexus_web's
+  // fresh `model.publishCatalog` push. The cached
   // catalog carries the guest-owned default base URLs, so providers can
   // reach their endpoint on a cold boot before the guest republishes.
   ts_model_catalog_ = prefs_->GetDict(prefs::kNexusTsModelCatalogCache).Clone();
   ApplyCatalogDefaultBaseUrls();
-  session_status_ = prefs_->GetDict(prefs::kNexusLastSessionStatus).Clone();
   // Model catalogues are TS-authoritative (see
   // `nexus_web/src/browser/config/nexusModelConfig.ts`). No network discovery
   // is performed — the hard-coded config supplies every id, context window,
@@ -286,17 +285,6 @@ void LlmBroker::SetProviderConfigs(base::DictValue configs,
 const base::DictValue& LlmBroker::GetTsModelCatalog() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return ts_model_catalog_;
-}
-
-void LlmBroker::SetSessionStatus(base::DictValue status) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  session_status_ = std::move(status);
-  prefs_->SetDict(prefs::kNexusLastSessionStatus, session_status_.Clone());
-}
-
-const base::DictValue& LlmBroker::GetSessionStatus() const {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return session_status_;
 }
 
 LlmBroker::PickEventPusherToken LlmBroker::AddPickEventPusher(
@@ -600,68 +588,6 @@ void LlmBroker::ReloadProvidersFromPrefs() {
   LoadProviderConfigs();
   // Fresh instances start without a default base URL.
   ApplyCatalogDefaultBaseUrls();
-}
-
-// ---------------------------------------------------------------------------
-// Inference delegation
-// ---------------------------------------------------------------------------
-
-void LlmBroker::DoGenerate(const base::DictValue& call_options,
-                           GenerateCallback callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  LlmProvider* provider = GetActiveProvider();
-  if (!provider) {
-    GenerateResult result;
-    result.finish_reason = FinishReason::kError;
-    std::move(callback).Run(
-        std::move(result),
-        "No LLM provider configured. Please select a provider in Settings.");
-    return;
-  }
-
-  provider->DoGenerate(call_options, std::move(callback));
-}
-
-void LlmBroker::DoStream(const base::DictValue& call_options,
-                         StreamChunkCallback chunk_callback,
-                         StreamDoneCallback done_callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  LlmProvider* provider = GetActiveProvider();
-  if (!provider) {
-    std::move(done_callback)
-        .Run(
-            "No LLM provider configured. Please select a provider in "
-            "Settings.");
-    return;
-  }
-
-  provider->DoStream(call_options, std::move(chunk_callback),
-                     std::move(done_callback));
-}
-
-void LlmBroker::CancelRequest(const std::string& request_id) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // Broadcast to all providers since we may not know which one owns the
-  // request (e.g. if the active provider changed mid-request).
-  for (auto& [id, provider] : providers_) {
-    provider->CancelRequest(request_id);
-  }
-}
-
-bool LlmBroker::IsRequestQueued(const std::string& request_id) const {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // Same broadcast rationale as CancelRequest: request ids are unique
-  // (host-generated UUIDs), so at most one provider can claim it.
-  for (const auto& [id, provider] : providers_) {
-    if (provider->IsRequestQueued(request_id)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 void LlmBroker::Shutdown() {

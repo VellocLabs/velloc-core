@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "streamKill",
-  "description": "Kill a streaming child (started by shell.spawn) and its process tree. Returns { found }. The exit still arrives as a shell.onStreamExit event with killed=true. Distinct from shell.kill, which addresses the background-shell registry (Bash run_in_background).",
+  "description": "Kill a streaming child (started by shell.spawn) and its process tree. Returns { found }. The exit still arrives as a shell.onStreamExit event with killed=true. A persistent child (spawn with persist) is killed with shell.persistentKill instead.",
   "inputs": [
     {
       "name": "streamId",

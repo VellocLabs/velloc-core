@@ -23,8 +23,6 @@ class Profile;
 namespace nexus {
 class LlmBroker;
 class LlmProvider;
-class NexusMcpHost;
-class NexusShellServiceLauncher;
 }  // namespace nexus
 
 namespace settings {
@@ -45,8 +43,8 @@ namespace settings {
 //   - getNexusLauncherEnabled / setNexusLauncherEnabled — local_state pref.
 //
 // Routes RETIRED in A5 (now exclusive to the panel ↔ C++ bridge — see
-// api/providers/nexus_providers_bridge_adapter.cc and
-// api/mcp/nexus_mcp_bridge_adapter.cc): refreshProviderModels,
+// api/providers/nexus_providers_bridge_adapter.cc; the MCP probe moved to
+// the runtime's mcpSettings.testConnect): refreshProviderModels,
 // beginProviderOAuth, getProviderOAuthStatus, pickNexusSelection,
 // testMcpServer. Also vapor-retired: setProviderApiKey,
 // validateProviderConnection, getOllamaModels, setActiveProvider,
@@ -196,16 +194,6 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // `nexus_guest_config.cc`, `llm_broker.cc`, and the in-runtime config
   // push path.
   //
-  // HandleGetMcpServers / HandleUpsertMcpServer / HandleRemoveMcpServer
-  // were similarly the WebUI CRUD over `prefs::kNexusMcpServerConfigs`.
-  // Dropped: no JS caller. The pref + `NexusMcpServerStore` remain for
-  // the bridge adapter's `GetOrCreateHost(id)` legacy fallback path
-  // (no inline config supplied).
-
-  // HandleTestMcpServer + OnTestMcpServerConnected removed: migrated to
-  // `mcp.testConnect` on the panel WebUI bridge port (A5 Tier 3a). See
-  // api/mcp/nexus_mcp_bridge_adapter.h::HandleTestConnectOnUI.
-
   // HandlePickNexusSelection removed: migrated to `providers.setActive`
   // on the panel WebUI bridge port (A5 Tier 3b). See
   // api/providers/nexus_providers_bridge_adapter.h::HandleSetActiveOnUI.
@@ -236,10 +224,6 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   };
 
   std::map<std::string, PendingVerification> pending_verifications_;
-
-  // `pending_mcp_tests_` + `mcp_test_launcher_` removed: the transient-
-  // host probe lives in NexusMcpBridgeAdapter now (A5 Tier 3a). See
-  // api/mcp/nexus_mcp_bridge_adapter.{h,cc}.
 
   base::WeakPtrFactory<NexusSettingsHandler> weak_factory_{this};
 };

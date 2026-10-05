@@ -61,10 +61,6 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
             ExecCallback callback) override;
   void Spawn(mojom::ShellSpawnOptionsPtr options,
              SpawnCallback callback) override;
-  void SpawnWithObserver(
-      mojom::ShellSpawnOptionsPtr options,
-      mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
-      SpawnWithObserverCallback callback) override;
   void ReadBackgroundOutput(const std::string& shell_id,
                             ReadBackgroundOutputCallback callback) override;
   void Kill(const std::string& shell_id, KillCallback callback) override;
@@ -89,25 +85,6 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // back into a Mojo response.
   void RunExec(mojom::ShellSpawnOptionsPtr options, ExecCallback callback);
 
-  // Auto-background-on-timeout (CC parity). When
-  // `ShellSpawnOptions::background_on_timeout` is set, `RunExec` routes the
-  // prepared request here instead of the plain post-and-reply path: the
-  // child runs under the hard backstop timeout while a binding-sequence
-  // `base::OneShotTimer` counts down the caller's requested `timeout_ms`
-  // ("block budget"). Whichever fires first wins — early completion
-  // (`OnExecBackgroundComplete` before the timer) replies with the full
-  // foreground result; the timer expiring first
-  // (`OnExecBackgroundTimeout`) detaches the still-running child into the
-  // `background_` registry and replies with `result.background_shell_id`,
-  // and the eventual `OnExecBackgroundComplete` records the final outcome
-  // there for `ReadBackgroundOutput`. Both callbacks run on the binding
-  // sequence, so the `replied` flag needs no lock.
-  void StartExecWithBackgroundFallback(ChildProcessRequest request,
-                                       ExecCallback callback);
-  void OnExecBackgroundTimeout(std::string shell_id);
-  void OnExecBackgroundComplete(std::string shell_id,
-                                ChildProcessOutcome outcome);
-
   // Background `Spawn` helpers. `RunSpawn` runs the same validation /
   // allowlist / cwd checks as `RunExec` (via the shared `PrepareExec`
   // free function), allocates a `shell_id`, replies immediately, then
@@ -116,23 +93,6 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // binding sequence — so the registry is only ever touched there and
   // needs no lock.
   void RunSpawn(mojom::ShellSpawnOptionsPtr options, SpawnCallback callback);
-  // Background `SpawnWithObserver` helper. Thin wrapper over `RunSpawnInternal`
-  // that threads the caller's `observer` remote through so
-  // `OnBackgroundComplete` can fire `NexusBackgroundShellObserver.OnExit` when
-  // the child reaches a terminal state. Shares the exact validation / launch /
-  // reply path as the plain `Spawn`.
-  void RunSpawnWithObserver(
-      mojom::ShellSpawnOptionsPtr options,
-      mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
-      SpawnWithObserverCallback callback);
-  // Shared implementation for `RunSpawn` and `RunSpawnWithObserver`. When
-  // `observer` is valid it is stored on the `BackgroundEntry` for the terminal
-  // `OnExit` notification; an invalid (null) remote means "no observer" (the
-  // plain `Spawn` path).
-  void RunSpawnInternal(
-      mojom::ShellSpawnOptionsPtr options,
-      mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
-      SpawnCallback callback);
   void OnBackgroundComplete(std::string shell_id,
                             base::TimeTicks dispatch_start,
                             ChildProcessOutcome outcome);
@@ -192,22 +152,6 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
     SpawnCallback callback;
   };
 
-  // Pending SpawnWithObserver requests waiting for the first capability probe.
-  // Carries the move-only observer endpoint through to `RunSpawnWithObserver`.
-  // Drained by `OnResolved`, mirroring `PendingSpawn`.
-  struct PendingSpawnWithObserver {
-    PendingSpawnWithObserver();
-    ~PendingSpawnWithObserver();
-    PendingSpawnWithObserver(const PendingSpawnWithObserver&) = delete;
-    PendingSpawnWithObserver& operator=(const PendingSpawnWithObserver&) = delete;
-    PendingSpawnWithObserver(PendingSpawnWithObserver&&);
-    PendingSpawnWithObserver& operator=(PendingSpawnWithObserver&&);
-
-    mojom::ShellSpawnOptionsPtr options;
-    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer;
-    SpawnWithObserverCallback callback;
-  };
-
   // Pending StreamSpawn requests waiting for the first capability probe.
   // Carries the move-only mojo endpoints through to `RunStreamSpawn`.
   struct PendingStreamSpawn {
@@ -255,26 +199,6 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
     // reads it to force `exit.killed = true` (the runner may report a normal exit
     // because the child died from our out-of-band termination).
     bool kill_issued = false;
-    // Optional exit observer supplied by `SpawnWithObserver` (the browser's
-    // `NexusShellServiceLauncher`). Bound while the child runs; fired ONCE from
-    // `OnBackgroundComplete` with the terminal `ShellExitInfo`, then reset.
-    // Invalid (unbound) for shells started via the plain `Spawn`.
-    mojo::Remote<mojom::NexusBackgroundShellObserver> observer;
-  };
-
-  // One in-flight `background_on_timeout` Exec (see
-  // `StartExecWithBackgroundFallback`). Holds the caller's reply callback
-  // and the block-budget timer until either the child completes or the
-  // timer fires. Keyed by the reserved `shell_id`. Only touched on the
-  // binding sequence — no lock.
-  struct ExecBackgroundState {
-    ExecBackgroundState();
-    ~ExecBackgroundState();
-
-    ExecCallback callback;
-    bool replied = false;
-    base::TimeTicks dispatch_start;
-    std::unique_ptr<base::OneShotTimer> timer;
   };
 
   mojo::Receiver<mojom::NexusShellService> receiver_{this};
@@ -288,20 +212,12 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   std::vector<GetCapabilitiesCallback> pending_callbacks_;
   std::vector<PendingExec> pending_execs_;
   std::vector<PendingSpawn> pending_spawns_;
-  std::vector<PendingSpawnWithObserver> pending_spawns_with_observer_;
   std::vector<PendingStreamSpawn> pending_stream_spawns_;
 
   // Background processes, keyed by the opaque `shell_id` returned from `Spawn`.
   // Entries persist after exit so the model can poll the final output;
   // capped at `kMaxBackgroundEntries` (oldest evicted) to bound memory.
   std::map<std::string, BackgroundEntry> background_;
-
-  // In-flight `background_on_timeout` Execs, keyed by the reserved
-  // opaque `shell_id` (same id scheme as `background_`). An entry lives from
-  // `StartExecWithBackgroundFallback` until whichever of the child
-  // completing or the block-budget timer firing resolves the reply AND the
-  // worker has reported its final outcome.
-  std::map<std::string, std::unique_ptr<ExecBackgroundState>> exec_background_;
 
   // Live streaming children started by `StreamSpawn`, keyed by an internal
   // id. Each erases itself (via `OnStreamingChildClosed`) when its child

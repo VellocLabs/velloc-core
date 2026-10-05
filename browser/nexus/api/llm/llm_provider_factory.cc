@@ -61,9 +61,9 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
   if (provider_id == "openai")
     return std::make_unique<OpenAiProvider>(url_loader_factory);
 
-  // ChatGPT Plus/Pro (OAuth subscription). Reuses OpenAiProvider's Responses
-  // API path against the ChatGPT Codex backend, with the originator /
-  // OpenAI-Beta headers that backend expects. The OAuth access token is
+  // ChatGPT Plus/Pro (OAuth subscription). Lists models from the ChatGPT
+  // Codex backend through OpenAiProvider, with the originator / OpenAI-Beta
+  // headers that backend expects. The OAuth access token is
   // supplied as the api_key via Configure() (see NexusOAuthManager).
   if (provider_id == "chatgpt-pro") {
     const OAuthProviderConfig* config = GetOAuthProviderConfig(provider_id);
@@ -75,14 +75,9 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
         {"originator", "browseros"},
         {"OpenAI-Beta", "responses=experimental"},
     };
-    // Concurrency / idle-timeout for this provider is driven by the TS
-    // model config (nexusModelConfig/providers/chatgptPro.ts
-    // `maxConcurrentStreams: 1`), pushed here via publishProviderConfigs ->
-    // Configure(), NOT hard-coded — a settings.json override still wins.
     return std::make_unique<OpenAiProvider>(
         url_loader_factory, config->id, config->display_name,
-        config->backend_base_url, /*uses_responses_api=*/true,
-        std::move(extra_headers));
+        config->backend_base_url, std::move(extra_headers));
   }
 
   // GitHub Copilot + Qwen Code (OAuth device-code). Both speak OpenAI-style
@@ -112,8 +107,7 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
     }
     return std::make_unique<OpenAiProvider>(
         url_loader_factory, config->id, config->display_name,
-        config->backend_base_url, /*uses_responses_api=*/false,
-        std::move(extra_headers));
+        config->backend_base_url, std::move(extra_headers));
   }
 
   if (provider_id == "anthropic")
@@ -170,7 +164,7 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateCustomProvider(
   if (api_compatibility == "openai") {
     return std::make_unique<OpenAiProvider>(
         url_loader_factory, provider_id, name,
-        /*default_base_url=*/std::string(), /*uses_responses_api=*/false,
+        /*default_base_url=*/std::string(),
         /*extra_headers=*/std::map<std::string, std::string>{},
         /*requires_api_key=*/false);
   }

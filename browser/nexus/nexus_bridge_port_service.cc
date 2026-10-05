@@ -21,7 +21,6 @@
 #include "custom_browser/browser/nexus/api/app_info/nexus_app_info_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/appearance/nexus_appearance_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/browser_tools/nexus_browser_tools_bridge_adapter.h"
-#include "custom_browser/browser/nexus/api/mcp/nexus_mcp_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/system_prefs/nexus_system_prefs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
@@ -107,10 +106,10 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
 
   // A5: the panel port carries a strictly smaller capability surface than
   // the guest port. kPanel mode skips constructing the guest-only adapters
-  // (fs/llm/network/mcp/session/catalog/browser/ui) so the panel port
-  // service stays light — no NexusLlmBroker observer, no NexusMcpHost
-  // map, etc. — and only registers the settings-page adapters that the
-  // WebUI panel actually needs.
+  // (fs/llm/network/session/catalog/browser/ui) so the panel port
+  // service stays light — no NexusLlmBroker observer etc. — and only
+  // registers the settings-page adapters that the WebUI panel actually
+  // needs.
   if (mode == PortServiceMode::kPanel) {
     // P2: providers capability (replaces `getAgentProviders` chrome.send +
     // the rest of the provider RPCs as P3-P5 land). All actions run on UI
@@ -130,19 +129,6 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
         std::make_unique<NexusBrowserToolsBridgeAdapter>(this, profile);
     RegisterCapability("browserTools", browser_tools_adapter_.get());
 
-    // Tier 3a: mcp capability — primarily for `mcp.testConnect`, the
-    // settings-page connection probe (replaces `testMcpServer`
-    // chrome.send). The full mcp capability surface (listServers /
-    // connect / disconnect / callTool) is reachable on this port too
-    // because the existing adapter implements one base class; per-
-    // action permission policy is a future enhancement. The panel
-    // WebUI never CALLS the other actions, and the chrome:// scheme
-    // boundary means there's no untrusted-content surface. The instance
-    // here is separate from the worker port's mcp_adapter_, so it has
-    // its own host map — appropriate for the transient testConnect
-    // pattern.
-    mcp_adapter_ = std::make_unique<NexusMcpBridgeAdapter>(this, profile, cwd);
-    RegisterCapability("mcp", mcp_adapter_.get());
     return;
   }
 
@@ -155,12 +141,6 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   // api/network/nexus_network_bridge_adapter.cc for details.
   network_adapter_ =
       std::make_unique<NexusNetworkBridgeAdapter>(this, profile);
-  // Native-backed MCP (stdio). Reads server configs (command/env/secrets)
-  // from prefs and launches them natively via its own streaming-capable
-  // NexusShellServiceLauncher; only ids / tool schemas / results reach the
-  // guest. `cwd` is the install root (same default the fs adapter anchors
-  // at) — used when a server config omits an explicit working directory.
-  mcp_adapter_ = std::make_unique<NexusMcpBridgeAdapter>(this, profile, cwd);
   catalog_adapter_ = std::make_unique<NexusCatalogBridgeAdapter>(this);
   // The `browser` capability is the single dispatch surface for the
   // macro-DSL-declared tool catalog (see `ToolCatalog::Get()`).
@@ -170,15 +150,14 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   // `setAgentLoopSettings`) lives on the dedicated `session`
   // capability below, not under `browser`.
   tools_adapter_ = std::make_unique<ToolsAdapter>(this, profile);
-  // Phase 12f: dedicated `session` capability. Hosts `publishStatus`
-  // (broker cache), `onStop` (rename of pre-12f `browser.endSession`),
-  // and `setAgentLoopSettings`. Holds a back-pointer to
+  // Phase 12f: dedicated `session` capability. Hosts `onStop` (rename of
+  // pre-12f `browser.endSession`), `setAgentLoopSettings` and
+  // `setActiveSession`. Holds a back-pointer to
   // `tools_adapter_` for the lifecycle handlers.
   session_adapter_ = std::make_unique<NexusSessionBridgeAdapter>(
       this, profile, tools_adapter_.get());
-  // Guest `shell` capability — status/kill for background shells the model
-  // spawned via Bash run_in_background. Uses the per-Profile shared launcher
-  // (so it reads the same registry ProcessTool spawns into).
+  // Guest `shell` capability — the child-process primitive (streaming spawn,
+  // persistent children, shell.env) over the per-Profile shared launcher.
   shell_adapter_ = std::make_unique<NexusShellBridgeAdapter>(this, profile);
   // Span-index transcript search. A pure forwarder: the engine, the span
   // cache and the `.sdi` sidecars all live in a utility process reached
@@ -190,7 +169,6 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   RegisterCapability("fs", fs_adapter_.get());
   RegisterCapability("model", llm_adapter_.get());
   RegisterCapability("network", network_adapter_.get());
-  RegisterCapability("mcp", mcp_adapter_.get());
   RegisterCapability("session", session_adapter_.get());
   RegisterCapability("search", search_adapter_.get());
   RegisterCapability("shell", shell_adapter_.get());
@@ -215,10 +193,8 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   RegisterCapability("remoteAccess", remote_access_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("browser", tools_adapter_.get());
-  // Phase 12: `catalog` capability — listHostedTools, renderPromptSection,
-  // listPromptSections. Exports to the JS guest what the bootstrap
-  // manifest used to push (hostedTools) and what the TS prompt-loader
-  // used to render in-process.
+  // Phase 12: `catalog` capability — listHostedTools, listSkills. Exports to
+  // the JS guest what the bootstrap manifest used to push (hostedTools).
   RegisterCapability("catalog", catalog_adapter_.get());
 
   // Settings · Tools "Open agent tabs in a separate window" toggle. The same

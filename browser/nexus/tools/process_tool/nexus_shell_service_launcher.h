@@ -6,10 +6,7 @@
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_PROCESS_TOOL_NEXUS_SHELL_SERVICE_LAUNCHER_H_
 
 #include <cstdint>
-#include <deque>
-#include <map>
 #include <memory>
-#include <optional>
 #include <set>
 #include <string>
 
@@ -18,7 +15,6 @@
 #include "base/time/time.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/browser/nexus/tools/process_tool/nexus_utility_service_remote.h"
-#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
 class Profile;
@@ -44,38 +40,15 @@ namespace nexus {
 //   `GetService()` will return a remote whose first call disconnects
 //   silently. See `docs/agents/nexus-process.md` §"Upstream-hook report"
 //   for the exact diff.
-class NexusShellServiceLauncher : public mojom::NexusBackgroundShellObserver {
+class NexusShellServiceLauncher {
  public:
-  // Reply shape for `SpawnBackgroundWithObserver` — mirrors the mojo
-  // `Spawn`/`SpawnWithObserver` response so callers (ProcessTool) can reuse
-  // their existing spawn-reply handling verbatim.
-  using SpawnReplyCallback = base::OnceCallback<void(
-      bool ok,
-      const std::optional<std::string>& shell_id,
-      const std::optional<std::string>& error_code,
-      const std::optional<std::string>& error_message,
-      const std::optional<std::string>& install_hint)>;
-
-  // Notified when ANY background shell reaches a terminal state. Each
-  // connected bridge guest registers one sink (its `SendEvent`) so the launcher
-  // can broadcast `shell.onExit` to every guest; each guest filters by shellId
-  // on the JS side. Repeating because many shells exit over the launcher's
-  // lifetime.
-  using ShellEventSink =
-      base::RepeatingCallback<void(const std::string& shell_id,
-                                   const mojom::ShellExitInfo&)>;
-
   NexusShellServiceLauncher();
 
   NexusShellServiceLauncher(const NexusShellServiceLauncher&) = delete;
   NexusShellServiceLauncher& operator=(const NexusShellServiceLauncher&) =
       delete;
 
-  ~NexusShellServiceLauncher() override;
-
-  // mojom::NexusBackgroundShellObserver:
-  void OnExit(const std::string& shell_id,
-              mojom::ShellExitInfoPtr exit) override;
+  ~NexusShellServiceLauncher();
 
   // Returns a connected remote, launching the utility process on first
   // use. Subsequent calls reuse the same remote until the idle timeout
@@ -87,64 +60,16 @@ class NexusShellServiceLauncher : public mojom::NexusBackgroundShellObserver {
   // shutdown plumbing.
   void Shutdown();
 
-  // Temporarily suppress idle-recycle while a background shell is running.
-  // Keepalive callers use opaque shell ids as tokens; repeated retain/release is
-  // idempotent. Once the last token is released, the normal 30s idle timer can
-  // recycle the utility process again.
+  // Temporarily suppress idle-recycle while a long-lived child is running (the
+  // persistent shells — NexusPersistentShells). Keepalive callers use opaque
+  // ids as tokens; repeated retain/release is idempotent. Once the last token
+  // is released, the normal 30s idle timer can recycle the utility process
+  // again.
   void RetainBackgroundShell(const std::string& shell_id);
   void ReleaseBackgroundShell(const std::string& shell_id);
 
-  // Browser-side terminal-result cache. The utility process owns the live child,
-  // but its in-memory registry is intentionally short-lived; caching terminal
-  // reads here lets manual BashOutput recover output after the service later
-  // idle-recycles or restarts.
-  struct CachedBackgroundOutput {
-    CachedBackgroundOutput();
-    CachedBackgroundOutput(const CachedBackgroundOutput&);
-    CachedBackgroundOutput& operator=(const CachedBackgroundOutput&);
-    CachedBackgroundOutput(CachedBackgroundOutput&&);
-    CachedBackgroundOutput& operator=(CachedBackgroundOutput&&);
-    ~CachedBackgroundOutput();
-
-    int exit_code = -1;
-    std::optional<int> signal;
-    bool timed_out = false;
-    bool killed = false;
-    uint64_t duration_ms = 0;
-    std::string stdout_text;
-    std::string stderr_text;
-    bool stdout_truncated = false;
-    bool stderr_truncated = false;
-  };
-  void CacheBackgroundOutput(const std::string& shell_id,
-                             CachedBackgroundOutput output);
-  std::optional<CachedBackgroundOutput> GetCachedBackgroundOutput(
-      const std::string& shell_id) const;
-
-  // Launch a background shell AND register for its terminal exit notification.
-  // Wraps the mojo `SpawnWithObserver`: the launcher binds a
-  // `NexusBackgroundShellObserver` receiver, hands the remote to the utility,
-  // and — on the reply — keeps the receiver alive keyed by `shell_id` so the
-  // utility's eventual `OnExit` lands here. `reply` mirrors the plain `Spawn`
-  // response (ok / shell_id / error_*). On success the launcher broadcasts the
-  // exit to all registered event sinks (see `AddShellEventSink`).
-  void SpawnBackgroundWithObserver(mojom::ShellSpawnOptionsPtr options,
-                                   SpawnReplyCallback reply);
-
-  // Register a bridge guest's event sink. The launcher broadcasts every
-  // background-shell terminal exit to ALL registered sinks (each guest filters
-  // by shellId on the JS side). Registering at the BRIDGE level (not per-shell)
-  // avoids a spawn/poll race: a shell is spawned by ProcessTool, which has no
-  // bridge delegate, so the exit listener must exist before the guest's first
-  // shell.status — a global sink registered when the bridge attaches covers
-  // every shell regardless of which one the guest polls first. Returns a
-  // subscription id; pass it to `RemoveShellEventSink` when the guest detaches.
-  uint64_t AddShellEventSink(ShellEventSink sink);
-  void RemoveShellEventSink(uint64_t subscription_id);
-
   bool IsBackgroundShellRetainedForTesting(const std::string& shell_id) const;
   size_t retained_background_shell_count_for_testing() const;
-  size_t cached_background_output_count_for_testing() const;
 
   base::WeakPtr<NexusShellServiceLauncher> GetWeakPtr();
 
@@ -155,38 +80,22 @@ class NexusShellServiceLauncher : public mojom::NexusBackgroundShellObserver {
  private:
   void ConfigureIdleHandler();
 
-  // One mojo receiver per watched background shell (keyed by shell_id). Bound
-  // in `SpawnBackgroundWithObserver`, kept alive until the utility fires
-  // `OnExit` (which resets it) so the terminal notification is never dropped.
-  std::map<std::string,
-           std::unique_ptr<mojo::Receiver<mojom::NexusBackgroundShellObserver>>>
-      exit_receivers_;
-  // Connected bridge guests' event sinks, keyed by subscription id. `OnExit`
-  // broadcasts the terminal exit to every sink; each guest filters by shellId
-  // on the JS side. Global (not per-shell) so a shell spawned before the
-  // guest's first shell.status is still covered.
-  std::map<uint64_t, ShellEventSink> event_sinks_;
-  uint64_t next_sink_id_ = 1;
-
   NexusUtilityServiceRemote<mojom::NexusShellService> remote_;
   std::set<std::string> retained_background_shells_;
-  std::map<std::string, CachedBackgroundOutput> cached_background_outputs_;
-  std::deque<std::string> cached_background_output_order_;
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<NexusShellServiceLauncher> weak_factory_{this};
 };
 
 // Returns the per-Profile SHARED launcher (lazily created, stored as Profile
-// user-data). `ProcessTool` (which spawns background shells via `Spawn`) AND the
-// guest `shell.*` bridge adapter (which observes/kills them via `shell.status` /
-// `shell.kill`) both call this, so they funnel through ONE utility process and
-// thus ONE background-shell registry — without it, a separate launcher would
-// spawn a separate utility process whose registry can't see the other's shells.
-// UI-thread only (the returned launcher is sequence-bound). The launcher lives
-// as long as the Profile; its 30s idle-recycle still applies when no background
-// shell ids are retained. Background Spawn callers retain their shell id until a
-// terminal shell.status / BashOutput read releases it, so a long-running shell's
-// in-memory registry is not lost just because the model waited before reading.
+// user-data). `ProcessTool` (Bash / PowerShell / Grep), the guest `shell.*`
+// bridge adapter (streaming `shell.spawn`) and NexusPersistentShells all call
+// this, so they funnel through ONE utility process. UI-thread only (the
+// returned launcher is sequence-bound). The launcher lives as long as the
+// Profile; its 30s idle-recycle applies when no persistent child is retained.
+// (The background-shell registry the guest used to observe through
+// `shell.status` / `shell.kill` / `shell.onExit` is gone — removed under
+// interface 1 on 2026-10-04; the runtime owns background shells over the
+// persistent-shell primitives.)
 NexusShellServiceLauncher& GetSharedShellLauncher(Profile* profile);
 
 }  // namespace nexus

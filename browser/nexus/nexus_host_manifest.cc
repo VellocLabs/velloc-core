@@ -12,18 +12,11 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 13> kBridgeCapabilities = {
+constexpr std::array<const char*, 12> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
     "shell",
-    // Native-backed MCP (stdio + Streamable HTTP). The guest gates its
-    // native MCP pool on `supportsBridgeCapability('mcp')` (see
-    // createBrowserRuntime.ts), so the capability must be advertised here
-    // for the `NexusMcpBridgeAdapter` (registered unconditionally by
-    // NexusBridgePortService) to be reachable. See
-    // custom_browser/browser/nexus/api/mcp/.
-    "mcp",
     // The macro-DSL-driven browser tool catalog. Always advertised: the
     // adapter is unconditionally constructed by NexusBridgePortService
     // and its catalog is the source of truth for the LLM-facing browser
@@ -35,10 +28,10 @@ constexpr std::array<const char*, 13> kBridgeCapabilities = {
     // `setAgentLoopSettings`) moved to the dedicated `session`
     // capability in Phase 12f.
     "browser",
-    // Phase 12f: dedicated session capability. `publishStatus`
-    // (SessionStatus cache in LlmBroker), `onStop` (LLM-session
+    // Phase 12f: dedicated session capability. `onStop` (LLM-session
     // OnStop cascade — renamed from `browser.endSession`),
-    // `setAgentLoopSettings` (per-session wall-clock budgets). See
+    // `setAgentLoopSettings` (per-session wall-clock budgets),
+    // `setActiveSession`. See
     // custom_browser/browser/nexus/api/session/.
     "session",
     // Span-index transcript search (Ctrl+K dialog). The guest gates the
@@ -47,8 +40,7 @@ constexpr std::array<const char*, 13> kBridgeCapabilities = {
     "search",
     // Phase 12: catalog metadata served lazily over the bridge. JS
     // pulls `listHostedTools` (replacing the bootstrap manifest's
-    // hostedTools field) and `renderPromptSection` (replacing TS-side
-    // getUsingYourToolsSection rendering). See
+    // hostedTools field) and `listSkills`. See
     // custom_browser/browser/nexus/api/catalog/.
     "catalog",
     // Native `sqlite` capability: read/write host SQLite files from the guest
@@ -143,11 +135,12 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   // The additive primitives (see kNativePrimitives).
   manifest.Set("primitives", BuildStringList(kNativePrimitives));
 
-  // The LLM bridge accepts a `document` part at the top level of a message
-  // (nexus_llm.mojom kDocument), not only inside a tool result. The guest
-  // inlines an @-mentioned PDF only when this is set, so an older binary —
-  // which would reject the part and fail the turn — gets a pdf_reference
-  // note instead. That is why it needs no interface-version bump.
+  // A `document` part may sit at the top level of a message, not only inside
+  // a tool result. The guest inlines an @-mentioned PDF only when this is
+  // set. The host no longer serializes requests (the runtime's provider
+  // drivers do, since model.call / streamStart were removed under interface
+  // 1 on 2026-10-04), so this is now always true; it is kept because the
+  // guest still reads it.
   manifest.Set("llmDocumentParts", true);
 
   // Boot snapshot of the unified agent runtime config (maxTurns,

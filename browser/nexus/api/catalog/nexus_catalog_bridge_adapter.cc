@@ -11,7 +11,6 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "custom_browser/browser/nexus/api/catalog/prompt_section_renderer.h"
 #include "custom_browser/browser/nexus/api/shell/host_shell.h"
 #include "custom_browser/browser/nexus/tools/nexus_skills_registry.gen.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_schema.h"
@@ -77,34 +76,6 @@ void NexusCatalogBridgeAdapter::ReplyWithFilteredCatalog(
   base::ListValue tools = BuildHostedToolsList(filtered);
   base::DictValue result;
   result.Set("hostedTools", std::move(tools));
-  std::move(done).Success(std::move(result));
-}
-
-void NexusCatalogBridgeAdapter::HandleRenderPromptSectionOnUI(
-    ::nexus::generated::RenderPromptSectionInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Unknown section names fall through to an empty string per the
-  // renderer's contract — matches the TS behavior where an
-  // unsupported placeholder leaves the slot empty.
-  std::string text = RenderPromptSection(input.name, input.enabledToolNames);
-
-  base::DictValue result;
-  result.Set("text", std::move(text));
-  std::move(done).Success(std::move(result));
-}
-
-void NexusCatalogBridgeAdapter::HandleListPromptSectionsOnUI(
-    ::nexus::generated::ListPromptSectionsInput /*input*/,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  base::ListValue sections;
-  for (const std::string& name : ListPromptSectionNames()) {
-    sections.Append(name);
-  }
-
-  base::DictValue result;
-  result.Set("sections", std::move(sections));
   std::move(done).Success(std::move(result));
 }
 

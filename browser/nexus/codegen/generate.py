@@ -126,16 +126,14 @@ class InputDecl:
 @dataclass
 class PromptDecl:
     """Per-tool prompt-section content. Populated from the `prompt` block
-    in *.tool.json. Drives `prompt_tool_entries.gen.h` consumed by
-    `api/catalog/prompt_section_renderer.cc`."""
+    in *.tool.json. Obsolete: parsed and validated, then ignored (no
+    emitter reads it since Phase 13.9)."""
     section: str            # one of PROMPT_SECTION_NAMES
     line: str               # the bullet line shown to the LLM
     group: str = ""         # optional sub-group within a section
 
 
-# Section names accepted in `prompt.section`. The renderer composes them
-# in this order; adding a new section here requires a matching emission
-# block in `api/catalog/prompt_section_renderer.cc`.
+# Section names accepted in the obsolete `prompt.section` (validation only).
 PROMPT_SECTION_NAMES: tuple[str, ...] = (
     "browser-tools",
     "file-shell-tools",
@@ -1535,14 +1533,12 @@ def emit_registry(
 
 
 # =============================================================================
-# Phase 13.9 retired the per-tool `prompt_tool_entries.gen.h` table.
-# Catalog-section prose (intro/outro/per-tool bullets) now lives in
-# consolidated section .md files referenced from
-# `tool-catalog-frame.json`. The renderer emits each .md verbatim once
-# its section's gating condition (e.g. "any browser tool enabled") is
-# satisfied. The `prompt` block on a *.tool.json is therefore obsolete;
-# the parser still accepts it for backwards compat but the codegen
-# silently ignores any data inside.
+# Phase 13.9 retired the per-tool `prompt_tool_entries.gen.h` table, and
+# on 2026-10-04 the host-side prompt-section renderer went too (the
+# `{{TOOL_CATALOG}}` / `{{system-prompt-tools}}` prose is rendered by the
+# runtime — nexus_web src/constants/promptSections/). The `prompt` block
+# on a *.tool.json is therefore obsolete; the parser still accepts it but
+# the codegen silently ignores any data inside.
 # =============================================================================
 
 
@@ -1591,97 +1587,6 @@ def _resolve_prose_field(value, base_dir: Path, field_path: str) -> str:
     return text
 
 
-def load_tool_catalog_frame(frame_path: Path) -> dict:
-    """Load and validate `tool-catalog-frame.json`.
-
-    Phase 13.9 shape: each top-level section key is a single string
-    (typically an `@file:<path>` reference to a .md file). The codegen
-    resolver expands the reference to the file's contents; the emitter
-    embeds each as a constexpr string_view in `tool_catalog_frame.gen.h`.
-    Validation here mirrors the JSON-Schema check but runs inline so
-    the codegen produces clean errors even when --validate is skipped.
-
-    Returns the parsed document with `@file:` references resolved to
-    file contents (so the emitter doesn't need to re-resolve)."""
-    with frame_path.open("r", encoding="utf-8") as f:
-        doc = json.load(f)
-    if not isinstance(doc, dict):
-        raise ValueError(f"{frame_path}: root must be an object")
-
-    # Every section value is a single string (`@file:<path>` or a
-    # literal). Required keys are validated together; an empty .md or
-    # missing file fails with the JSON field path attached.
-    for required_key in (
-        "browser_tools",
-        "file_shell_tools",
-        "task_tracking",
-        "skills",
-        "parallelism",
-    ):
-        v = _resolve_prose_field(
-            doc.get(required_key),
-            frame_path.parent,
-            f"{frame_path}: {required_key}",
-        )
-        if not isinstance(v, str) or not v:
-            raise ValueError(
-                f"{frame_path}: '{required_key}' must be a non-empty "
-                f"string (or `@file:<path>` reference to a .md file).")
-        doc[required_key] = v
-
-    return doc
-
-
-# =============================================================================
-# Phase 13.2: system-prompt-tools content — `system_prompt_tools.gen.h`
-#
-# Reads a single top-level declaration at
-# `tools/declarations/system-prompt-tools.md` (verbatim markdown — no
-# JSON wrapper, no rendering, what you write is what the LLM sees) and
-# emits a header containing one constexpr `std::string_view
-# kSystemPromptToolsContent`. The renderer in
-# `api/catalog/prompt_section_renderer.cc` returns this string verbatim
-# when asked for the `system-prompt-tools` section.
-#
-# Source-of-truth design: previously these bullets lived as hand-written
-# prose in `nexus_web/public/system_prompts/*.md` and drifted out-of-
-# date as the tool surface evolved (Phase 13 retired tools like
-# `wait` / `forward` / `create_tab` but the .md still referenced them).
-# A first pass migrated to a JSON shape with `sections[].bullets[]`;
-# Phase 13.7 dropped the JSON wrapper entirely — authoring multi-
-# paragraph prose as JSON string literals was unergonomic and produced
-# typos that survived review (`"Each fills entry"` lived inside a
-# JSON string for several iterations before anyone noticed). The .md
-# source is now the single artifact the author edits.
-# =============================================================================
-
-SYSTEM_PROMPT_TOOLS_TEMPLATE = """\
-// AUTO-GENERATED FROM: {source_relpath}
-// DO NOT EDIT THIS FILE. Edit the source declaration instead and re-run
-// codegen (or rebuild — GN tracks the dependency).
-//
-// Cross-cutting native-tool prose for the `{{{{system-prompt-tools}}}}`
-// placeholder in `nexus_web/public/system_prompts/*.md`. The catalog
-// renderer at `api/catalog/prompt_section_renderer.cc` returns this
-// string verbatim via `bridge.catalog.renderPromptSection({{name:
-// 'system-prompt-tools'}})`.
-
-#ifndef GEN_NEXUS_SYSTEM_PROMPT_TOOLS_H_
-#define GEN_NEXUS_SYSTEM_PROMPT_TOOLS_H_
-
-#include <string_view>
-
-namespace nexus::generated {{
-
-inline constexpr std::string_view kSystemPromptToolsContent =
-{content_literal};
-
-}}  // namespace nexus::generated
-
-#endif  // GEN_NEXUS_SYSTEM_PROMPT_TOOLS_H_
-"""
-
-
 def _emit_raw_string_literal(content: str) -> str:
     """Wrap a Python string in a C++ raw string literal. Uses a delimiter
     that's vanishingly unlikely to appear in the content
@@ -1697,161 +1602,6 @@ def _emit_raw_string_literal(content: str) -> str:
     return f"    R\"{delim}({content}){delim}\""
 
 
-def emit_system_prompt_tools(
-    source_path: Path,
-    output_dir: Path,
-) -> Path:
-    """Read `system-prompt-tools.md` verbatim and emit
-    `system_prompt_tools.gen.h` with the file contents as a single
-    constexpr string_view. No section walking, no markdown rendering —
-    what the author writes is what the LLM sees. A single trailing
-    newline is stripped so the embedded constant doesn't end with
-    a dangling blank line."""
-    rendered = source_path.read_text(encoding="utf-8")
-    if rendered.endswith("\n"):
-        rendered = rendered[:-1]
-    if not rendered:
-        raise ValueError(
-            f"{source_path}: file is empty — write the system-prompt-tools "
-            f"markdown directly in this .md file.")
-
-    out_path = output_dir / "system_prompt_tools.gen.h"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        SYSTEM_PROMPT_TOOLS_TEMPLATE.format(
-            source_relpath=str(source_path).replace("\\", "/"),
-            content_literal=_emit_raw_string_literal(rendered),
-        ),
-        encoding="utf-8",
-    )
-    return out_path
-
-
-# =============================================================================
-# Phase 13.4 / 13.8: tool-catalog-frame content — `tool_catalog_frame.gen.h`
-#
-# Source-of-truth for the prose that frames the `{{TOOL_CATALOG}}`
-# rendered section: the "## Browser tools" block (now a single
-# consolidated .md), the "## File and shell tools" header + read-
-# before-edit rule, and the JS-only section blocks (TodoWrite / Skill /
-# parallelism). Previously all hand-written constexpr blocks inside
-# `prompt_section_renderer.cc`.
-#
-# Phase 13.8: the browser-tools section was simplified from a per-piece
-# composition (header + intro + call_shape + per-group bullets + outro)
-# to a single `kBrowserToolsContent` string that the renderer emits
-# verbatim. Per-tool bullets used to be aggregated from each
-# browser_tool/*.tool.json's `prompt` block; those blocks were removed
-# and the same prose now lives directly in
-# `browser_tool/browser-tools-catalog.md` (referenced by
-# tool-catalog-frame.json `browser_tools`). The renderer detects "is any
-# browser tool enabled" by checking the session's enabled-tool set
-# against `kBrowserToolWireNames` (emitted from the parsed decls).
-# =============================================================================
-
-TOOL_CATALOG_FRAME_TEMPLATE = """\
-// AUTO-GENERATED FROM: {source_relpath}
-// DO NOT EDIT THIS FILE. Edit the source declaration instead and re-run
-// codegen (or rebuild — GN tracks the dependency).
-//
-// Frame prose for the `{{{{TOOL_CATALOG}}}}` placeholder, rendered by
-// `api/catalog/prompt_section_renderer.cc::RenderUsingYourToolsSection`.
-
-#ifndef GEN_NEXUS_TOOL_CATALOG_FRAME_H_
-#define GEN_NEXUS_TOOL_CATALOG_FRAME_H_
-
-#include <array>
-#include <string_view>
-
-namespace nexus::generated {{
-
-// Each section string is emitted verbatim by the renderer when its
-// gating condition is satisfied. The string carries its own "## ..."
-// markdown header (no separate header constant any more).
-inline constexpr std::string_view kBrowserToolsContent =
-{browser_content_literal};
-inline constexpr std::string_view kFileShellToolsContent =
-{file_shell_content_literal};
-inline constexpr std::string_view kTaskTrackingContent =
-{task_tracking_literal};
-inline constexpr std::string_view kSkillsContent =
-{skills_literal};
-inline constexpr std::string_view kParallelismContent =
-{parallelism_literal};
-
-// Wire names of every tool in the `browser_tool/` category. The
-// renderer checks this against the session's enabled-tool set to
-// decide whether to emit `kBrowserToolsContent`.
-inline constexpr std::array<std::string_view, {browser_tool_count}>
-    kBrowserToolWireNames = {{{{
-{browser_tool_wire_names}
-    }}}};
-
-// Wire names of every tool in `file_tool/` and `process_tool/`
-// (collectively the "file and shell tools" section). Same role as
-// `kBrowserToolWireNames` for the file-shell section's gating.
-inline constexpr std::array<std::string_view, {file_shell_tool_count}>
-    kFileShellToolWireNames = {{{{
-{file_shell_tool_wire_names}
-    }}}};
-
-}}  // namespace nexus::generated
-
-#endif  // GEN_NEXUS_TOOL_CATALOG_FRAME_H_
-"""
-
-
-def emit_tool_catalog_frame(
-    source_path: Path,
-    output_dir: Path,
-    decls: list,
-) -> Path:
-    """Read `tool-catalog-frame.json`, emit `tool_catalog_frame.gen.h`
-    with one constexpr string_view per section (each loaded verbatim
-    from a sibling .md file) plus two wire-name arrays so the renderer
-    can detect "any browser tool enabled" / "any file-shell tool
-    enabled" without scanning per-tool prompt entries.
-
-    `decls` is the parsed `*.tool.json` list (used to extract the
-    wire names per category). `load_tool_catalog_frame()` is called
-    on `source_path` to load and resolve the section fields."""
-    doc = load_tool_catalog_frame(source_path)
-
-    def wire_names_for(categories: tuple[str, ...]) -> list[str]:
-        return sorted(
-            d.schema_wire_name for d in decls
-            if d.category_snake in categories
-        )
-
-    browser_wire_names = wire_names_for(("browser_tool",))
-    file_shell_wire_names = wire_names_for(("file_tool", "process_tool"))
-
-    def render_array(names: list[str]) -> str:
-        return "\n".join(
-            f"        {cpp_string_literal(name)}," for name in names
-        )
-
-    out_path = output_dir / "tool_catalog_frame.gen.h"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        TOOL_CATALOG_FRAME_TEMPLATE.format(
-            source_relpath=str(source_path).replace("\\", "/"),
-            browser_content_literal=_emit_raw_string_literal(
-                doc["browser_tools"]),
-            file_shell_content_literal=_emit_raw_string_literal(
-                doc["file_shell_tools"]),
-            task_tracking_literal=_emit_raw_string_literal(
-                doc["task_tracking"]),
-            skills_literal=_emit_raw_string_literal(doc["skills"]),
-            parallelism_literal=_emit_raw_string_literal(
-                doc["parallelism"]),
-            browser_tool_count=len(browser_wire_names),
-            browser_tool_wire_names=render_array(browser_wire_names),
-            file_shell_tool_count=len(file_shell_wire_names),
-            file_shell_tool_wire_names=render_array(file_shell_wire_names),
-        ),
-        encoding="utf-8",
-    )
     return out_path
 
 
@@ -1935,7 +1685,7 @@ class ApiActionDecl:
     def virtual_name(self) -> str:
         """fs.stat (thread_pool)        → HandleStatOnThreadPool
         fs.readFile (thread_pool)        → HandleReadFileOnThreadPool
-        llm.streamStart (ui)             → HandleStreamStartOnUI
+        llm.rawStreamOpen (ui)           → HandleRawStreamOpenOnUI
         """
         suffix = THREAD_METHOD_SUFFIX_BY_VALUE[self.runtime_thread]
         return f"Handle{to_pascal_case_camel(self.name)}{suffix}"
@@ -3016,39 +2766,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  skills   -> {skh_out}")
         print(f"  skills   -> {skcc_out}")
 
-        # Phase 13.4 / 13.8 / 13.9: tool-catalog-frame —
-        # `tool_catalog_frame.gen.h`. Emits one constexpr string per
-        # catalog section (loaded verbatim from a .md) plus the
-        # browser-tool and file-shell-tool wire-name arrays the
-        # renderer uses for section gating. After 13.9 every .tool.json
-        # is purely a tool declaration — none carry catalog-prose
-        # `prompt` blocks any more.
-        frame_json = args.declarations_dir / "tool-catalog-frame.json"
-        if frame_json.exists():
-            frame_out = emit_tool_catalog_frame(
-                frame_json, args.output_dir, decls
-            )
-            print(f"  frame    -> {frame_out}")
-
-        # Phase 13.2: system-prompt-tools content —
-        # `system_prompt_tools.gen.h`. The source is a single .md file
-        # at `tools/declarations/system-prompt-tools.md` (Phase 13.7
-        # dropped the JSON wrapper — see the emit-function docstring).
-        # Cross-cutting native-tool prose (batching rules, error-
-        # recovery cheatsheet, etc.) that previously lived as hand-
-        # written prose in the public/.md templates and drifted out-of-
-        # date as the tool surface evolved. The renderer at
-        # `api/catalog/prompt_section_renderer.cc` surfaces this string
-        # via `bridge.catalog.renderPromptSection({name:
-        # 'system-prompt-tools'})`; the JS prompt loader substitutes
-        # `{{system-prompt-tools}}` in the public/.md templates with
-        # the result.
-        sys_prompt_md = args.declarations_dir / "system-prompt-tools.md"
-        if sys_prompt_md.exists():
-            sys_out = emit_system_prompt_tools(
-                sys_prompt_md, args.output_dir
-            )
-            print(f"  sys-prompt -> {sys_out}")
 
     # -------------------------------------------------------------------
     # Bridge-API codegen — runs after the tool pipeline so the two are

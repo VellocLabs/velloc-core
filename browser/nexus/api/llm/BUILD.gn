@@ -13,12 +13,7 @@ source_set("types") {
     "llm_types.h",
   ]
 
-  # LlmObservation is a field of GenerateResult, so it is part of this
-  # target's public surface.
-  public_deps = [
-    ":observation",
-    "//base",
-  ]
+  public_deps = [ "//base" ]
 }
 
 # LLM pref name constants (header-only).
@@ -42,17 +37,6 @@ source_set("provider_config") {
   ]
 }
 
-# Pure text-flattening / JSON helpers extracted from nexus_llm_host.cc so
-# they can be unit tested in isolation. No dependencies beyond base::Value.
-source_set("text_helpers") {
-  sources = [
-    "llm_text_helpers.cc",
-    "llm_text_helpers.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
 # Target-domain check, forbidden-header list and byte queue behind the
 # `model.rawStream*` provider byte transport (nexus_llm_raw_stream.cc).
 # Pure; unit-tested via llm_raw_stream_policy_unittest.cc.
@@ -66,33 +50,6 @@ source_set("raw_stream_policy") {
   deps = [
     "//net",
     "//url",
-  ]
-}
-
-# Incremental line splitter used by provider stream parsers to turn byte
-# chunks into whole LF/CRLF-terminated lines. Zero dependencies, fully
-# unit-tested via llm_line_splitter_unittest.cc.
-source_set("line_splitter") {
-  sources = [
-    "llm_line_splitter.cc",
-    "llm_line_splitter.h",
-  ]
-}
-
-# Opt-in wire observation: response-header allowlist + request-body digest,
-# collected ONLY for requests that set `capture_observations`. Feeds the
-# guest's endpoint-integrity checks (relay misrepresentation detection).
-source_set("observation") {
-  sources = [
-    "llm_observation.cc",
-    "llm_observation.h",
-  ]
-
-  public_deps = [ "//base" ]
-
-  deps = [
-    "//crypto",
-    "//net",
   ]
 }
 
@@ -124,17 +81,6 @@ source_set("provider") {
 
   # net::HttpRequestHeaders for ApplyUserAgent().
   deps = [ "//net" ]
-}
-
-# Generic per-provider stream guard: idle-timeout watchdog + concurrency pool
-# + a /debug diagnostic string. Provider-agnostic; only depends on //base.
-source_set("stream_guard") {
-  sources = [
-    "llm_stream_guard.cc",
-    "llm_stream_guard.h",
-  ]
-
-  public_deps = [ "//base" ]
 }
 
 
@@ -224,8 +170,6 @@ source_set("webui_host") {
     ":broker",
     ":oauth",
     ":provider_config",
-    ":reasoning_replay",
-    ":text_helpers",
     "//base",
     "//chrome/browser/profiles:profile",
     "//components/prefs",
@@ -233,125 +177,8 @@ source_set("webui_host") {
   ]
 }
 
-# Individual provider implementations.
-# Translates OpenAI-compatible /chat/completions streaming tool-call deltas
-# into the bridge's stream-chunk vocabulary. Deliberately a tiny base-only
-# source_set (same pattern as :anthropic_schema_sanitizer) so the lite
-# unit-test binary can cover the DashScope/Qwen empty-`id` streaming quirk
-# without linking the full provider.
-source_set("openai_tool_call_stream") {
-  sources = [
-    "providers/openai/openai_tool_call_stream.cc",
-    "providers/openai/openai_tool_call_stream.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# The `velloc-replay-v1:` envelope that carries a provider's reasoning replay
-# payload through the guest inside a thinking block's signature, bound to the
-# provider + model that produced it. Base-only so the lite unit-test binary
-# covers the binding rules.
-source_set("reasoning_replay") {
-  sources = [
-    "reasoning_replay.cc",
-    "reasoning_replay.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# Extracts readable reasoning text from OpenAI-compatible /chat/completions
-# deltas and Responses API reasoning items (each backend names the field
-# differently). Tiny base-only source_set (same pattern as
-# :openai_tool_call_stream) so the lite unit-test binary covers the
-# per-backend field precedence without linking the full provider.
-source_set("openai_reasoning") {
-  sources = [
-    "providers/openai/openai_reasoning.cc",
-    "providers/openai/openai_reasoning.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# Normalizes an OpenAI-compatible /chat/completions usage block into the
-# bridge's camelCase stream-usage vocabulary, emitting the cache-EXCLUSIVE
-# prompt count (see openai_usage.h). Tiny base-only source_set (same pattern as
-# :openai_tool_call_stream) so the lite unit-test binary can cover the
-# cache-double-count regression without linking the full provider.
-source_set("openai_usage") {
-  sources = [
-    "providers/openai/openai_usage.cc",
-    "providers/openai/openai_usage.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# Serializes a bridge `role:"tool"` message (N parallel `tool-result` parts)
-# into OpenAI-compatible wire entries: one tool message / function_call_output
-# per part, images in one follow-up user message after the batch (see
-# openai_tool_result_messages.h). Shared by the OpenAI and Ollama providers.
-# Tiny base-only source_set (same pattern as :openai_usage) so the lite
-# unit-test binary can cover the batch shape without linking a provider.
-source_set("openai_tool_result_messages") {
-  sources = [
-    "providers/openai/openai_tool_result_messages.cc",
-    "providers/openai/openai_tool_result_messages.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# Serializes a bridge user message into Responses-API `content`: a string when
-# text-only, else input_text / input_image / input_file parts (see
-# openai_user_content.h). Tiny base-only source_set (same pattern as
-# :openai_usage) so the lite unit-test binary can cover the part shapes
-# without linking the provider.
-source_set("openai_user_content") {
-  sources = [
-    "providers/openai/openai_user_content.cc",
-    "providers/openai/openai_user_content.h",
-  ]
-
-  public_deps = [ "//base" ]
-  deps = [ ":openai_tool_result_messages" ]
-}
-
-# Pulls the message + code out of a Responses-API terminal error event. The
-# public /v1/responses API and the ChatGPT (Codex) backend disagree about
-# where they live, and an unrecognized shape used to collapse to a
-# placeholder the guest could not classify — so a retryable capacity outage
-# surfaced as a dead "Issue: unknown" turn (see openai_responses_error.h).
-# Tiny base-only source_set (same pattern as :openai_usage) so the lite
-# unit-test binary can cover every envelope without linking the provider.
-source_set("openai_responses_error") {
-  sources = [
-    "providers/openai/openai_responses_error.cc",
-    "providers/openai/openai_responses_error.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# Extracts a human-readable error message from a provider error body —
-# raw JSON OR an SSE `data:` frame (some gateways — DashScope/token-plan,
-# Anthropic-compatible proxies — return HTTP 4xx as a single
-# `data: {"error":{...}}` event; without unwrapping it the provider would
-# surface a bare "HTTP <status>"). Shared by every provider's HTTP-error
-# path. Tiny base-only source_set (same pattern as :openai_tool_call_stream)
-# so the lite unit-test binary can cover the SSE-frame unwrap without
-# linking any provider.
-source_set("error_extract") {
-  sources = [
-    "llm_error_extract.cc",
-    "llm_error_extract.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
+# Individual provider implementations: the model-discovery / key-verification
+# half of each provider (inference moved to the runtime on 2026-10-04).
 source_set("openai_provider") {
   sources = [
     "providers/openai/openai_provider.cc",
@@ -359,49 +186,11 @@ source_set("openai_provider") {
   ]
 
   deps = [
-    ":error_extract",
-    ":line_splitter",
-    ":openai_reasoning",
-    ":openai_responses_error",
-    ":reasoning_replay",
-    ":openai_tool_call_stream",
-    ":openai_tool_result_messages",
-    ":openai_usage",
-    ":openai_user_content",
     ":provider",
-    ":stream_guard",
     ":types",
     "//base",
     "//custom_browser/browser/nexus:secret_crypt",
     "//services/network/public/cpp",
-  ]
-}
-
-# OpenAI-strict → Anthropic strict-schema dialect transform. Deliberately a
-# tiny base-only source_set (same pattern as
-# //custom_browser/browser/nexus:tool_schema) so the lite unit-test binary can
-# link it without dragging in the full provider.
-source_set("anthropic_schema_sanitizer") {
-  sources = [
-    "providers/anthropic/anthropic_schema_sanitizer.cc",
-    "providers/anthropic/anthropic_schema_sanitizer.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
-
-# Anthropic `stop_reason` -> FinishReason mapping + `stop_details`
-# normalization. Pure (base + :types) so it can be unit-tested without the
-# network stack; the provider links it.
-source_set("anthropic_stop_reason") {
-  sources = [
-    "providers/anthropic/anthropic_stop_reason.cc",
-    "providers/anthropic/anthropic_stop_reason.h",
-  ]
-
-  public_deps = [
-    ":types",
-    "//base",
   ]
 }
 
@@ -412,9 +201,6 @@ source_set("anthropic_provider") {
   ]
 
   deps = [
-    ":anthropic_schema_sanitizer",
-    ":anthropic_stop_reason",
-    ":error_extract",
     ":provider",
     ":types",
     "//base",
@@ -430,7 +216,6 @@ source_set("google_provider") {
   ]
 
   deps = [
-    ":error_extract",
     ":provider",
     ":types",
     "//base",
@@ -446,10 +231,6 @@ source_set("ollama_provider") {
   ]
 
   deps = [
-    ":error_extract",
-    ":line_splitter",
-    ":openai_reasoning",
-    ":openai_tool_result_messages",
     ":provider",
     ":types",
     "//base",
@@ -473,7 +254,6 @@ group("providers") {
 group("llm") {
   public_deps = [
     ":broker",
-    ":line_splitter",
     ":oauth",
     ":pref_names",
     ":pref_registration",
@@ -481,7 +261,6 @@ group("llm") {
     ":provider_config",
     ":provider_factory",
     ":providers",
-    ":text_helpers",
     ":types",
   ]
 }

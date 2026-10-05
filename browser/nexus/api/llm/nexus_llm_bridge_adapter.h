@@ -26,10 +26,11 @@ class NexusLlmHost;
 //
 // Phase 10f architecture (see fs adapter for the full description):
 //   - Per *.api.json declares its inputs in tools-style `inputs[]`.
-//   - LLM actions all use `runtime.thread = "ui"` and the
-//     `passthrough_payload` pseudo-type for the request payload (the
-//     inner shape is provider-translated and not worth enumerating
-//     per-field on the bridge wire).
+//   - LLM actions all use `runtime.thread = "ui"`. The guest speaks every
+//     provider's wire format itself (model.call / streamStart / streamRead /
+//     streamCancel and the C++ request translation behind them were removed
+//     under interface 1 on 2026-10-04); the host serves the catalog, the
+//     provider configs and the `rawStream*` byte transport.
 //   - Each Handle*OnUI runs on the bridge's home thread (UI). It reads
 //     fields off `input.payload`, invokes the relevant llm_host_ async
 //     method, and forwards the result through `done`. The
@@ -60,22 +61,6 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
 
   void HandleCatalogOnUI(
       ::nexus::generated::CatalogInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleCallOnUI(
-      ::nexus::generated::CallInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleStreamStartOnUI(
-      ::nexus::generated::StreamStartInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleStreamReadOnUI(
-      ::nexus::generated::StreamReadInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleStreamCancelOnUI(
-      ::nexus::generated::StreamCancelInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void HandleSetDefaultSelectionOnUI(
@@ -137,14 +122,9 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
   // Deferred erase: a stream may report its end from inside its own
   // callbacks, so it is never deleted synchronously from them.
   void EraseRawStreamSoon(const std::string& stream_id);
-  // Phase 12f: `publishStatus` moved out of `llm/` into the new
-  // `session/` capability — see
-  // `api/session/nexus_session_bridge_adapter.{h,cc}`. The wire
-  // contract is unchanged; only the adapter that handles it changed.
 
   raw_ptr<Profile> profile_;
   std::unique_ptr<NexusLlmHost> llm_host_;
-  std::map<std::string, NexusLlmBridgeStreamState> bridge_stream_states_;
   // Open raw streams by id. Bounded by kMaxRawStreams (the .cc).
   std::map<std::string, std::unique_ptr<NexusLlmRawStream>> raw_streams_;
   // Ids a rawStreamCancel named before their rawStreamOpen was handled.

@@ -25,8 +25,13 @@ namespace nexus {
 class LlmProvider;
 class NexusOAuthManager;
 
-// Per-profile service that owns all LlmProvider instances and routes inference
-// requests to the currently active provider.
+// Per-profile service that owns all LlmProvider instances: their configs,
+// model listings, OAuth tokens and the active provider pick. It no longer
+// routes inference — the runtime speaks every provider's wire format over
+// `model.rawStream*` (model.call / streamStart were removed under interface
+// 1 on 2026-10-04); the provider instances stay for model discovery, key
+// verification (`providerAuth`) and the rawStream base-URL / credential
+// anchor.
 //
 // On construction it reads the persisted provider ID from prefs, instantiates
 // all registered providers, and configures them with stored credentials. The
@@ -67,9 +72,6 @@ class LlmBroker : public KeyedService {
   // `nexus.active_provider_id`.
   void SetProviderConfigs(base::DictValue configs,
                           const std::string& active_provider_id);
-
-  void SetSessionStatus(base::DictValue status);
-  const base::DictValue& GetSessionStatus() const;
 
   // --- Reverse flow: host-side pick → nexus_web ---
   //
@@ -181,24 +183,6 @@ class LlmBroker : public KeyedService {
   // settings reset needs to clear in-memory provider state as well.
   void ReloadProvidersFromPrefs();
 
-  // --- Inference (delegates to active provider) ---
-
-  void DoGenerate(const base::DictValue& call_options,
-                  GenerateCallback callback);
-
-  void DoStream(const base::DictValue& call_options,
-                StreamChunkCallback chunk_callback,
-                StreamDoneCallback done_callback);
-
-  void CancelRequest(const std::string& request_id);
-
-  // True when any provider still holds `request_id` in its concurrency FIFO
-  // (accepted, never dispatched upstream). Mirrors CancelRequest's broadcast:
-  // the owning provider is not tracked here. Used by NexusLlmHost to tell
-  // "waiting for a slot" apart from "the provider went silent" before it
-  // fails a read on its idle deadline.
-  bool IsRequestQueued(const std::string& request_id) const;
-
   // KeyedService:
   void Shutdown() override;
 
@@ -273,11 +257,9 @@ class LlmBroker : public KeyedService {
 
   std::unique_ptr<NexusOAuthManager> oauth_manager_;
 
-  // In-memory mirrors of the prefs-backed caches. Warm-loaded from prefs
-  // at construction and overwritten by SetTsModelCatalog /
-  // SetSessionStatus.
+  // In-memory mirror of the prefs-backed catalog cache. Warm-loaded from
+  // prefs at construction and overwritten by SetTsModelCatalog.
   base::DictValue ts_model_catalog_;
-  base::DictValue session_status_;
 
   // Pushers registered by every live bridge adapter (one per bridge
   // port — page + worker). DispatchUserPick fans events out to all of

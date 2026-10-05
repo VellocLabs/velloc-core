@@ -103,44 +103,15 @@ action("nexus_tools_codegen") {
     # Skill('<name>') activates the bucket.
     "tools/declarations/skills/browser.skill.json",
 
-    # Phase 13.2 / 13.7: cross-cutting native-tool prose for the
-    # `{{system-prompt-tools}}` placeholder in
-    # `nexus_web/public/system_prompts/*.md`. One Markdown file at the
-    # top of `tools/declarations/` is the source of truth; codegen
-    # reads it verbatim into `system_prompt_tools.gen.h` (a single
-    # constexpr string the renderer returns as-is).
-    "tools/declarations/system-prompt-tools.md",
-
-    # Phase 13.4: catalog-frame manifest for the `{{TOOL_CATALOG}}`
-    # placeholder — group ordering, the "## Browser tools" / "##
-    # File and shell tools" headers, and `@file:` references to the
-    # prose .md files below. Codegen emits `tool_catalog_frame.gen.h`
-    # with constexpr string_views the renderer references, AND seeds
-    # `_BROWSER_TOOL_GROUP_ORDER` so the per-tool prompt-entries
-    # table sorts in the canonical group order defined here.
-    "tools/declarations/tool-catalog-frame.json",
-
-    # Prose blocks for the catalog-frame manifest above. Each .md is loaded
-    # by the codegen's `@file:` resolver and embedded as a constexpr string in
-    # `tool_catalog_frame.gen.h`. Listed individually so GN re-runs codegen
-    # when any block changes. The browser section's catalog .md was relocated
-    # to `browser_tool/` (with the browser skill's description + instructions
-    # .md — see below) so all three browser prose sources share one folder;
-    # the other four sections stay in `tool-catalog-frame/`.
-    "tools/declarations/tool-catalog-frame/file-shell-tools.md",
-    "tools/declarations/tool-catalog-frame/task-tracking.md",
-    "tools/declarations/tool-catalog-frame/skills.md",
-    "tools/declarations/tool-catalog-frame/parallelism.md",
-
-    # Browser skill prose, split by audience into three .md under
+    # Browser skill prose, split by audience into two .md under
     # `browser_tool/`, pulled in via `@file:` references:
-    #   - browser-tools-catalog.md      → tool-catalog-frame.json `browser_tools`
-    #       (Position 2: the system-prompt `## Browser tools` catalog).
     #   - browser-skill-description.md  → browser.skill.json `description`
     #       (Position 1: the 1-line skill-menu advertisement).
     #   - browser-skill-instructions.md → browser.skill.json `instructions`
     #       (Position 3: the workflow playbook injected on activation).
-    "tools/declarations/browser_tool/browser-tools-catalog.md",
+    # (The system-prompt `## Browser tools` catalog and the other
+    # prompt-section prose live in the runtime since 2026-10-04 —
+    # nexus_web src/constants/promptSections/ and src/tools/glic/prompts/.)
     "tools/declarations/browser_tool/browser-skill-description.md",
     "tools/declarations/browser_tool/browser-skill-instructions.md",
 
@@ -187,7 +158,6 @@ action("nexus_tools_codegen") {
     # calls into NexusShellService. Bash runs arbitrary host shell
     # commands; Grep shells out to ripgrep.
     "tools/declarations/process_tool/bash.tool.json",
-    "tools/declarations/process_tool/bash_output.tool.json",
     "tools/declarations/process_tool/grep.tool.json",
     "tools/declarations/process_tool/power_shell.tool.json",
 
@@ -233,9 +203,10 @@ action("nexus_tools_codegen") {
     "api/declarations/sqlite/open.api.json",
     "api/declarations/sqlite/query.api.json",
 
-    # llm category — 11 actions, proxied through NexusLlmHost / LlmBroker.
-    # Phase 12f moved `publishStatus` out to the new `session` category.
-    "api/declarations/llm/call.api.json",
+    # llm category — 9 actions: the catalog / provider-config publishing
+    # (NexusLlmHost / LlmBroker) and the `rawStream*` byte transport.
+    # call / streamStart / streamRead / streamCancel were removed under
+    # interface 1 on 2026-10-04 (the runtime speaks every wire format).
     "api/declarations/llm/catalog.api.json",
     "api/declarations/llm/encryptSecret.api.json",
     "api/declarations/llm/publishBinaryRegistry.api.json",
@@ -245,9 +216,6 @@ action("nexus_tools_codegen") {
     "api/declarations/llm/rawStreamOpen.api.json",
     "api/declarations/llm/rawStreamRead.api.json",
     "api/declarations/llm/setDefaultSelection.api.json",
-    "api/declarations/llm/streamCancel.api.json",
-    "api/declarations/llm/streamRead.api.json",
-    "api/declarations/llm/streamStart.api.json",
 
     # network category — V1 of the WebFetch tool. General-purpose HTTP
     # GET over the Chromium net stack, exposed to TS-side tools that
@@ -262,40 +230,25 @@ action("nexus_tools_codegen") {
     "api/declarations/network/wsOpen.api.json",
     "api/declarations/network/wsSend.api.json",
 
-    # mcp category — native-backed (stdio) MCP server lifecycle. The C++
-    # side owns the full MCP client for locally-spawned servers (process
-    # launch + JSON-RPC handshake + tools/list + tools/call); the JS
-    # MCPPool references each server only by opaque id, so the command /
-    # env (incl. secrets) never crosses into the guest. Mirrors the
-    # LLM-provider "secrets stay native" template. Backed by
-    # `NexusMcpHost` over `NexusShellService`.
-    "api/declarations/mcp/callTool.api.json",
-    "api/declarations/mcp/connect.api.json",
-    "api/declarations/mcp/disconnect.api.json",
-    "api/declarations/mcp/listServers.api.json",
-    "api/declarations/mcp/testConnect.api.json",
-
-    # shell category — guest-side observe/control for BACKGROUND shells the
-    # model spawns via the Bash tool's run_in_background mode (ProcessTool::
-    # Spawn). `status` maps onto ReadBackgroundOutput, `kill` onto the Mojo
-    # Kill. Both go through the per-Profile shared NexusShellServiceLauncher so
-    # they reach the same utility-process registry ProcessTool spawned into.
-    # Lets the TS layer surface a backgrounded Bash in the Background Tasks
-    # drawer (live status + Stop) WITHOUT going through the model tool loop.
+    # shell category — the child-process primitive: streaming spawn (shell or
+    # argv form; `persist` hands the child to NexusPersistentShells), stdin,
+    # kill, the persistent list/kill and shell.env. All go through the
+    # per-Profile shared NexusShellServiceLauncher. (The background-shell
+    # registry actions `status` / `kill` + the `onExit` event were removed
+    # under interface 1 on 2026-10-04 — the runtime owns background shells.)
     "api/declarations/shell/closeStdin.api.json",
     "api/declarations/shell/env.api.json",
-    "api/declarations/shell/kill.api.json",
     "api/declarations/shell/persistentKill.api.json",
     "api/declarations/shell/persistentList.api.json",
     "api/declarations/shell/spawn.api.json",
-    "api/declarations/shell/status.api.json",
     "api/declarations/shell/streamKill.api.json",
     "api/declarations/shell/writeStdin.api.json",
 
-    # session category — 4 actions (Phase 12f, +setActiveSession).
-    # Dedicated capability for SessionStatus + LLM-session lifecycle.
-    # `publishStatus` and `onStop` (renamed from `browser.endSession`)
-    # plus `setAgentLoopSettings` (renamed from
+    # session category — 3 actions (Phase 12f, +setActiveSession; the
+    # write-only `publishStatus` was removed on 2026-10-04).
+    # Dedicated capability for the LLM-session lifecycle: `onStop`
+    # (renamed from `browser.endSession`) plus `setAgentLoopSettings`
+    # (renamed from
     # `browser.setAgentLoopSettings`). `setActiveSession` reports the
     # guest's active chat session: activates one of its kNexus-window
     # tabs and returns the tab counts that gate the webview_area.
@@ -303,7 +256,6 @@ action("nexus_tools_codegen") {
     # structs into one `nexus::generated` namespace and providers/
     # setActive.api.json already owns `SetActiveInput`.)
     "api/declarations/session/onStop.api.json",
-    "api/declarations/session/publishStatus.api.json",
     "api/declarations/session/setActiveSession.api.json",
     "api/declarations/session/setAgentLoopSettings.api.json",
 
@@ -360,8 +312,6 @@ action("nexus_tools_codegen") {
     # rendering (was getUsingYourToolsSection in TS) to C++ as the
     # single source of truth for tool-name knowledge.
     "api/declarations/catalog/listHostedTools.api.json",
-    "api/declarations/catalog/listPromptSections.api.json",
-    "api/declarations/catalog/renderPromptSection.api.json",
 
     # providers category — Approach 5 (A5): WebUI panel ↔ C++ bridge
     # port. Used ONLY on the panel WebUI bridge port (not exposed to
@@ -452,7 +402,6 @@ action("nexus_tools_codegen") {
     # process_tool category — UI-thread tools that fire async mojo
     # calls into NexusShellService.
     "$target_gen_dir/tools/bash.gen.h",
-    "$target_gen_dir/tools/bash_output.gen.h",
     "$target_gen_dir/tools/grep.gen.h",
     "$target_gen_dir/tools/power_shell.gen.h",
 
@@ -472,8 +421,6 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/llm/llm_api.gen.cc",
     "$target_gen_dir/api/network/network_api.gen.h",
     "$target_gen_dir/api/network/network_api.gen.cc",
-    "$target_gen_dir/api/mcp/mcp_api.gen.h",
-    "$target_gen_dir/api/mcp/mcp_api.gen.cc",
     "$target_gen_dir/api/shell/shell_api.gen.h",
     "$target_gen_dir/api/shell/shell_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.h",
@@ -524,23 +471,6 @@ action("nexus_tools_codegen") {
     # nexus_catalog_bridge_adapter.cc to serve `catalog.listSkills`.
     "$target_gen_dir/tools/nexus_skills_registry.gen.h",
     "$target_gen_dir/tools/nexus_skills_registry.gen.cc",
-
-    # Phase 13.2: rendered cross-cutting native-tool prose for the
-    # `{{system-prompt-tools}}` placeholder. Source .md at
-    # tools/declarations/system-prompt-tools.md. Consumed by
-    # api/catalog/prompt_section_renderer.cc.
-    "$target_gen_dir/tools/system_prompt_tools.gen.h",
-
-    # Phase 13.4 / 13.8 / 13.9: rendered catalog-frame prose for the
-    # `{{TOOL_CATALOG}}` placeholder. Source manifest at
-    # tools/declarations/tool-catalog-frame.json (references one .md
-    # per section). Consumed by api/catalog/prompt_section_renderer.cc
-    # via the constexpr string_views `kBrowserToolsContent`,
-    # `kFileShellToolsContent`, `kTaskTrackingContent`, `kSkillsContent`,
-    # `kParallelismContent`, plus the wire-name arrays
-    # `kBrowserToolWireNames` / `kFileShellToolWireNames` (used to gate
-    # whether each section is emitted).
-    "$target_gen_dir/tools/tool_catalog_frame.gen.h",
   ]
 
   args = [
@@ -683,7 +613,7 @@ source_set("remote_access") {
 
   # Deliberately NOT //chrome/browser/ui: the listener must not depend on the
   # UI layer (see the ui -> settings_handler -> bridge -> ui cycle documented
-  # on `:mcp_host`, BUILD.gn above).
+  # on `:shell_launcher`, BUILD.gn above).
 }
 
 # The process-wide "is remote access up, and how many devices are connected"
@@ -822,64 +752,29 @@ source_set("secret_store") {
   ]
 }
 
-# Native MCP server config store (prefs reader). Deliberately tiny — only
-# //base + //components/prefs + the pref-name header — so the lite unit
-# test binary can link it without dragging in the whole `bridge` set
-# (mirrors the `:provider_config` factoring on the LLM side).
-source_set("mcp_server_store") {
+# The per-Profile launcher of the NexusShellService utility process
+# (Bash / PowerShell / Grep, the guest `shell.*` capability, the persistent
+# children). Deliberately a leaf that does NOT depend on //chrome/browser/ui,
+# so `:bridge` can depend on it without forming a cycle through
+# //chrome/browser/ui -> :nexus_settings_handler -> :bridge. (It used to share
+# the `mcp_host` target with the native MCP client, removed under interface 1
+# on 2026-10-04 — the runtime runs MCP over shell.spawn + network.streamOpen.)
+source_set("shell_launcher") {
   sources = [
-    "api/mcp/nexus_mcp_server_store.cc",
-    "api/mcp/nexus_mcp_server_store.h",
-  ]
-
-  public_deps = [ "//base" ]
-
-  deps = [
-    "//components/prefs",
-    "//custom_browser/browser/nexus/api/llm:pref_names",
-  ]
-}
-
-# Browser-process MCP client: the transport-agnostic JSON-RPC host, the
-# http / stdio transports, and the utility-process launcher. Deliberately a
-# leaf that does NOT depend on //chrome/browser/ui, so both `:bridge`
-# (the `mcp` capability) and `:nexus_settings_handler` (the pre-save
-# connection test) can depend on it without forming a cycle through
-# //chrome/browser/ui -> :nexus_settings_handler.
-source_set("mcp_host") {
-  sources = [
-    "api/mcp/nexus_mcp_host.cc",
-    "api/mcp/nexus_mcp_host.h",
-    "api/mcp/nexus_mcp_http_transport.cc",
-    "api/mcp/nexus_mcp_http_transport.h",
-    "api/mcp/nexus_mcp_stdio_transport.cc",
-    "api/mcp/nexus_mcp_stdio_transport.h",
-    "api/mcp/nexus_mcp_transport.h",
     "tools/process_tool/nexus_shell_service_launcher.cc",
     "tools/process_tool/nexus_shell_service_launcher.h",
   ]
 
   public_deps = [
-    # NexusMcpServerConfig appears in the host / transport headers.
-    ":mcp_server_store",
-
-    # nexus_shell.mojom types appear in the stdio transport + launcher headers.
+    # nexus_shell.mojom types appear in the launcher header.
     "mojom",
     "//base",
   ]
 
   deps = [
-    # ServiceProcessHost::Launch for the stdio utility process.
+    # ServiceProcessHost::Launch for the utility process.
     "//content/public/browser",
     "//mojo/public/cpp/bindings",
-    "//net/traffic_annotation",
-
-    # SimpleURLLoader / SharedURLLoaderFactory / ResourceRequest (http) +
-    # the URLResponseHead mojom; transitively brings //net for the
-    # HttpResponseHeaders / net_errors used by the http transport.
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
-    "//url",
   ]
 }
 
@@ -895,8 +790,6 @@ source_set("bridge") {
     "api/browser_tools/nexus_browser_tools_bridge_adapter.h",
     "api/catalog/nexus_catalog_bridge_adapter.cc",
     "api/catalog/nexus_catalog_bridge_adapter.h",
-    "api/catalog/prompt_section_renderer.cc",
-    "api/catalog/prompt_section_renderer.h",
     "api/fs/nexus_fs_bridge_adapter.cc",
     "api/fs/nexus_fs_bridge_adapter.h",
     "api/llm/nexus_llm_bridge_adapter.cc",
@@ -911,8 +804,6 @@ source_set("bridge") {
     "api/network/nexus_http_byte_stream.h",
     "api/network/nexus_websocket_connection.cc",
     "api/network/nexus_websocket_connection.h",
-    "api/mcp/nexus_mcp_bridge_adapter.cc",
-    "api/mcp/nexus_mcp_bridge_adapter.h",
     "api/network/nexus_network_bridge_adapter.cc",
     "api/network/nexus_network_bridge_adapter.h",
     "api/network/nexus_network_host.cc",
@@ -1023,7 +914,6 @@ source_set("bridge") {
     "$target_gen_dir/api/browser_tools/browser_tools_api.gen.cc",
     "$target_gen_dir/api/catalog/catalog_api.gen.cc",
     "$target_gen_dir/api/llm/llm_api.gen.cc",
-    "$target_gen_dir/api/mcp/mcp_api.gen.cc",
     "$target_gen_dir/api/network/network_api.gen.cc",
     "$target_gen_dir/api/providers/providers_api.gen.cc",
     "$target_gen_dir/api/remote_access/remote_access_api.gen.cc",
@@ -1037,19 +927,16 @@ source_set("bridge") {
   ]
 
   public_deps = [
-    # NexusMcpHost / transports / NexusShellServiceLauncher: the adapter
-    # header (and process_tool.cc) include these; consumers of bridge get
-    # them transitively.
+    # NexusShellServiceLauncher: process_tool.h and the shell adapter include
+    # it; consumers of bridge get it transitively.
+    ":shell_launcher",
+
+    # At-rest secret encryption (NexusSecretCrypt) appears in bridge headers.
+    ":secret_crypt",
+
     # nexus_tool_schema's types appear in bridge's public headers
     # (tool_base.h, tool_catalog.h, …) so consumers of bridge transitively
     # need access to them. Promote to public_deps to keep that link.
-    ":mcp_host",
-
-    # NexusMcpServerConfig appears in the MCP bridge-adapter header.
-    ":mcp_server_store",
-
-    # At-rest secret encryption used by the MCP adapter (decrypt env/headers).
-    ":secret_crypt",
     ":tool_schema",
   ]
 
@@ -1146,9 +1033,6 @@ source_set("bridge") {
     "//content/public/browser",
     "//crypto",
     "//custom_browser/browser/nexus/api/llm:broker",
-
-    # ObservationToBridge in nexus_llm_bridge_support.cc.
-    "//custom_browser/browser/nexus/api/llm:observation",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:raw_stream_policy",
     "//custom_browser/browser/nexus/api/llm:webui_host",
@@ -1265,7 +1149,7 @@ source_set("browser_tools_config") {
 # transport, so they share this instead. Deliberately a LEAF: it must be
 # dependable from `:nexus_settings_handler` without dragging
 # //chrome/browser/ui back in and re-opening the dependency cycle noted on
-# `:mcp_host`.
+# `:shell_launcher`.
 source_set("client_restart") {
   sources = [
     "nexus_client_restart.cc",
@@ -1411,17 +1295,9 @@ source_set("nexus_settings_handler") {
     # `restartBrowser` — the guest-recovery overlay's "Restart client" button.
     # A leaf that (unlike `:bridge`) does not pull //chrome/browser/ui, so it
     # cannot re-open the ui -> nexus_settings_handler -> bridge -> ui cycle
-    # documented on `:mcp_host` below.
+    # documented on `:shell_launcher`.
     ":client_restart",
 
-    # MCP connection test (`testMcpServer`): builds a transient NexusMcpHost
-    # (+ NexusShellServiceLauncher for stdio) to run the handshake before a
-    # server is saved. `:mcp_host` is a leaf that (unlike `:bridge`) does NOT
-    # pull //chrome/browser/ui, so it avoids the
-    # ui -> nexus_settings_handler -> bridge -> ui cycle. `:mcp_server_store`
-    # provides the config parser.
-    ":mcp_host",
-    ":mcp_server_store",
     ":secret_crypt",
     "//base",
     "//chrome/browser/profiles:profile",
@@ -1452,28 +1328,12 @@ source_set("unit_tests_lite") {
 
   sources = [
     "api/alarms/alarm_schedule_unittest.cc",
-    "api/llm/llm_error_extract_unittest.cc",
-    "api/llm/llm_line_splitter_unittest.cc",
-    "api/llm/llm_observation_unittest.cc",
     "api/llm/llm_provider_factory_unittest.cc",
     "api/llm/llm_raw_stream_policy_unittest.cc",
-    "api/llm/llm_stream_guard_unittest.cc",
-    "api/llm/llm_text_helpers_unittest.cc",
-    "api/llm/llm_types_unittest.cc",
     "api/llm/oauth/oauth_providers_unittest.cc",
     "api/llm/oauth/oauth_token_store_unittest.cc",
     "api/llm/provider_config_unittest.cc",
-    "api/llm/reasoning_replay_unittest.cc",
-    "api/llm/providers/anthropic/anthropic_schema_sanitizer_unittest.cc",
-    "api/llm/providers/anthropic/anthropic_stop_reason_unittest.cc",
-    "api/llm/providers/openai/openai_reasoning_unittest.cc",
-    "api/llm/providers/openai/openai_responses_error_unittest.cc",
-    "api/llm/providers/openai/openai_tool_call_stream_unittest.cc",
-    "api/llm/providers/openai/openai_tool_result_messages_unittest.cc",
-    "api/llm/providers/openai/openai_usage_unittest.cc",
-    "api/llm/providers/openai/openai_user_content_unittest.cc",
     "api/fs/nexus_fs_watcher_unittest.cc",
-    "api/mcp/nexus_mcp_server_store_unittest.cc",
     "api/network/network_egress_policy_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
@@ -1496,7 +1356,6 @@ source_set("unit_tests_lite") {
     # nexus_fs_watcher_unittest.cc — the fs.watch core (//base only).
     ":fs",
     ":host_shell",
-    ":mcp_server_store",
     ":network_egress_policy",
     # Pure routing logic for remote access; a leaf (//base only) so it links
     # into the lite binary without dragging in the listener's net::HttpServer.
@@ -1524,31 +1383,12 @@ source_set("unit_tests_lite") {
     "//components/os_crypt/async/browser:test_support",
     "//components/prefs",
     "//components/prefs:test_support",
-    "//custom_browser/browser/nexus/api/llm:anthropic_schema_sanitizer",
-
-    # anthropic_stop_reason_unittest.cc — `refusal` -> content-filter mapping
-    # + `stop_details` normalization.
-    "//custom_browser/browser/nexus/api/llm:anthropic_stop_reason",
-    "//custom_browser/browser/nexus/api/llm:error_extract",
-    "//custom_browser/browser/nexus/api/llm:line_splitter",
-
-    # llm_observation_unittest.cc — header allowlist + request-body digest.
-    "//custom_browser/browser/nexus/api/llm:observation",
     "//custom_browser/browser/nexus/api/llm:oauth",
-    "//custom_browser/browser/nexus/api/llm:openai_reasoning",
-    "//custom_browser/browser/nexus/api/llm:reasoning_replay",
-    "//custom_browser/browser/nexus/api/llm:openai_responses_error",
-    "//custom_browser/browser/nexus/api/llm:openai_tool_call_stream",
-    "//custom_browser/browser/nexus/api/llm:openai_tool_result_messages",
-    "//custom_browser/browser/nexus/api/llm:openai_usage",
-    "//custom_browser/browser/nexus/api/llm:openai_user_content",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:provider",
     "//custom_browser/browser/nexus/api/llm:provider_config",
     "//custom_browser/browser/nexus/api/llm:provider_factory",
     "//custom_browser/browser/nexus/api/llm:raw_stream_policy",
-    "//custom_browser/browser/nexus/api/llm:stream_guard",
-    "//custom_browser/browser/nexus/api/llm:text_helpers",
     "//custom_browser/browser/nexus/api/llm:types",
     "//services/network/public/cpp",
     "//testing/gtest",
@@ -1569,7 +1409,6 @@ source_set("unit_tests") {
     "api/appearance/nexus_appearance_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_host_unittest.cc",
-    "api/llm/nexus_llm_bridge_support_unittest.cc",
     "api/llm/nexus_llm_raw_stream_unittest.cc",
     "api/network/nexus_http_byte_stream_unittest.cc",
     "api/network/nexus_network_bridge_adapter_unittest.cc",

@@ -35,22 +35,20 @@ namespace {
 
 constexpr int kDefaultBashTimeoutMs = 120000;
 constexpr int kMaxBashTimeoutMs = 600000;
-// No-timeout-cap sentinel: a `run_in_background` command carrying this `timeout`
-// runs with no wall-clock kill, so a detached command runs to completion — CC's
-// `background()` clears the kill timer. The JS side sets it on BOTH background
-// paths: the auto-background middle layer (a foreground command that crosses its
-// timeout) AND an explicit `run_in_background: true` from the model. Passed
-// through to the utility, which recognises the same value
-// (SafeCommandLimits::kNoTimeoutCapSentinelMs). INT32_MAX so it fits `int
-// timeout_ms` and an OLD utility clamps it to kMaxBashTimeoutMs (safe degrade).
-// Never sent by the model as a literal — bash.tool.json caps `timeout` at
-// kMaxBashTimeoutMs; the JS middle layer substitutes it after the model's args
-// arrive. Kept in sync with nexus_web hostedTools.ts SHELL_NO_TIMEOUT_CAP_SENTINEL_MS.
-constexpr int kNoTimeoutCapSentinelMs = 2147483647;
 constexpr int kMaxOutputBytes = 30000;
 constexpr char kProcessUnavailableCode[] = "process_unavailable";
 constexpr char kProcessUnavailableMessage[] =
     "process tools require an attached browser profile";
+// `run_in_background` is served by the runtime, which starts the command as a
+// persistent host child (`shell.spawn` + `persist`) and owns the task. The host
+// keeps no background-shell registry any more (removed under interface 1 on
+// 2026-10-04), so an explicit background request that still reaches the hosted
+// tool is refused loudly instead of silently blocking in the foreground.
+constexpr char kBackgroundUnsupportedCode[] = "background_unsupported";
+constexpr char kBackgroundUnsupportedMessage[] =
+    "run_in_background is not served by the host: the runtime starts "
+    "background commands itself. Run the command in the foreground, or retry "
+    "from a runtime that owns background shells.";
 
 // Per-platform shell invocation. Mirrors `buildShellInvocation` in the
 // retired BashTool.ts but trimmed to one shell per platform — the
@@ -169,48 +167,6 @@ std::string BigBufferToString(const mojo_base::BigBuffer& buffer, size_t cap) {
       std::string(reinterpret_cast<const char*>(bytes.data()), n));
 }
 
-base::DictValue BuildBackgroundOutputDict(const std::string& shell_id,
-                                          int exit_code,
-                                          bool timed_out,
-                                          const std::string& stdout_text,
-                                          const std::string& stderr_text,
-                                          bool stdout_truncated,
-                                          bool stderr_truncated) {
-  std::string body;
-  if (timed_out) {
-    body.append("Command timed out.\n");
-  } else if (exit_code != 0) {
-    body.append(base::StrCat(
-        {"Command exited with code ", base::NumberToString(exit_code), ".\n"}));
-  }
-  if (!stdout_text.empty()) {
-    body.append(stdout_text);
-  }
-  if (!stderr_text.empty()) {
-    if (!stdout_text.empty()) {
-      body.push_back('\n');
-    }
-    body.append(stderr_text);
-  }
-  if (stdout_truncated || stderr_truncated) {
-    if (!body.empty() && body.back() != '\n') {
-      body.push_back('\n');
-    }
-    body.append(
-        "[output truncated — re-run with a narrower scope to capture more]");
-  }
-  if (body.empty()) {
-    body = "(no output)";
-  }
-
-  base::DictValue dict;
-  dict.Set("shell_id", shell_id);
-  dict.Set("status", "completed");
-  dict.Set("exit_code", exit_code);
-  dict.Set("output", std::move(body));
-  return dict;
-}
-
 // Extract the leading "base command" from a command line for the
 // command-semantic table. Mirrors the TS `extractBaseCommand`:
 //   1. Split on `||`, `&&`, `;`, `|`; take the LAST segment (it
@@ -218,25 +174,6 @@ base::DictValue BuildBackgroundOutputDict(const std::string& shell_id,
 //   2. Strip leading env-var assignments (FOO=bar BAR=baz cmd).
 //   3. Take the first whitespace-separated token.
 //   4. Strip surrounding quotes.
-// Mirrors Claude Code's `isAutobackgroundingAllowed`: a foreground command
-// may be auto-backgrounded when it crosses its timeout UNLESS its leading
-// token is on the small disallow-list — a pure sleep, which should use the
-// Sleep tool, not a held-open shell. Shared by the Bash and PowerShell
-// paths, so the list covers bash `sleep` AND PowerShell `Start-Sleep` (plus
-// its `sleep` alias); PowerShell is case-insensitive, so compare that way.
-// Checks the first whitespace-delimited token, matching CC's `parts[0]`.
-bool IsAutoBackgroundAllowed(const std::string& command) {
-  size_t start = command.find_first_not_of(" \t");
-  if (start == std::string::npos) {
-    return true;
-  }
-  size_t end = command.find_first_of(" \t", start);
-  std::string token = command.substr(
-      start, end == std::string::npos ? std::string::npos : end - start);
-  return !base::EqualsCaseInsensitiveASCII(token, "sleep") &&
-         !base::EqualsCaseInsensitiveASCII(token, "start-sleep");
-}
-
 std::string ExtractBaseCommand(const std::string& command) {
   // Crude split: find the last index of any of the boundary chars and
   // take the substring after it. We don't care about correctness for
@@ -659,6 +596,11 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
     std::move(done).Reject("invalid_args", "command must not be empty");
     return;
   }
+  if (input.run_in_background.value_or(false)) {
+    std::move(done).Reject(kBackgroundUnsupportedCode,
+                           kBackgroundUnsupportedMessage);
+    return;
+  }
 
   ToolSession* session = GetSession();
   // Per-call cwd override: a worktree-isolated subagent sets `cwd` so its
@@ -690,19 +632,10 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   }
 
   int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
-  // A run_in_background command may carry the no-timeout-cap sentinel (the JS
-  // side sets it on both the auto-background middle layer AND an explicit
-  // run_in_background, so a detached command runs to completion). Pass it
-  // through UNCLAMPED — the utility's ClampTimeoutMs recognises the same value.
-  // Every other value keeps the normal default/clamp.
-  const bool no_timeout_cap = input.run_in_background.value_or(false) &&
-                              timeout_ms == kNoTimeoutCapSentinelMs;
-  if (!no_timeout_cap) {
-    if (timeout_ms <= 0) {
-      timeout_ms = kDefaultBashTimeoutMs;
-    } else if (timeout_ms > kMaxBashTimeoutMs) {
-      timeout_ms = kMaxBashTimeoutMs;
-    }
+  if (timeout_ms <= 0) {
+    timeout_ms = kDefaultBashTimeoutMs;
+  } else if (timeout_ms > kMaxBashTimeoutMs) {
+    timeout_ms = kMaxBashTimeoutMs;
   }
 
   // Hook-exec path: the host-internal `hook_shell` field (set by the JS hook
@@ -756,44 +689,20 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   // POSIX: run through the resolved default shell (unchanged behaviour).
   options->use_shell = true;
 #endif
-  const bool auto_background_on_timeout =
-      !input.run_in_background.value_or(false) &&
-      IsAutoBackgroundAllowed(input.command);
-  options->timeout_ms = static_cast<uint32_t>(
-      auto_background_on_timeout ? kMaxBashTimeoutMs : timeout_ms);
+  options->timeout_ms = static_cast<uint32_t>(timeout_ms);
   options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
-  // Auto-background-on-timeout (CC parity): foreground Bash uses Spawn so it can
-  // emit live progress; the utility-process hard timeout is extended to the
-  // maximum and the browser-side poller returns a background handoff at the
-  // requested foreground budget.
-  options->background_on_timeout = auto_background_on_timeout;
+  // Foreground Bash uses Spawn + ReadBackgroundOutput polling so it can emit
+  // live progress; `timeout_ms` is the utility's hard kill. (The old
+  // auto-background-on-timeout handoff is gone with the host registry: the
+  // runtime backgrounds a long command itself before it reaches the host.)
 
   mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
-
-  // Background path: fire-and-return. The service launches the command,
-  // runs it to completion (or timeout) on a worker, and buffers the
-  // output for the completion notification and manual BashOutput recovery.
-  // We resolve `done` immediately with the shell_id.
-  //
-  // Uses the launcher's observer-based spawn so the utility pushes the
-  // terminal exit back to the browser (→ `shell.onExit` bridge event →
-  // nexus_web) event-driven, instead of the guest polling `shell.status`
-  // on a timer just to learn the command finished. Output is still fetched
-  // on demand via ReadBackgroundOutput / the bridge shell.status.
-  if (input.run_in_background.value_or(false)) {
-    launcher_->SpawnBackgroundWithObserver(
-        std::move(options),
-        base::BindOnce(&ProcessTool::OnBashSpawnDone,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(done)));
-    return;
-  }
 
   remote->Spawn(std::move(options),
                 base::BindOnce(&ProcessTool::OnForegroundSpawnDone,
                                weak_ptr_factory_.GetWeakPtr(), std::move(done),
                                input.command, base::TimeTicks::Now(),
-                               std::string("bash"), timeout_ms,
-                               auto_background_on_timeout));
+                               std::string("bash")));
 }
 
 
@@ -802,8 +711,6 @@ void ProcessTool::OnForegroundSpawnDone(
     std::string original_command,
     base::TimeTicks start_time,
     std::string tool_label,
-    int foreground_timeout_ms,
-    bool auto_background_on_timeout,
     bool ok,
     const std::optional<std::string>& shell_id,
     const std::optional<std::string>& error_code,
@@ -822,17 +729,14 @@ void ProcessTool::OnForegroundSpawnDone(
     return;
   }
   PollForegroundShell(std::move(done), *shell_id, std::move(original_command),
-                      start_time, std::move(tool_label), foreground_timeout_ms,
-                      auto_background_on_timeout);
+                      start_time, std::move(tool_label));
 }
 
 void ProcessTool::PollForegroundShell(ToolCallback done,
                                       std::string shell_id,
                                       std::string original_command,
                                       base::TimeTicks start_time,
-                                      std::string tool_label,
-                                      int foreground_timeout_ms,
-                                      bool auto_background_on_timeout) {
+                                      std::string tool_label) {
   if (!launcher_) {
     std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
     return;
@@ -842,8 +746,7 @@ void ProcessTool::PollForegroundShell(ToolCallback done,
       base::BindOnce(&ProcessTool::OnForegroundShellStatus,
                      weak_ptr_factory_.GetWeakPtr(), std::move(done), shell_id,
                      std::move(original_command), start_time,
-                     std::move(tool_label), foreground_timeout_ms,
-                     auto_background_on_timeout));
+                     std::move(tool_label)));
 }
 
 void ProcessTool::OnForegroundShellStatus(
@@ -852,8 +755,6 @@ void ProcessTool::OnForegroundShellStatus(
     std::string original_command,
     base::TimeTicks start_time,
     std::string tool_label,
-    int foreground_timeout_ms,
-    bool auto_background_on_timeout,
     mojom::ShellBackgroundOutputPtr output) {
   if (!output || !output->found) {
     std::move(done).Reject(base::StrCat({tool_label, "_failed"}),
@@ -887,32 +788,12 @@ void ProcessTool::OnForegroundShellStatus(
                    (base::TimeTicks::Now() - start_time).InSecondsF());
       session->EmitToolProgress(base::Value(std::move(progress)));
     }
-    const base::TimeDelta elapsed = base::TimeTicks::Now() - start_time;
-    if (auto_background_on_timeout &&
-        elapsed >= base::Milliseconds(foreground_timeout_ms)) {
-      if (launcher_) {
-        launcher_->RetainBackgroundShell(shell_id);
-      }
-      base::DictValue dict;
-      dict.Set("shell_id", shell_id);
-      dict.Set("status", "running");
-      dict.Set("message",
-               base::StrCat(
-                   {"Command exceeded its foreground timeout and was moved "
-                    "to the background (shell_id=",
-                    shell_id,
-                    "). It is still running — Nexus will notify you when it "
-                    "completes; do not poll for output while it is running."}));
-      std::move(done).Resolve(std::move(dict));
-      return;
-    }
     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&ProcessTool::PollForegroundShell,
                        weak_ptr_factory_.GetWeakPtr(), std::move(done), shell_id,
                        std::move(original_command), start_time,
-                       std::move(tool_label), foreground_timeout_ms,
-                       auto_background_on_timeout),
+                       std::move(tool_label)),
         base::Milliseconds(500));
     return;
   }
@@ -930,148 +811,6 @@ void ProcessTool::OnForegroundShellStatus(
 }
 
 // =============================================================================
-// Background Bash: Spawn + BashOutput
-// =============================================================================
-
-void ProcessTool::OnBashSpawnDone(
-    ToolCallback done,
-    bool ok,
-    const std::optional<std::string>& shell_id,
-    const std::optional<std::string>& error_code,
-    const std::optional<std::string>& error_message,
-    const std::optional<std::string>& install_hint) {
-  // Pre-launch failure (COMMAND_NOT_ALLOWED, INVALID_CWD, BINARY_NOT_FOUND,
-  // …) — same shape as the foreground Bash reject, install_hint appended.
-  if (!ok || !shell_id.has_value()) {
-    std::string msg = error_message.value_or(std::string());
-    if (install_hint.has_value() && !install_hint->empty()) {
-      if (!msg.empty()) {
-        msg.append("\n\n");
-      }
-      msg.append(*install_hint);
-    }
-    std::move(done).Reject(error_code.value_or("bash_spawn_failed"),
-                           std::move(msg));
-    return;
-  }
-
-  if (launcher_) {
-    launcher_->RetainBackgroundShell(*shell_id);
-  }
-
-  base::DictValue dict;
-  dict.Set("shell_id", *shell_id);
-  dict.Set("status", "running");
-  dict.Set(
-      "message",
-      base::StrCat({"Command started in the background (shell_id=", *shell_id,
-                    "). Nexus will notify you when it completes; do not poll "
-                    "for output while it is running."}));
-  std::move(done).Resolve(std::move(dict));
-}
-
-void ProcessTool::RunBashOutputOnUI(::nexus::generated::BashOutputInput input,
-                                    ToolCallback done) {
-  if (input.shell_id.empty()) {
-    std::move(done).Reject("invalid_args", "shell_id must not be empty");
-    return;
-  }
-  if (!launcher_) {
-    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
-    return;
-  }
-  mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
-  remote->ReadBackgroundOutput(input.shell_id,
-                               base::BindOnce(&ProcessTool::OnBashOutputDone,
-                                              weak_ptr_factory_.GetWeakPtr(),
-                                              std::move(done), input.shell_id));
-}
-
-void ProcessTool::OnBashOutputDone(ToolCallback done,
-                                   std::string shell_id,
-                                   mojom::ShellBackgroundOutputPtr output) {
-  if (!output || !output->found) {
-    if (launcher_) {
-      std::optional<NexusShellServiceLauncher::CachedBackgroundOutput> cached =
-          launcher_->GetCachedBackgroundOutput(shell_id);
-      launcher_->ReleaseBackgroundShell(shell_id);
-      if (cached.has_value()) {
-        std::move(done).Resolve(BuildBackgroundOutputDict(
-            shell_id, cached->exit_code, cached->timed_out, cached->stdout_text,
-            cached->stderr_text, cached->stdout_truncated,
-            cached->stderr_truncated));
-        return;
-      }
-    }
-    std::move(done).Reject(
-        "unknown_shell",
-        base::StrCat({"No background command found for shell_id=", shell_id,
-                      ". It may have never existed or been evicted."}));
-    return;
-  }
-
-  if (!output->running && launcher_) {
-    NexusShellServiceLauncher::CachedBackgroundOutput cached;
-    cached.exit_code = (output->exit && output->exit->code.has_value())
-                           ? *output->exit->code
-                           : -1;
-    if (output->exit && output->exit->signal.has_value()) {
-      cached.signal = *output->exit->signal;
-    }
-    cached.timed_out = output->exit && output->exit->timed_out;
-    cached.killed = output->exit && output->exit->killed;
-    cached.duration_ms = output->exit ? output->exit->duration_ms : 0;
-    cached.stdout_text = BigBufferToString(output->stdout_buffer, kMaxOutputBytes);
-    cached.stderr_text = BigBufferToString(output->stderr_buffer, kMaxOutputBytes);
-    cached.stdout_truncated = output->stdout_truncated;
-    cached.stderr_truncated = output->stderr_truncated;
-    launcher_->CacheBackgroundOutput(shell_id, cached);
-    launcher_->ReleaseBackgroundShell(shell_id);
-  }
-
-  const std::string stdout_text =
-      BigBufferToString(output->stdout_buffer, kMaxOutputBytes);
-  const std::string stderr_text =
-      BigBufferToString(output->stderr_buffer, kMaxOutputBytes);
-
-  if (output->running) {
-    std::string body;
-    if (!stdout_text.empty()) {
-      body.append(stdout_text);
-    }
-    if (!stderr_text.empty()) {
-      if (!body.empty()) {
-        body.push_back('\n');
-      }
-      body.append(stderr_text);
-    }
-
-    base::DictValue dict;
-    dict.Set("shell_id", shell_id);
-    dict.Set("status", "running");
-    dict.Set("output", body.empty() ? "(no output yet)" : std::move(body));
-    dict.Set("stdout_truncated", output->stdout_truncated);
-    dict.Set("stderr_truncated", output->stderr_truncated);
-    dict.Set("message",
-             "Command is still running in the background. Output shown is "
-             "captured so far; prefer waiting for the background completion "
-             "notification instead of polling repeatedly.");
-    std::move(done).Resolve(std::move(dict));
-    return;
-  }
-
-  // Finished — shape like the foreground Bash prose result.
-  const int exit_code = (output->exit && output->exit->code.has_value())
-                            ? *output->exit->code
-                            : -1;
-  const bool timed_out = output->exit && output->exit->timed_out;
-
-  std::move(done).Resolve(BuildBackgroundOutputDict(
-      shell_id, exit_code, timed_out, stdout_text, stderr_text,
-      output->stdout_truncated, output->stderr_truncated));
-}
-
-// =============================================================================
 // RunPowerShellOnUI override (Windows model-facing PowerShell tool)
 // =============================================================================
 
@@ -1079,6 +818,11 @@ void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
                                     ToolCallback done) {
   if (input.command.empty()) {
     std::move(done).Reject("invalid_args", "command must not be empty");
+    return;
+  }
+  if (input.run_in_background.value_or(false)) {
+    std::move(done).Reject(kBackgroundUnsupportedCode,
+                           kBackgroundUnsupportedMessage);
     return;
   }
 
@@ -1108,25 +852,15 @@ void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
   }
 
   int timeout_ms = input.timeout.value_or(kDefaultBashTimeoutMs);
-  // A run_in_background command may carry the no-timeout-cap sentinel (the JS
-  // side sets it on both the auto-background middle layer AND an explicit
-  // run_in_background, so a detached command runs to completion). Pass it
-  // through UNCLAMPED — the utility's ClampTimeoutMs recognises the same value.
-  // Every other value keeps the normal default/clamp.
-  const bool no_timeout_cap = input.run_in_background.value_or(false) &&
-                              timeout_ms == kNoTimeoutCapSentinelMs;
-  if (!no_timeout_cap) {
-    if (timeout_ms <= 0) {
-      timeout_ms = kDefaultBashTimeoutMs;
-    } else if (timeout_ms > kMaxBashTimeoutMs) {
-      timeout_ms = kMaxBashTimeoutMs;
-    }
+  if (timeout_ms <= 0) {
+    timeout_ms = kDefaultBashTimeoutMs;
+  } else if (timeout_ms > kMaxBashTimeoutMs) {
+    timeout_ms = kMaxBashTimeoutMs;
   }
 
-  // Prefer PowerShell 7 (pwsh); OnPowerShellExecDone falls back to Windows
-  // PowerShell (powershell) if pwsh isn't installed.
+  // Prefer PowerShell 7 (pwsh); OnPowerShellForegroundSpawnDone falls back to
+  // Windows PowerShell (powershell) if pwsh isn't installed.
   LaunchPowerShellAttempt(input.command, std::move(cwd), timeout_ms, "pwsh",
-                          input.run_in_background.value_or(false),
                           std::move(done));
 }
 
@@ -1134,7 +868,6 @@ void ProcessTool::LaunchPowerShellAttempt(std::string command,
                                           base::FilePath cwd,
                                           int timeout_ms,
                                           std::string shell_id,
-                                          bool run_in_background,
                                           ToolCallback done) {
   if (!launcher_) {
     std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
@@ -1150,35 +883,16 @@ void ProcessTool::LaunchPowerShellAttempt(std::string command,
   options->args = std::move(inv.args);
   options->cwd = cwd;
   options->use_shell = false;
-  const bool auto_background_on_timeout =
-      !run_in_background && IsAutoBackgroundAllowed(command);
-  options->timeout_ms = static_cast<uint32_t>(
-      auto_background_on_timeout ? kMaxBashTimeoutMs : timeout_ms);
+  options->timeout_ms = static_cast<uint32_t>(timeout_ms);
   options->max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
-  options->background_on_timeout = auto_background_on_timeout;
 
   mojo::Remote<mojom::NexusShellService>& remote = launcher_->GetService();
-
-  // Explicit background path (run_in_background=true): fire-and-return with a
-  // shell_id, mirroring the Bash Spawn path. OnPowerShellSpawnDone keeps the
-  // pwsh→powershell pre-launch fallback before handing off to OnBashSpawnDone.
-  // Uses the observer-based spawn (like the Bash background path) so the
-  // terminal exit is pushed event-driven instead of guest-polled.
-  if (run_in_background) {
-    launcher_->SpawnBackgroundWithObserver(
-        std::move(options),
-        base::BindOnce(&ProcessTool::OnPowerShellSpawnDone,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(done), command,
-                       cwd, timeout_ms, shell_id));
-    return;
-  }
 
   remote->Spawn(
       std::move(options),
       base::BindOnce(&ProcessTool::OnPowerShellForegroundSpawnDone,
                      weak_ptr_factory_.GetWeakPtr(), std::move(done), command,
-                     std::move(cwd), timeout_ms, shell_id,
-                     auto_background_on_timeout));
+                     std::move(cwd), timeout_ms, shell_id));
 }
 
 void ProcessTool::OnPowerShellExecDone(
@@ -1200,8 +914,7 @@ void ProcessTool::OnPowerShellExecDone(
       (*error_code == "BINARY_NOT_FOUND" ||
        *error_code == "COMMAND_NOT_ALLOWED")) {
     LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
-                            "powershell", /*run_in_background=*/false,
-                            std::move(done));
+                            "powershell", std::move(done));
     return;
   }
 
@@ -1220,7 +933,6 @@ void ProcessTool::OnPowerShellForegroundSpawnDone(
     base::FilePath cwd,
     int timeout_ms,
     std::string attempted_shell,
-    bool auto_background_on_timeout,
     bool ok,
     const std::optional<std::string>& shell_id,
     const std::optional<std::string>& error_code,
@@ -1230,41 +942,12 @@ void ProcessTool::OnPowerShellForegroundSpawnDone(
       (*error_code == "BINARY_NOT_FOUND" ||
        *error_code == "COMMAND_NOT_ALLOWED")) {
     LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
-                            "powershell", /*run_in_background=*/false,
-                            std::move(done));
+                            "powershell", std::move(done));
     return;
   }
   OnForegroundSpawnDone(std::move(done), std::move(command), base::TimeTicks::Now(),
-                        "powershell", timeout_ms, auto_background_on_timeout,
-                        ok, shell_id, error_code, error_message, install_hint);
-}
-
-void ProcessTool::OnPowerShellSpawnDone(
-    ToolCallback done,
-    std::string command,
-    base::FilePath cwd,
-    int timeout_ms,
-    std::string attempted_shell,
-    bool ok,
-    const std::optional<std::string>& shell_id,
-    const std::optional<std::string>& error_code,
-    const std::optional<std::string>& error_message,
-    const std::optional<std::string>& install_hint) {
-  // pwsh not installed → fall back to Windows PowerShell, mirroring the
-  // foreground OnPowerShellExecDone retry. Only pre-launch resolution
-  // failures are retried; once the command spawns, the result is final.
-  if (!ok && attempted_shell == "pwsh" && error_code.has_value() &&
-      (*error_code == "BINARY_NOT_FOUND" ||
-       *error_code == "COMMAND_NOT_ALLOWED")) {
-    LaunchPowerShellAttempt(std::move(command), std::move(cwd), timeout_ms,
-                            "powershell", /*run_in_background=*/true,
-                            std::move(done));
-    return;
-  }
-  // Otherwise identical to the Bash background spawn: resolve with the
-  // shell_id (notification-driven completion) or reject the pre-launch failure.
-  OnBashSpawnDone(std::move(done), ok, shell_id, error_code, error_message,
-                  install_hint);
+                        "powershell", ok, shell_id, error_code, error_message,
+                        install_hint);
 }
 
 void ProcessTool::OnBashExecDone(
@@ -1299,33 +982,6 @@ void ProcessTool::OnBashExecDone(
     std::string code =
         error_code.value_or(base::StrCat({tool_label, "_failed"}));
     std::move(done).Reject(std::move(code), std::move(msg));
-    return;
-  }
-
-  // Auto-background-on-timeout handoff: the command crossed its foreground
-  // budget and was DETACHED (not killed) into the background registry.
-  // Surface it exactly like a `run_in_background` spawn (see OnBashSpawnDone)
-  // so Nexus can notify on completion, instead of showing a timeout failure.
-  // Mirrors Claude Code moving a timed-out foreground command to the
-  // background.
-  if (result->background_shell_id.has_value() &&
-      !result->background_shell_id->empty()) {
-    const std::string& bg_id = *result->background_shell_id;
-    if (launcher_) {
-      launcher_->RetainBackgroundShell(bg_id);
-    }
-
-    base::DictValue dict;
-    dict.Set("shell_id", bg_id);
-    dict.Set("status", "running");
-    dict.Set("message",
-             base::StrCat(
-                 {"Command exceeded its foreground timeout and was moved "
-                  "to the background (shell_id=",
-                  bg_id,
-                  "). It is still running — Nexus will notify you when it "
-                  "completes; do not poll for output while it is running."}));
-    std::move(done).Resolve(std::move(dict));
     return;
   }
 

@@ -37,13 +37,6 @@ namespace {
 using base::Value;
 using Dict = base::DictValue;
 
-// Wall-clock epoch-ms for the bridge timeline stamps (t_recv_native). Uses
-// base::Time so the stamps line up with JS-side Date.now() values.
-double NowEpochMs() {
-  return static_cast<double>(
-      base::Time::Now().InMillisecondsFSinceUnixEpochIgnoringNull());
-}
-
 // Raw provider streams (`model.rawStream*`). A session drives one at a time;
 // the cap only bounds a runaway or hostile guest.
 constexpr size_t kMaxRawStreams = 16;
@@ -107,186 +100,6 @@ void NexusLlmBridgeAdapter::HandleCatalogOnUI(
         std::move(done).Success(Value(CatalogToBridge(*catalog)));
       },
       std::move(done)));
-}
-
-void NexusLlmBridgeAdapter::HandleCallOnUI(
-    ::nexus::generated::CallInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  std::string error_message;
-  mojom::NexusLlmRequestParamsPtr request =
-      BuildMojoLlmRequest(input.payload, &error_message);
-  if (!request) {
-    std::move(done).InvalidArgs(error_message);
-    return;
-  }
-
-  // Native deadline contract: the guest stamps `deadlineMs` at the top of
-  // the passthrough payload (absolute epoch-ms = JS t0 + budget). When the
-  // deadline fires before the provider answers, the host cancels the
-  // upstream request via broker->CancelRequest and resolves with
-  // status:'timeout' — see NexusLlmHost::OnCallDeadlineTimeout.
-  std::optional<double> deadline_ms;
-  if (std::optional<double> v = input.payload.FindDouble("deadlineMs")) {
-    deadline_ms = *v;
-  }
-  Dict timeline;
-  timeline.Set("t_recv_native", NowEpochMs());
-
-  llm_host_->Call(
-      std::move(request), deadline_ms, std::move(timeline),
-      base::BindOnce(
-          [](::nexus::BridgeResponseCallback done, bool success,
-             mojom::NexusLlmCallResultPtr result,
-             std::optional<std::string> error_message) {
-            if (!success || !result) {
-              std::move(done).Error("LLM_ERROR",
-                                    error_message.value_or("Call failed"));
-              return;
-            }
-            std::move(done).Success(Value(CallResultToBridge(*result)));
-          },
-          std::move(done)));
-}
-
-void NexusLlmBridgeAdapter::HandleStreamStartOnUI(
-    ::nexus::generated::StreamStartInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  std::string error_message;
-  mojom::NexusLlmRequestParamsPtr request =
-      BuildMojoLlmRequest(input.payload, &error_message);
-  if (!request) {
-    std::move(done).InvalidArgs(error_message);
-    return;
-  }
-
-  // Capture self via WeakPtr so the inner callback can read/write
-  // bridge_stream_states_ when the host's StreamStart resolves. `done`
-  // is captured separately and consumed at the end.
-  llm_host_->StreamStart(
-      std::move(request),
-      base::BindOnce(
-          [](base::WeakPtr<NexusLlmBridgeAdapter> self,
-             ::nexus::BridgeResponseCallback done, bool success,
-             std::optional<std::string> stream_id,
-             std::optional<std::string> error_message) {
-            if (!success || !stream_id.has_value() || stream_id->empty()) {
-              std::move(done).Error(
-                  "LLM_ERROR",
-                  error_message.value_or("StreamStart failed"));
-              return;
-            }
-            if (self) {
-              self->bridge_stream_states_[*stream_id] =
-                  NexusLlmBridgeStreamState();
-            }
-            Dict result;
-            result.Set("streamId", *stream_id);
-            std::move(done).Success(std::move(result));
-          },
-          weak_factory_.GetWeakPtr(), std::move(done)));
-}
-
-void NexusLlmBridgeAdapter::HandleStreamReadOnUI(
-    ::nexus::generated::StreamReadInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // NOTE: the per-stream bridge state is created lazily in the completion
-  // callback below, and only for reads the host answered successfully.
-  // Pre-creating it here leaked one NexusLlmBridgeStreamState per unknown /
-  // guest-invented stream id (the host errors and the error path returned
-  // without erasing) — an unbounded map for a hostile or buggy guest.
-
-  // Hold-read contract: when the guest supplies `waitMs` / `deadlineMs`,
-  // the host may hold this read (queue empty, stream not done) until fresh
-  // data arrives, the stream finishes, or the hold window expires — see
-  // NexusLlmHost::StreamRead. A native timeout ALSO cancels the upstream
-  // loader, so the guest can stop polling without an explicit streamCancel.
-  Dict timeline;
-  timeline.Set("t_recv_native", NowEpochMs());
-
-  llm_host_->StreamRead(
-      input.streamId, input.deadlineMs, input.waitMs, std::move(timeline),
-      base::BindOnce(
-          [](base::WeakPtr<NexusLlmBridgeAdapter> self, std::string stream_id,
-             ::nexus::BridgeResponseCallback done, bool success,
-             mojom::NexusLlmStreamReadResultPtr result,
-             std::optional<std::string> error_message) {
-            if (!success || !result) {
-              if (self) {
-                // Drop any bridge-side state for a stream the host no longer
-                // recognizes — it would otherwise leak per errored read.
-                self->bridge_stream_states_.erase(stream_id);
-              }
-              std::move(done).Error(
-                  "LLM_ERROR",
-                  error_message.value_or("StreamRead failed"));
-              return;
-            }
-            if (!self) {
-              std::move(done).Error("LLM_ERROR", "Adapter destroyed");
-              return;
-            }
-
-            auto state_it = self->bridge_stream_states_.find(stream_id);
-            if (state_it == self->bridge_stream_states_.end()) {
-              state_it = self->bridge_stream_states_
-                             .emplace(stream_id, NexusLlmBridgeStreamState())
-                             .first;
-            }
-
-            bool stream_done = false;
-            bool should_cancel = false;
-            Dict bridge_result = StreamReadResultToBridge(
-                &state_it->second, *result, &stream_done, &should_cancel);
-
-            // On a native hold-read timeout the host has already cancelled
-            // the upstream loader and erased ITS stream entry, and the guest
-            // abandons the stream (no further read, no cancel). Mirror that
-            // here or the bridge state leaks once per timed-out stream.
-            const bool host_timed_out = result->status == "timeout";
-            if (stream_done || host_timed_out) {
-              self->bridge_stream_states_.erase(state_it);
-            }
-            if (should_cancel) {
-              self->llm_host_->Cancel(
-                  stream_id, base::BindOnce(
-                                 [](bool /*success*/,
-                                    std::optional<std::string> /*error*/) {}));
-            }
-            std::move(done).Success(std::move(bridge_result));
-          },
-          weak_factory_.GetWeakPtr(), input.streamId, std::move(done)));
-}
-
-void NexusLlmBridgeAdapter::HandleStreamCancelOnUI(
-    ::nexus::generated::StreamCancelInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Tear down the stream on both sides — see the pre-Phase-10f comment
-  // for details. Bridge-side per-stream state cached here also gets
-  // dropped — keyed by stream_id and would otherwise leak.
-  std::string stream_id = input.streamId;
-  // NOTE: do NOT `std::move(stream_id)` into the BindOnce below — `stream_id`
-  // is ALSO passed by const-ref as the first argument to `Cancel`, and C++
-  // leaves the evaluation order of call arguments unspecified. If the bind
-  // (with the move) is built first, the first argument binds to a moved-from
-  // (empty) string, so `Cancel` cancels stream id "" — the upstream loader is
-  // never torn down and a mid-stream cancel never closes the socket. Pass a
-  // copy to the bind so the by-ref argument is always the real id.
-  llm_host_->Cancel(
-      stream_id,
-      base::BindOnce(
-          [](base::WeakPtr<NexusLlmBridgeAdapter> self, std::string stream_id,
-             ::nexus::BridgeResponseCallback done, bool /*success*/,
-             std::optional<std::string> /*error*/) {
-            if (self) {
-              self->bridge_stream_states_.erase(stream_id);
-            }
-            std::move(done).SuccessVoid();
-          },
-          weak_factory_.GetWeakPtr(), stream_id, std::move(done)));
 }
 
 void NexusLlmBridgeAdapter::HandleSetDefaultSelectionOnUI(
@@ -396,10 +209,7 @@ void NexusLlmBridgeAdapter::HandlePublishBinaryRegistryOnUI(
   std::move(done).SuccessVoid();
 }
 
-// Phase 12f: `HandlePublishStatusOnUI` moved out — the `session`
-// capability is now its own codegen base + adapter
-// (`api/session/nexus_session_bridge_adapter.cc`). The
-// `PushSessionApplySelection` path below STAYS here because it's a
+// The `PushSessionApplySelection` path below lives here because it's a
 // PUSH-from-host event triggered by an LLM-broker pick observer; the
 // session adapter would have to call back into the broker observer
 // chain for no benefit.

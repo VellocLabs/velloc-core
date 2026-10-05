@@ -19,25 +19,22 @@ class NexusBridgeResponseDelegate;
 // Concrete adapter implementing the generated `CatalogApiBase` virtuals.
 //
 // Phase 12 architecture: the bootstrap message previously pushed
-// `manifest.hostedTools` and the prompt-section rendering ran in TS via
-// `getUsingYourToolsSection`. Both have moved here:
+// `manifest.hostedTools`; it is pulled from here instead:
 //
 //   - `listHostedTools` returns the same `HostedToolDefinition[]` the
 //     bootstrap message used to embed; sourced from
 //     `ToolCatalog::Get().schemas()` and serialized via
 //     `BuildHostedToolsList`.
 //
-//   - `renderPromptSection` walks the catalog + the JS-supplied enabled-
-//     tool set and produces the prose that fills `{{TOOL_CATALOG}}` in
-//     the .md template. The C++ rendering replaces the hand-maintained
-//     `BROWSER_TOOL_NAMES` set in
-//     `nexus_web/src/constants/systemPromptToolSection.ts`.
+//   - `listSkills` serves the hosted skill catalog.
 //
-//   - `listPromptSections` advertises which placeholder names the
-//     guest can ask for.
+// The prompt-section rendering (`renderPromptSection` /
+// `listPromptSections`) that used to live here moved to the runtime
+// (nexus_web `constants/promptSections/promptSectionRenderer.ts`) and was
+// removed under interface 1 on 2026-10-04.
 //
-// All three actions run on UI (the bridge's home thread) — pure
-// in-memory work, no blocking I/O.
+// Both actions run on UI (the bridge's home thread) — in-memory work; the
+// shell-availability probe behind listHostedTools hops to the thread pool.
 class NexusCatalogBridgeAdapter
     : public ::nexus::generated::CatalogApiBase {
  public:
@@ -51,14 +48,6 @@ class NexusCatalogBridgeAdapter
  private:
   void HandleListHostedToolsOnUI(
       ::nexus::generated::ListHostedToolsInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleRenderPromptSectionOnUI(
-      ::nexus::generated::RenderPromptSectionInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
-  void HandleListPromptSectionsOnUI(
-      ::nexus::generated::ListPromptSectionsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void HandleListSkillsOnUI(

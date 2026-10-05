@@ -41,9 +41,10 @@ struct SafeCommandLimits {
   // Code's backgrounded-command lifetime — `background()` clears the kill timer).
   // Chosen as INT32_MAX: it fits the browser-side `int timeout_ms`, and an OLD
   // browser that predates the sentinel clamps it to kMaxTimeoutMs (the prior
-  // 10-minute kill), so version skew degrades safely. Kept in sync with
-  // process_tool.cc kNoTimeoutCapSentinelMs and nexus_web hostedTools.ts
-  // SHELL_NO_TIMEOUT_CAP_SENTINEL_MS.
+  // 10-minute kill), so version skew degrades safely. No browser-side caller
+  // sends it since 2026-10-04: the hosted Bash / PowerShell tools no longer
+  // background (the runtime owns background shells over shell.spawn+persist,
+  // which has no wall-clock cap). Retained as a policy passthrough.
   static constexpr uint32_t kNoTimeoutCapSentinelMs = 2147483647u;
 
   static constexpr uint32_t kDefaultMaxOutputBytes = 1u * 1024u * 1024u;

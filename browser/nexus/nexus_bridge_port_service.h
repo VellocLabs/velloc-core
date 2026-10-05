@@ -25,7 +25,6 @@ class NexusBrowserToolsBridgeAdapter;
 class NexusCatalogBridgeAdapter;
 class NexusFsBridgeAdapter;
 class NexusLlmBridgeAdapter;
-class NexusMcpBridgeAdapter;
 class NexusMessagePortEndpoint;
 class NexusNetworkBridgeAdapter;
 class NexusProvidersBridgeAdapter;
@@ -152,17 +151,9 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // api/network/nexus_network_bridge_adapter.h for the contract and
   // api/declarations/network/httpGet.api.json for the wire schema.
   std::unique_ptr<NexusNetworkBridgeAdapter> network_adapter_;
-  // Native-backed MCP (stdio) capability. Owns per-server `NexusMcpHost`
-  // instances + a shared streaming-capable `NexusShellServiceLauncher`.
-  // Server command / env (incl. secrets) are read from prefs browser-side
-  // and never cross to the guest. See api/mcp/nexus_mcp_bridge_adapter.h
-  // and api/declarations/mcp/*.api.json.
-  std::unique_ptr<NexusMcpBridgeAdapter> mcp_adapter_;
   // Phase 12: serves the `catalog` capability — listHostedTools (lazy-
-  // pull replacement for the bootstrap manifest's hostedTools field)
-  // and renderPromptSection / listPromptSections (C++ side now owns
-  // the prose-rendering that pre-Phase-12 lived in
-  // nexus_web/src/constants/systemPromptToolSection.ts).
+  // pull replacement for the bootstrap manifest's hostedTools field) and
+  // listSkills.
   std::unique_ptr<NexusCatalogBridgeAdapter> catalog_adapter_;
   // Owns the per-LLM-session sessions map (`ToolSession` per sessionId)
   // and routes catalog dispatchers from `ToolCatalog::Get()` through
@@ -173,10 +164,10 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // `browser.<tool_name>` and lifecycle cleanup arrives via
   // `session.onStop` (Phase 12f, formerly `browser.endSession`).
   std::unique_ptr<ToolsAdapter> tools_adapter_;
-  // Phase 12f: serves the `session` capability — `publishStatus`
-  // (broker cache; pre-12f lived under `llm/`), `onStop` (rename of
-  // pre-12f `browser.endSession`; cascades through ToolsAdapter), and
-  // `setAgentLoopSettings` (per-session wall-clock budgets). Holds a
+  // Phase 12f: serves the `session` capability — `onStop` (rename of
+  // pre-12f `browser.endSession`; cascades through ToolsAdapter),
+  // `setAgentLoopSettings` (per-session wall-clock budgets) and
+  // `setActiveSession`. Holds a
   // raw back-pointer to `tools_adapter_`; the two adapters share a
   // lifetime under this port service so the back-ref is safe.
   std::unique_ptr<NexusSessionBridgeAdapter> session_adapter_;
@@ -184,13 +175,10 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // on-disk session transcripts (the Ctrl+K dialog). All work runs on a
   // dedicated ThreadPool sequence inside the adapter.
   std::unique_ptr<NexusSearchBridgeAdapter> search_adapter_;
-  // Guest-only: the `shell` capability — `status` (→ ReadBackgroundOutput) and
-  // `kill` (→ Mojo Kill) for BACKGROUND shells the model spawned via the Bash
-  // tool's run_in_background mode. Lets the TS layer poll/stop a backgrounded
-  // Bash for the Background Tasks drawer WITHOUT the model tool loop. Reaches
-  // the same utility-process registry as ProcessTool via the per-Profile shared
-  // NexusShellServiceLauncher. NOT a revival of the Phase-12g `process`
-  // capability (which was redundant tool-dispatch); this is narrow observe/kill.
+  // Guest-only: the `shell` capability — the child-process primitive
+  // (streaming `spawn`, stdin / kill, the persistent children, `env`) over the
+  // per-Profile shared NexusShellServiceLauncher. NOT a revival of the
+  // Phase-12g `process` capability (which was redundant tool-dispatch).
   std::unique_ptr<NexusShellBridgeAdapter> shell_adapter_;
   std::unique_ptr<NexusSqliteBridgeAdapter> sqlite_adapter_;
   // Guest `secrets` capability (set / has / delete / listNames).

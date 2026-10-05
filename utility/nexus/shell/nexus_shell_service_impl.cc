@@ -282,19 +282,6 @@ NexusShellServiceImpl::PendingSpawn::PendingSpawn(PendingSpawn&&) = default;
 NexusShellServiceImpl::PendingSpawn&
 NexusShellServiceImpl::PendingSpawn::operator=(PendingSpawn&&) = default;
 
-NexusShellServiceImpl::PendingSpawnWithObserver::PendingSpawnWithObserver() =
-    default;
-
-NexusShellServiceImpl::PendingSpawnWithObserver::~PendingSpawnWithObserver() =
-    default;
-
-NexusShellServiceImpl::PendingSpawnWithObserver::PendingSpawnWithObserver(
-    PendingSpawnWithObserver&&) = default;
-
-NexusShellServiceImpl::PendingSpawnWithObserver&
-NexusShellServiceImpl::PendingSpawnWithObserver::operator=(
-    PendingSpawnWithObserver&&) = default;
-
 NexusShellServiceImpl::PendingStreamSpawn::PendingStreamSpawn() = default;
 
 NexusShellServiceImpl::PendingStreamSpawn::~PendingStreamSpawn() = default;
@@ -315,10 +302,6 @@ NexusShellServiceImpl::BackgroundEntry::BackgroundEntry(BackgroundEntry&&) =
 
 NexusShellServiceImpl::BackgroundEntry&
 NexusShellServiceImpl::BackgroundEntry::operator=(BackgroundEntry&&) = default;
-
-NexusShellServiceImpl::ExecBackgroundState::ExecBackgroundState() = default;
-
-NexusShellServiceImpl::ExecBackgroundState::~ExecBackgroundState() = default;
 
 NexusShellServiceImpl::NexusShellServiceImpl(
     mojo::PendingReceiver<mojom::NexusShellService> receiver) {
@@ -406,13 +389,6 @@ void NexusShellServiceImpl::OnResolved(ResolvedCapabilities capabilities) {
     RunSpawn(std::move(pending.options), std::move(pending.callback));
   }
 
-  std::vector<PendingSpawnWithObserver> drained_spawns_with_observer;
-  drained_spawns_with_observer.swap(pending_spawns_with_observer_);
-  for (auto& pending : drained_spawns_with_observer) {
-    RunSpawnWithObserver(std::move(pending.options), std::move(pending.observer),
-                         std::move(pending.callback));
-  }
-
   std::vector<PendingStreamSpawn> drained_stream_spawns;
   drained_stream_spawns.swap(pending_stream_spawns_);
   for (auto& pending : drained_stream_spawns) {
@@ -457,15 +433,6 @@ void NexusShellServiceImpl::RunExec(mojom::ShellSpawnOptionsPtr options,
     return;
   }
   ChildProcessRequest request = std::move(prep.request);
-
-  // Auto-background-on-timeout (CC parity): route a slow foreground command
-  // to the timer-race path so crossing the caller's budget DETACHES the
-  // still-running child instead of killing it. See
-  // StartExecWithBackgroundFallback.
-  if (options->background_on_timeout) {
-    StartExecWithBackgroundFallback(std::move(request), std::move(callback));
-    return;
-  }
 
   const base::TimeTicks dispatch_start = base::TimeTicks::Now();
 
@@ -541,66 +508,6 @@ void NexusShellServiceImpl::Spawn(mojom::ShellSpawnOptionsPtr options,
 
 void NexusShellServiceImpl::RunSpawn(mojom::ShellSpawnOptionsPtr options,
                                      SpawnCallback callback) {
-  RunSpawnInternal(std::move(options),
-                   mojo::PendingRemote<mojom::NexusBackgroundShellObserver>(),
-                   std::move(callback));
-}
-
-void NexusShellServiceImpl::SpawnWithObserver(
-    mojom::ShellSpawnOptionsPtr options,
-    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
-    SpawnWithObserverCallback callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  if (!options) {
-    std::move(callback).Run(/*ok=*/false, /*shell_id=*/std::nullopt,
-                            "INVALID_ARGS",
-                            "SpawnWithObserver requires a non-null "
-                            "ShellSpawnOptions",
-                            /*install_hint=*/std::nullopt);
-    return;
-  }
-
-  // Queue until the first capability probe finishes (mirrors Spawn).
-  if (!cached_capabilities_.has_value()) {
-    PendingSpawnWithObserver pending;
-    pending.options = std::move(options);
-    pending.observer = std::move(observer);
-    pending.callback = std::move(callback);
-    pending_spawns_with_observer_.push_back(std::move(pending));
-    EnsureResolveStarted();
-    return;
-  }
-
-  RunSpawnWithObserver(std::move(options), std::move(observer),
-                       std::move(callback));
-}
-
-void NexusShellServiceImpl::RunSpawnWithObserver(
-    mojom::ShellSpawnOptionsPtr options,
-    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
-    SpawnWithObserverCallback callback) {
-  // `SpawnCallback` and `SpawnWithObserverCallback` have identical signatures
-  // but are distinct mojo-generated types. Forward through a plain callback so
-  // the shared internal path (which speaks `SpawnCallback`) can run it.
-  RunSpawnInternal(
-      std::move(options), std::move(observer),
-      base::BindOnce(
-          [](SpawnWithObserverCallback cb, bool ok,
-             const std::optional<std::string>& shell_id,
-             const std::optional<std::string>& error_code,
-             const std::optional<std::string>& error_message,
-             const std::optional<std::string>& install_hint) {
-            std::move(cb).Run(ok, shell_id, error_code, error_message,
-                              install_hint);
-          },
-          std::move(callback)));
-}
-
-void NexusShellServiceImpl::RunSpawnInternal(
-    mojom::ShellSpawnOptionsPtr options,
-    mojo::PendingRemote<mojom::NexusBackgroundShellObserver> observer,
-    SpawnCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(cached_capabilities_.has_value());
 
@@ -634,12 +541,6 @@ void NexusShellServiceImpl::RunSpawnInternal(
   std::string shell_id =
       base::StrCat({"bg_", base::Uuid::GenerateRandomV4().AsLowercaseString()});
   background_[shell_id] = BackgroundEntry{};
-  // Bind the exit observer (if any) so OnBackgroundComplete can push the
-  // terminal ShellExitInfo to the browser event-driven. Invalid for the plain
-  // Spawn path — `is_valid()` guards the fire in OnBackgroundComplete.
-  if (observer.is_valid()) {
-    background_[shell_id].observer.Bind(std::move(observer));
-  }
 
   std::move(callback).Run(/*ok=*/true, shell_id, /*error_code=*/std::nullopt,
                           /*error_message=*/std::nullopt,
@@ -695,22 +596,6 @@ void NexusShellServiceImpl::OnBackgroundComplete(
   it->second.stderr_so_far = outcome.stderr_bytes;
   it->second.stdout_truncated_so_far = outcome.stdout_truncated;
   it->second.stderr_truncated_so_far = outcome.stderr_truncated;
-  // Push the terminal exit to the browser observer (if one was supplied via
-  // SpawnWithObserver) BEFORE moving `outcome` away. This is the event-driven
-  // signal that lets nexus_web finalize the `local_bash` task without polling
-  // ReadBackgroundOutput. TERMINAL: fired exactly once, then the remote is
-  // reset so a stray second completion can't double-notify.
-  if (it->second.observer.is_bound()) {
-    auto exit = mojom::ShellExitInfo::New();
-    exit->code = outcome.code;
-    exit->signal = outcome.signal;
-    exit->timed_out = outcome.timed_out;
-    exit->killed = outcome.killed;
-    exit->duration_ms =
-        static_cast<uint64_t>(it->second.duration.InMilliseconds());
-    it->second.observer->OnExit(shell_id, std::move(exit));
-    it->second.observer.reset();
-  }
   it->second.outcome = std::move(outcome);
   it->second.kill_handle = ChildProcessKillHandle();  // release tree-kill handle
 }
@@ -788,171 +673,6 @@ void NexusShellServiceImpl::Kill(const std::string& shell_id,
     it->second.kill_issued = true;
   }
   std::move(callback).Run(/*found=*/true, /*was_running=*/true);
-}
-
-void NexusShellServiceImpl::StartExecWithBackgroundFallback(
-    ChildProcessRequest request,
-    ExecCallback callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // `request.timeout` is the caller's clamped foreground budget (set by
-  // PrepareExec from options.timeout_ms). Repurpose it as the BLOCK BUDGET
-  // for the timer, and run the child under the hard server cap so crossing
-  // the budget detaches rather than kills.
-  const base::TimeDelta block_budget = request.timeout;
-  request.timeout = base::Milliseconds(SafeCommandLimits::kMaxTimeoutMs);
-
-  // Bound memory: evict the oldest COMPLETED background entry at capacity
-  // (mirrors RunSpawn). Running entries are never evicted.
-  if (background_.size() >= kMaxBackgroundEntries) {
-    for (auto it = background_.begin(); it != background_.end(); ++it) {
-      if (!it->second.running) {
-        background_.erase(it);
-        break;
-      }
-    }
-  }
-
-  // Reserve the handle up front so the timer and the completion callback
-  // key off the same id.
-  std::string shell_id =
-      base::StrCat({"bg_", base::Uuid::GenerateRandomV4().AsLowercaseString()});
-  background_[shell_id] = BackgroundEntry{};
-
-  auto state = std::make_unique<ExecBackgroundState>();
-  state->callback = std::move(callback);
-  state->dispatch_start = base::TimeTicks::Now();
-  state->timer = std::make_unique<base::OneShotTimer>();
-  state->timer->Start(
-      FROM_HERE, block_budget,
-      base::BindOnce(&NexusShellServiceImpl::OnExecBackgroundTimeout,
-                     weak_factory_.GetWeakPtr(), shell_id));
-  exec_background_[shell_id] = std::move(state);
-
-  // Same launch tree-kill handle capture as RunSpawn, so a command
-  // auto-detached on timeout is also killable via `Kill(shell_id)`.
-  scoped_refptr<base::SequencedTaskRunner> binding_runner =
-      base::SequencedTaskRunner::GetCurrentDefault();
-  auto on_launched = base::BindPostTask(
-      binding_runner,
-      base::BindOnce(&NexusShellServiceImpl::OnBackgroundLaunched,
-                     weak_factory_.GetWeakPtr(), shell_id));
-  auto on_output = base::BindPostTask(
-      binding_runner,
-      base::BindRepeating(&NexusShellServiceImpl::OnBackgroundOutput,
-                          weak_factory_.GetWeakPtr(), shell_id));
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE,
-      // WithBaseSyncPrimitives(): RunChildProcess waits on the child —
-      // same trait requirement as the Exec / Spawn paths.
-      {base::MayBlock(), base::WithBaseSyncPrimitives(),
-       base::TaskPriority::USER_VISIBLE,
-       base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-      base::BindOnce(&RunChildProcessWithOutput, std::move(request),
-                     std::move(on_launched), std::move(on_output)),
-      base::BindOnce(&NexusShellServiceImpl::OnExecBackgroundComplete,
-                     weak_factory_.GetWeakPtr(), shell_id));
-}
-
-void NexusShellServiceImpl::OnExecBackgroundTimeout(std::string shell_id) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  auto it = exec_background_.find(shell_id);
-  if (it == exec_background_.end()) {
-    return;  // The worker already completed and erased the state.
-  }
-  ExecBackgroundState* state = it->second.get();
-  if (state->replied) {
-    return;  // Defensive — the completion path already replied.
-  }
-  state->replied = true;
-
-  // Hand the still-running child to the background registry: it keeps
-  // running under the backstop timeout and the caller polls
-  // ReadBackgroundOutput(shell_id). NOT killed — exit.killed = false.
-  // Mirrors Claude Code's tengu_bash_command_timeout_backgrounded.
-  auto result = mojom::ShellExecResult::New();
-  auto exit = mojom::ShellExitInfo::New();
-  exit->timed_out = true;
-  exit->killed = false;
-  exit->duration_ms = static_cast<uint64_t>(
-      (base::TimeTicks::Now() - state->dispatch_start).InMilliseconds());
-  result->exit = std::move(exit);
-  result->stdout_buffer = mojo_base::BigBuffer();
-  result->stderr_buffer = mojo_base::BigBuffer();
-  result->background_shell_id = shell_id;
-
-  std::move(state->callback)
-      .Run(/*ok=*/true, std::move(result), /*error_code=*/std::nullopt,
-           /*error_message=*/std::nullopt, /*install_hint=*/std::nullopt);
-  // Keep the exec_background_ entry until OnExecBackgroundComplete records
-  // the final outcome into background_; the timer has fired and is inert.
-}
-
-void NexusShellServiceImpl::OnExecBackgroundComplete(
-    std::string shell_id,
-    ChildProcessOutcome outcome) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  auto it = exec_background_.find(shell_id);
-  if (it == exec_background_.end()) {
-    // State already gone — still record into background_ if it survives.
-    auto bg = background_.find(shell_id);
-    if (bg != background_.end()) {
-      if (bg->second.kill_issued) {
-        outcome.killed = true;
-        outcome.timed_out = false;
-      }
-      bg->second.running = false;
-      bg->second.stdout_so_far = outcome.stdout_bytes;
-      bg->second.stderr_so_far = outcome.stderr_bytes;
-      bg->second.stdout_truncated_so_far = outcome.stdout_truncated;
-      bg->second.stderr_truncated_so_far = outcome.stderr_truncated;
-      bg->second.outcome = std::move(outcome);
-    }
-    return;
-  }
-
-  if (it->second->replied) {
-    // Timed out earlier → already surfaced to the model as a background
-    // command. Record the final outcome so ReadBackgroundOutput returns it.
-    const base::TimeTicks dispatch_start = it->second->dispatch_start;
-    auto bg = background_.find(shell_id);
-    if (bg != background_.end()) {
-      if (bg->second.kill_issued) {
-        outcome.killed = true;
-        outcome.timed_out = false;
-      }
-      bg->second.running = false;
-      bg->second.duration = base::TimeTicks::Now() - dispatch_start;
-      bg->second.stdout_so_far = outcome.stdout_bytes;
-      bg->second.stderr_so_far = outcome.stderr_bytes;
-      bg->second.stdout_truncated_so_far = outcome.stdout_truncated;
-      bg->second.stderr_truncated_so_far = outcome.stderr_truncated;
-      bg->second.outcome = std::move(outcome);
-    }
-    exec_background_.erase(it);
-    return;
-  }
-
-  // Completed within the block budget → reply as a normal foreground Exec
-  // and drop the reserved background slot (the model never saw its id).
-  it->second->timer->Stop();
-  ExecCallback callback = std::move(it->second->callback);
-  const base::TimeDelta total =
-      base::TimeTicks::Now() - it->second->dispatch_start;
-  background_.erase(shell_id);
-  exec_background_.erase(it);  // `it` / state invalid past this point.
-
-  if (!outcome.launched) {
-    std::move(callback).Run(/*ok=*/false, /*result=*/nullptr,
-                            outcome.launch_error_code,
-                            outcome.launch_error_message,
-                            /*install_hint=*/std::nullopt);
-    return;
-  }
-  std::move(callback).Run(/*ok=*/true, ToMojomExecResult(outcome, total),
-                          /*error_code=*/std::nullopt,
-                          /*error_message=*/std::nullopt,
-                          /*install_hint=*/std::nullopt);
 }
 
 void NexusShellServiceImpl::ReadBackgroundOutput(

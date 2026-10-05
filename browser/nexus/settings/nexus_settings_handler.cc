@@ -33,12 +33,9 @@
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_url_opener.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
-#include "custom_browser/browser/nexus/api/mcp/nexus_mcp_host.h"
-#include "custom_browser/browser/nexus/api/mcp/nexus_mcp_server_store.h"
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_prefs.h"
 #include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
 #include "custom_browser/browser/nexus/nexus_client_restart.h"
-#include "custom_browser/browser/nexus/tools/process_tool/nexus_shell_service_launcher.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
 
@@ -307,18 +304,11 @@ void NexusSettingsHandler::RegisterMessages() {
   // `pickNexusSelection` route removed: migrated to `providers.setActive`
   // on the panel WebUI bridge port (A5 Tier 3b). See
   // api/providers/nexus_providers_bridge_adapter.cc::HandleSetActiveOnUI.
-  // MCP server configuration — only the connection-probe handler
-  // survives. `getMcpServers` / `upsertMcpServer` / `removeMcpServer`
-  // were dropped when the MCP settings page moved to the WebUI ↔
-  // SharedWorker bridge (servers persist to `~/.nexus/settings.json`
-  // under `mcp.servers` now). The C++ `nexus.mcp_server_configs`
-  // pref is still registered for back-compat with the bridge
-  // adapter's `GetOrCreateHost` legacy fallback path, but no JS
-  // code reads or writes it through the WebUI surface anymore.
-  // A5 Tier 3a: `testMcpServer` chrome.send route migrated to
-  // `mcp.testConnect` on the panel WebUI bridge port. Legacy handler
-  // body in this file is dead code while diagnostic logging is
-  // running on the new path; will retire in a follow-up.
+  // MCP server configuration has no route here: servers persist to
+  // `~/.nexus/settings.json` (`mcp.servers`) through the runtime's
+  // `mcpSettings` capability, which also runs the connection probe
+  // (`mcpSettings.testConnect`). The native `mcp` capability and its
+  // `nexus.mcp_server_configs` pref were removed on 2026-10-04.
 }
 
 void NexusSettingsHandler::OnJavascriptAllowed() {
@@ -330,8 +320,6 @@ void NexusSettingsHandler::OnJavascriptAllowed() {
 
 void NexusSettingsHandler::OnJavascriptDisallowed() {
   pending_verifications_.clear();
-  // `pending_mcp_tests_.clear()` removed: the transient-host map moved
-  // to NexusMcpBridgeAdapter (A5 Tier 3a) which owns its own teardown.
   weak_factory_.InvalidateWeakPtrs();
 }
 
@@ -592,11 +580,8 @@ void NexusSettingsHandler::HandleVerifyProviderConfig(
   // Use the /v1/models (or provider-equivalent) endpoint as the connectivity
   // probe. This exercises the same auth surface as a generation call, returns
   // well-defined error codes on failure, and is the data we actually need
-  // next — no reason to make a separate throw-away `DoGenerate` call with a
-  // synthetic "hello" prompt. Earlier versions of this handler did a dummy
-  // DoGenerate first, but `GetDefaultModelId()` now returns empty by design
-  // (the TS layer owns model selection), so a generation probe can never
-  // succeed here.
+  // next. The host has no inference path (the runtime speaks every wire
+  // format), so a model listing is the only probe it can make.
   it->second.provider->FetchAvailableModels(
       base::BindOnce(&NexusSettingsHandler::OnVerifyProviderModelsFetched,
                      weak_factory_.GetWeakPtr(), callback_id));
@@ -650,19 +635,6 @@ void NexusSettingsHandler::HandleResetProviderConfig(
   result.Set("activeProviderId", broker->GetActiveProviderId());
   ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
 }
-
-// HandleGetMcpServers / HandleUpsertMcpServer / HandleRemoveMcpServer
-// were the WebUI CRUD surface for the `nexus.mcp_server_configs`
-// Profile pref before the MCP settings page moved to the WebUI ↔
-// SharedWorker bridge. They've been dropped — no JS code calls them
-// anymore. The pref itself + `NexusMcpServerStore` remain, because
-// `NexusMcpBridgeAdapter`'s legacy `GetOrCreateHost(id)` fallback
-// still consults it for hosts that haven't received an inline
-// config from the new path.
-
-// HandleTestMcpServer + OnTestMcpServerConnected removed: migrated to
-// `mcp.testConnect` on the panel WebUI bridge port (A5 Tier 3a). See
-// api/mcp/nexus_mcp_bridge_adapter.cc::HandleTestConnectOnUI.
 
 // HandleRefreshProviderModels + OnOAuthTokenForModels +
 // OnProviderModelsFetched removed — the `refreshProviderModels`

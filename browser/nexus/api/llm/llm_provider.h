@@ -14,14 +14,18 @@ class HttpRequestHeaders;
 
 namespace nexus {
 
-// Abstract base class for all LLM providers. Each concrete provider translates
-// from the Vercel-aligned common wire format to its native API format and back.
+// Abstract base class for all LLM providers: a provider's identity, stored
+// configuration (API key, base URL, user agent) and model discovery. The
+// runtime speaks every provider's wire format itself over `model.rawStream*`;
+// the C++ inference half (DoGenerate / DoStream behind model.call /
+// streamStart) was removed under interface 1 on 2026-10-04. The instances
+// remain for model listing, key verification (`providerAuth.verify` fetches
+// the model list) and as the rawStream base-URL / credential anchor.
 //
 // Lifecycle:
 //   1. Constructed by LlmProviderFactory with a SharedURLLoaderFactory.
 //   2. Configure() is called with API key / base URL from prefs.
 //   3. FetchAvailableModels() is called to populate the dynamic model list.
-//   4. DoGenerate() / DoStream() handle inference requests.
 class LlmProvider {
  public:
   virtual ~LlmProvider() = default;
@@ -84,28 +88,6 @@ class LlmProvider {
   // Returns the currently active base URL (custom if set, otherwise default).
   virtual std::string GetBaseUrl() const = 0;
 
-  // --- Inference ---
-
-  // Non-streaming generation. |call_options| is a Vercel-aligned Dict flowing
-  // directly from the TypeScript bridge.
-  virtual void DoGenerate(const base::DictValue& call_options,
-                          GenerateCallback callback) = 0;
-
-  // Streaming generation.
-  virtual void DoStream(const base::DictValue& call_options,
-                        StreamChunkCallback chunk_callback,
-                        StreamDoneCallback done_callback) = 0;
-
-  virtual void CancelRequest(const std::string& request_id) = 0;
-
-  // True when `request_id` has been accepted but is still waiting for a
-  // concurrency slot — no upstream socket was ever opened, so it cannot have
-  // produced bytes and MUST NOT be judged by an idle/silence deadline. Only
-  // providers that implement a concurrency pool (today: OpenAI, via
-  // LlmStreamGuard) can answer yes; the default is "not queued", which
-  // preserves the previous behaviour for every other provider.
-  virtual bool IsRequestQueued(const std::string& request_id) const;
-
   // The User-Agent this provider pins on its HTTP requests, or empty for the
   // host's default. Set by ConfigureUserAgent().
   const std::string& user_agent() const { return user_agent_; }
@@ -122,8 +104,7 @@ class LlmProvider {
 
   // Sets the pinned User-Agent on an outgoing request's |headers|, replacing
   // the host default the network stack would add. No-op when none is pinned.
-  // Every request a provider sends (generate, stream, model discovery) goes
-  // through this.
+  // Every request a provider sends (model discovery) goes through this.
   void ApplyUserAgent(net::HttpRequestHeaders& headers) const;
 
  private:

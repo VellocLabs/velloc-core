@@ -9,8 +9,6 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
-#include "custom_browser/browser/nexus/api/llm/llm_broker.h"
-#include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
@@ -103,22 +101,6 @@ void NexusSessionBridgeAdapter::PushAgentConfig() {
   Dict payload;
   payload.Set("config", GetAgentConfig(profile_));
   SendEvent(route, base::Value(std::move(payload)));
-}
-
-void NexusSessionBridgeAdapter::HandlePublishStatusOnUI(
-    ::nexus::generated::PublishStatusInput input,
-    std::vector<blink::MessagePortDescriptor> /*ports*/,
-    ::nexus::BridgeResponseCallback done) {
-  // Payload shape: SessionStatus directly. Stored verbatim so future
-  // extensions don't require adapter changes — pre-Phase-12f the same
-  // logic lived in `NexusLlmBridgeAdapter::HandlePublishStatusOnUI`.
-  LlmBroker* broker = LlmBrokerFactory::GetForProfile(profile_);
-  if (!broker) {
-    std::move(done).Error("LLM_ERROR", "LlmBroker unavailable");
-    return;
-  }
-  broker->SetSessionStatus(std::move(input.payload));
-  std::move(done).SuccessVoid();
 }
 
 void NexusSessionBridgeAdapter::HandleOnStopOnUI(

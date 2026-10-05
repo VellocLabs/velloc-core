@@ -93,24 +93,6 @@ inline constexpr char kNexusTsModelCatalogCache[] =
 inline constexpr char kNexusBakedDefaultBaseUrlsCleared[] =
     "nexus.baked_default_base_urls_cleared";
 
-// Last `SessionStatus` payload pushed by nexus_web via
-// `session.publishStatus`. Write-only today: LlmBroker warm-loads it into
-// memory, but nothing reads it since the Lit quick-settings popup (its only
-// consumer) was retired. TODO(nexus): remove it together with the
-// `session.publishStatus` chain (separate follow-up).
-inline constexpr char kNexusLastSessionStatus[] = "nexus.last_session_status";
-
-// Single authoritative store of natively-configured MCP servers. Each key
-// is an opaque server id; each value is a dict:
-//   { "transport": "stdio", "command": "node", "args": [...],
-//     "env": { "API_TOKEN": "…" }, "cwd": "/optional" }
-// SECURITY: the MCP analogue of kNexusProviderConfigs — `env` may hold
-// secrets (tokens). Read browser-side by NexusMcpServerStore and launched
-// natively; the `mcp` bridge capability exposes only each server's id +
-// transport to the JS guest, NEVER the command / args / env. The native
-// Settings UI (Plan A) is the only writer.
-inline constexpr char kNexusMcpServerConfigs[] = "nexus.mcp_server_configs";
-
 // --- Remote access (remote-browser-client plan §8.3) ---
 // The desktop's embedded relay: a default-OFF net::HttpServer that reverse-
 // proxies the guest origin's immutable build entry and exposes /rt so a

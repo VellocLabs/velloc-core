@@ -52,15 +52,6 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kNexusBakedDefaultBaseUrlsCleared,
                                 false);
 
-  // Most-recent SessionStatus published by nexus_web — write-only today; see
-  // kNexusLastSessionStatus.
-  registry->RegisterDictionaryPref(prefs::kNexusLastSessionStatus);
-
-  // Natively-configured MCP servers (id -> {transport, command, args, env,
-  // cwd}). Holds secrets in `env`; read browser-side by NexusMcpServerStore,
-  // never exposed to the JS guest. See mcp_pref_names.h.
-  registry->RegisterDictionaryPref(prefs::kNexusMcpServerConfigs);
-
   // Remote access (plan §8.3): default OFF, no bind address, the well-known
   // default port. See the pref-name comments in llm_pref_names.h.
   registry->RegisterBooleanPref(prefs::kNexusRemoteAccessEnabled, false);

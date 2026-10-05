@@ -1,9 +1,0 @@
-{
-  "$schema": "../../../codegen/api_schema.json",
-  "name": "listServers",
-  "description": "Enumerate the natively-configured (stdio) MCP servers. Reads the persisted `nexus.mcp_server_configs` prefs and returns only each server's opaque id + transport kind — never its command / args / env (which may carry secrets). The JS MCPPool calls this at init to discover which native servers exist, then `connect`s each. Output: { servers: array<{ id: string, transport: \"stdio\" }> }.",
-  "inputs": [],
-  "runtime": {
-    "thread": "ui"
-  }
-}

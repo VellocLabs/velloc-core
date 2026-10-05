@@ -77,7 +77,7 @@
           "type": "string",
           "enum": ["ui", "io", "any", "thread_pool"],
           "default": "ui",
-          "description": "Which thread the implementation's Handle*() method runs on. The codegen-emitted dispatcher PostTasks to this thread before invoking the virtual (extracting required keys synchronously on UI first), so the implementation never has to PostTask itself for the entry hop. Method names get a suffix matching the value (HandleStatOnThreadPool, HandleCallOnUI). The response back to UI is handled by `BridgeResponseCallback` — implementations call done.Success/Error/Binary from any thread; the callback marshals to UI internally."
+          "description": "Which thread the implementation's Handle*() method runs on. The codegen-emitted dispatcher PostTasks to this thread before invoking the virtual (extracting required keys synchronously on UI first), so the implementation never has to PostTask itself for the entry hop. Method names get a suffix matching the value (HandleStatOnThreadPool, HandleCatalogOnUI). The response back to UI is handled by `BridgeResponseCallback` — implementations call done.Success/Error/Binary from any thread; the callback marshals to UI internally."
         }
       }
     }

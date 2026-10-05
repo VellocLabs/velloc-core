@@ -23,19 +23,12 @@ class ToolsAdapter;
 
 // Concrete adapter implementing the generated `SessionApiBase` virtuals.
 //
-// Phase 12f architecture: the `session` capability used to be a wire-
-// level alias for a slice of LLM-adapter functionality (`publishStatus`
-// was registered under `api/declarations/llm/` and dispatched through
-// `NexusLlmBridgeAdapter`) PLUS a pair of manual handlers in
-// `ToolsAdapter` (`browser.endSession`, `browser.setAgentLoopSettings`).
-//
-// This adapter consolidates all three under one `session` capability
-// served by a dedicated codegen base class:
-//
-//   - `publishStatus` — moved from the LLM declarations folder. The
-//     payload (a `SessionStatus` dict) is forwarded verbatim to
-//     `LlmBroker::SetSessionStatus`. The broker still lives in
-//     `api/llm/`; only the bridge entrypoint moved.
+// Phase 12f architecture: the `session` capability consolidates what used
+// to be a pair of manual handlers in `ToolsAdapter`
+// (`browser.endSession`, `browser.setAgentLoopSettings`) under one
+// capability served by a dedicated codegen base class. (`publishStatus`,
+// a write-only SessionStatus cache in LlmBroker with no host reader, was
+// removed under interface 1 on 2026-10-04.)
 //
 //   - `onStop` — renamed from the manual `browser.endSession` handler.
 //     Cascades through `ToolsAdapter::OnSessionStopped` →
@@ -58,8 +51,8 @@ class ToolsAdapter;
 //     different port) and resolves with the session's tab counts.
 //
 // All actions run on UI (the bridge's home thread) — they touch
-// browser-process state (LlmBroker via Profile keyed services,
-// ToolsAdapter's per-session map) which is UI-bound.
+// browser-process state (ToolsAdapter's per-session map, the
+// profile-keyed tab tracker) which is UI-bound.
 //
 // The adapter holds a back-reference to `ToolsAdapter` because two
 // of its actions need to reach into the session map. The lifetime
@@ -89,10 +82,6 @@ class NexusSessionBridgeAdapter
  private:
   // Overrides of generated::SessionApiBase pure virtuals.
 
-  void HandlePublishStatusOnUI(
-      ::nexus::generated::PublishStatusInput input,
-      std::vector<blink::MessagePortDescriptor> ports,
-      ::nexus::BridgeResponseCallback done) override;
   void HandleOnStopOnUI(
       ::nexus::generated::OnStopInput input,
       std::vector<blink::MessagePortDescriptor> ports,

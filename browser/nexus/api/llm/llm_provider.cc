@@ -20,12 +20,6 @@ std::string LlmProvider::GetLastFetchedRawCatalogJson() const {
   return std::string();
 }
 
-bool LlmProvider::IsRequestQueued(const std::string& /*request_id*/) const {
-  // Providers without a concurrency pool dispatch every request immediately,
-  // so nothing is ever "waiting for a slot".
-  return false;
-}
-
 void LlmProvider::ConfigureUserAgent(const base::DictValue& config) {
   const std::string* user_agent = config.FindString("user_agent");
   user_agent_ = user_agent ? *user_agent : std::string();

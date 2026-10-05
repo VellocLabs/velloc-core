@@ -221,4 +221,5 @@
   <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {রিমোট অ্যাক্সেস: কোনো ডিভাইস সংযুক্ত নেই} =1 {রিমোট অ্যাক্সেস: #টি ডিভাইস সংযুক্ত} other {রিমোট অ্যাক্সেস: #টি ডিভাইস সংযুক্ত}}</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> থেকে প্রস্থান করবেন?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {রিমোট অ্যাক্সেসের মাধ্যমে #টি ডিভাইস সংযুক্ত আছে। প্রস্থান করলে এটি বিচ্ছিন্ন হয়ে যাবে।} other {রিমোট অ্যাক্সেসের মাধ্যমে #টি ডিভাইস সংযুক্ত আছে। প্রস্থান করলে সেগুলি বিচ্ছিন্ন হয়ে যাবে।}}</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">সব ডেটাও মুছে ফেলুন (ক্যাশে + <ph name="DATA_DIR"/>)</translation>
 </translationbundle>

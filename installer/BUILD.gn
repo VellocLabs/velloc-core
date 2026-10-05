@@ -2,15 +2,45 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//testing/test.gni")
+
+assert(is_win)
+
 # Third-party binaries packed into the mini_installer archive. Each is
 # listed in //chrome/installer/mini_installer/chrome.release under
 # %(VersionDir)s, so setup.exe installs it into Application\<version>\ next
 # to chrome.dll (custom_browser::GetBundledBinaryPath), removes it with the
 # old version on upgrade, and build.sh's payload signing signs it like every
 # other .exe the manifest lists. Provenance: bundled/README.md.
-assert(is_win)
-
 copy("bundled_binaries") {
   sources = [ "bundled/rg.exe" ]
   outputs = [ "$root_out_dir/{{source_file_part}}" ]
+}
+
+# Uninstall-time cleanup of the Nexus runtime data (`~/.velloc`). setup.exe
+# links it (//chrome/installer/setup:lib, enable_custom_browser) and calls
+# it from its uninstall when the profile is deleted too.
+source_set("uninstall_data") {
+  sources = [
+    "uninstall_data.cc",
+    "uninstall_data.h",
+  ]
+  deps = [
+    "//base",
+    "//custom_browser/common:common",
+  ]
+  visibility = [
+    ":*",
+    "//chrome/installer/setup:*",
+  ]
+}
+
+test("custom_browser_installer_unittests") {
+  sources = [ "uninstall_data_unittest.cc" ]
+  deps = [
+    ":uninstall_data",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
 }

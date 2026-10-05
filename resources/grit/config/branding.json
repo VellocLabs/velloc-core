@@ -1,9 +1,11 @@
 {
+  "display_name": "Velloc Code",
+
   "languages": {
     "zh-CN": {
       "replacements": [
-        { "pattern": "\\bChromium\\b", "replacement": "%brand%" },
-        { "pattern": "\\bChromium\\b", "replacement": "%brand%" }
+        { "pattern": "(?<![A-Za-z0-9_])Chromium(?![A-Za-z0-9_])", "replacement": "%brand%" },
+        { "pattern": "(?<![A-Za-z0-9_])Chromium(?![A-Za-z0-9_])", "replacement": "%brand%" }
       ],
       "blacklist": [
         "chromium://[^\\s]*",
@@ -15,8 +17,8 @@
 
   "default": {
     "replacements": [
-      { "pattern": "\\bChromium\\b", "replacement": "%brand%" },
-      { "pattern": "\\bChrome\\b", "replacement": "%brand%" }
+      { "pattern": "(?<![A-Za-z0-9_])Chromium(?![A-Za-z0-9_])", "replacement": "%brand%" },
+      { "pattern": "(?<![A-Za-z0-9_])Chrome(?![A-Za-z0-9_])", "replacement": "%brand%" }
     ],
     "blacklist": [
       "chromium://[^\\s]*",

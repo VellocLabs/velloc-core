@@ -219,4 +219,5 @@
   <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {リモートアクセス: 接続中のデバイスはありません} other {リモートアクセス: # 台のデバイスが接続中}}</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> を終了しますか？</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, other {リモートアクセスで # 台のデバイスが接続中です。終了すると切断されます。}}</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">すべてのデータも削除する（キャッシュ + <ph name="DATA_DIR"/>）</translation>
 </translationbundle>

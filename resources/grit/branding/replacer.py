@@ -10,6 +10,11 @@ class Replacer:
     def __init__(self, cfg_path: str | Path):
         raw_cfg = self._load_raw_cfg(cfg_path)
         self._rules = self._compile_all(raw_cfg)
+        # What %brand% becomes in text a user reads. branding_path_component
+        # names the install / user-data directories and registry keys and
+        # stays a single token; the display name may not ("Velloc Code").
+        # Empty means the path component doubles as the display name.
+        self.display_name: str = raw_cfg.get("display_name", "")
 
     # ------------------------------------------------------------------ public
     def replace(self, text: str, lang: str = "") -> str:

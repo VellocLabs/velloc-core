@@ -50,7 +50,9 @@ def PatchTranslateNodeMessage(self, lang: str, gender: str, result: str) -> str:
     except Exception:
         branding_name = ""
 
-    if branding_name:
-        new_text = new_text.replace("%brand%", branding_name)
+    # %brand% is display text: the display name, not the path component.
+    brand_text = replacer.display_name or branding_name
+    if brand_text:
+        new_text = new_text.replace("%brand%", brand_text)
 
     return new_text

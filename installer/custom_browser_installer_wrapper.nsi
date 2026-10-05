@@ -8,11 +8,20 @@
 !include "LogicLib.nsh"
 !include "WordFunc.nsh"
 
+; Signed copies of NSIS's plug-in DLLs (build.sh, velloc_sign_nsis_plugins).
+; The installer unpacks its plug-ins into $PLUGINSDIR at run time, and the
+; stock ones are unsigned; Store policy 10.2.9 wants every PE file of the
+; installer signed. A dir added here outranks the stock one for a plug-in of
+; the same name.
+!ifdef VELLOC_NSIS_PLUGIN_DIR
+  !addplugindir /x86-unicode "${VELLOC_NSIS_PLUGIN_DIR}"
+!endif
+
 !ifndef PRODUCT_NAME
   !define PRODUCT_NAME "Velloc Code"
 !endif
 !ifndef PRODUCT_PUBLISHER
-  !define PRODUCT_PUBLISHER "Velloc Code"
+  !define PRODUCT_PUBLISHER "VellocLabs"
 !endif
 !define MINI_INSTALLER_NAME "mini_installer.exe"
 !ifndef MINI_INSTALLER_SOURCE
@@ -53,16 +62,16 @@
 
 ; Version info (defaults to PRODUCT_VERSION unless overridden).
 !ifndef MINI_COMPANY_NAME
-  !define MINI_COMPANY_NAME "Velloc"
+  !define MINI_COMPANY_NAME "VellocLabs"
 !endif
 !ifndef MINI_FILE_DESCRIPTION
   !define MINI_FILE_DESCRIPTION "Velloc Code Installer"
 !endif
 !ifndef MINI_PRODUCT_NAME
-  !define MINI_PRODUCT_NAME "Velloc Code Installer"
+  !define MINI_PRODUCT_NAME "Velloc Code"
 !endif
 !ifndef MINI_COPYRIGHT
-  !define MINI_COPYRIGHT "Copyright 2026 Velloc. All rights reserved."
+  !define MINI_COPYRIGHT "Copyright 2026 VellocLabs. All rights reserved."
 !endif
 !ifndef MINI_FILE_VERSION
   !define MINI_FILE_VERSION "${PRODUCT_VERSION}"
@@ -259,8 +268,9 @@ FunctionEnd
 ; Brings up the Velloc main window after an install. If no instance is running
 ; this launches a new one; if one is running in the background the process
 ; singleton routes the launch to it and raises its existing main window
-; (SetForegroundWindow + restore). Runs on every install, not just first
-; install — this is what makes an overwrite install surface the window.
+; (SetForegroundWindow + restore). Runs on every interactive per-user
+; install, not just first install — this is what makes an overwrite install
+; surface the window. Silent and system-level installs do not launch.
 Function LaunchInstalledChrome
   ; A system-level install runs elevated, and Exec inherits this process's
   ; token: the browser, its renderers and the shell utility process would all
@@ -268,6 +278,13 @@ Function LaunchInstalledChrome
   ; for the same reason — mirror it and let the user start Velloc themselves.
   ${If} $InstallMode == "system"
     DetailPrint "System-level install: not launching ${PRODUCT_NAME} from the elevated installer."
+    Return
+  ${EndIf}
+  ; A silent (/S) install is run by a tool — a deployment script, the
+  ; Microsoft Store's install of the .exe — with no user waiting for a
+  ; window; Store policy 10.2.9 wants it to finish without UI.
+  ${If} ${Silent}
+    DetailPrint "Silent install: not launching ${PRODUCT_NAME}."
     Return
   ${EndIf}
   Call ResolveInstalledChromeExe

@@ -32,6 +32,12 @@ inline constexpr std::string_view kCustomBrowserProductName = "Velloc Code";
 inline constexpr std::string_view kCustomBrowserProductLongName =
     "Velloc Code in Chrome";
 
+// The publisher: Apps & features' "Publisher" column (setup.exe,
+// InstallUtil::GetPublisherName) and the copyright holder. Mirrors
+// COMPANY_FULLNAME in the brand's BRANDING file, which names the version
+// resources; installer_strings_brand_test.py fails when the two drift.
+inline constexpr std::string_view kCustomBrowserPublisherName = "VellocLabs";
+
 }  // namespace custom_browser
 
 #endif  // CUSTOM_BROWSER_COMMON_BRANDING_CONSTANTS_H_

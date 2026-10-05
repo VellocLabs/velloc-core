@@ -66,6 +66,43 @@ std::optional<std::string> ExpandSecretTemplates(std::string_view text,
                                                  const SecretLookup& lookup,
                                                  std::string* out);
 
+// ---- OAuth templates -------------------------------------------------------
+//
+// For the OAuth-backed providers (chatgpt-pro, github-copilot, qwen-code) the
+// credential is not a stored secret but a token the host refreshes or
+// exchanges right before use (NexusOAuthManager::EnsureFreshToken). A header
+// or query value may carry `{{oauth:access_token}}` (the backend-ready bearer:
+// the refreshed ChatGPT / Qwen token, or the short-lived Copilot token minted
+// from the GitHub one) and `{{oauth:account_id}}` (chatgpt-pro's
+// `ChatGPT-Account-Id`). The host resolves them only after running that step,
+// and they never come back to the guest.
+
+struct OAuthValues {
+  std::string access_token;
+  std::string account_id;
+};
+
+// True when `text` carries an `{{oauth:` placeholder.
+bool HasOAuthTemplate(std::string_view text);
+
+// Expands every `{{oauth:NAME}}` in |text| into |out| (NAME: access_token |
+// account_id). `values` null (the provider is not an OAuth provider, or the
+// refresh failed) or an empty access_token is an error, as are an unknown NAME
+// and a malformed placeholder. An empty account_id expands to "" (a ChatGPT
+// sign-in may carry none) — see IsOmittedOAuthValue. Other text —
+// `{{secret:…}}` included — is copied verbatim.
+std::optional<std::string> ExpandOAuthTemplates(std::string_view text,
+                                                const OAuthValues* values,
+                                                std::string* out);
+
+// True when a header / query value that carried an `{{oauth:…}}` placeholder
+// expanded to nothing — `{{oauth:account_id}}` with no account id. The caller
+// then omits the header / parameter rather than send it empty (the behaviour
+// of the removed C++ chatgpt-pro provider, which set ChatGPT-Account-Id only
+// when it had one). Advertised as the `model.rawStreamOpen.oauthOptional`
+// primitive.
+bool IsOmittedOAuthValue(std::string_view original, std::string_view expanded);
+
 // ---- Secret capture -------------------------------------------------------
 //
 // A request may declare that fields of its JSON response are secrets (a

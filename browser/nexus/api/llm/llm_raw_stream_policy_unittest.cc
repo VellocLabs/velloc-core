@@ -194,5 +194,55 @@ TEST(LlmRawStreamPolicyTest, RecentIdSetEvictsOldestPastCapacity) {
   EXPECT_TRUE(set.Take("id-" + base::NumberToString(RecentIdSet::kCapacity)));
 }
 
+TEST(LlmRawStreamPolicyTest, OAuthTemplatesExpandOnlyWithValues) {
+  const OAuthValues values{"at-123", "acct-9"};
+  std::string out;
+  EXPECT_FALSE(ExpandOAuthTemplates("Bearer {{oauth:access_token}}", &values,
+                                    &out));
+  EXPECT_EQ(out, "Bearer at-123");
+  EXPECT_FALSE(ExpandOAuthTemplates("{{oauth:account_id}}", &values, &out));
+  EXPECT_EQ(out, "acct-9");
+  // Secret placeholders pass through for the secret pass that follows.
+  EXPECT_FALSE(ExpandOAuthTemplates("{{secret:api_key}}", nullptr, &out));
+  EXPECT_EQ(out, "{{secret:api_key}}");
+
+  // No values (not an OAuth provider / refresh failed), an empty token, an
+  // unknown name, an unterminated placeholder: all refuse.
+  EXPECT_TRUE(
+      ExpandOAuthTemplates("{{oauth:access_token}}", nullptr, &out).has_value());
+  const OAuthValues no_token{"", "acct"};
+  EXPECT_TRUE(ExpandOAuthTemplates("{{oauth:access_token}}", &no_token, &out)
+                  .has_value());
+  EXPECT_TRUE(
+      ExpandOAuthTemplates("{{oauth:account_id}}", nullptr, &out).has_value());
+  EXPECT_TRUE(
+      ExpandOAuthTemplates("{{oauth:refresh_token}}", &values, &out).has_value());
+  EXPECT_TRUE(
+      ExpandOAuthTemplates("{{oauth:access_token", &values, &out).has_value());
+  EXPECT_TRUE(HasOAuthTemplate("x {{oauth:access_token}}"));
+  EXPECT_FALSE(HasOAuthTemplate("{{secret:api_key}}"));
+}
+
+// A ChatGPT sign-in may carry no account id: the placeholder expands to ""
+// and the caller omits the header (the old C++ chatgpt-pro behaviour).
+TEST(LlmRawStreamPolicyTest, AnEmptyAccountIdOmitsItsValue) {
+  const OAuthValues no_account{"at", ""};
+  std::string out;
+  EXPECT_FALSE(
+      ExpandOAuthTemplates("{{oauth:account_id}}", &no_account, &out));
+  EXPECT_EQ(out, "");
+  EXPECT_TRUE(IsOmittedOAuthValue("{{oauth:account_id}}", out));
+
+  // Only a value that came out empty because of a placeholder is omitted.
+  EXPECT_FALSE(ExpandOAuthTemplates("acct-{{oauth:account_id}}", &no_account,
+                                    &out));
+  EXPECT_EQ(out, "acct-");
+  EXPECT_FALSE(IsOmittedOAuthValue("acct-{{oauth:account_id}}", out));
+  EXPECT_FALSE(IsOmittedOAuthValue("", ""));
+  const OAuthValues values{"at", "acct-9"};
+  EXPECT_FALSE(ExpandOAuthTemplates("{{oauth:account_id}}", &values, &out));
+  EXPECT_FALSE(IsOmittedOAuthValue("{{oauth:account_id}}", out));
+}
+
 }  // namespace
 }  // namespace nexus

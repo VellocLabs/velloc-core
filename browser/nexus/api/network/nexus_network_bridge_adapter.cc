@@ -17,6 +17,8 @@
 #include "content/public/browser/storage_partition.h"
 #include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_host.h"
+#include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_provider_oauth.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/base/url_util.h"
@@ -163,15 +165,33 @@ bool ValidateRequestUrl(const std::string& url,
 // of entries that carried a secret are appended to `expanded_names`. Header
 // values are re-validated after expansion so a secret with a CR/LF cannot
 // split the header block. Returns false after answering `done`.
+bool HasAnyTemplate(const std::string& text) {
+  return HasSecretPlaceholder(text) || HasOAuthTemplate(text);
+}
+
+// Whether `values` carry an `{{oauth:NAME}}` (the providerId form).
+bool NeedsOAuth(const std::optional<base::DictValue>& values) {
+  if (!values.has_value()) {
+    return false;
+  }
+  for (const auto [name, value] : *values) {
+    if (value.is_string() && HasOAuthTemplate(value.GetString())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ExpandSecretsInValues(PrefService* prefs,
                            const GURL& url,
                            bool are_headers,
                            base::DictValue& values,
                            std::vector<std::string>* expanded_names,
-                           ::nexus::BridgeResponseCallback& done) {
+                           ::nexus::BridgeResponseCallback& done,
+                           const OAuthValues* oauth = nullptr) {
   bool any = false;
   for (const auto [name, value] : values) {
-    if (value.is_string() && HasSecretPlaceholder(value.GetString())) {
+    if (value.is_string() && HasAnyTemplate(value.GetString())) {
       any = true;
       break;
     }
@@ -182,13 +202,24 @@ bool ExpandSecretsInValues(PrefService* prefs,
   NexusSecretStore store(prefs);
   const NamespacedSecretLookup lookup =
       store.LookupFor(url::Origin::Create(url));
+  // {{oauth:account_id}} with no account id: the entry is dropped, not sent
+  // empty (IsOmittedOAuthValue). Removed after the walk.
+  std::vector<std::string> omitted;
   for (auto [name, value] : values) {
-    if (!value.is_string() || !HasSecretPlaceholder(value.GetString())) {
+    if (!value.is_string() || !HasAnyTemplate(value.GetString())) {
       continue;
+    }
+    // OAuth values first (only present on the providerId form, after the
+    // host's refresh / exchange ran), then the stored secrets.
+    std::string with_oauth;
+    if (std::optional<std::string> oauth_error =
+            ExpandOAuthTemplates(value.GetString(), oauth, &with_oauth)) {
+      std::move(done).Error("OAUTH_UNAVAILABLE", std::move(*oauth_error));
+      return false;
     }
     std::string expanded;
     if (std::optional<SecretExpansionError> error =
-            ExpandSecretPlaceholders(value.GetString(), lookup, &expanded)) {
+            ExpandSecretPlaceholders(with_oauth, lookup, &expanded)) {
       if (error->code == "INVALID_ARGS") {
         std::move(done).InvalidArgs(std::move(error->message));
       } else {
@@ -197,6 +228,10 @@ bool ExpandSecretsInValues(PrefService* prefs,
       }
       return false;
     }
+    if (IsOmittedOAuthValue(value.GetString(), expanded)) {
+      omitted.push_back(name);
+      continue;
+    }
     if (are_headers && !net::HttpUtil::IsValidHeaderValue(expanded)) {
       std::move(done).InvalidArgs("Invalid header value after secret "
                                   "substitution: " + name);
@@ -204,6 +239,9 @@ bool ExpandSecretsInValues(PrefService* prefs,
     }
     value = base::Value(std::move(expanded));
     expanded_names->push_back(name);
+  }
+  for (const std::string& name : omitted) {
+    values.Remove(name);
   }
   return true;
 }
@@ -268,6 +306,67 @@ void NexusNetworkBridgeAdapter::HandleHttpRequestOnUI(
     ::nexus::generated::HttpRequestInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
+  if (!NeedsOAuth(input.headers) && !NeedsOAuth(input.queryParams)) {
+    StartHttpRequest(std::move(input), std::move(done), std::nullopt);
+    return;
+  }
+  const std::optional<std::string> provider_id = input.providerId;
+  const std::string url = input.url;
+  ResolveOAuthForRequest(
+      provider_id, url,
+      base::BindOnce(
+          [](base::WeakPtr<NexusNetworkBridgeAdapter> self,
+             ::nexus::generated::HttpRequestInput input,
+             ::nexus::BridgeResponseCallback done,
+             std::optional<OAuthValues> values, std::string error_code,
+             std::string error) {
+            if (!values.has_value()) {
+              std::move(done).Error(std::move(error_code), std::move(error));
+              return;
+            }
+            if (self) {
+              self->StartHttpRequest(std::move(input), std::move(done),
+                                     std::move(values));
+            }
+          },
+          weak_factory_.GetWeakPtr(), std::move(input), std::move(done)));
+}
+
+void NexusNetworkBridgeAdapter::ResolveOAuthForRequest(
+    const std::optional<std::string>& provider_id,
+    const std::string& url,
+    OAuthResolvedCallback callback) {
+  if (!provider_id.has_value() || provider_id->empty()) {
+    std::move(callback).Run(std::nullopt, "INVALID_ARGS",
+                            "{{oauth:NAME}} needs a providerId.");
+    return;
+  }
+  Profile* profile =
+      browser_context_ ? Profile::FromBrowserContext(browser_context_)
+                       : nullptr;
+  // The same anchor as model.rawStreamOpen: the request must stay on the
+  // provider's registrable domain.
+  if (std::optional<std::string> refusal = CheckRawStreamTarget(
+          GURL(GetProviderAnchorBaseUrl(profile, *provider_id)), GURL(url))) {
+    std::move(callback).Run(std::nullopt, "TARGET_NOT_ALLOWED",
+                            std::move(*refusal));
+    return;
+  }
+  ResolveProviderOAuthValues(
+      profile, *provider_id,
+      base::BindOnce(
+          [](OAuthResolvedCallback callback, std::optional<OAuthValues> values,
+             std::string error) {
+            std::move(callback).Run(std::move(values), "OAUTH_UNAVAILABLE",
+                                    std::move(error));
+          },
+          std::move(callback)));
+}
+
+void NexusNetworkBridgeAdapter::StartHttpRequest(
+    ::nexus::generated::HttpRequestInput input,
+    ::nexus::BridgeResponseCallback done,
+    std::optional<OAuthValues> oauth) {
   if (!url_loader_factory_) {
     std::move(done).Error(
         "NETWORK_ERROR",
@@ -312,13 +411,15 @@ void NexusNetworkBridgeAdapter::HandleHttpRequestOnUI(
   std::vector<std::string> secret_headers;
   if (input.headers.has_value() &&
       !ExpandSecretsInValues(prefs_, target, /*are_headers=*/true,
-                             *input.headers, &secret_headers, done)) {
+                             *input.headers, &secret_headers, done,
+                             oauth ? &*oauth : nullptr)) {
     return;
   }
   if (input.queryParams.has_value()) {
     std::vector<std::string> secret_params;
     if (!ExpandSecretsInValues(prefs_, target, /*are_headers=*/false,
-                               *input.queryParams, &secret_params, done)) {
+                               *input.queryParams, &secret_params, done,
+                             oauth ? &*oauth : nullptr)) {
       return;
     }
     for (const auto [name, value] : *input.queryParams) {
@@ -377,6 +478,36 @@ void NexusNetworkBridgeAdapter::HandleStreamOpenOnUI(
     ::nexus::generated::NetworkStreamOpenInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
+  if (!NeedsOAuth(input.headers) && !NeedsOAuth(input.queryParams)) {
+    StartStreamOpen(std::move(input), std::move(done), std::nullopt);
+    return;
+  }
+  const std::optional<std::string> provider_id = input.providerId;
+  const std::string url = input.url;
+  ResolveOAuthForRequest(
+      provider_id, url,
+      base::BindOnce(
+          [](base::WeakPtr<NexusNetworkBridgeAdapter> self,
+             ::nexus::generated::NetworkStreamOpenInput input,
+             ::nexus::BridgeResponseCallback done,
+             std::optional<OAuthValues> values, std::string error_code,
+             std::string error) {
+            if (!values.has_value()) {
+              std::move(done).Error(std::move(error_code), std::move(error));
+              return;
+            }
+            if (self) {
+              self->StartStreamOpen(std::move(input), std::move(done),
+                                    std::move(values));
+            }
+          },
+          weak_factory_.GetWeakPtr(), std::move(input), std::move(done)));
+}
+
+void NexusNetworkBridgeAdapter::StartStreamOpen(
+    ::nexus::generated::NetworkStreamOpenInput input,
+    ::nexus::BridgeResponseCallback done,
+    std::optional<OAuthValues> oauth) {
   if (!url_loader_factory_) {
     std::move(done).Error("NETWORK_ERROR",
                           "Network capability not initialised.");
@@ -437,13 +568,15 @@ void NexusNetworkBridgeAdapter::HandleStreamOpenOnUI(
   std::vector<std::string> secret_headers;
   if (input.headers.has_value() &&
       !ExpandSecretsInValues(prefs_, target, /*are_headers=*/true,
-                             *input.headers, &secret_headers, done)) {
+                             *input.headers, &secret_headers, done,
+                             oauth ? &*oauth : nullptr)) {
     return;
   }
   if (input.queryParams.has_value()) {
     std::vector<std::string> secret_params;
     if (!ExpandSecretsInValues(prefs_, target, /*are_headers=*/false,
-                               *input.queryParams, &secret_params, done)) {
+                               *input.queryParams, &secret_params, done,
+                             oauth ? &*oauth : nullptr)) {
       return;
     }
     for (const auto [name, value] : *input.queryParams) {

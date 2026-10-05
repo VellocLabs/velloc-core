@@ -9,6 +9,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_provider_oauth.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "base/containers/span.h"
 #include "base/strings/string_util.h"
@@ -437,6 +438,51 @@ void NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI(
     std::move(done).Error("LLM_ERROR", "No profile.");
     return;
   }
+  // `{{oauth:NAME}}` (an OAuth-backed provider: chatgpt-pro, github-copilot,
+  // qwen-code) needs the host's refresh / exchange step first — the same
+  // EnsureFreshToken the C++ providers run before every call. The values are
+  // substituted host-side only, under the same provider-domain anchor as
+  // `{{secret:NAME}}`, and never reach the guest.
+  bool needs_oauth = false;
+  for (const std::optional<base::DictValue>* values :
+       {&input.headers, &input.queryParams}) {
+    if (!values->has_value()) {
+      continue;
+    }
+    for (const auto [name, value] : **values) {
+      if (value.is_string() && HasOAuthTemplate(value.GetString())) {
+        needs_oauth = true;
+      }
+    }
+  }
+  if (!needs_oauth) {
+    ContinueRawStreamOpen(std::move(input), std::move(done), std::nullopt);
+    return;
+  }
+  const std::string provider_id = input.providerId;
+  ResolveProviderOAuthValues(
+      profile_, provider_id,
+      base::BindOnce(
+          [](base::WeakPtr<NexusLlmBridgeAdapter> self,
+             ::nexus::generated::RawStreamOpenInput input,
+             ::nexus::BridgeResponseCallback done,
+             std::optional<OAuthValues> values, std::string error) {
+            if (!values.has_value()) {
+              std::move(done).Error("OAUTH_UNAVAILABLE", std::move(error));
+              return;
+            }
+            if (self) {
+              self->ContinueRawStreamOpen(std::move(input), std::move(done),
+                                          std::move(values));
+            }
+          },
+          weak_factory_.GetWeakPtr(), std::move(input), std::move(done)));
+}
+
+void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
+    ::nexus::generated::RawStreamOpenInput input,
+    ::nexus::BridgeResponseCallback done,
+    std::optional<OAuthValues> oauth) {
   if (raw_streams_.size() >= kMaxRawStreams) {
     std::move(done).Error("TOO_MANY_STREAMS",
                           "Too many raw streams are open.");
@@ -525,11 +571,20 @@ void NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI(
       if (!value.is_string()) {
         continue;
       }
+      std::string with_oauth;
+      if (std::optional<std::string> error = ExpandOAuthTemplates(
+              value.GetString(), oauth ? &*oauth : nullptr, &with_oauth)) {
+        std::move(done).Error("OAUTH_UNAVAILABLE", *error);
+        return;
+      }
       std::string expanded;
       if (std::optional<std::string> error =
-              ExpandSecretTemplates(value.GetString(), lookup, &expanded)) {
+              ExpandSecretTemplates(with_oauth, lookup, &expanded)) {
         std::move(done).Error("SECRET_UNAVAILABLE", *error);
         return;
+      }
+      if (IsOmittedOAuthValue(value.GetString(), expanded)) {
+        continue;  // {{oauth:account_id}} with no account id.
       }
       target = net::AppendQueryParameter(target, name, expanded);
     }
@@ -553,11 +608,20 @@ void NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI(
         std::move(done).InvalidArgs("Header not allowed: " + name);
         return;
       }
+      std::string with_oauth;
+      if (std::optional<std::string> error = ExpandOAuthTemplates(
+              value.GetString(), oauth ? &*oauth : nullptr, &with_oauth)) {
+        std::move(done).Error("OAUTH_UNAVAILABLE", *error);
+        return;
+      }
       std::string expanded;
       if (std::optional<std::string> error =
-              ExpandSecretTemplates(value.GetString(), lookup, &expanded)) {
+              ExpandSecretTemplates(with_oauth, lookup, &expanded)) {
         std::move(done).Error("SECRET_UNAVAILABLE", *error);
         return;
+      }
+      if (IsOmittedOAuthValue(value.GetString(), expanded)) {
+        continue;  // {{oauth:account_id}} with no account id: no header.
       }
       // Validated after expansion, so a secret with a CR/LF cannot split
       // the header block.

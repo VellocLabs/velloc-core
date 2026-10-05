@@ -110,6 +110,11 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
       ::nexus::generated::RawStreamOpenInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // The body of rawStreamOpen, after any `{{oauth:NAME}}` values were
+  // resolved (nullopt: none were needed).
+  void ContinueRawStreamOpen(::nexus::generated::RawStreamOpenInput input,
+                             ::nexus::BridgeResponseCallback done,
+                             std::optional<OAuthValues> oauth);
   void HandleRawStreamReadOnUI(
       ::nexus::generated::RawStreamReadInput input,
       std::vector<blink::MessagePortDescriptor> ports,

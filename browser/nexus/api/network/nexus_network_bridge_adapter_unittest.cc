@@ -247,5 +247,24 @@ TEST_F(NexusNetworkSecretsTest, HttpRequestExpandsHeadersToo) {
   EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
 }
 
+// {{oauth:NAME}} on the network surfaces needs a providerId, and the URL
+// must stay on that provider's domain — refused before any token is fetched.
+TEST_F(NexusNetworkStreamTest, OAuthTemplatesNeedAProviderAndItsDomain) {
+  base::DictValue payload = OpenPayload("https://api.example.com/v1/run");
+  base::DictValue headers;
+  headers.Set("Authorization", "Bearer {{oauth:access_token}}");
+  payload.Set("headers", headers.Clone());
+  Dispatch("streamOpen", std::move(payload));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+
+  // An unknown provider (no profile here) anchors nowhere.
+  base::DictValue with_provider = OpenPayload("https://api.example.com/v1/run");
+  with_provider.Set("headers", std::move(headers));
+  with_provider.Set("providerId", "chatgpt-pro");
+  Dispatch("streamOpen", std::move(with_provider));
+  EXPECT_EQ(delegate_.last_error_code, "TARGET_NOT_ALLOWED");
+  EXPECT_EQ(adapter_.stream_count_for_testing(), 0u);
+}
+
 }  // namespace
 }  // namespace nexus

@@ -905,6 +905,8 @@ source_set("bridge") {
     "api/llm/nexus_llm_bridge_support.h",
     "api/llm/nexus_llm_raw_stream.cc",
     "api/llm/nexus_llm_raw_stream.h",
+    "api/llm/nexus_provider_oauth.cc",
+    "api/llm/nexus_provider_oauth.h",
     "api/network/nexus_http_byte_stream.cc",
     "api/network/nexus_http_byte_stream.h",
     "api/network/nexus_websocket_connection.cc",

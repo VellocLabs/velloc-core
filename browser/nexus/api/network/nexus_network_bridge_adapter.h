@@ -3,11 +3,13 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
@@ -163,6 +165,25 @@ class NexusNetworkBridgeAdapter
   // Erase after the current callback frame (the socket is on the stack).
   void EraseSocketSoon(const std::string& socket_id);
   network::mojom::NetworkContext* GetNetworkContext();
+
+  // `{{oauth:NAME}}` with a providerId (httpRequest / streamOpen): the
+  // provider-domain anchor, then the host's refresh / exchange
+  // (ResolveProviderOAuthValues). On failure the callback gets the bridge
+  // error code and message.
+  using OAuthResolvedCallback =
+      base::OnceCallback<void(std::optional<OAuthValues> values,
+                              std::string error_code,
+                              std::string error)>;
+  void ResolveOAuthForRequest(const std::optional<std::string>& provider_id,
+                              const std::string& url,
+                              OAuthResolvedCallback callback);
+  // The bodies of httpRequest / streamOpen once any OAuth values are known.
+  void StartHttpRequest(::nexus::generated::HttpRequestInput input,
+                        ::nexus::BridgeResponseCallback done,
+                        std::optional<OAuthValues> oauth);
+  void StartStreamOpen(::nexus::generated::NetworkStreamOpenInput input,
+                       ::nexus::BridgeResponseCallback done,
+                       std::optional<OAuthValues> oauth);
 
   // Shared tail of both handlers: build the per-request host and start it.
   void StartRequest(NexusHttpRequestSpec spec,

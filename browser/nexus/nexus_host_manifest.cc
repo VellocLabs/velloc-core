@@ -107,6 +107,14 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // origin (an older host would send the placeholder text verbatim).
     "network.secretTemplates",
     "network.wsOpen",
+    // {{oauth:access_token}} / {{oauth:account_id}}: rawStreamOpen, and
+    // httpRequest / streamOpen with a providerId (an older host would send
+    // the placeholder text).
+    "model.rawStreamOpen.oauth",
+    "network.oauthTemplates",
+    // An empty {{oauth:account_id}} omits its header / query parameter
+    // instead of refusing the request (an older host refuses it).
+    "model.rawStreamOpen.oauthOptional",
 });
 
 template <size_t N>

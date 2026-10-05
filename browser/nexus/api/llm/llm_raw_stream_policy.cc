@@ -146,6 +146,56 @@ std::optional<std::string> ExpandSecretTemplates(std::string_view text,
   }
 }
 
+namespace {
+constexpr std::string_view kOAuthOpen = "{{oauth:";
+}  // namespace
+
+bool HasOAuthTemplate(std::string_view text) {
+  return text.find(kOAuthOpen) != std::string_view::npos;
+}
+
+std::optional<std::string> ExpandOAuthTemplates(std::string_view text,
+                                                const OAuthValues* values,
+                                                std::string* out) {
+  out->clear();
+  size_t pos = 0;
+  while (true) {
+    const size_t open = text.find(kOAuthOpen, pos);
+    if (open == std::string_view::npos) {
+      out->append(text.substr(pos));
+      return std::nullopt;
+    }
+    out->append(text.substr(pos, open - pos));
+    const size_t name_start = open + kOAuthOpen.size();
+    const size_t close = text.find(kSecretClose, name_start);
+    if (close == std::string_view::npos) {
+      return "Unterminated {{oauth:...}} placeholder.";
+    }
+    const std::string_view name = text.substr(name_start, close - name_start);
+    const std::string* value = nullptr;
+    // An account id is optional (IsOmittedOAuthValue); the token is not.
+    bool may_be_empty = false;
+    if (name == "access_token") {
+      value = values ? &values->access_token : nullptr;
+    } else if (name == "account_id") {
+      value = values ? &values->account_id : nullptr;
+      may_be_empty = true;
+    } else {
+      return "Unknown OAuth placeholder: " + std::string(name);
+    }
+    if (!value || (value->empty() && !may_be_empty)) {
+      return "The provider has no OAuth " + std::string(name) +
+             " (not signed in, or the token could not be refreshed).";
+    }
+    out->append(*value);
+    pos = close + kSecretClose.size();
+  }
+}
+
+bool IsOmittedOAuthValue(std::string_view original, std::string_view expanded) {
+  return expanded.empty() && HasOAuthTemplate(original);
+}
+
 std::optional<std::string> ApplySecretCaptures(
     std::string_view body,
     const std::vector<SecretCapture>& captures,

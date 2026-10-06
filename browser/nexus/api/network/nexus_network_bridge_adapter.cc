@@ -7,6 +7,7 @@
 #include "base/base64.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
@@ -54,6 +55,8 @@ constexpr size_t kMaxRequestBodyBytes = 16 * 1024 * 1024;
 constexpr size_t kMaxStreamUrlChars = 8192;
 constexpr int kDefaultStreamIdleTimeoutMs = 90'000;
 constexpr int kDefaultStreamReadMaxBytes = 1024 * 1024;
+// network.wsClose: a close frame's payload is 125 bytes, 2 of them the code.
+constexpr size_t kMaxWsCloseReasonBytes = 123;
 
 constexpr net::NetworkTrafficAnnotationTag kStreamTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("nexus_network_stream", R"(
@@ -674,8 +677,11 @@ void NexusNetworkBridgeAdapter::StartStreamOpen(
                           ? *input.idleTimeoutMs
                           : kDefaultStreamIdleTimeoutMs;
   size_t max_bytes = std::numeric_limits<size_t>::max();
+  // A double from the guest: NaN fails the test (no cap); one past size_t
+  // saturates rather than wrapping (a cast would be undefined, and on x64
+  // lands on 0 — every byte "too large").
   if (input.maxResponseBytes.has_value() && *input.maxResponseBytes > 0) {
-    max_bytes = static_cast<size_t>(*input.maxResponseBytes);
+    max_bytes = base::saturated_cast<size_t>(*input.maxResponseBytes);
   }
 
   auto stream = std::make_unique<NexusHttpByteStream>(
@@ -988,12 +994,25 @@ void NexusNetworkBridgeAdapter::HandleWsCloseOnUI(
     ::nexus::generated::NetworkWsCloseInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
+  // The WebSocket API's close() rules: 1000 or an application code, and a
+  // reason that fits the close frame. Anything else the network service
+  // would silently send as 1011, so refuse it instead.
+  const int code = input.code.value_or(1000);
+  if (code != 1000 && (code < 3000 || code > 4999)) {
+    std::move(done).Error("INVALID_ARGS",
+                          "A close code must be 1000 or 3000-4999.");
+    return;
+  }
+  const std::string reason = input.reason.value_or(std::string());
+  if (reason.size() > kMaxWsCloseReasonBytes) {
+    std::move(done).Error("INVALID_ARGS",
+                          "A close reason must be at most 123 bytes.");
+    return;
+  }
   auto it = sockets_.find(input.socketId);
   const bool found = it != sockets_.end();
   if (found) {
-    const int code = input.code.value_or(1000);
-    it->second->Close(static_cast<uint16_t>(std::clamp(code, 1000, 4999)),
-                      input.reason.value_or(std::string()));
+    it->second->Close(static_cast<uint16_t>(code), reason);
   }
   base::DictValue out;
   out.Set("found", found);

@@ -14,13 +14,13 @@
       "name": "code",
       "type": "integer",
       "required": false,
-      "description": "Close code, default 1000."
+      "description": "Close code, default 1000. As the WebSocket API's close(): 1000 or 3000-4999, INVALID_ARGS otherwise."
     },
     {
       "name": "reason",
       "type": "string",
       "required": false,
-      "description": "Close reason (at most 123 bytes)."
+      "description": "Close reason, at most 123 UTF-8 bytes (INVALID_ARGS otherwise)."
     }
   ],
   "runtime": {

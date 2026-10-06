@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/api/network/nexus_websocket_connection.h"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -220,6 +221,42 @@ TEST_F(NexusWebSocketConnectionTest, OpensExchangesMessagesAndCloses) {
   task_environment_.RunUntilIdle();
   EXPECT_EQ(closed_code_, 1000);
   EXPECT_FALSE(connection_->Send(false, "late"));
+}
+
+// A message past the cap closes with 1009, and its bytes are still taken off
+// the pipe: left there, the next frame would read them as its own data (a
+// corrupted message) and the network service, its pipe full, would stall.
+// After that no message is delivered — the socket is closing.
+TEST_F(NexusWebSocketConnectionTest, AnOversizedMessageIsDrainedNotDelivered) {
+  Open(/*egress_policy=*/true);
+  Establish(net::IPAddress(93, 184, 216, 34));
+  ASSERT_TRUE(opened_);
+
+  const size_t oversized = NexusWebSocketConnection::kMaxMessageBytes + 1;
+  client_->OnDataFrame(true, network::mojom::WebSocketMessageType::TEXT,
+                       oversized);
+  client_->OnDataFrame(true, network::mojom::WebSocketMessageType::TEXT, 2);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(socket_.close_code, 1009);
+
+  const std::string chunk(64 * 1024, 'x');
+  size_t left = oversized;
+  for (int i = 0; left > 0 && i < 4096; ++i) {
+    size_t written = 0;
+    const MojoResult result = server_writes_->WriteData(
+        base::as_byte_span(chunk).first(std::min(left, chunk.size())),
+        MOJO_WRITE_DATA_FLAG_NONE, written);
+    ASSERT_TRUE(result == MOJO_RESULT_OK || result == MOJO_RESULT_SHOULD_WAIT);
+    if (result == MOJO_RESULT_OK) {
+      left -= written;
+    }
+    task_environment_.RunUntilIdle();
+  }
+  ASSERT_EQ(left, 0u) << "the oversized frame was left on the pipe";
+  ASSERT_EQ(server_writes_->WriteAllData(base::as_byte_span(std::string("ok"))),
+            MOJO_RESULT_OK);
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(messages_.empty());
 }
 
 TEST_F(NexusWebSocketConnectionTest, APrivatePeerIsRefusedWhenDirect) {

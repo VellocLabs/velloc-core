@@ -5,6 +5,7 @@
 #include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -177,6 +178,56 @@ TEST_F(NexusNetworkStreamTest, ClosingTheConnectionCancelsOpenStreams) {
   EXPECT_EQ(adapter_.stream_count_for_testing(), 1u);
   adapter_.OnBridgeConnectionClosed();
   EXPECT_EQ(adapter_.stream_count_for_testing(), 0u);
+}
+
+// maxResponseBytes is a guest double: one past size_t saturates to "no
+// practical cap" instead of an undefined cast (0 on x64 — every byte too
+// large).
+TEST_F(NexusNetworkStreamTest, AHugeResponseCapStillReadsTheBody) {
+  const GURL url("https://api.example.com/big-cap");
+  auto head = network::CreateURLResponseHead(net::HTTP_OK);
+  head->remote_endpoint = net::IPEndPoint(net::IPAddress(93, 184, 216, 34), 443);
+  head->proxy_chain = net::ProxyChain::Direct();
+  factory_.AddResponse(url, std::move(head), "body",
+                       network::URLLoaderCompletionStatus(net::OK));
+
+  base::DictValue payload = OpenPayload(url.spec());
+  payload.Set("maxResponseBytes", 1e300);
+  Dispatch("streamOpen", std::move(payload));
+  ASSERT_EQ(delegate_.success_count, 1) << delegate_.last_error_code;
+
+  base::DictValue read;
+  read.Set("streamId", "stream-0001");
+  Dispatch("streamRead", std::move(read));
+  EXPECT_EQ(delegate_.error_count, 0) << delegate_.last_error_code;
+  ASSERT_EQ(delegate_.binary_count, 1);
+  EXPECT_EQ(delegate_.last_binary_bytes, "body");
+}
+
+// wsClose takes what the WebSocket API's close() takes; anything else is
+// refused rather than sent as 1011 by the network service.
+TEST_F(NexusNetworkStreamTest, WsCloseRefusesCodesAndReasonsCloseWouldNot) {
+  auto close = [&](std::optional<int> code, std::string reason) {
+    base::DictValue payload;
+    payload.Set("socketId", "no-such-socket");
+    if (code) {
+      payload.Set("code", *code);
+    }
+    payload.Set("reason", std::move(reason));
+    delegate_.last_error_code.clear();
+    const int before = delegate_.success_count;
+    Dispatch("wsClose", std::move(payload));
+    return delegate_.success_count > before ? std::string("ok")
+                                            : delegate_.last_error_code;
+  };
+  EXPECT_EQ(close(std::nullopt, ""), "ok");
+  EXPECT_EQ(close(1000, "bye"), "ok");
+  EXPECT_EQ(close(3000, ""), "ok");
+  EXPECT_EQ(close(4999, std::string(123, 'r')), "ok");
+  EXPECT_EQ(close(1001, ""), "INVALID_ARGS");
+  EXPECT_EQ(close(2999, ""), "INVALID_ARGS");
+  EXPECT_EQ(close(5000, ""), "INVALID_ARGS");
+  EXPECT_EQ(close(1000, std::string(124, 'r')), "INVALID_ARGS");
 }
 
 // {{secret:NAME}} goes into a request to the secret's own origin, and

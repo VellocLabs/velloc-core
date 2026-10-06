@@ -257,15 +257,18 @@ void NexusWebSocketConnection::OnDataFrame(
     message_binary_ = type == network::mojom::WebSocketMessageType::BINARY;
     message_.clear();
   }
-  if (data_length > kMaxMessageBytes ||
-      message_.size() + data_length > kMaxMessageBytes) {
+  if (!discarding_ && (data_length > kMaxMessageBytes ||
+                       message_.size() + data_length > kMaxMessageBytes)) {
+    // The frame's bytes still follow on the pipe: drain them (and every
+    // later frame's) rather than leave them to be read as the next frame.
+    discarding_ = true;
+    message_.clear();
     Close(1009, "message too big");
-    return;
   }
   frame_fin_ = fin;
   frame_remaining_ = static_cast<size_t>(data_length);
   if (frame_remaining_ == 0) {
-    if (fin) {
+    if (fin && !discarding_) {
       FinishMessage();
     }
     return;
@@ -279,13 +282,18 @@ void NexusWebSocketConnection::ReadFrame(
     MojoResult /*result*/,
     const mojo::HandleSignalsState& /*state*/) {
   while (frame_remaining_ > 0) {
-    const size_t offset = message_.size();
-    message_.resize(offset + frame_remaining_);
     size_t read = 0;
-    const MojoResult result = readable_->ReadData(
-        MOJO_READ_DATA_FLAG_NONE,
-        base::as_writable_byte_span(message_).subspan(offset), read);
-    message_.resize(offset + (result == MOJO_RESULT_OK ? read : 0));
+    MojoResult result;
+    if (discarding_) {
+      result = readable_->DiscardData(frame_remaining_, read);
+    } else {
+      const size_t offset = message_.size();
+      message_.resize(offset + frame_remaining_);
+      result = readable_->ReadData(
+          MOJO_READ_DATA_FLAG_NONE,
+          base::as_writable_byte_span(message_).subspan(offset), read);
+      message_.resize(offset + (result == MOJO_RESULT_OK ? read : 0));
+    }
     if (result == MOJO_RESULT_SHOULD_WAIT) {
       readable_watcher_.ArmOrNotify();
       return;
@@ -297,7 +305,7 @@ void NexusWebSocketConnection::ReadFrame(
     frame_remaining_ -= read;
   }
   client_receiver_.Resume();
-  if (frame_fin_) {
+  if (frame_fin_ && !discarding_) {
     FinishMessage();
   }
 }

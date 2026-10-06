@@ -156,6 +156,11 @@ class NexusWebSocketConnection : public network::mojom::ProxyLookupClient,
   std::string message_;
   size_t frame_remaining_ = 0;
   bool frame_fin_ = false;
+  // Set once a message ran past kMaxMessageBytes and the socket began
+  // closing with 1009: from then on every frame's bytes are read off the
+  // pipe and dropped, so no later frame reads them as its own and no message
+  // is delivered.
+  bool discarding_ = false;
 
   // Messages being sent: each one's bytes follow its SendMessage on the pipe.
   base::circular_deque<std::string> write_queue_;

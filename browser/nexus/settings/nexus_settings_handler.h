@@ -39,6 +39,8 @@ namespace settings {
 //     etc.); production WebUI calls them through the panel bridge.
 //   - getWebappUrl / setWebappUrl — launch-time C++ read; stays.
 //   - restartBrowser — guest-recovery overlay's "Restart client" button.
+//   - reloadPanel — guest-recovery overlay's "Try again" (and its offline
+//     auto-retry).
 //   - getBackgroundModeEnabled / setBackgroundModeEnabled — local_state pref.
 //   - getNexusLauncherEnabled / setNexusLauncherEnabled — local_state pref.
 //
@@ -139,6 +141,15 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // its way out.
   // JS: chrome.send('restartBrowser')
   void HandleRestartBrowser(const base::ListValue& args);
+
+  // Reloads this WebUI page from the browser side. Backs the guest-recovery
+  // overlay's "Try again" and its retry on `online`: the page's own
+  // `location.reload()` is aborted on chrome://custom.top-chrome — the
+  // guest <webview> reports ERR_ABORTED and the document never goes away —
+  // while a browser-initiated reload of the same contents goes through.
+  // Fire-and-forget: the page is replaced, so there is nothing to answer.
+  // JS: chrome.send('reloadPanel')
+  void HandleReloadPanel(const base::ListValue& args);
 
   // HandleGet/SetBrowserToolsSeparateWindow declarations removed:
   // migrated to `browserTools.snapshot` / `browserTools.setField` on the

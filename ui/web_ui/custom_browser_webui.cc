@@ -71,6 +71,14 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
       "customBrowserNexusOllamaNote",
       l10n_util::GetStringFUTF16(IDS_NEXUS_SETTINGS_OLLAMA_NOTE,
                                  product_long_name));
+  // <nexus-guest-recovery> (pages/nexus/nexus_guest_recovery.ts).
+  html_source->AddString(
+      "customBrowserNexusGuestRecoveryTitle",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_GUEST_RECOVERY_TITLE,
+                                 product_name));
+  html_source->AddString(
+      "customBrowserNexusGuestOfflineBody",
+      l10n_util::GetStringFUTF16(IDS_NEXUS_GUEST_OFFLINE_BODY, product_name));
 
   static constexpr webui::LocalizedString kNexusStrings[] = {
       {"customBrowserLoadingLabel", IDS_CUSTOM_BROWSER_LOADING},
@@ -162,6 +170,12 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
       {"customBrowserNexusErrorUnexpectedResponse",
        IDS_NEXUS_SETTINGS_ERROR_UNEXPECTED_RESPONSE},
       {"customBrowserCancel", IDS_CANCEL},
+      {"customBrowserNexusGuestRecoveryBody", IDS_NEXUS_GUEST_RECOVERY_BODY},
+      {"customBrowserNexusGuestRecoveryUrlLabel",
+       IDS_NEXUS_GUEST_RECOVERY_URL_LABEL},
+      {"customBrowserNexusGuestRecoveryReset", IDS_NEXUS_GUEST_RECOVERY_RESET},
+      {"customBrowserNexusGuestRecoveryRetry", IDS_NEXUS_GUEST_RECOVERY_RETRY},
+      {"customBrowserNexusGuestOfflineTitle", IDS_NEXUS_GUEST_OFFLINE_TITLE},
   };
   html_source->AddLocalizedStrings(kNexusStrings);
 }

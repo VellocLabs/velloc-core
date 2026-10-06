@@ -82,6 +82,7 @@ class CustomBrowserWebUI : public ui::MojoWebUIController,
   // yet) simply gets the new view for when it does.
   void DetachFromView();
   void AttachToView(CustomBrowserView* browser);
+  bool HasView() const { return custom_browser_view_ != nullptr; }
 
   // The embedder should call this whenever the result of
   // Embedder::GetLayout() changes.

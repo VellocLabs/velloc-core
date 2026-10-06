@@ -222,4 +222,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Выйти из <ph name="PRODUCT_NAME"/>?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, one {Через удалённый доступ подключено # устройство. При выходе оно будет отключено.} few {Через удалённый доступ подключено # устройства. При выходе они будут отключены.} many {Через удалённый доступ подключено # устройств. При выходе они будут отключены.} other {Через удалённый доступ подключено # устройства. При выходе они будут отключены.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Также удалить все данные (кеш + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">Не удалось загрузить среду выполнения <ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Панели не удалось запустить среду выполнения. Обычно это значит, что настроенный источник недоступен или не предоставляет версию, нужную этой сборке.</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Адрес</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Восстановить среду выполнения по умолчанию</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Повторить</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Нет подключения к интернету</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY">Для загрузки <ph name="PRODUCT_NAME"/> нужно подключение к интернету. Повторная попытка будет выполнена автоматически, как только подключение восстановится.</translation>
 </translationbundle>

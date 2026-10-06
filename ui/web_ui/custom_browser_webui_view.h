@@ -129,6 +129,8 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   void PrimaryMainFrameRenderProcessGone(
       base::TerminationStatus status) override;
   void DocumentOnLoadCompletedInPrimaryMainFrame() override;
+  void DidFinishNavigation(
+      content::NavigationHandle* navigation_handle) override;
 
  private:
   void SetContainerTargetVisibility(bool target_visible);

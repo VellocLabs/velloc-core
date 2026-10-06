@@ -157,6 +157,12 @@ export class NexusViewElement extends CrLitElement {
   // back from a bad `nexus.webapp_url` — the pref's other editor lives in the
   // guest's own Settings · About page, i.e. inside the app that just failed.
   private guestFailureUrl_: string|null = null;
+  // Why the guest failed (onGuestFailure_'s `reason`), for the offline test.
+  private guestFailureReason_ = '';
+  // `online` / `offline` on window: while the recovery overlay is up it
+  // follows the connection (see isGuestOffline_), and coming back online
+  // retries the guest by itself — the offline overlay promises exactly that.
+  private readonly onConnectionChange_ = () => this.onConnectionChanged_();
   private dismissBootWelcomeUnsubscribe_: (() => void)|null = null;
   private mainContentsLayoutUnsubscribe_: (() => void)|null = null;
   private buildInfoUnsubscribe_: (() => void)|null = null;
@@ -179,6 +185,8 @@ export class NexusViewElement extends CrLitElement {
         payload => this.onBuildInfo_(payload));
     this.bootProgressUnsubscribe_ = onBootProgress(
         payload => this.onBootProgress_(payload));
+    window.addEventListener('online', this.onConnectionChange_);
+    window.addEventListener('offline', this.onConnectionChange_);
   }
 
   override firstUpdated() {
@@ -230,6 +238,7 @@ export class NexusViewElement extends CrLitElement {
     }
     console.error('[NexusView] guest failed to start', {guestUrl, reason});
     this.guestFailureUrl_ = guestUrl ?? '';
+    this.guestFailureReason_ = reason;
     this.bootWelcomeDismissed_ = true;
     this.clearDismissBootWelcomeFallbackTimer_();
     this.requestUpdate();
@@ -271,8 +280,33 @@ export class NexusViewElement extends CrLitElement {
     chrome.send('restartBrowser');
   }
 
+  // A browser-side reload (NexusSettingsHandler::HandleReloadPanel): the
+  // page's own `location.reload()` is aborted on this WebUI and leaves the
+  // overlay standing, which made Try again a dead button.
   private onRecoveryRetry_() {
-    location.reload();
+    chrome.send('reloadPanel');
+  }
+
+  // Offline means the runtime source is not the suspect: the overlay then says
+  // so instead of offering to reset it. `navigator.onLine` is the browser's own
+  // view; ERR_INTERNET_DISCONNECTED is what a load aborted for the same reason
+  // reports, in case the event and the abort race. A first launch with no
+  // network is the case this is for — once the guest has loaded online it is
+  // served from the HTTP cache and boots offline without ever getting here.
+  private isGuestOffline_(): boolean {
+    return navigator.onLine === false ||
+        this.guestFailureReason_ === 'loadabort ERR_INTERNET_DISCONNECTED';
+  }
+
+  private onConnectionChanged_() {
+    if (this.guestFailureUrl_ === null) {
+      return;
+    }
+    if (navigator.onLine) {
+      this.onRecoveryRetry_();
+      return;
+    }
+    this.requestUpdate();
   }
 
   // Host-handshake stage source (bootstrapNexusGuest's onStatus callback):
@@ -334,6 +368,8 @@ export class NexusViewElement extends CrLitElement {
       this.bootProgressUnsubscribe_ = null;
     }
     this.clearDismissBootWelcomeFallbackTimer_();
+    window.removeEventListener('online', this.onConnectionChange_);
+    window.removeEventListener('offline', this.onConnectionChange_);
     super.disconnectedCallback();
   }
 
@@ -453,6 +489,7 @@ export class NexusViewElement extends CrLitElement {
       ${this.guestFailureUrl_ === null ? nothing : html`
         <nexus-guest-recovery class="recovery-overlay"
             .guestUrl=${this.guestFailureUrl_}
+            .offline=${this.isGuestOffline_()}
             @nexus-guest-recovery-reset=${this.onRecoveryReset_}
             @nexus-guest-recovery-retry=${this.onRecoveryRetry_}>
         </nexus-guest-recovery>

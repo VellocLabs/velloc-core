@@ -222,4 +222,11 @@ Esto elimina el proveedor almacenado, el endpoint guardado y los modelos selecci
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">¿Salir de <ph name="PRODUCT_NAME"/>?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {Hay # dispositivo conectado mediante el acceso remoto. Si sale, se desconectará.} other {Hay # dispositivos conectados mediante el acceso remoto. Si sale, se desconectarán.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Eliminar también todos los datos (caché + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">No se pudo cargar el runtime de <ph name="PRODUCT_NAME"/></translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">El panel no pudo iniciar su runtime. Normalmente significa que el origen configurado no es accesible o no sirve la versión que requiere esta compilación.</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Se intentó</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Restaurar runtime predeterminado</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Reintentar</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">No tienes conexión</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> necesita conexión a internet para cargarse. Lo volverá a intentar en cuanto vuelvas a estar en línea.</translation>
 </translationbundle>

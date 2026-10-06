@@ -31,88 +31,9 @@ import {
 
 import {getString} from './nexus_shared.js';
 
-// Localized copy, owned by this element for the same reason <nexus-welcome>
-// owns its own: the overlay paints when the guest is unreachable, so it cannot
-// read the guest's i18n catalogs. Locale resolution mirrors nexus_web's
-// `resolveLocale()` (BCP-47 prefix → supported catalog, English fallback).
-type RecoveryLocale = 'en'|'zh'|'es'|'fr'|'de';
-
-interface RecoveryCopy {
-  title: string;
-  body: string;
-  urlLabel: string;
-  reset: string;
-  retry: string;
-}
-
-const RECOVERY_COPY: Record<RecoveryLocale, RecoveryCopy> = {
-  en: {
-    title: 'The {product} runtime didn’t load',
-    body:
-        'The panel could not start its runtime. This usually means the ' +
-        'configured runtime source is unreachable, or does not serve the ' +
-        'version this build requires.',
-    urlLabel: 'Tried',
-    reset: 'Restore default runtime',
-    retry: 'Try again',
-  },
-  zh: {
-    title: '{product} 运行时未能加载',
-    body:
-        '面板无法启动运行时。通常是配置的运行时来源无法访问，或它不提供当前' +
-        '版本所需的接口版本。',
-    urlLabel: '已尝试',
-    reset: '恢复默认运行时',
-    retry: '重试',
-  },
-  es: {
-    title: 'No se pudo cargar el runtime de {product}',
-    body:
-        'El panel no pudo iniciar su runtime. Normalmente significa que el ' +
-        'origen configurado no es accesible o no sirve la versión que ' +
-        'requiere esta compilación.',
-    urlLabel: 'Se intentó',
-    reset: 'Restaurar runtime predeterminado',
-    retry: 'Reintentar',
-  },
-  fr: {
-    title: 'Le runtime {product} n’a pas pu être chargé',
-    body:
-        'Le panneau n’a pas pu démarrer son runtime. Cela signifie ' +
-        'généralement que la source configurée est inaccessible ou qu’elle ' +
-        'ne fournit pas la version requise par cette build.',
-    urlLabel: 'Tentative',
-    reset: 'Restaurer le runtime par défaut',
-    retry: 'Réessayer',
-  },
-  de: {
-    title: '{product}-Runtime konnte nicht geladen werden',
-    body:
-        'Das Panel konnte seine Runtime nicht starten. Meist ist die ' +
-        'konfigurierte Quelle nicht erreichbar oder liefert nicht die von ' +
-        'diesem Build benötigte Version.',
-    urlLabel: 'Versucht',
-    reset: 'Standard-Runtime wiederherstellen',
-    retry: 'Erneut versuchen',
-  },
-};
-
-function resolveRecoveryLocale(raw: string|null|undefined): RecoveryLocale {
-  const lang = (raw ?? '').toLowerCase();
-  if (lang.startsWith('zh')) {
-    return 'zh';
-  }
-  if (lang.startsWith('es')) {
-    return 'es';
-  }
-  if (lang.startsWith('fr')) {
-    return 'fr';
-  }
-  if (lang.startsWith('de')) {
-    return 'de';
-  }
-  return 'en';
-}
+// Copy comes from custom_browser_strings.grd through loadTimeData
+// (custom_browser_webui.cc, AddNexusStrings) — host-side, so it is there even
+// though the guest, and with it the guest's i18n catalogs, never loaded.
 
 export class NexusGuestRecoveryElement extends CrLitElement {
   static get is() {
@@ -233,6 +154,11 @@ export class NexusGuestRecoveryElement extends CrLitElement {
   // Manual setter + requestUpdate(), matching <nexus-welcome> and the rest of
   // pages/nexus/ rather than Lit's reactive-property machinery.
   private guestUrl_ = '';
+  // Set by <nexus-view> from the browser's connection state. Offline, the
+  // runtime source is not to blame and resetting it would wipe a URL the user
+  // may have pinned deliberately — so the offline state names the connection,
+  // offers only Try again, and <nexus-view> retries by itself on `online`.
+  private offline_ = false;
 
   get guestUrl(): string {
     return this.guestUrl_;
@@ -246,6 +172,18 @@ export class NexusGuestRecoveryElement extends CrLitElement {
     this.requestUpdate();
   }
 
+  get offline(): boolean {
+    return this.offline_;
+  }
+
+  set offline(value: boolean) {
+    if (value === this.offline_) {
+      return;
+    }
+    this.offline_ = value;
+    this.requestUpdate();
+  }
+
   private onReset_() {
     this.dispatchEvent(new CustomEvent('nexus-guest-recovery-reset'));
   }
@@ -255,26 +193,53 @@ export class NexusGuestRecoveryElement extends CrLitElement {
   }
 
   protected override render() {
-    const copy = RECOVERY_COPY[resolveRecoveryLocale(navigator.language)];
-    const productName = getString('customBrowserProductName', 'Velloc');
-    const title = copy.title.replace('{product}', productName);
-    const body = copy.body.replace('{product}', productName);
+    if (this.offline_) {
+      return html`
+        <div class="recovery-card" id="recoveryCard" data-state="offline"
+            role="alert">
+          <div class="recovery-title">
+            ${getString('customBrowserNexusGuestOfflineTitle')}
+          </div>
+          <div class="recovery-body">
+            ${getString('customBrowserNexusGuestOfflineBody')}
+          </div>
+          <div class="recovery-actions">
+            <button class="primary"
+                id="retryRuntime"
+                @click=${this.onRetry_}>
+              ${getString('customBrowserNexusGuestRecoveryRetry')}
+            </button>
+          </div>
+        </div>
+      `;
+    }
     return html`
-      <div class="recovery-card" role="alert">
-        <div class="recovery-title">${title}</div>
-        <div class="recovery-body">${body}</div>
+      <div class="recovery-card" id="recoveryCard" data-state="failed"
+          role="alert">
+        <div class="recovery-title">
+          ${getString('customBrowserNexusGuestRecoveryTitle')}
+        </div>
+        <div class="recovery-body">
+          ${getString('customBrowserNexusGuestRecoveryBody')}
+        </div>
         ${this.guestUrl_ ? html`
           <div class="recovery-url">
-            <span class="label">${copy.urlLabel}:</span> ${this.guestUrl_}
+            <span class="label">
+              ${getString('customBrowserNexusGuestRecoveryUrlLabel')}:
+            </span> ${this.guestUrl_}
           </div>
         ` : ''}
         <div class="recovery-actions">
           <button class="primary"
               id="resetRuntime"
-              @click=${this.onReset_}>${copy.reset}</button>
+              @click=${this.onReset_}>
+            ${getString('customBrowserNexusGuestRecoveryReset')}
+          </button>
           <button class="secondary"
               id="retryRuntime"
-              @click=${this.onRetry_}>${copy.retry}</button>
+              @click=${this.onRetry_}>
+            ${getString('customBrowserNexusGuestRecoveryRetry')}
+          </button>
         </div>
       </div>
     `;

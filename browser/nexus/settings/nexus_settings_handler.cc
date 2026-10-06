@@ -19,6 +19,8 @@
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -257,6 +259,10 @@ void NexusSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "restartBrowser",
       base::BindRepeating(&NexusSettingsHandler::HandleRestartBrowser,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "reloadPanel",
+      base::BindRepeating(&NexusSettingsHandler::HandleReloadPanel,
                           base::Unretained(this)));
   // `getBrowserToolsSeparateWindow` / `setBrowserToolsSeparateWindow`
   // routes removed: migrated to `browserTools.snapshot` /
@@ -742,6 +748,22 @@ void NexusSettingsHandler::HandleRestartBrowser(
   // restart is posted (nexus::RestartClient), so this handler returns first
   // and WebUI teardown happens on the next task.
   nexus::RestartClient();
+}
+
+void NexusSettingsHandler::HandleReloadPanel(
+    const base::ListValue& /*args*/) {
+  // Posted: the reload replaces this WebUI (and this handler), so it must not
+  // start while the message is still being dispatched to us.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](base::WeakPtr<content::WebContents> contents) {
+            if (contents) {
+              contents->GetController().Reload(content::ReloadType::NORMAL,
+                                               /*check_for_repost=*/false);
+            }
+          },
+          web_ui()->GetWebContents()->GetWeakPtr()));
 }
 
 // HandleGetBrowserToolsSeparateWindow / HandleSetBrowserToolsSeparateWindow

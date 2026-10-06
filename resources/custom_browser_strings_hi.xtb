@@ -222,4 +222,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> से बाहर निकलें?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {रिमोट एक्सेस के ज़रिए # डिवाइस कनेक्ट है। बाहर निकलने पर यह डिस्कनेक्ट हो जाएगा।} other {रिमोट एक्सेस के ज़रिए # डिवाइस कनेक्ट हैं। बाहर निकलने पर ये डिस्कनेक्ट हो जाएंगे।}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">सारा डेटा भी हटाएं (कैश + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> रनटाइम लोड नहीं हुआ</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">पैनल अपना रनटाइम शुरू नहीं कर सका। आम तौर पर इसका मतलब है कि कॉन्फ़िगर किया गया रनटाइम स्रोत पहुंच से बाहर है, या वह इस बिल्ड के लिए ज़रूरी वर्शन उपलब्ध नहीं कराता।</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">आज़माया गया</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">डिफ़ॉल्ट रनटाइम बहाल करें</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">फिर से कोशिश करें</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">आप ऑफ़लाइन हैं</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> को लोड होने के लिए इंटरनेट कनेक्शन चाहिए। आपके फिर से ऑनलाइन होते ही यह अपने-आप दोबारा कोशिश करेगा।</translation>
 </translationbundle>

@@ -222,4 +222,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> থেকে প্রস্থান করবেন?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {রিমোট অ্যাক্সেসের মাধ্যমে #টি ডিভাইস সংযুক্ত আছে। প্রস্থান করলে এটি বিচ্ছিন্ন হয়ে যাবে।} other {রিমোট অ্যাক্সেসের মাধ্যমে #টি ডিভাইস সংযুক্ত আছে। প্রস্থান করলে সেগুলি বিচ্ছিন্ন হয়ে যাবে।}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">সব ডেটাও মুছে ফেলুন (ক্যাশে + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> রানটাইম লোড হয়নি</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">প্যানেলটি তার রানটাইম চালু করতে পারেনি। সাধারণত এর মানে কনফিগার করা রানটাইম উৎসে পৌঁছানো যাচ্ছে না, অথবা এই বিল্ডের প্রয়োজনীয় সংস্করণটি সেখানে নেই।</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">চেষ্টা করা হয়েছে</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">ডিফল্ট রানটাইম ফিরিয়ে আনুন</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">আবার চেষ্টা করুন</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">আপনি অফলাইন আছেন</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> লোড হতে ইন্টারনেট সংযোগ দরকার। আবার অনলাইন হলেই এটি নিজে থেকে আবার চেষ্টা করবে।</translation>
 </translationbundle>

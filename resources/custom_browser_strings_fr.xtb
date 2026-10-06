@@ -222,4 +222,11 @@ Cela supprime le fournisseur mémorisé, le point de terminaison enregistré et 
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Quitter <ph name="PRODUCT_NAME"/> ?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {# appareil est connecté via l’accès à distance. Quitter le déconnectera.} other {# appareils sont connectés via l’accès à distance. Quitter les déconnectera.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Supprimer également toutes les données (cache + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">Le runtime <ph name="PRODUCT_NAME"/> n’a pas pu être chargé</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Le panneau n’a pas pu démarrer son runtime. Cela signifie généralement que la source configurée est inaccessible ou qu’elle ne fournit pas la version requise par cette build.</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Tentative</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Restaurer le runtime par défaut</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Réessayer</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Vous êtes hors connexion</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> a besoin d’une connexion Internet pour se charger. Une nouvelle tentative aura lieu dès que vous serez de nouveau en ligne.</translation>
 </translationbundle>

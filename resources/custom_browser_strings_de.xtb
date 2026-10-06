@@ -222,4 +222,11 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> beenden?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {Über den Remote-Zugriff ist # Gerät verbunden. Beim Beenden wird die Verbindung getrennt.} other {Über den Remote-Zugriff sind # Geräte verbunden. Beim Beenden werden die Verbindungen getrennt.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Auch alle Daten löschen (Cache + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/>-Runtime konnte nicht geladen werden</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Das Panel konnte seine Runtime nicht starten. Meist ist die konfigurierte Quelle nicht erreichbar oder liefert nicht die von diesem Build benötigte Version.</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Versucht</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Standard-Runtime wiederherstellen</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Erneut versuchen</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Du bist offline</translation>
+  <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> braucht zum Laden eine Internetverbindung. Sobald du wieder online bist, wird es automatisch erneut versucht.</translation>
 </translationbundle>

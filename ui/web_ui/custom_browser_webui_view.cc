@@ -454,6 +454,23 @@ void CustomBrowserWebUIView::DocumentOnLoadCompletedInPrimaryMainFrame() {
   SetPaneFocusAndFocusDefault();
 }
 
+void CustomBrowserWebUIView::DidFinishNavigation(
+    content::NavigationHandle* navigation_handle) {
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
+      !navigation_handle->HasCommitted() ||
+      navigation_handle->IsSameDocument()) {
+    return;
+  }
+  // A reload (the recovery overlay's reloadPanel) commits a NEW WebUI
+  // controller. InitializeWebView only handed this window to the first one,
+  // so the new one would park its page handlers forever and
+  // DeinitializeWebView would find it without a view. Give it this window.
+  auto* custom_browser_webui = GetBrowserWebUI(owned_contents_.get());
+  if (custom_browser_webui && !custom_browser_webui->HasView()) {
+    custom_browser_webui->AttachToView(custom_browser_view_);
+  }
+}
+
 // static
 void CustomBrowserWebUIView::EnableDraggableRegions(
     content::WebContents* web_contents) {

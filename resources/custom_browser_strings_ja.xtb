@@ -222,7 +222,7 @@
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">すべてのデータも削除する（キャッシュ + <ph name="DATA_DIR"/>）</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> ランタイムを読み込めませんでした</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">パネルのランタイムを起動できませんでした。通常、設定されたランタイムのソースにアクセスできないか、このビルドに必要なバージョンが提供されていないことが原因です。</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">試行した URL</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">試行した URL：</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">既定のランタイムに戻す</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">再試行</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">オフラインです</translation>

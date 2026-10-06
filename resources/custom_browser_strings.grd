@@ -714,8 +714,8 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_NEXUS_GUEST_RECOVERY_BODY" desc="Body of the overlay shown in the agent panel when its runtime failed to start while the computer is online." use_name_for_id="true">
         The panel could not start its runtime. This usually means the configured runtime source is unreachable, or does not serve the version this build requires.
       </message>
-      <message name="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL" desc="Label before the web address the agent panel tried to load its runtime from, on the runtime-failed overlay. Followed by a colon and the address." use_name_for_id="true">
-        Tried
+      <message name="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL" desc="Label before the web address the agent panel tried to load its runtime from, on the runtime-failed overlay. Includes its own trailing colon, in the locale's punctuation (full-width in Chinese and Japanese, a space before it in French); the address follows after a space." use_name_for_id="true">
+        Tried:
       </message>
       <message name="IDS_NEXUS_GUEST_RECOVERY_RESET" desc="Button on the runtime-failed overlay: forget a custom runtime address, go back to the built-in one, and restart the app." use_name_for_id="true">
         Restore default runtime

@@ -224,7 +224,7 @@
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">同时删除全部数据（缓存 + <ph name="DATA_DIR"/>）</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> 运行时未能加载</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">面板无法启动运行时。通常是配置的运行时来源无法访问，或它不提供当前版本所需的接口版本。</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">已尝试</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">已尝试：</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">恢复默认运行时</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">重试</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">你已离线</translation>

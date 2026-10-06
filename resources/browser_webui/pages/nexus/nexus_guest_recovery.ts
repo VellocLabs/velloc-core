@@ -225,7 +225,7 @@ export class NexusGuestRecoveryElement extends CrLitElement {
         ${this.guestUrl_ ? html`
           <div class="recovery-url">
             <span class="label">
-              ${getString('customBrowserNexusGuestRecoveryUrlLabel')}:
+              ${getString('customBrowserNexusGuestRecoveryUrlLabel')}
             </span> ${this.guestUrl_}
           </div>
         ` : ''}

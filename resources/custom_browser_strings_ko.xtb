@@ -222,7 +222,7 @@
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">모든 데이터도 삭제(캐시 + <ph name="DATA_DIR"/>)</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> 런타임을 불러오지 못했습니다</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">패널이 런타임을 시작하지 못했습니다. 보통 설정된 런타임 소스에 연결할 수 없거나, 이 빌드에 필요한 버전을 제공하지 않는 경우입니다.</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">시도한 주소</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">시도한 주소:</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">기본 런타임 복원</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">다시 시도</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">오프라인 상태입니다</translation>

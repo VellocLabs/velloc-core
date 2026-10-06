@@ -224,7 +224,7 @@
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Также удалить все данные (кеш + <ph name="DATA_DIR"/>)</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">Не удалось загрузить среду выполнения <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Панели не удалось запустить среду выполнения. Обычно это значит, что настроенный источник недоступен или не предоставляет версию, нужную этой сборке.</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Адрес</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Адрес:</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Восстановить среду выполнения по умолчанию</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Повторить</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Нет подключения к интернету</translation>

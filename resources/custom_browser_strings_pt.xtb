@@ -224,7 +224,7 @@ Isso remove o provedor armazenado, o endpoint salvo e os modelos selecionados qu
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Excluir também todos os dados (cache + <ph name="DATA_DIR"/>)</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">Não foi possível carregar o runtime do <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">O painel não conseguiu iniciar o runtime. Normalmente isso significa que a origem configurada está inacessível ou não fornece a versão exigida por esta compilação.</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Tentado</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Tentado:</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Restaurar runtime padrão</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Tentar novamente</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Você está off-line</translation>

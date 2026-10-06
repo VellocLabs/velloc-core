@@ -224,7 +224,7 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Auch alle Daten löschen (Cache + <ph name="DATA_DIR"/>)</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/>-Runtime konnte nicht geladen werden</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Das Panel konnte seine Runtime nicht starten. Meist ist die konfigurierte Quelle nicht erreichbar oder liefert nicht die von diesem Build benötigte Version.</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Versucht</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Versucht:</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">Standard-Runtime wiederherstellen</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Erneut versuchen</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Du bist offline</translation>

@@ -224,7 +224,7 @@
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">সব ডেটাও মুছে ফেলুন (ক্যাশে + <ph name="DATA_DIR"/>)</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> রানটাইম লোড হয়নি</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">প্যানেলটি তার রানটাইম চালু করতে পারেনি। সাধারণত এর মানে কনফিগার করা রানটাইম উৎসে পৌঁছানো যাচ্ছে না, অথবা এই বিল্ডের প্রয়োজনীয় সংস্করণটি সেখানে নেই।</translation>
-  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">চেষ্টা করা হয়েছে</translation>
+  <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">চেষ্টা করা হয়েছে:</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RESET">ডিফল্ট রানটাইম ফিরিয়ে আনুন</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">আবার চেষ্টা করুন</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">আপনি অফলাইন আছেন</translation>

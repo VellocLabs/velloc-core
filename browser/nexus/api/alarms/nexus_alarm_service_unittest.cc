@@ -14,12 +14,18 @@
 #include "base/test/task_environment.h"
 #include "base/time/clock.h"
 #include "base/values.h"
+#include "chrome/browser/prefs/browser_prefs.h"
+#include "chrome/test/base/testing_profile.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
+#include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/api/alarms/nexus_alarms_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/api/llm/llm_pref_registration.h"
+#include "custom_browser/browser/nexus/launcher/nexus_launcher_delegate.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
+#include "custom_browser/browser/nexus/nexus_test_support.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -154,6 +160,7 @@ TEST_F(NexusAlarmServiceTest, TheAdapterCreatesListsAndPushesOnAlarm) {
     task_environment_.RunUntilIdle();
   }
   NexusAlarmsBridgeAdapter adapter(&delegate, service.get());
+  adapter.OnBridgeConnectionOpened();  // NexusBridgePortService::CreatePortPair
   base::DictValue route;
   route.Set("namespace", "nexus");
   route.Set("capability", "alarms");
@@ -186,6 +193,70 @@ TEST_F(NexusAlarmServiceTest, TheAdapterCreatesListsAndPushesOnAlarm) {
   EXPECT_TRUE(adapter.Dispatch("create", "req", route, bad, {}));
   task_environment_.RunUntilIdle();
   EXPECT_EQ(delegate.last_error_code, "INVALID_ARGS");
+}
+
+// The guest's port died (a crashed or reloading webview): the adapter lives on
+// with its port service, but an event sent now is dropped. So the fire must
+// queue and wake a runtime, not vanish into the dead port; the next
+// connection makes the adapter a sink again.
+TEST_F(NexusAlarmServiceTest, AFireWhileTheConnectionIsDownIsQueued) {
+  auto service = MakeService();
+  RecordingDelegate delegate;
+  NexusAlarmsBridgeAdapter adapter(&delegate, service.get());
+  adapter.OnBridgeConnectionOpened();
+  adapter.OnBridgeConnectionClosed();
+
+  ASSERT_FALSE(service->Create("once", NowMs() + 1000, std::nullopt));
+  task_environment_.FastForwardBy(base::Seconds(2));
+  EXPECT_TRUE(delegate.events.empty());
+  EXPECT_EQ(wakes_, 1);
+  std::vector<AlarmFire> pending = service->TakePending();
+  ASSERT_EQ(pending.size(), 1u);
+  EXPECT_EQ(pending[0].name, "once");
+
+  // Reconnected: fires are events again, no wake. Opening twice adds one sink.
+  adapter.OnBridgeConnectionOpened();
+  adapter.OnBridgeConnectionOpened();
+  ASSERT_FALSE(service->Create("again", NowMs() + 1000, std::nullopt));
+  task_environment_.FastForwardBy(base::Seconds(2));
+  ASSERT_EQ(delegate.events.size(), 1u);
+  EXPECT_EQ(*delegate.events[0].second.GetDict().FindString("name"), "again");
+  EXPECT_EQ(wakes_, 1);
+}
+
+// A fire that finds no runtime boots the runtime of the profile it fired in,
+// not the last-used profile's.
+class RecordingLauncherDelegate : public NexusLauncherDelegate {
+ public:
+  void OpenOrFocusNexusWindow() override { ++unscoped_opens; }
+  void OpenOrFocusNexusWindowForProfile(Profile* profile) override {
+    opened_for.push_back(profile);
+  }
+  void OpenOrFocusNormalWindow() override {}
+  void ConfirmQuit(base::OnceClosure proceed) override {}
+  void Quit() override {}
+
+  int unscoped_opens = 0;
+  std::vector<Profile*> opened_for;
+};
+
+TEST_F(NexusAlarmServiceTest, AWakeOpensTheFiringProfilesWindow) {
+  auto prefs = std::make_unique<sync_preferences::TestingPrefServiceSyncable>();
+  RegisterUserProfilePrefs(prefs->registry());
+  RegisterNexusProfilePrefs(prefs->registry());
+  TestingProfile::Builder builder;
+  builder.SetPrefService(std::move(prefs));
+  test::AddGlicDisablingFactory(builder);
+  std::unique_ptr<TestingProfile> profile = builder.Build();
+
+  RecordingLauncherDelegate launcher;
+  NexusLauncherDelegate* previous = GetNexusLauncherDelegate();
+  SetNexusLauncherDelegate(&launcher);
+  NexusAlarmServiceFactory::WakeRuntimeForProfile(profile.get());
+  SetNexusLauncherDelegate(previous);
+  ASSERT_EQ(launcher.opened_for.size(), 1u);
+  EXPECT_EQ(launcher.opened_for[0], profile.get());
+  EXPECT_EQ(launcher.unscoped_opens, 0);
 }
 
 }  // namespace

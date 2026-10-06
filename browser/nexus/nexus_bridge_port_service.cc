@@ -267,6 +267,7 @@ blink::MessagePortDescriptor NexusBridgePortService::CreatePortPair() {
       base::BindRepeating(&NexusBridgePortService::OnControlPortError,
                           weak_factory_.GetWeakPtr()));
   LOG(INFO) << "[NexusTrace][PortService] Created direct bridge port pair";
+  NotifyConnectionOpened();
   return port_pair.TakePort1();
 }
 
@@ -287,6 +288,14 @@ void NexusBridgePortService::NotifyConnectionClosed() {
   for (const auto& [capability, handler] : capability_handlers_) {
     if (handler) {
       handler->OnBridgeConnectionClosed();
+    }
+  }
+}
+
+void NexusBridgePortService::NotifyConnectionOpened() {
+  for (const auto& [capability, handler] : capability_handlers_) {
+    if (handler) {
+      handler->OnBridgeConnectionOpened();
     }
   }
 }

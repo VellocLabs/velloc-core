@@ -34,18 +34,28 @@ NexusAlarmsBridgeAdapter::NexusAlarmsBridgeAdapter(
     NexusAlarmService* service)
     : ::nexus::generated::AlarmsApiBase(delegate),
       service_(service ? service->GetWeakPtr()
-                       : base::WeakPtr<NexusAlarmService>()) {
-  if (service_) {
-    sink_id_ = service_->AddSink(base::BindRepeating(
-        &NexusAlarmsBridgeAdapter::PushAlarmEvent,
-        weak_factory_.GetWeakPtr()));
-  }
-}
+                       : base::WeakPtr<NexusAlarmService>()) {}
 
 NexusAlarmsBridgeAdapter::~NexusAlarmsBridgeAdapter() {
+  OnBridgeConnectionClosed();
+}
+
+void NexusAlarmsBridgeAdapter::OnBridgeConnectionOpened() {
+  if (!service_ || sink_id_ != 0) {
+    return;
+  }
+  sink_id_ = service_->AddSink(base::BindRepeating(
+      &NexusAlarmsBridgeAdapter::PushAlarmEvent, weak_factory_.GetWeakPtr()));
+}
+
+void NexusAlarmsBridgeAdapter::OnBridgeConnectionClosed() {
+  // Until the next port the guest cannot receive an event; with no sink left
+  // the service queues the fire and wakes a runtime instead of handing it to
+  // a dead port.
   if (service_ && sink_id_ != 0) {
     service_->RemoveSink(sink_id_);
   }
+  sink_id_ = 0;
 }
 
 void NexusAlarmsBridgeAdapter::HandleCreateOnUI(

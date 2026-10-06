@@ -125,6 +125,7 @@ TEST_F(NexusBackgroundModeManagerTest, ReleasesKeepAliveOnAppTerminating) {
 class FakeLauncherDelegate : public NexusLauncherDelegate {
  public:
   void OpenOrFocusNexusWindow() override {}
+  void OpenOrFocusNexusWindowForProfile(Profile* /*profile*/) override {}
   void OpenOrFocusNormalWindow() override {}
   void ConfirmQuit(base::OnceClosure proceed) override {
     ++confirmations;

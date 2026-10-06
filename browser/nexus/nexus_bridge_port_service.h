@@ -124,6 +124,8 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // Tells every registered adapter that the guest connection ended
   // (NexusBridgeCapabilityHandler::OnBridgeConnectionClosed).
   void NotifyConnectionClosed();
+  // ... and that a new one began (OnBridgeConnectionOpened).
+  void NotifyConnectionOpened();
   void DispatchRequest(const std::string& json_request,
                        std::vector<blink::MessagePortDescriptor> ports);
   void SendResponse(const std::string& json_response,

@@ -38,6 +38,10 @@ class NexusLauncherDelegateImpl : public nexus::NexusLauncherDelegate {
     window_util::OpenOrFocusNexusWindow(LaunchProfile());
   }
 
+  void OpenOrFocusNexusWindowForProfile(Profile* profile) override {
+    window_util::OpenOrFocusNexusWindow(profile ? profile : LaunchProfile());
+  }
+
   void OpenOrFocusNormalWindow() override {
     window_util::OpenOrFocusNormalWindow(LaunchProfile());
   }

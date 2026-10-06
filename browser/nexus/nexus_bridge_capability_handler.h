@@ -64,6 +64,12 @@ class NexusBridgeCapabilityHandler {
   // Default: nothing to release.
   virtual void OnBridgeConnectionClosed() {}
 
+  // A guest connection began (NexusBridgePortService::CreatePortPair handed
+  // out a fresh port). Pairs with OnBridgeConnectionClosed, which a replaced
+  // port gets first. For state that must exist only while a guest can
+  // receive events. Default: nothing.
+  virtual void OnBridgeConnectionOpened() {}
+
   // Returns a WeakPtr<NexusBridgeCapabilityHandler> bound to this object's
   // home sequence (UI). Used by the codegen-emitted dispatcher to
   // manufacture BridgeResponseCallbacks; those callbacks are safe to

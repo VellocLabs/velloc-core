@@ -66,7 +66,7 @@ class NexusAlarmService : public KeyedService {
   static constexpr base::TimeDelta kMaxTimerDelay = base::Hours(1);
 
   // `wake` boots a runtime when a fire finds none (the factory binds it to
-  // NexusLauncherDelegate::OpenOrFocusNexusWindow). `clock` is the wall
+  // WakeRuntimeForProfile with the service's own profile). `clock` is the wall
   // clock (a test's mock clock).
   NexusAlarmService(PrefService* prefs,
                     const base::Clock* clock,
@@ -125,6 +125,10 @@ class NexusAlarmServiceFactory : public BrowserContextKeyedServiceFactory {
   // Null for a null or off-the-record profile.
   static NexusAlarmService* GetForProfile(Profile* profile);
   static NexusAlarmServiceFactory* GetInstance();
+
+  // A fire found no runtime: open or focus `profile`'s Nexus window (the
+  // service's `wake`). Public for tests.
+  static void WakeRuntimeForProfile(Profile* profile);
 
   NexusAlarmServiceFactory(const NexusAlarmServiceFactory&) = delete;
   NexusAlarmServiceFactory& operator=(const NexusAlarmServiceFactory&) =

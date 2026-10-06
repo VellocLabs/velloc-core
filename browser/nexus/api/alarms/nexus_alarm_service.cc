@@ -179,16 +179,24 @@ NexusAlarmServiceFactory::BuildServiceInstanceForBrowserContext(
   if (!profile || profile->IsOffTheRecord()) {
     return nullptr;
   }
+  // The service is the profile's KeyedService, destroyed before the
+  // profile, so the bound pointer outlives every run of `wake`.
   return std::make_unique<NexusAlarmService>(
       profile->GetPrefs(), base::DefaultClock::GetInstance(),
-      base::BindRepeating([] {
-        // The existing way a runtime is brought up from nothing: the same
-        // call the tray icon makes. Null very early in startup — the fire
-        // is queued either way and drained by the next runtime's list.
-        if (NexusLauncherDelegate* delegate = GetNexusLauncherDelegate()) {
-          delegate->OpenOrFocusNexusWindow();
-        }
-      }));
+      base::BindRepeating(&NexusAlarmServiceFactory::WakeRuntimeForProfile,
+                          base::Unretained(profile)));
+}
+
+// static
+void NexusAlarmServiceFactory::WakeRuntimeForProfile(Profile* profile) {
+  // The existing way a runtime is brought up from nothing — the tray icon's
+  // call — but for the profile whose alarm fired, not the last-used one: a
+  // fire in profile B must boot B's runtime, which drains B's queue. Null
+  // very early in startup; the fire is queued either way and drained by the
+  // next runtime's list.
+  if (NexusLauncherDelegate* delegate = GetNexusLauncherDelegate()) {
+    delegate->OpenOrFocusNexusWindowForProfile(profile);
+  }
 }
 
 bool NexusAlarmServiceFactory::ServiceIsCreatedWithBrowserContext() const {

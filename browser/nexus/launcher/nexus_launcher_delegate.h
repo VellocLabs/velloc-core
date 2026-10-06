@@ -7,6 +7,8 @@
 
 #include "base/functional/callback_forward.h"
 
+class Profile;
+
 namespace nexus {
 
 // Bridges the launcher's tray icon to the window-opening logic that lives in
@@ -25,6 +27,11 @@ class NexusLauncherDelegate {
   // (works even when no browser window is currently open, because the launcher
   // keep-alive keeps the process running).
   virtual void OpenOrFocusNexusWindow() = 0;
+
+  // The same for `profile`'s Nexus window - for a caller that acts for one
+  // profile (an alarm that fired in it) rather than for the user at large.
+  // A null `profile` means the launch profile, as OpenOrFocusNexusWindow.
+  virtual void OpenOrFocusNexusWindowForProfile(Profile* profile) = 0;
 
   // Focuses an existing normal (non-Nexus) browser window, or opens one. Backs
   // the tray menu's "Open Browser Window".

@@ -122,6 +122,38 @@ TEST_F(NexusFsWatchCoreTest, PollWatchReportsACreatedFileOnce) {
   EXPECT_EQ(events_.size(), 1u);
 }
 
+// A tree past the snapshot cap: the walk sees only the first N entries, so
+// a new file early in enumeration order pushes another past the cut. That
+// file is unvisited, not deleted — no phantom delete (or create); the guest
+// is told once, by an overflow event, and real edits still come through.
+TEST_F(NexusFsWatchCoreTest, APollWalkCutAtTheCapInventsNoDeletes) {
+  for (const char* name : {"b.txt", "c.txt", "d.txt", "e.txt"}) {
+    ASSERT_TRUE(base::WriteFile(Path(name), "x"));
+  }
+  core_->SetMaxPollEntriesForTesting(3);
+  ASSERT_TRUE(core_->Add("w1", temp_dir_.GetPath(), false, true).ok);
+
+  PollAndSettle("w1");
+  ASSERT_EQ(events_.size(), 1u);
+  EXPECT_TRUE(events_[0].overflow);
+  EXPECT_EQ(events_[0].paths,
+            std::vector<std::string>{temp_dir_.GetPath().AsUTF8Unsafe()});
+
+  ASSERT_TRUE(base::WriteFile(Path("a.txt"), "x"));
+  PollAndSettle("w1");
+  EXPECT_EQ(events_.size(), 1u) << "a partial walk reported " +
+                                       (events_.size() > 1 ? events_.back().kind
+                                                           : std::string());
+
+  for (const char* name : {"a.txt", "b.txt", "c.txt", "d.txt", "e.txt"}) {
+    ASSERT_TRUE(base::WriteFile(Path(name), "longer"));
+  }
+  PollAndSettle("w1");
+  ASSERT_EQ(events_.size(), 2u);
+  EXPECT_EQ(events_[1].kind, "modified");
+  EXPECT_FALSE(events_[1].overflow);
+}
+
 TEST_F(NexusFsWatchCoreTest, ABurstIsCoalescedIntoOneEventWithAMixedKind) {
   ASSERT_TRUE(base::WriteFile(Path("old.txt"), "1"));
   ASSERT_TRUE(core_->Add("w1", temp_dir_.GetPath(), false, true).ok);

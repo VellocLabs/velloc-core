@@ -30,6 +30,8 @@
 
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
+#else
+#include <sys/stat.h>
 #endif
 
 // NEXUS_FS_ATOMIC_WRITE is defined in nexus_fs_host.h — see the flag's comment
@@ -182,6 +184,26 @@ std::vector<uint8_t> CopyBigBufferBytes(const mojo_base::BigBuffer& buffer) {
 }
 
 }  // namespace
+
+// Whether two open files are one file (the same path spelled two ways, or
+// a hard link): copying a file onto itself must not truncate it.
+bool IsSameFile(const base::File& a, const base::File& b) {
+#if BUILDFLAG(IS_WIN)
+  BY_HANDLE_FILE_INFORMATION x;
+  BY_HANDLE_FILE_INFORMATION y;
+  return ::GetFileInformationByHandle(a.GetPlatformFile(), &x) &&
+         ::GetFileInformationByHandle(b.GetPlatformFile(), &y) &&
+         x.dwVolumeSerialNumber == y.dwVolumeSerialNumber &&
+         x.nFileIndexHigh == y.nFileIndexHigh &&
+         x.nFileIndexLow == y.nFileIndexLow;
+#else
+  struct stat x;
+  struct stat y;
+  return ::fstat(a.GetPlatformFile(), &x) == 0 &&
+         ::fstat(b.GetPlatformFile(), &y) == 0 && x.st_dev == y.st_dev &&
+         x.st_ino == y.st_ino;
+#endif
+}
 
 // The one canonical spelling of the absent-path wire code (see
 // FsFailureMessage's header comment) — shared so no method can drift into a
@@ -832,7 +854,28 @@ NexusFsHost::SimpleResult NexusFsHost::CopyFile(const std::string& src,
     result.error = "EEXIST: the destination already exists";
     return result;
   }
-  if (!base::CopyFile(from, to)) {
+  // Not base::CopyFile: on Windows its own early refusals (a path naming
+  // `..`, a path of MAX_PATH or more) set no error, so the message reported
+  // GetLastFileError() from some earlier call. Open both ends like readFile /
+  // writeFile do; a refusal then names its real error.
+  base::File in(from, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  if (!in.IsValid()) {
+    result.error = FsFailureMessage(in.error_details());
+    return result;
+  }
+  // Opened without truncating, so a destination that is the source itself
+  // is caught before a byte of it is lost.
+  base::File out(to, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE);
+  if (!out.IsValid()) {
+    result.error = "Failed to copy file (" +
+                   FsFailureMessage(out.error_details()) + ")";
+    return result;
+  }
+  if (IsSameFile(in, out)) {
+    result.error = "EINVAL: the source and destination are the same file";
+    return result;
+  }
+  if (!out.SetLength(0) || !base::CopyFileContents(in, out)) {
     result.error = "Failed to copy file (" +
                    FsFailureMessage(base::File::GetLastFileError()) + ")";
     return result;

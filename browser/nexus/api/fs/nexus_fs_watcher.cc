@@ -125,6 +125,9 @@ struct NexusFsWatchCore::Watch {
   // complete (the walk was not cut at kMaxPollEntries).
   FsSnapshot snapshot;
   bool snapshot_complete = false;
+  // Poll mode: the guest was told (by an overflow event) that the tree
+  // outgrew the walk; told again only after a complete walk in between.
+  bool reported_partial = false;
 
   // The burst being debounced.
   std::set<base::FilePath> pending;
@@ -184,7 +187,8 @@ NexusFsWatchCore::AddResult NexusFsWatchCore::Add(const std::string& watch_id,
     // path, not the descendant that changed; Flush resolves such a burst
     // against this baseline.
     bool truncated = false;
-    ref.snapshot = TakeFsSnapshot(path, recursive, kMaxPollEntries, &truncated);
+    ref.snapshot =
+        TakeFsSnapshot(path, recursive, max_poll_entries_, &truncated);
     ref.snapshot_complete = !truncated;
     result.mode = "native";
   } else {
@@ -214,8 +218,10 @@ void NexusFsWatchCore::SimulateNativeChangeForTesting(
 void NexusFsWatchCore::StartPolling(const std::string& watch_id,
                                     Watch& watch) {
   watch.native.reset();
+  bool truncated = false;
   watch.snapshot =
-      TakeFsSnapshot(watch.root, watch.recursive, kMaxPollEntries, nullptr);
+      TakeFsSnapshot(watch.root, watch.recursive, max_poll_entries_, &truncated);
+  watch.snapshot_complete = !truncated;
   watch.poll_timer = std::make_unique<base::RepeatingTimer>();
   watch.poll_timer->Start(
       FROM_HERE, kPollInterval,
@@ -265,12 +271,27 @@ void NexusFsWatchCore::OnPoll(const std::string& watch_id) {
     return;
   }
   Watch& watch = *it->second;
-  FsSnapshot next =
-      TakeFsSnapshot(watch.root, watch.recursive, kMaxPollEntries, nullptr);
+  bool truncated = false;
+  FsSnapshot next = TakeFsSnapshot(watch.root, watch.recursive,
+                                   max_poll_entries_, &truncated);
+  // A walk cut at the cap saw part of the tree, and which part follows the
+  // enumeration order: a path on one side only may just be unvisited, not
+  // created or deleted. So from a partial walk only a change to a path both
+  // walks saw is real; the rest is unwatched, and the guest is told once (an
+  // overflow event on the root) to rescan rather than fed phantom deletes.
+  const bool partial = truncated || !watch.snapshot_complete;
   for (const auto& [path, kind] : DiffFsSnapshots(watch.snapshot, next)) {
-    Note(watch_id, watch, path, kind);
+    if (!partial || kind == "modified") {
+      Note(watch_id, watch, path, kind);
+    }
   }
+  if (truncated && !watch.reported_partial) {
+    Note(watch_id, watch, watch.root, "change");
+    watch.overflow = true;
+  }
+  watch.reported_partial = truncated;
   watch.snapshot = std::move(next);
+  watch.snapshot_complete = !truncated;
 }
 
 void NexusFsWatchCore::Note(const std::string& watch_id,
@@ -309,7 +330,7 @@ void NexusFsWatchCore::Flush(const std::string& watch_id) {
       watch.pending.contains(watch.root)) {
     bool truncated = false;
     FsSnapshot next = TakeFsSnapshot(watch.root, watch.recursive,
-                                     kMaxPollEntries, &truncated);
+                                     max_poll_entries_, &truncated);
     const auto changes = DiffFsSnapshots(watch.snapshot, next);
     watch.snapshot = std::move(next);
     watch.snapshot_complete = !truncated;

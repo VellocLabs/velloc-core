@@ -828,6 +828,37 @@ TEST(NexusFsHostTest, CopyFileRefusesAnExistingDestinationUnlessOverwrite) {
   EXPECT_FALSE(host->CopyFile(".", "d", false).success);  // a directory
 }
 
+// copyFile opens both ends as readFile / writeFile do, so it fails the way
+// they fail: a `..` step is refused as EACCES (base::File), not with
+// whatever error an earlier call left behind (base::CopyFile returned early
+// without setting one). And a file copied onto itself is refused, not
+// truncated.
+TEST(NexusFsHostTest, CopyFileFailsLikeReadAndWriteAndRefusesItself) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  auto host = MakeHost(temp_dir.GetPath());
+  ASSERT_TRUE(base::CreateDirectory(temp_dir.GetPath().AppendASCII("sub")));
+  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("a.txt"), "aaa"));
+
+  NexusFsHost::SimpleResult from_parent =
+      host->CopyFile("sub/../a.txt", "b.txt", false);
+  EXPECT_FALSE(from_parent.success);
+  EXPECT_EQ(from_parent.error, "EACCES: permission denied");
+  NexusFsHost::SimpleResult to_parent =
+      host->CopyFile("a.txt", "sub/../b.txt", false);
+  EXPECT_FALSE(to_parent.success);
+  EXPECT_EQ(to_parent.error, "Failed to copy file (EACCES: permission denied)");
+
+  NexusFsHost::SimpleResult itself = host->CopyFile("a.txt", "./a.txt", true);
+  EXPECT_FALSE(itself.success);
+  EXPECT_EQ(itself.error.rfind("EINVAL:", 0), 0u) << itself.error;
+  std::string content;
+  ASSERT_TRUE(base::ReadFileToString(temp_dir.GetPath().AppendASCII("a.txt"),
+                                     &content));
+  EXPECT_EQ(content, "aaa");
+}
+
 TEST(NexusFsHostTest, WriteFileIfMatchWritesOnlyWhileTheStatMatches) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

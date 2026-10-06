@@ -127,6 +127,10 @@ class NexusFsWatchCore {
 
   // Runs one poll pass now instead of waiting for the interval (tests).
   void PollNowForTesting(const std::string& watch_id);
+  // Lowers the snapshot cap (kMaxPollEntries) for watches added after.
+  void SetMaxPollEntriesForTesting(size_t max_entries) {
+    max_poll_entries_ = max_entries;
+  }
   // Delivers a native notification for `path` as the platform would (tests:
   // the OS's own timing is not the test's).
   void SimulateNativeChangeForTesting(const std::string& watch_id,
@@ -147,6 +151,8 @@ class NexusFsWatchCore {
             const base::FilePath& path,
             const std::string& kind);
   void Flush(const std::string& watch_id);
+
+  size_t max_poll_entries_ = kMaxPollEntries;
 
   EventCallback on_event_;
   std::map<std::string, std::unique_ptr<Watch>> watches_;

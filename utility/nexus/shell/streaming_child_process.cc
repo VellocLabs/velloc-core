@@ -355,12 +355,15 @@ void StreamingChildProcess::OnLaunched(LaunchResult result) {
 #elif BUILDFLAG(IS_WIN)
   job_ = std::move(result.job);
   kill_process_ = result.process.Duplicate();
+#endif
   if (kill_requested_) {
-    // Killed before the launch finished: honour it now.
+    // Killed before the launch finished (Kill() latched with no child to
+    // signal): honour it now that there is one. On every platform — the
+    // POSIX child used to run on, unkillable, since Kill() is a no-op once
+    // latched.
     kill_requested_ = false;
     Kill();
   }
-#endif
   const base::TimeTicks start = base::TimeTicks::Now();
   wait_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,

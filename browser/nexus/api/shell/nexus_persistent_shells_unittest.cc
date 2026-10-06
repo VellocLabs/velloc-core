@@ -13,7 +13,9 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/task_environment.h"
+#include "base/test/test_simple_task_runner.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -154,6 +156,68 @@ TEST_F(NexusPersistentShellsTest, OutputGoesToTheLogAndTheExitIsRecorded) {
   ASSERT_EQ(keep_alive_log_.size(), 2u);
   EXPECT_EQ(keep_alive_log_[1],
             std::make_pair("persist:" + started.id, false));
+}
+
+// A chatty child: chunks that arrive while an append is in flight go as one
+// write, in order — not one queued task (and one open/close) per chunk.
+TEST_F(NexusPersistentShellsTest, OutputWhileAnAppendIsInFlightIsCoalesced) {
+  ASSERT_TRUE(Start("chatty.log").ok);
+  auto log_runner = base::MakeRefCounted<base::TestSimpleTaskRunner>();
+  shells_->SetLogTaskRunnerForTesting(log_runner);
+
+  std::string expected;
+  for (int i = 0; i < 1000; ++i) {
+    const std::string chunk = "line " + base::NumberToString(i) + "\n";
+    expected += chunk;
+    client_->OnStdout(Bytes(chunk));
+  }
+  task_environment_.RunUntilIdle();
+  // The first chunk's append; the other 999 wait behind it.
+  EXPECT_EQ(log_runner->NumPendingTasks(), 1u);
+
+  int appends = 0;
+  while (log_runner->HasPendingTask()) {
+    log_runner->RunPendingTasks();
+    ++appends;
+    task_environment_.RunUntilIdle();  // the reply sends the next batch
+  }
+  EXPECT_EQ(appends, 2);
+  EXPECT_EQ(ReadLog("chatty.log"), expected);
+}
+
+// Past the cap the output is dropped, not buffered without bound, and the
+// log marks the gap where it is.
+TEST_F(NexusPersistentShellsTest, OutputPastTheCapIsDroppedAndMarked) {
+  ASSERT_TRUE(Start("flood.log").ok);
+  auto log_runner = base::MakeRefCounted<base::TestSimpleTaskRunner>();
+  shells_->SetLogTaskRunnerForTesting(log_runner);
+
+  client_->OnStdout(Bytes("first\n"));  // in flight
+  const size_t mib = 1024 * 1024;
+  const size_t fits = NexusPersistentShells::kMaxPendingLogBytes / mib;
+  for (size_t i = 0; i < fits; ++i) {
+    client_->OnStdout(std::vector<uint8_t>(mib, 'a'));
+  }
+  client_->OnStdout(std::vector<uint8_t>(mib, 'b'));  // over the cap
+  client_->OnStdout(Bytes("x"));  // dropped too: the gap stays one gap
+  task_environment_.RunUntilIdle();
+  while (log_runner->HasPendingTask()) {
+    log_runner->RunPendingTasks();
+    task_environment_.RunUntilIdle();
+  }
+  client_->OnStdout(Bytes("after\n"));
+  task_environment_.RunUntilIdle();
+  while (log_runner->HasPendingTask()) {
+    log_runner->RunPendingTasks();
+    task_environment_.RunUntilIdle();
+  }
+
+  const std::string log = ReadLog("flood.log");
+  const std::string marker =
+      "\n[velloc: " + base::NumberToString(mib + 1) +
+      " bytes of output dropped]\n";
+  EXPECT_EQ(log, "first\n" + std::string(fits * mib, 'a') + marker +
+                     "after\n");
 }
 
 TEST_F(NexusPersistentShellsTest, KillAsksTheControllerAndRecordsTheKill) {

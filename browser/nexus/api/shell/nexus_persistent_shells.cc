@@ -11,6 +11,7 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
@@ -33,9 +34,9 @@ std::string KeepAliveToken(const std::string& id) {
   return "persist:" + id;
 }
 
-// Runs on the log runner: one open-append-close per chunk. Chunks are a few
-// KB at most (the service's pump size), and keeping no handle open means a
-// log the guest rotates or deletes is simply recreated.
+// Runs on the log runner: one open-append-close per batch (the chunks that
+// arrived while the previous batch was being written). Keeping no handle
+// open means a log the guest rotates or deletes is simply recreated.
 void AppendBytes(const base::FilePath& path, std::vector<uint8_t> data) {
   base::File file(path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_APPEND);
   if (file.IsValid()) {
@@ -153,6 +154,9 @@ NexusPersistentShells::Record::Record(const Record&) = default;
 NexusPersistentShells::Record& NexusPersistentShells::Record::operator=(
     const Record&) = default;
 NexusPersistentShells::Record::~Record() = default;
+
+NexusPersistentShells::PendingLog::PendingLog() = default;
+NexusPersistentShells::PendingLog::~PendingLog() = default;
 
 NexusPersistentShells::StartResult::StartResult() = default;
 NexusPersistentShells::StartResult::StartResult(StartResult&&) = default;
@@ -274,9 +278,58 @@ void NexusPersistentShells::AppendToLog(const std::string& id,
   if (it == children_.end()) {
     return;
   }
-  log_runner_->PostTask(FROM_HERE, base::BindOnce(&AppendBytes,
-                                                  it->second->log_path(),
-                                                  std::move(data)));
+  PendingLog& pending = pending_logs_[id];
+  if (pending.path.empty()) {
+    pending.path = it->second->log_path();
+  }
+  // Once over the cap, drop everything until the append in flight lands, so
+  // the marker sits exactly where the gap is.
+  if (pending.dropped > 0 ||
+      pending.bytes.size() + data.size() > kMaxPendingLogBytes) {
+    pending.dropped += data.size();
+  } else {
+    pending.bytes.insert(pending.bytes.end(), data.begin(), data.end());
+  }
+  if (!pending.in_flight) {
+    FlushLog(id);
+  }
+}
+
+void NexusPersistentShells::FlushLog(const std::string& id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  auto it = pending_logs_.find(id);
+  if (it == pending_logs_.end()) {
+    return;
+  }
+  PendingLog& pending = it->second;
+  if (pending.bytes.empty() && pending.dropped == 0) {
+    pending_logs_.erase(it);
+    return;
+  }
+  std::vector<uint8_t> batch;
+  batch.swap(pending.bytes);
+  if (pending.dropped > 0) {
+    const std::string marker = "\n[velloc: " +
+                               base::NumberToString(pending.dropped) +
+                               " bytes of output dropped]\n";
+    batch.insert(batch.end(), marker.begin(), marker.end());
+    pending.dropped = 0;
+  }
+  pending.in_flight = true;
+  log_runner_->PostTaskAndReply(
+      FROM_HERE, base::BindOnce(&AppendBytes, pending.path, std::move(batch)),
+      base::BindOnce(&NexusPersistentShells::OnLogFlushed,
+                     weak_factory_.GetWeakPtr(), id));
+}
+
+void NexusPersistentShells::OnLogFlushed(const std::string& id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  auto it = pending_logs_.find(id);
+  if (it == pending_logs_.end()) {
+    return;
+  }
+  it->second.in_flight = false;
+  FlushLog(id);
 }
 
 void NexusPersistentShells::OnChildExit(const std::string& id,

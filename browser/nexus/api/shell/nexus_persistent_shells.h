@@ -107,6 +107,11 @@ class NexusPersistentShells {
   // it; a start that would need to evict a running one is refused.
   static constexpr size_t kMaxRecords = 64;
 
+  // Output a child may have waiting for the log while an append is in
+  // flight. Past it the rest is dropped until that append lands, and the
+  // log says how many bytes are missing.
+  static constexpr size_t kMaxPendingLogBytes = 8 * 1024 * 1024;
+
   NexusPersistentShells(StreamSpawnFunction spawn,
                         KeepAliveFunction keep_alive);
   ~NexusPersistentShells();
@@ -146,6 +151,8 @@ class NexusPersistentShells {
                  const std::optional<std::string>& error_message,
                  const std::optional<std::string>& install_hint);
   void AppendToLog(const std::string& id, std::vector<uint8_t> data);
+  void FlushLog(const std::string& id);
+  void OnLogFlushed(const std::string& id);
   void OnChildExit(const std::string& id, const mojom::ShellExitInfo& exit);
   bool EvictOneExited();
 
@@ -156,6 +163,22 @@ class NexusPersistentShells {
   std::map<std::string, Record> records_;
   std::deque<std::string> order_;  // ids, oldest first
   std::map<std::string, std::unique_ptr<Child>> children_;
+
+  // A child's output on its way to the log. One append per child is in
+  // flight at a time; chunks arriving meanwhile gather here and go as the
+  // next one, so a chatty child costs a write per disk round trip, not one
+  // queued task (and one open/close) per chunk. Outlives the Child until
+  // the last append lands.
+  struct PendingLog {
+    PendingLog();
+    ~PendingLog();
+
+    base::FilePath path;
+    std::vector<uint8_t> bytes;
+    uint64_t dropped = 0;
+    bool in_flight = false;
+  };
+  std::map<std::string, PendingLog> pending_logs_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<NexusPersistentShells> weak_factory_{this};

@@ -14,6 +14,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
 #include "custom_browser/browser/nexus/api/network/nexus_http_byte_stream.h"
+#include "custom_browser/browser/nexus/api/network/nexus_guest_request.h"
 #include "custom_browser/browser/nexus/api/network/nexus_websocket_connection.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
@@ -133,6 +134,7 @@ class NexusNetworkBridgeAdapter
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void OnStreamOpened(std::string stream_id,
+                      GuestVisibleUrl visible_url,
                       ::nexus::BridgeResponseCallback done,
                       NexusHttpByteStream::OpenResult result);
   // Erase after the current callback frame (the stream may be on the stack).

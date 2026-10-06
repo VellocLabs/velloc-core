@@ -245,6 +245,30 @@ TEST_F(NexusWebSocketConnectionTest, WithoutThePolicyThereIsNoLookup) {
   EXPECT_TRUE(open_code_.empty());
 }
 
+// The handshake must never reach a LAN / loopback peer: the network service
+// is asked to refuse such a socket before anything is written, and that
+// refusal reads as the egress policy's.
+TEST_F(NexusWebSocketConnectionTest, ALocalPeerIsRefusedBeforeTheHandshake) {
+  Open(/*egress_policy=*/true);
+  EXPECT_NE(context_.created_options &
+                network::mojom::kURLLoadOptionBlockLocalRequest,
+            0u);
+  EXPECT_NE(context_.created_options &
+                network::mojom::kWebSocketOptionBlockAllCookies,
+            0u);
+  context_.handshake->OnFailure(
+      "blocked", net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS, 0);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(open_code_, NexusWebSocketConnection::kEgressBlockedErrorCode);
+}
+
+TEST_F(NexusWebSocketConnectionTest, OptedOutSocketsMayReachTheLan) {
+  Open(/*egress_policy=*/false);
+  EXPECT_EQ(context_.created_options &
+                network::mojom::kURLLoadOptionBlockLocalRequest,
+            0u);
+}
+
 TEST_F(NexusWebSocketConnectionTest, AHandshakeFailureFailsTheOpen) {
   Open(/*egress_policy=*/false);
   context_.handshake->OnFailure("refused", net::ERR_CONNECTION_REFUSED, 0);

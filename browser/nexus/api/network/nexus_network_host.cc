@@ -210,6 +210,9 @@ void NexusNetworkHost::Start() {
       // arguments but never on the wire — confusing; and a caller
       // must not smuggle a Host or a Cookie through this surface.
       if (IsReservedNetworkRequestHeader(name)) continue;
+      // The adapter refused these already; skipping here too keeps a new
+      // caller from reaching SetHeader's CHECK (a browser crash).
+      if (InvalidGuestHeader(name, entry.second.GetString())) continue;
       // The HTTP request header API takes a string-string map; the
       // SimpleURLLoader will forward verbatim.
       resource_request->headers.SetHeader(name, entry.second.GetString());
@@ -357,8 +360,9 @@ void NexusNetworkHost::OnDownloadComplete(
   envelope.Set("status", status_code);
   envelope.Set("statusText", status_text);
   // The final URL surfaces the post-redirect destination. When
-  // follow_redirects_ is false, this equals the input URL.
-  envelope.Set("finalUrl", loader_->GetFinalURL().spec());
+  // follow_redirects_ is false, this equals the input URL. A query value a
+  // secret was expanded into shows the guest's placeholder, never the secret.
+  envelope.Set("finalUrl", spec_.visible_url.For(loader_->GetFinalURL()));
   envelope.Set("headers", std::move(headers_dict));
 
   // Wrap the body bytes in a BigBuffer. Empty body → zero-byte

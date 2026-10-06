@@ -13,6 +13,7 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
+#include "custom_browser/browser/nexus/api/network/nexus_guest_request.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 
@@ -58,6 +59,10 @@ struct NexusHttpRequestSpec {
   // Authorization on a cross-origin redirect.
   std::vector<std::string> secret_headers;
   std::string secret_origin;
+  // What `finalUrl` reports: the guest's `{{secret:NAME}}` /
+  // `{{oauth:NAME}}` placeholders in place of the query values they expanded
+  // to. Empty (the final URL as-is) when nothing was expanded.
+  GuestVisibleUrl visible_url;
 
   // The GET surface as the spec: every GET field mapped, no method / body.
   static NexusHttpRequestSpec FromHttpGet(::nexus::generated::HttpGetInput in);

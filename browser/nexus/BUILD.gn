@@ -505,11 +505,15 @@ source_set("host_shell") {
 # The egress policy every network.* request runs under (public hosts only:
 # loopback / private / link-local / CGNAT / multicast refused on the IP the
 # socket connected to). Pure functions over net::IPAddress and GURL — a leaf
-# so the lite test binary links it without the bridge.
+# so the lite test binary links it without the bridge. Also the guest-request
+# checks every network.* surface shares (header validity, the finalUrl a
+# {{secret:NAME}} query value is redacted from).
 source_set("network_egress_policy") {
   sources = [
     "api/network/network_egress_policy.cc",
     "api/network/network_egress_policy.h",
+    "api/network/nexus_guest_request.cc",
+    "api/network/nexus_guest_request.h",
   ]
 
   deps = [
@@ -1339,6 +1343,7 @@ source_set("unit_tests_lite") {
     "api/llm/provider_config_unittest.cc",
     "api/fs/nexus_fs_watcher_unittest.cc",
     "api/network/network_egress_policy_unittest.cc",
+    "api/network/nexus_guest_request_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "codegen/codegen_smoke_unittest.cc",

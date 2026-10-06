@@ -21,6 +21,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/originating_process_id.h"
 #include "services/network/public/mojom/network_context.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "url/origin.h"
 
 namespace nexus {
@@ -139,12 +140,30 @@ void NexusWebSocketConnection::Connect() {
   handshake_receiver_.set_disconnect_handler(base::BindOnce(
       &NexusWebSocketConnection::OnPipeDisconnected, base::Unretained(this)));
   const url::Origin origin = url::Origin::Create(url_);
+  // Pre-send egress enforcement, as for http (network_egress_policy.h): the
+  // network service refuses a socket whose peer is loopback or private when
+  // it connects, before the opening handshake (and any expanded
+  // `{{secret:NAME}}` header) is written; the open fails with
+  // ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS (OnFailure). There is no
+  // WebSocket option for it: services/network/websocket.cc hands these
+  // options to LocalNetworkAccessChecker as URL-load options, so the URL-load
+  // bit is the switch. Through a proxy the peer is the proxy and the check
+  // passes (an unknown address space counts as public), as for http.
+  // OnConnectionEstablished still judges the peer for the ranges Chromium
+  // counts as public.
+  static_assert((network::mojom::kURLLoadOptionBlockLocalRequest &
+                 (network::mojom::kWebSocketOptionBlockAllCookies |
+                  network::mojom::kWebSocketOptionBlockThirdPartyCookies)) ==
+                0);
+  uint32_t options = network::mojom::kWebSocketOptionBlockAllCookies;
+  if (egress_policy_) {
+    options |= network::mojom::kURLLoadOptionBlockLocalRequest;
+  }
   network_context_->CreateWebSocket(
       url_, protocols_, net::StorageAccessApiStatus::kNone,
       net::IsolationInfo::CreateForInternalRequest(origin),
       std::move(headers_), network::OriginatingProcessId::browser(), origin,
-      network::mojom::ClientSecurityState::New(),
-      network::mojom::kWebSocketOptionBlockAllCookies,
+      network::mojom::ClientSecurityState::New(), options,
       net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
       std::move(handshake),
       /*url_loader_network_observer=*/mojo::NullRemote(),
@@ -161,6 +180,14 @@ void NexusWebSocketConnection::OnFailure(const std::string& message,
                                          int net_error,
                                          int response_code) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (egress_policy_) {
+    if (std::optional<std::string> refusal =
+            EgressRefusalForNetError(net_error, url_)) {
+      FailOpen(kEgressBlockedErrorCode,
+               "Refused by the egress policy: " + *refusal + ".");
+      return;
+    }
+  }
   FailOpen("WS_CONNECT_FAILED",
            base::StringPrintf("%s (net error %d, HTTP %d)", message.c_str(),
                               net_error, response_code));

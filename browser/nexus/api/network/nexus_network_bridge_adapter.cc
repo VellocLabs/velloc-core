@@ -16,6 +16,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
+#include "custom_browser/browser/nexus/api/network/nexus_guest_request.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_host.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_provider_oauth.h"
@@ -246,6 +247,95 @@ bool ExpandSecretsInValues(PrefService* prefs,
   return true;
 }
 
+// Refuses a header that may not go on the wire (InvalidGuestHeader: the
+// browser CHECKs on it), and with `reject_reserved` one the loader owns
+// (IsReservedNetworkRequestHeader); without it a reserved header is left for
+// NexusNetworkHost to drop. Runs on the values that will be sent, i.e. after
+// `{{secret:NAME}}` expansion.
+bool ValidateGuestHeaders(const std::optional<base::DictValue>& headers,
+                          bool reject_reserved,
+                          ::nexus::BridgeResponseCallback& done) {
+  if (!headers.has_value()) {
+    return true;
+  }
+  for (const auto [name, value] : *headers) {
+    if (!value.is_string()) {
+      continue;
+    }
+    if (reject_reserved && IsReservedNetworkRequestHeader(name)) {
+      std::move(done).InvalidArgs("Header not allowed: " + name);
+      return false;
+    }
+    if (std::optional<std::string> refusal =
+            InvalidGuestHeader(name, value.GetString())) {
+      std::move(done).InvalidArgs(std::move(*refusal));
+      return false;
+    }
+  }
+  return true;
+}
+
+// What httpRequest and streamOpen send, built one way.
+struct PreparedGuestRequest {
+  // The URL on the wire: the validated URL plus the (expanded) query.
+  GURL url;
+  // The URL the guest is shown back (`finalUrl`): placeholders, not secrets.
+  GuestVisibleUrl visible_url;
+  // Headers a secret or OAuth value was substituted into.
+  std::vector<std::string> secret_headers;
+};
+
+// `{{secret:NAME}}` / `{{oauth:NAME}}` expanded in header and query values for
+// `base`'s origin only (the query is appended after `base` was validated, so a
+// secret can only add to the query of an already-approved URL), then every
+// header checked. False when `done` was answered.
+bool PrepareGuestRequest(PrefService* prefs,
+                         const GURL& base,
+                         bool reject_reserved_headers,
+                         std::optional<base::DictValue>& headers,
+                         std::optional<base::DictValue>& query,
+                         const OAuthValues* oauth,
+                         ::nexus::BridgeResponseCallback& done,
+                         PreparedGuestRequest* out) {
+  if (headers.has_value() &&
+      !ExpandSecretsInValues(prefs, base, /*are_headers=*/true, *headers,
+                             &out->secret_headers, done, oauth)) {
+    return false;
+  }
+  if (!ValidateGuestHeaders(headers, reject_reserved_headers, done)) {
+    return false;
+  }
+  GURL url = base;
+  GURL guest = base;
+  if (query.has_value()) {
+    const base::DictValue placeholders = query->Clone();
+    std::vector<std::string> expanded_params;
+    if (!ExpandSecretsInValues(prefs, base, /*are_headers=*/false, *query,
+                               &expanded_params, done, oauth)) {
+      return false;
+    }
+    for (const auto [name, value] : *query) {
+      if (!value.is_string()) {
+        continue;
+      }
+      url = net::AppendQueryParameter(url, name, value.GetString());
+      const std::string* placeholder = placeholders.FindString(name);
+      guest = net::AppendQueryParameter(
+          guest, name, placeholder ? *placeholder : value.GetString());
+    }
+    for (const std::string& name : expanded_params) {
+      const std::string* placeholder = placeholders.FindString(name);
+      const std::string* expanded = query->FindString(name);
+      if (placeholder && expanded) {
+        out->visible_url.AddExpansion(*placeholder, *expanded);
+      }
+    }
+  }
+  out->visible_url.SetUrls(url, guest);
+  out->url = std::move(url);
+  return true;
+}
+
 }  // namespace
 
 NexusNetworkBridgeAdapter::NexusNetworkBridgeAdapter(
@@ -296,6 +386,9 @@ void NexusNetworkBridgeAdapter::HandleHttpGetOnUI(
   // caller opts into the policy with allowPrivateNetwork=false.
   if (!ValidateRequestUrl(input.url, input.allowPrivateNetwork.value_or(true),
                           done)) {
+    return;
+  }
+  if (!ValidateGuestHeaders(input.headers, /*reject_reserved=*/false, done)) {
     return;
   }
   StartRequest(NexusHttpRequestSpec::FromHttpGet(std::move(input)),
@@ -404,36 +497,22 @@ void NexusNetworkBridgeAdapter::StartHttpRequest(
       return;
     }
   }
-  // `{{secret:NAME}}` in header and query values, for this URL's origin
-  // only (the query is appended after the URL was validated, so a secret
-  // can only add to the query of an already-approved URL).
-  GURL target(input.url);
-  std::vector<std::string> secret_headers;
-  if (input.headers.has_value() &&
-      !ExpandSecretsInValues(prefs_, target, /*are_headers=*/true,
-                             *input.headers, &secret_headers, done,
-                             oauth ? &*oauth : nullptr)) {
+  // A reserved header is dropped by the host on this surface (its
+  // pre-existing contract), refused on streamOpen / wsOpen.
+  PreparedGuestRequest prepared;
+  if (!PrepareGuestRequest(prefs_, GURL(input.url),
+                           /*reject_reserved_headers=*/false, input.headers,
+                           input.queryParams, oauth ? &*oauth : nullptr, done,
+                           &prepared)) {
     return;
-  }
-  if (input.queryParams.has_value()) {
-    std::vector<std::string> secret_params;
-    if (!ExpandSecretsInValues(prefs_, target, /*are_headers=*/false,
-                               *input.queryParams, &secret_params, done,
-                             oauth ? &*oauth : nullptr)) {
-      return;
-    }
-    for (const auto [name, value] : *input.queryParams) {
-      if (value.is_string()) {
-        target = net::AppendQueryParameter(target, name, value.GetString());
-      }
-    }
   }
   NexusHttpRequestSpec spec =
       NexusHttpRequestSpec::FromHttpRequest(std::move(input));
-  spec.url = target.spec();
-  if (!secret_headers.empty()) {
-    spec.secret_headers = std::move(secret_headers);
-    spec.secret_origin = url::Origin::Create(target).Serialize();
+  spec.url = prepared.url.spec();
+  spec.visible_url = std::move(prepared.visible_url);
+  if (!prepared.secret_headers.empty()) {
+    spec.secret_headers = std::move(prepared.secret_headers);
+    spec.secret_origin = url::Origin::Create(prepared.url).Serialize();
   }
   StartRequest(std::move(spec), std::move(done));
 }
@@ -540,8 +619,6 @@ void NexusNetworkBridgeAdapter::StartStreamOpen(
                           kMaxStreamUrlChars)) {
     return;
   }
-  GURL target(input.url);
-
   const std::string method = base::ToUpperASCII(input.method.value_or("GET"));
   if (method.empty() || !net::HttpUtil::IsValidHeaderName(method) ||
       IsForbiddenMethod(method)) {
@@ -563,33 +640,17 @@ void NexusNetworkBridgeAdapter::StartStreamOpen(
     return;
   }
 
-  // `{{secret:NAME}}`: only for the URL's own origin (see
-  // ExpandSecretsInValues). The query is appended after validation.
-  std::vector<std::string> secret_headers;
-  if (input.headers.has_value() &&
-      !ExpandSecretsInValues(prefs_, target, /*are_headers=*/true,
-                             *input.headers, &secret_headers, done,
-                             oauth ? &*oauth : nullptr)) {
+  PreparedGuestRequest prepared;
+  if (!PrepareGuestRequest(prefs_, GURL(input.url),
+                           /*reject_reserved_headers=*/true, input.headers,
+                           input.queryParams, oauth ? &*oauth : nullptr, done,
+                           &prepared)) {
     return;
   }
-  if (input.queryParams.has_value()) {
-    std::vector<std::string> secret_params;
-    if (!ExpandSecretsInValues(prefs_, target, /*are_headers=*/false,
-                               *input.queryParams, &secret_params, done,
-                             oauth ? &*oauth : nullptr)) {
-      return;
-    }
-    for (const auto [name, value] : *input.queryParams) {
-      if (!value.is_string()) {
-        continue;
-      }
-      target = net::AppendQueryParameter(target, name, value.GetString());
-    }
-  }
-  const url::Origin secret_origin = url::Origin::Create(target);
+  const url::Origin secret_origin = url::Origin::Create(prepared.url);
 
   auto request = std::make_unique<network::ResourceRequest>();
-  request->url = target;
+  request->url = prepared.url;
   request->method = method;
   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   std::string content_type = "application/octet-stream";
@@ -598,16 +659,8 @@ void NexusNetworkBridgeAdapter::StartStreamOpen(
       if (!value.is_string()) {
         continue;
       }
-      if (name.empty() || IsReservedNetworkRequestHeader(name) ||
-          !net::HttpUtil::IsValidHeaderName(name)) {
-        std::move(done).InvalidArgs("Header not allowed: " + name);
-        return;
-      }
+      // Checked in PrepareGuestRequest.
       const std::string& header_value = value.GetString();
-      if (!net::HttpUtil::IsValidHeaderValue(header_value)) {
-        std::move(done).InvalidArgs("Invalid header value: " + name);
-        return;
-      }
       if (base::EqualsCaseInsensitiveASCII(
               name, net::HttpRequestHeaders::kContentType)) {
         content_type = header_value;
@@ -636,7 +689,7 @@ void NexusNetworkBridgeAdapter::StartStreamOpen(
             return origin.IsSameOriginWith(next);
           },
           secret_origin),
-      std::move(secret_headers), NexusHttpByteStream::BodyTransform(),
+      std::move(prepared.secret_headers), NexusHttpByteStream::BodyTransform(),
       kStreamTrafficAnnotation);
   if (!allow_private) {
     stream->EnableEgressPolicy();
@@ -649,11 +702,13 @@ void NexusNetworkBridgeAdapter::StartStreamOpen(
   streams_[stream_id] = std::move(stream);
   stream_ptr->Start(base::BindOnce(&NexusNetworkBridgeAdapter::OnStreamOpened,
                                    weak_factory_.GetWeakPtr(), stream_id,
+                                   std::move(prepared.visible_url),
                                    std::move(done)));
 }
 
 void NexusNetworkBridgeAdapter::OnStreamOpened(
     std::string stream_id,
+    GuestVisibleUrl visible_url,
     ::nexus::BridgeResponseCallback done,
     NexusHttpByteStream::OpenResult result) {
   if (!result.error_code.empty()) {
@@ -669,7 +724,8 @@ void NexusNetworkBridgeAdapter::OnStreamOpened(
   out.Set("streamId", stream_id);
   out.Set("status", result.status);
   out.Set("statusText", std::move(result.status_text));
-  out.Set("finalUrl", std::move(result.final_url));
+  // Never the expanded {{secret:NAME}} / {{oauth:NAME}} query values.
+  out.Set("finalUrl", visible_url.For(GURL(result.final_url)));
   out.Set("headers", std::move(result.headers));
   std::move(done).Success(std::move(out));
 }
@@ -807,18 +863,13 @@ void NexusNetworkBridgeAdapter::HandleWsOpenOnUI(
   if (input.headers.has_value()) {
     std::vector<std::string> secret_headers;
     if (!ExpandSecretsInValues(prefs_, http_url, /*are_headers=*/true,
-                               *input.headers, &secret_headers, done)) {
+                               *input.headers, &secret_headers, done) ||
+        !ValidateGuestHeaders(input.headers, /*reject_reserved=*/true, done)) {
       return;
     }
     for (const auto [name, value] : *input.headers) {
       if (!value.is_string()) {
         continue;
-      }
-      if (name.empty() || IsReservedNetworkRequestHeader(name) ||
-          !net::HttpUtil::IsValidHeaderName(name) ||
-          !net::HttpUtil::IsValidHeaderValue(value.GetString())) {
-        std::move(done).InvalidArgs("Header not allowed: " + name);
-        return;
       }
       headers.push_back(
           network::mojom::HttpHeader::New(name, value.GetString()));

@@ -41,10 +41,13 @@ namespace nexus {
 // never sent.
 //
 // Egress policy (unless opted out): an IP-literal host in a refused range is
-// refused by the adapter before this class exists; here the peer the
-// handshake connected to (`WebSocketHandshakeResponse::remote_endpoint`) is
-// judged — unless the connection went through a proxy, which a proxy lookup
-// for the URL decides first (through a proxy the peer is the proxy).
+// refused by the adapter before this class exists; the network service
+// refuses a loopback / private peer when the socket connects, before the
+// handshake is written (`kURLLoadOptionBlockLocalRequest`, see Connect); and
+// the peer the handshake connected to
+// (`WebSocketHandshakeResponse::remote_endpoint`) is judged again — unless
+// the connection went through a proxy, which a proxy lookup for the URL
+// decides first (through a proxy the peer is the proxy).
 //
 // Messages: a text or binary message is reassembled from its frames and
 // delivered whole (at most kMaxMessageBytes, else the socket is closed with

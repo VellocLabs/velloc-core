@@ -106,6 +106,17 @@ class NexusNetworkStreamTest : public testing::Test {
     return payload;
   }
 
+  // An httpRequest POST with one inline body byte (see OpenPayload).
+  static base::DictValue RequestPayload(const std::string& url) {
+    base::DictValue payload;
+    payload.Set("url", url);
+    payload.Set("method", "POST");
+    base::ListValue body;
+    body.Append(1);
+    payload.Set("body", std::move(body));
+    return payload;
+  }
+
   content::BrowserTaskEnvironment task_environment_;
   network::TestURLLoaderFactory factory_;
   RecordingDelegate delegate_;
@@ -245,6 +256,93 @@ TEST_F(NexusNetworkSecretsTest, HttpRequestExpandsHeadersToo) {
   missing.Set("headers", std::move(missing_headers));
   Dispatch("httpRequest", std::move(missing));
   EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
+}
+
+// A secret expanded into the query goes on the wire but never comes back to
+// the guest: finalUrl shows the placeholder.
+TEST_F(NexusNetworkSecretsTest, FinalUrlNeverEchoesAnExpandedSecret) {
+  const GURL sent("https://api.example.com/v1/ping?key=tok-123");
+  auto head = network::CreateURLResponseHead(net::HTTP_OK);
+  head->remote_endpoint = net::IPEndPoint(net::IPAddress(93, 184, 216, 34), 443);
+  head->proxy_chain = net::ProxyChain::Direct();
+  factory_.AddResponse(sent, std::move(head), "ok",
+                       network::URLLoaderCompletionStatus(net::OK));
+
+  base::DictValue payload = RequestPayload("https://api.example.com/v1/ping");
+  base::DictValue query;
+  query.Set("key", "{{secret:provider:acme}}");
+  payload.Set("queryParams", std::move(query));
+  Dispatch("httpRequest", std::move(payload));
+  ASSERT_EQ(delegate_.binary_count, 1) << delegate_.last_error_code;
+  const std::string* final_url =
+      delegate_.last_binary_envelope.GetDict().FindString("finalUrl");
+  ASSERT_TRUE(final_url);
+  EXPECT_EQ(final_url->find("tok-123"), std::string::npos) << *final_url;
+  EXPECT_NE(final_url->find("key=%7B%7Bsecret%3Aprovider%3Aacme%7D%7D"),
+            std::string::npos)
+      << *final_url;
+}
+
+TEST_F(NexusNetworkSecretsTest, StreamFinalUrlNeverEchoesAnExpandedSecret) {
+  const GURL sent("https://api.example.com/v1/run?key=tok-123");
+  auto head = network::CreateURLResponseHead(net::HTTP_OK);
+  head->remote_endpoint = net::IPEndPoint(net::IPAddress(93, 184, 216, 34), 443);
+  head->proxy_chain = net::ProxyChain::Direct();
+  factory_.AddResponse(sent, std::move(head), "data: hi\n\n",
+                       network::URLLoaderCompletionStatus(net::OK));
+
+  base::DictValue payload = OpenPayload("https://api.example.com/v1/run");
+  base::DictValue query;
+  query.Set("key", "{{secret:provider:acme}}");
+  payload.Set("queryParams", std::move(query));
+  Dispatch("streamOpen", std::move(payload));
+  ASSERT_EQ(delegate_.success_count, 1) << delegate_.last_error_code;
+  const std::string* final_url =
+      delegate_.last_success.GetDict().FindString("finalUrl");
+  ASSERT_TRUE(final_url);
+  EXPECT_EQ(final_url->find("tok-123"), std::string::npos) << *final_url;
+}
+
+// net::HttpRequestHeaders::SetHeader CHECKs a header's name and value; a
+// guest header that would fail it is refused, not sent (which used to take
+// the whole browser down on httpGet / httpRequest).
+TEST_F(NexusNetworkStreamTest, MalformedHeadersAreRefusedOnEverySurface) {
+  int requests = 0;
+  factory_.SetInterceptor(base::BindLambdaForTesting(
+      [&](const network::ResourceRequest&) { ++requests; }));
+
+  base::DictValue bad_value;
+  bad_value.Set("X-Note", "a\nb");
+  base::DictValue bad_name;
+  bad_name.Set("X Api Key", "abc");
+
+  base::DictValue get;
+  get.Set("url", "https://api.example.com/page");
+  get.Set("headers", bad_name.Clone());
+  Dispatch("httpGet", std::move(get));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+
+  delegate_.last_error_code.clear();
+  base::DictValue request = RequestPayload("https://api.example.com/v1/ping");
+  request.Set("headers", bad_value.Clone());
+  Dispatch("httpRequest", std::move(request));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+
+  delegate_.last_error_code.clear();
+  base::DictValue stream = OpenPayload("https://api.example.com/x");
+  stream.Set("headers", bad_value.Clone());
+  Dispatch("streamOpen", std::move(stream));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+  EXPECT_EQ(requests, 0);
+
+  // Control: the same httpRequest with a well-formed header goes out, so the
+  // refusals above were the headers' and not the payload's.
+  base::DictValue good = RequestPayload("https://api.example.com/v1/ping");
+  base::DictValue good_headers;
+  good_headers.Set("X-Note", "fine");
+  good.Set("headers", std::move(good_headers));
+  Dispatch("httpRequest", std::move(good));
+  EXPECT_EQ(requests, 1);
 }
 
 // {{oauth:NAME}} on the network surfaces needs a providerId, and the URL

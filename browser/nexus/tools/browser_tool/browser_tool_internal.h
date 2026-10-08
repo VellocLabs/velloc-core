@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/values.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -97,7 +98,7 @@ class PausableToolCallbackHolder
 
   void SetTimeout(scoped_refptr<PausableTimeout> timeout);
   void Resolve(base::Value value);
-  void Reject(std::string code, std::string message);
+  void Reject(std::string code, base::DictValue params);
   void OnTimeout();
 
  private:
@@ -120,33 +121,14 @@ const actor::EnterprisePolicyChecker* GetPolicyChecker(Profile* profile);
 
 // Map ActionResultCode → "actor_error_<N>: <human description>".
 // Used by OnActionsResultBuilt + the read_page / find_text completions.
-std::string DescribeActorError(actor::mojom::ActionResultCode code);
 
-// Tool-aware variant of `DescribeActorError`. Overrides the description
-// for `(action_name, code)` combinations where the generic message would
-// mislead the model.
-//
-// Specifically: when a scroll-tool (`scroll_to` / `scroll`) itself
-// returns `kElementOffscreen`, the standard message ("prepend a
-// scroll_to action targeting that index, then retry") is wrong — the
-// model would just re-issue the same scroll_to and loop. Upstream
-// Chromium's `ToolBase::EnsureTargetInView`
-// (`chrome/renderer/actor/tool_base.cc:224-258`) calls
-// `Element.ScrollIntoViewIfNeeded()`, which silently does nothing when
-// the target is clipped by an `overflow:hidden` ancestor (common in
-// card-style search-result carousels). The post-scroll validation then
-// still sees empty `VisibleBoundsInWidget()` and re-emits
-// `kElementOffscreen`. CLAUDE.md restricts upstream edits, so this
-// helper rewrites the error message at the bridge boundary instead —
-// telling the model to switch tactics (BrowserFindText, or pick a
-// different element) rather than retry the same call.
-//
-// For any combination this helper doesn't special-case, it delegates
-// straight to `DescribeActorError(code)` — keeping behavior identical
-// for click/input/etc. paths where the original "scroll first" advice
-// is correct.
-std::string DescribeActorErrorForTool(std::string_view action_name,
-                                       actor::mojom::ActionResultCode code);
+// `params` for a browser-family error: `{action?, phase?}`, `{phase}`,
+// `{reason}`. The runtime renders the model-visible sentence from the
+// code and these params; C++ carries no prose.
+base::DictValue ActionParams(std::string_view action,
+                             std::string_view phase = std::string_view());
+base::DictValue PhaseParams(std::string_view phase);
+base::DictValue ReasonParams(std::string_view reason);
 
 // Reduce a per-action result vector to one overall `ActionResultCode`.
 //

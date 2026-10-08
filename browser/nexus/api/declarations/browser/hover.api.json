@@ -1,0 +1,121 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "hover",
+  "description": "Host action behind the BrowserHover tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "BrowserHover",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": true
+    }
+  ],
+  "errors": [
+    {
+      "code": "no_profile",
+      "params": [
+        "phase",
+        "action"
+      ]
+    },
+    {
+      "code": "no_actor_service",
+      "params": [
+        "phase",
+        "action"
+      ]
+    },
+    {
+      "code": "no_policy_checker",
+      "params": [
+        "phase"
+      ]
+    },
+    {
+      "code": "task_create_failed"
+    },
+    {
+      "code": "task_create_unhealthy",
+      "params": [
+        "reason",
+        "state"
+      ]
+    },
+    {
+      "code": "invalid_action",
+      "params": [
+        "action",
+        "phase"
+      ]
+    },
+    {
+      "code": "tool_gone",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "task_missing",
+      "params": [
+        "action",
+        "phase"
+      ]
+    },
+    {
+      "code": "actor_engine_wedged",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "task_went_away",
+      "params": [
+        "action",
+        "state"
+      ]
+    },
+    {
+      "code": "no_tabs",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "tool_action_timeout",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "tab_not_in_session",
+      "params": [
+        "tool",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "no_session_tab",
+      "params": [
+        "tool"
+      ]
+    },
+    {
+      "code": "no_active_tab",
+      "params": [
+        "reason",
+        "tool"
+      ]
+    },
+    {
+      "code": "index_not_found",
+      "params": [
+        "tool",
+        "index",
+        "tab_id"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

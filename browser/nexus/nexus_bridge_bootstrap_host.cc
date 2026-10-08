@@ -72,10 +72,9 @@ void NexusBridgeBootstrapHost::GuestReady() {
   const url::Origin host_origin =
       url::Origin::Create(render_frame_host_->GetLastCommittedURL());
 
-  // Phase 12c: hostedTools no longer ride the bootstrap message.
-  // The JS guest pulls them post-bootstrap via the `catalog` bridge
-  // capability (`nexus.catalog.listHostedTools`). Bootstrap stays
-  // minimal — capabilities + transferred ports.
+  // The bootstrap message carries no tool definitions: the runtime defines
+  // the host tools itself and offers them by the advertised capabilities.
+  // Bootstrap stays minimal — capabilities + transferred ports.
   content::MessagePortProvider::PostMessageToFrame(
       render_frame_host_->GetPage(), &host_origin, &host_origin,
       bridge_support::Utf8Payload(

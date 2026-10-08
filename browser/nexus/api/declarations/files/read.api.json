@@ -1,0 +1,144 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "read",
+  "description": "Host action behind the Read tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "FilesRead",
+  "inputs": [
+    {
+      "name": "file_path",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "offset",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "limit",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "pages",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "context_window",
+      "type": "integer",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "invalid_pages",
+      "params": [
+        "pages"
+      ]
+    },
+    {
+      "code": "too_many_pages",
+      "params": [
+        "pages",
+        "max_pages"
+      ]
+    },
+    {
+      "code": "blocked_device_path",
+      "params": [
+        "path"
+      ]
+    },
+    {
+      "code": "is_directory",
+      "params": [
+        "path"
+      ]
+    },
+    {
+      "code": "file_too_large",
+      "params": [
+        "size_bytes",
+        "limit_bytes",
+        "kind",
+        "path",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "file_not_found"
+    },
+    {
+      "code": "read_failed",
+      "params": [
+        "path",
+        "phase",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "unsupported_binary_file"
+    },
+    {
+      "code": "max_file_read_token_exceeded",
+      "params": [
+        "tokens",
+        "max_tokens"
+      ]
+    },
+    {
+      "code": "invalid_notebook",
+      "params": [
+        "reason",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "media_read_failed",
+      "params": [
+        "path",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "invalid_pdf",
+      "params": [
+        "path",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "pdf_too_many_pages",
+      "params": [
+        "path",
+        "detail",
+        "source"
+      ]
+    },
+    {
+      "code": "pdf_render_failed",
+      "params": [
+        "path",
+        "detail",
+        "source"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

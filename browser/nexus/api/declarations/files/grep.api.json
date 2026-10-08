@@ -1,0 +1,111 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "grep",
+  "description": "Host action behind the Grep tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "FilesGrep",
+  "inputs": [
+    {
+      "name": "pattern",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "path",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "glob",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "output_mode",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "context_before",
+      "type": "integer",
+      "required": false,
+      "wire_name": "-B"
+    },
+    {
+      "name": "context_after",
+      "type": "integer",
+      "required": false,
+      "wire_name": "-A"
+    },
+    {
+      "name": "context_c",
+      "type": "integer",
+      "required": false,
+      "wire_name": "-C"
+    },
+    {
+      "name": "context",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "show_line_numbers",
+      "type": "boolean",
+      "required": false,
+      "wire_name": "-n"
+    },
+    {
+      "name": "case_insensitive",
+      "type": "boolean",
+      "required": false,
+      "wire_name": "-i"
+    },
+    {
+      "name": "type",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "head_limit",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "offset",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "multiline",
+      "type": "boolean",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason",
+        "value"
+      ]
+    },
+    {
+      "code": "process_unavailable"
+    },
+    {
+      "code": "path_not_found",
+      "params": [
+        "path"
+      ]
+    },
+    {
+      "code": "grep_failed",
+      "params": [
+        "detail",
+        "service_code"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

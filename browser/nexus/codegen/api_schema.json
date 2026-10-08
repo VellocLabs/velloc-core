@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nexus.local/schemas/api.schema.json",
   "title": "Nexus bridge-API declaration",
-  "description": "Schema for *.api.json files consumed by codegen/generate.py. Each file declares one bridge handler (a wire action under a category like fs / llm). Mirrors tool_schema.json closely so authors only learn one declarative form. Codegen emits a per-action input struct + extractor + dispatcher (in <category>_api.gen.{h,cc}); the implementation receives `(InputT input, ports, BridgeResponseCallback done)` and never sees the raw payload dict, the request id, or the route — those are handled by the framework.",
+  "description": "Schema for *.api.json files consumed by codegen/generate.py. Each file declares one bridge handler (a wire action under a category like fs / llm). Codegen emits a per-action input struct + extractor + dispatcher (in <category>_api.gen.{h,cc}); the implementation receives `(InputT input, ports, BridgeResponseCallback done)` and never sees the raw payload dict, the request id, or the route — those are handled by the framework.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "description", "inputs"],
@@ -53,7 +53,7 @@
               "bytes",
               "passthrough_payload"
             ],
-            "description": "Type. Mirrors tool_schema.json's enum, plus two API-only pseudo-types: `bytes` and `passthrough_payload`. `bytes` is `std::vector<uint8_t>` and uniquely supports DUAL TRANSPORT — the codegen-emitted dispatcher resolves the field by trying inline `array<integer>` in the payload first, then falling back to a transferred MessagePort that delivers an ArrayBuffer. The dispatch to the target thread is deferred until the bytes are actually in hand, so the implementation receives a fully-populated `std::vector<uint8_t>` and never touches ports. `passthrough_payload` captures the ENTIRE payload dict (used by LLM actions whose payload is opaque/provider-translated)."
+            "description": "Type: the JSON kinds the extractor understands, plus two pseudo-types: `bytes` and `passthrough_payload`. `bytes` is `std::vector<uint8_t>` and uniquely supports DUAL TRANSPORT — the codegen-emitted dispatcher resolves the field by trying inline `array<integer>` in the payload first, then falling back to a transferred MessagePort that delivers an ArrayBuffer. The dispatch to the target thread is deferred until the bytes are actually in hand, so the implementation receives a fully-populated `std::vector<uint8_t>` and never touches ports. `passthrough_payload` captures the ENTIRE payload dict (used by LLM actions whose payload is opaque/provider-translated)."
           },
           "required": {
             "type": "boolean",
@@ -63,15 +63,34 @@
           "description": {
             "type": "string",
             "description": "Per-input description. Surfaced in generated code comments."
+          },
+          "wire_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional JSON key the extractor reads from the payload when it differs from `name` (for a key such as -A that is not a C++ identifier). The generated struct field is always `name`."
           }
         }
       }
     },
 
+    "errors": {
+      "type": "array",
+      "description": "The error codes this action can answer with (`{code, params}` — the runtime renders the model-visible text from the same table). Codegen emits one constant per code and an `Is<Category>ErrorCode()` check for the category.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "params": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "description": "The parameter names the error's `params` object carries." },
+          "description": { "type": "string" }
+        }
+      }
+    },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Cross-cutting runtime properties. Mirrors the tools-side runtime block.",
+      "description": "Cross-cutting runtime properties.",
       "properties": {
         "thread": {
           "type": "string",

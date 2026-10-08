@@ -1,0 +1,72 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "evaluate",
+  "description": "Host action behind the BrowserEvaluate tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "BrowserEvaluate",
+  "inputs": [
+    {
+      "name": "code",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "errors": [
+    {
+      "code": "tab_not_in_session",
+      "params": [
+        "tool",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "no_session_tab",
+      "params": [
+        "tool"
+      ]
+    },
+    {
+      "code": "no_active_tab",
+      "params": [
+        "reason",
+        "tool"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "tab_not_found",
+      "params": [
+        "tool",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "agent_host_unavailable"
+    },
+    {
+      "code": "attach_refused"
+    },
+    {
+      "code": "send_failed"
+    },
+    {
+      "code": "cdp_error",
+      "params": [
+        "detail"
+      ]
+    },
+    {
+      "code": "cdp_no_result"
+    },
+    {
+      "code": "agent_host_closed"
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

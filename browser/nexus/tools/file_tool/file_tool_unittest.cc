@@ -21,6 +21,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "content/public/test/browser_task_environment.h"
+#include "custom_browser/browser/nexus/api/files/files_api.gen.h"
 #include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
@@ -43,6 +44,7 @@ struct CallResult {
   base::Value value;
   std::string error_code;
   std::string error_message;
+  base::DictValue error_params;
 };
 
 ToolCallback MakeRecordingCallback(CallResult* out) {
@@ -50,11 +52,12 @@ ToolCallback MakeRecordingCallback(CallResult* out) {
     out->resolved = true;
     out->value = std::move(value);
   });
-  auto on_error =
-      base::BindLambdaForTesting([out](std::string code, std::string message) {
+  auto on_error = base::BindLambdaForTesting(
+      [out](std::string code, std::string message, base::DictValue params) {
         out->rejected = true;
         out->error_code = std::move(code);
         out->error_message = std::move(message);
+        out->error_params = std::move(params);
       });
   return ToolCallback(std::move(on_success), std::move(on_error));
 }
@@ -70,7 +73,7 @@ TEST(FileToolTest, ReadResolvesWithLineNumberedProjection) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -105,7 +108,7 @@ TEST(FileToolTest, ReadWithNoLimitReturnsWholeFile) {
   // Small context window — previously capped at 1000 lines; now returns all.
   ToolSession small_session(/*profile=*/nullptr, kSessionKey);
   CallResult small_result;
-  ::nexus::generated::ReadInput small_input;
+  ::nexus::generated::FilesReadInput small_input;
   small_input.file_path = file.AsUTF8Unsafe();
   small_session.file_tool().RunReadOnUI(std::move(small_input),
                                         MakeRecordingCallback(&small_result));
@@ -121,7 +124,7 @@ TEST(FileToolTest, ReadWithNoLimitReturnsWholeFile) {
   // line cap; the token budget is a fixed 25000).
   ToolSession large_session(/*profile=*/nullptr, kSessionKey);
   CallResult large_result;
-  ::nexus::generated::ReadInput large_input;
+  ::nexus::generated::FilesReadInput large_input;
   large_input.file_path = file.AsUTF8Unsafe();
   large_input.context_window = 500001;
   large_session.file_tool().RunReadOnUI(std::move(large_input),
@@ -144,7 +147,7 @@ TEST(FileToolTest, ReadDedupsUnchangedFullTextRead) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult first_result;
-  ::nexus::generated::ReadInput first_input;
+  ::nexus::generated::FilesReadInput first_input;
   first_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(first_input),
                                   MakeRecordingCallback(&first_result));
@@ -152,20 +155,17 @@ TEST(FileToolTest, ReadDedupsUnchangedFullTextRead) {
   ASSERT_TRUE(first_result.resolved);
 
   CallResult second_result;
-  ::nexus::generated::ReadInput second_input;
+  ::nexus::generated::FilesReadInput second_input;
   second_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(second_input),
                                   MakeRecordingCallback(&second_result));
   task_environment.RunUntilIdle();
 
   ASSERT_TRUE(second_result.resolved);
-  ASSERT_TRUE(second_result.value.is_string());
-  EXPECT_EQ(
-      "File unchanged since last read. The content from the earlier Read "
-      "tool_result in this conversation is still current — refer to that "
-      "instead "
-      "of re-reading.",
-      second_result.value.GetString());
+  ASSERT_TRUE(second_result.value.is_dict());
+  const base::DictValue* notice = second_result.value.GetDict().FindDict("notice");
+  ASSERT_TRUE(notice);
+  EXPECT_EQ("unchanged", *notice->FindString("kind"));
 }
 
 TEST(FileToolTest, ReadDoesNotDedupAfterContentChange) {
@@ -178,7 +178,7 @@ TEST(FileToolTest, ReadDoesNotDedupAfterContentChange) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult first_result;
-  ::nexus::generated::ReadInput first_input;
+  ::nexus::generated::FilesReadInput first_input;
   first_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(first_input),
                                   MakeRecordingCallback(&first_result));
@@ -189,7 +189,7 @@ TEST(FileToolTest, ReadDoesNotDedupAfterContentChange) {
   ASSERT_TRUE(base::WriteFile(file, "gamma\n"));
 
   CallResult second_result;
-  ::nexus::generated::ReadInput second_input;
+  ::nexus::generated::FilesReadInput second_input;
   second_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(second_input),
                                   MakeRecordingCallback(&second_result));
@@ -216,7 +216,7 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult first_result;
-  ::nexus::generated::ReadInput first_input;
+  ::nexus::generated::FilesReadInput first_input;
   first_input.file_path = file.AsUTF8Unsafe();
   first_input.limit = 1;
   session.file_tool().RunReadOnUI(std::move(first_input),
@@ -228,7 +228,7 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
       << first_result.value.GetString();
 
   CallResult second_result;
-  ::nexus::generated::ReadInput second_input;
+  ::nexus::generated::FilesReadInput second_input;
   second_input.file_path = file.AsUTF8Unsafe();
   second_input.limit = 1;
   session.file_tool().RunReadOnUI(std::move(second_input),
@@ -236,13 +236,12 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
   task_environment.RunUntilIdle();
 
   ASSERT_TRUE(second_result.resolved);
-  ASSERT_TRUE(second_result.value.is_string());
-  EXPECT_NE(std::string::npos, second_result.value.GetString().find(
-                                   "File unchanged since last read"));
+  ASSERT_TRUE(second_result.value.is_dict());
+  EXPECT_EQ("unchanged", *second_result.value.GetDict().FindDict("notice")->FindString("kind"));
 
   // CC parity: a partial read does NOT block Edit (no isPartialView).
   CallResult edit_result;
-  ::nexus::generated::EditInput edit_input;
+  ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
   edit_input.old_string = "beta";
   edit_input.new_string = "delta";
@@ -255,7 +254,7 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
 
   // CC parity: a partial read does NOT block Write either.
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "delta\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -275,7 +274,7 @@ TEST(FileToolTest, PartialReadFollowedByFullReadDoesNotDedup) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult first_result;
-  ::nexus::generated::ReadInput first_input;
+  ::nexus::generated::FilesReadInput first_input;
   first_input.file_path = file.AsUTF8Unsafe();
   first_input.limit = 1;
   session.file_tool().RunReadOnUI(std::move(first_input),
@@ -284,7 +283,7 @@ TEST(FileToolTest, PartialReadFollowedByFullReadDoesNotDedup) {
   ASSERT_TRUE(first_result.resolved);
 
   CallResult second_result;
-  ::nexus::generated::ReadInput second_input;
+  ::nexus::generated::FilesReadInput second_input;
   second_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(second_input),
                                   MakeRecordingCallback(&second_result));
@@ -309,7 +308,7 @@ TEST(FileToolTest, ExactRangeDedupMatrixRequiresSameOffsetAndLimit) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult first_result;
-  ::nexus::generated::ReadInput first_input;
+  ::nexus::generated::FilesReadInput first_input;
   first_input.file_path = file.AsUTF8Unsafe();
   first_input.offset = 2;
   first_input.limit = 2;
@@ -322,7 +321,7 @@ TEST(FileToolTest, ExactRangeDedupMatrixRequiresSameOffsetAndLimit) {
   EXPECT_NE(std::string::npos, first_result.value.GetString().find("3\tthree"));
 
   CallResult same_range_result;
-  ::nexus::generated::ReadInput same_range_input;
+  ::nexus::generated::FilesReadInput same_range_input;
   same_range_input.file_path = file.AsUTF8Unsafe();
   same_range_input.offset = 2;
   same_range_input.limit = 2;
@@ -330,12 +329,11 @@ TEST(FileToolTest, ExactRangeDedupMatrixRequiresSameOffsetAndLimit) {
                                   MakeRecordingCallback(&same_range_result));
   task_environment.RunUntilIdle();
   ASSERT_TRUE(same_range_result.resolved);
-  ASSERT_TRUE(same_range_result.value.is_string());
-  EXPECT_NE(std::string::npos, same_range_result.value.GetString().find(
-                                   "File unchanged since last read"));
+  ASSERT_TRUE(same_range_result.value.is_dict());
+  EXPECT_EQ("unchanged", *same_range_result.value.GetDict().FindDict("notice")->FindString("kind"));
 
   CallResult different_limit_result;
-  ::nexus::generated::ReadInput different_limit_input;
+  ::nexus::generated::FilesReadInput different_limit_input;
   different_limit_input.file_path = file.AsUTF8Unsafe();
   different_limit_input.offset = 2;
   different_limit_input.limit = 1;
@@ -350,7 +348,7 @@ TEST(FileToolTest, ExactRangeDedupMatrixRequiresSameOffsetAndLimit) {
                                    "File unchanged since last read"));
 
   CallResult different_offset_result;
-  ::nexus::generated::ReadInput different_offset_input;
+  ::nexus::generated::FilesReadInput different_offset_input;
   different_offset_input.file_path = file.AsUTF8Unsafe();
   different_offset_input.offset = 3;
   different_offset_input.limit = 1;
@@ -374,7 +372,7 @@ TEST(FileToolTest, EditAndWriteStatesCanDedupButDoNotRequirePriorRead) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -382,7 +380,7 @@ TEST(FileToolTest, EditAndWriteStatesCanDedupButDoNotRequirePriorRead) {
   ASSERT_TRUE(read_result.resolved);
 
   CallResult edit_result;
-  ::nexus::generated::EditInput edit_input;
+  ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
   edit_input.old_string = "alpha";
   edit_input.new_string = "gamma";
@@ -392,7 +390,7 @@ TEST(FileToolTest, EditAndWriteStatesCanDedupButDoNotRequirePriorRead) {
   ASSERT_TRUE(edit_result.resolved);
 
   CallResult post_edit_read_result;
-  ::nexus::generated::ReadInput post_edit_read_input;
+  ::nexus::generated::FilesReadInput post_edit_read_input;
   post_edit_read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(post_edit_read_input),
                                   MakeRecordingCallback(&post_edit_read_result));
@@ -405,19 +403,17 @@ TEST(FileToolTest, EditAndWriteStatesCanDedupButDoNotRequirePriorRead) {
                                    "File unchanged since last read"));
 
   CallResult second_post_edit_read_result;
-  ::nexus::generated::ReadInput second_post_edit_read_input;
+  ::nexus::generated::FilesReadInput second_post_edit_read_input;
   second_post_edit_read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(second_post_edit_read_input),
                                   MakeRecordingCallback(&second_post_edit_read_result));
   task_environment.RunUntilIdle();
   ASSERT_TRUE(second_post_edit_read_result.resolved);
-  ASSERT_TRUE(second_post_edit_read_result.value.is_string());
-  EXPECT_NE(std::string::npos,
-            second_post_edit_read_result.value.GetString().find(
-                "File unchanged since last read"));
+  ASSERT_TRUE(second_post_edit_read_result.value.is_dict());
+  EXPECT_EQ("unchanged", *second_post_edit_read_result.value.GetDict().FindDict("notice")->FindString("kind"));
 
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "delta\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -426,7 +422,7 @@ TEST(FileToolTest, EditAndWriteStatesCanDedupButDoNotRequirePriorRead) {
   ASSERT_TRUE(write_result.resolved);
 
   CallResult post_write_read_result;
-  ::nexus::generated::ReadInput post_write_read_input;
+  ::nexus::generated::FilesReadInput post_write_read_input;
   post_write_read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(post_write_read_input),
                                   MakeRecordingCallback(&post_write_read_result));
@@ -447,7 +443,7 @@ TEST(FileToolTest, ClearReadStateDisablesDedup) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult first_result;
-  ::nexus::generated::ReadInput first_input;
+  ::nexus::generated::FilesReadInput first_input;
   first_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(first_input),
                                   MakeRecordingCallback(&first_result));
@@ -457,7 +453,7 @@ TEST(FileToolTest, ClearReadStateDisablesDedup) {
   session.file_tool().ClearReadState();
 
   CallResult second_result;
-  ::nexus::generated::ReadInput second_input;
+  ::nexus::generated::FilesReadInput second_input;
   second_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(second_input),
                                   MakeRecordingCallback(&second_result));
@@ -478,7 +474,7 @@ TEST(FileToolTest, ReadIgnoresPagesForNonPdfTextFile) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.pages = "1-2";
   session.file_tool().RunReadOnUI(std::move(input),
@@ -504,7 +500,7 @@ TEST(FileToolTest, ReadRejectsInvalidPagesFormat) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.pages = "abc";
   session.file_tool().RunReadOnUI(std::move(input),
@@ -514,8 +510,7 @@ TEST(FileToolTest, ReadRejectsInvalidPagesFormat) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("invalid_pages", result.error_code);
-  EXPECT_NE(std::string::npos,
-            result.error_message.find("Invalid pages parameter"));
+  EXPECT_TRUE(result.error_params.FindString("pages"));
 }
 
 // CC parity (spec 2-1-5 errorCode 8): a page range wider than 20 pages is
@@ -529,7 +524,7 @@ TEST(FileToolTest, ReadRejectsTooManyPages) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.pages = "1-99";
   session.file_tool().RunReadOnUI(std::move(input),
@@ -539,8 +534,7 @@ TEST(FileToolTest, ReadRejectsTooManyPages) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("too_many_pages", result.error_code);
-  EXPECT_NE(std::string::npos,
-            result.error_message.find("exceeds maximum of 20 pages"));
+  EXPECT_EQ(20, result.error_params.FindInt("max_pages").value_or(0));
 }
 
 TEST(FileToolTest, ReadRejectsUnsupportedBinaryFile) {
@@ -553,7 +547,7 @@ TEST(FileToolTest, ReadRejectsUnsupportedBinaryFile) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -578,7 +572,7 @@ TEST(FileToolTest, ReadDecodesUtf16LeInsteadOfRejectingAsBinary) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -602,7 +596,7 @@ TEST(FileToolTest, ReadRejectsNoLimitTextFileOverDefaultSizeCap) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -611,8 +605,8 @@ TEST(FileToolTest, ReadRejectsNoLimitTextFileOverDefaultSizeCap) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("file_too_large", result.error_code);
-  EXPECT_NE(std::string::npos,
-            result.error_message.find("exceeds maximum allowed size"));
+  EXPECT_GT(result.error_params.FindDouble("size_bytes").value_or(0),
+            result.error_params.FindDouble("limit_bytes").value_or(0));
 }
 
 TEST(FileToolTest, ReadWithExplicitLimitCanTargetLargeTextFile) {
@@ -626,7 +620,7 @@ TEST(FileToolTest, ReadWithExplicitLimitCanTargetLargeTextFile) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.limit = 1;
   session.file_tool().RunReadOnUI(std::move(input),
@@ -649,7 +643,7 @@ TEST(FileToolTest, ReadRejectsOutputOverDefaultTokenCap) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -658,8 +652,8 @@ TEST(FileToolTest, ReadRejectsOutputOverDefaultTokenCap) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("max_file_read_token_exceeded", result.error_code);
-  EXPECT_NE(std::string::npos,
-            result.error_message.find("exceeds maximum allowed tokens"));
+  EXPECT_GT(result.error_params.FindInt("tokens").value_or(0),
+            result.error_params.FindInt("max_tokens").value_or(0));
 }
 
 // CC parity: an empty file must resolve with the system-reminder warning
@@ -673,7 +667,7 @@ TEST(FileToolTest, ReadEmptyFileWarnsInsteadOfEmptyResult) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -681,11 +675,10 @@ TEST(FileToolTest, ReadEmptyFileWarnsInsteadOfEmptyResult) {
 
   EXPECT_TRUE(result.resolved);
   EXPECT_FALSE(result.rejected);
-  ASSERT_TRUE(result.value.is_string());
-  EXPECT_EQ(
-      "<system-reminder>Warning: the file exists but the contents are "
-      "empty.</system-reminder>",
-      result.value.GetString());
+  ASSERT_TRUE(result.value.is_dict());
+  const base::DictValue* notice = result.value.GetDict().FindDict("notice");
+  ASSERT_TRUE(notice);
+  EXPECT_EQ("empty", *notice->FindString("kind"));
 }
 
 // CC parity: an offset past EOF reports the file length rather than
@@ -699,7 +692,7 @@ TEST(FileToolTest, ReadOffsetBeyondEofWarnsWithFileLength) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.offset = 100;
   session.file_tool().RunReadOnUI(std::move(input),
@@ -708,11 +701,12 @@ TEST(FileToolTest, ReadOffsetBeyondEofWarnsWithFileLength) {
 
   EXPECT_TRUE(result.resolved);
   EXPECT_FALSE(result.rejected);
-  ASSERT_TRUE(result.value.is_string());
-  EXPECT_EQ(
-      "<system-reminder>Warning: the file exists but is shorter than the "
-      "provided offset (100). The file has 3 lines.</system-reminder>",
-      result.value.GetString());
+  ASSERT_TRUE(result.value.is_dict());
+  const base::DictValue* notice = result.value.GetDict().FindDict("notice");
+  ASSERT_TRUE(notice);
+  EXPECT_EQ("short", *notice->FindString("kind"));
+  EXPECT_EQ(100, notice->FindInt("offset").value_or(0));
+  EXPECT_EQ(3, notice->FindInt("total_lines").value_or(0));
 }
 
 // CC parity: reading an empty file records the read state, so a follow-up
@@ -726,7 +720,7 @@ TEST(FileToolTest, WriteAfterReadingEmptyFileSucceeds) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -734,7 +728,7 @@ TEST(FileToolTest, WriteAfterReadingEmptyFileSucceeds) {
   ASSERT_TRUE(read_result.resolved);
 
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "beta\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -759,7 +753,7 @@ TEST(FileToolTest, ReadStripsLeadingUtf8Bom) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -785,7 +779,7 @@ TEST(FileToolTest, ReadDirectoryReturnsEisdir) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = dir.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -794,8 +788,7 @@ TEST(FileToolTest, ReadDirectoryReturnsEisdir) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("is_directory", result.error_code);
-  EXPECT_NE(std::string::npos, result.error_message.find("EISDIR"))
-      << result.error_message;
+  EXPECT_TRUE(result.error_params.FindString("path"));
 }
 
 // CC parity (FileReadTool ENOENT branch): a missing file gets a distinct
@@ -808,7 +801,7 @@ TEST(FileToolTest, ReadMissingFileReturnsFileNotFound) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -817,8 +810,6 @@ TEST(FileToolTest, ReadMissingFileReturnsFileNotFound) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("file_not_found", result.error_code);
-  EXPECT_NE(std::string::npos, result.error_message.find("File does not exist"))
-      << result.error_message;
 }
 
 TEST(FileToolTest, EditRequiresPriorFullRead) {
@@ -830,7 +821,7 @@ TEST(FileToolTest, EditRequiresPriorFullRead) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "alpha";
   input.new_string = "gamma";
@@ -856,7 +847,7 @@ TEST(FileToolTest, EditAfterPartialReadSucceeds) {
   // Partial read (limit=1)
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   read_input.limit = 1;
   session.file_tool().RunReadOnUI(std::move(read_input),
@@ -866,7 +857,7 @@ TEST(FileToolTest, EditAfterPartialReadSucceeds) {
 
   // Edit succeeds — a partial read is not a partial view (CC parity).
   CallResult edit_result;
-  ::nexus::generated::EditInput edit_input;
+  ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
   edit_input.old_string = "beta";
   edit_input.new_string = "delta";
@@ -890,7 +881,7 @@ TEST(FileToolTest, WriteAfterPartialReadSucceeds) {
   // Partial read (offset=2, limit=1)
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   read_input.offset = 2;
   read_input.limit = 1;
@@ -901,7 +892,7 @@ TEST(FileToolTest, WriteAfterPartialReadSucceeds) {
 
   // Write succeeds — a partial read is not a partial view (CC parity).
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "delta\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -927,7 +918,7 @@ TEST(FileToolTest, EditAfterTruncatedReadSucceeds) {
   // Read with no offset/limit — will be truncated at 2000 lines
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -936,7 +927,7 @@ TEST(FileToolTest, EditAfterTruncatedReadSucceeds) {
 
   // Edit should succeed because truncated read is NOT a partial view
   CallResult edit_result;
-  ::nexus::generated::EditInput edit_input;
+  ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
   edit_input.old_string = "line 1500";
   edit_input.new_string = "edited line 1500";
@@ -962,7 +953,7 @@ TEST(FileToolTest, WriteAfterTruncatedReadSucceeds) {
   // Read with no offset/limit — will be truncated at 2000 lines
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -971,7 +962,7 @@ TEST(FileToolTest, WriteAfterTruncatedReadSucceeds) {
 
   // Write should succeed because truncated read is NOT a partial view
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "completely new content\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -991,7 +982,7 @@ TEST(FileToolTest, EditAfterReadSucceedsAndUpdatesReadState) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -999,7 +990,7 @@ TEST(FileToolTest, EditAfterReadSucceedsAndUpdatesReadState) {
   ASSERT_TRUE(read_result.resolved);
 
   CallResult edit_result;
-  ::nexus::generated::EditInput edit_input;
+  ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
   edit_input.old_string = "alpha";
   edit_input.new_string = "gamma";
@@ -1014,7 +1005,7 @@ TEST(FileToolTest, EditAfterReadSucceedsAndUpdatesReadState) {
   EXPECT_EQ("gamma\nbeta\n", contents);
 
   CallResult second_edit_result;
-  ::nexus::generated::EditInput second_edit_input;
+  ::nexus::generated::FilesEditInput second_edit_input;
   second_edit_input.file_path = file.AsUTF8Unsafe();
   second_edit_input.old_string = "beta";
   second_edit_input.new_string = "delta";
@@ -1035,7 +1026,7 @@ TEST(FileToolTest, WriteExistingFileRequiresPriorRead) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "beta\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1055,7 +1046,7 @@ TEST(FileToolTest, WriteNewFileDoesNotRequirePriorRead) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "beta\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1079,7 +1070,7 @@ TEST(FileToolTest, WriteRejectsFileModifiedSinceRead) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -1090,7 +1081,7 @@ TEST(FileToolTest, WriteRejectsFileModifiedSinceRead) {
   ASSERT_TRUE(base::WriteFile(file, "external\n"));
 
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "beta\n";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -1127,7 +1118,7 @@ TEST(FileToolTest, DestroyingSessionMidReadDropsReplyWithoutUseAfterFree) {
   auto session =
       std::make_unique<ToolSession>(/*profile=*/nullptr, kSessionKey);
   session->set_cwd(temp_dir.GetPath());
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session->file_tool().RunReadOnUI(std::move(input),
                                    MakeRecordingCallback(&result));
@@ -1252,7 +1243,7 @@ TEST(FileToolTest, NotebookReadRecordsReadStateEnablingWrite) {
   ASSERT_TRUE(read_result.resolved);
 
   CallResult write_result;
-  ::nexus::generated::WriteInput write_input;
+  ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
   write_input.content = "{\"cells\": [{\"cell_type\": \"code\"}]}";
   session.file_tool().RunWriteOnUI(std::move(write_input),
@@ -1273,7 +1264,7 @@ static void SeedReadState(ToolSession& session,
                           base::test::TaskEnvironment& env,
                           const base::FilePath& file) {
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -1291,7 +1282,7 @@ TEST(FileToolTest, EditRejectsNotebookFile) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "cells";
   input.new_string = "blocks";
@@ -1301,7 +1292,6 @@ TEST(FileToolTest, EditRejectsNotebookFile) {
 
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("notebook_file", result.error_code);
-  EXPECT_NE(std::string::npos, result.error_message.find("NotebookEdit"));
 }
 
 // Spec 2-2-4 code 4: missing file + non-empty old_string → file_not_found.
@@ -1313,7 +1303,7 @@ TEST(FileToolTest, EditMissingFileWithOldStringReportsNotFound) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "hello";
   input.new_string = "world";
@@ -1334,7 +1324,7 @@ TEST(FileToolTest, EditCreatesNewFileWithEmptyOldString) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "";
   input.new_string = "hello world";
@@ -1360,7 +1350,7 @@ TEST(FileToolTest, EditEmptyOldStringOnNonEmptyFileRejects) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "";
   input.new_string = "new content";
@@ -1384,7 +1374,7 @@ TEST(FileToolTest, EditPreservesCRLFLineEndings) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "beta";
   input.new_string = "delta";
@@ -1410,7 +1400,7 @@ TEST(FileToolTest, EditDeleteStripsTrailingNewline) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "beta";
   input.new_string = "";
@@ -1439,7 +1429,7 @@ TEST(FileToolTest, EditNormalizesCurlyQuotesAndPreservesStyle) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "\"hello\"";  // straight quotes from model
   input.new_string = "\"goodbye\"";
@@ -1476,7 +1466,7 @@ TEST(FileToolTest, EditQuoteNormalizedMatchAfterEarlierCurlyQuotes) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "says \"target\"";  // straight quotes from model
   input.new_string = "says \"done\"";
@@ -1507,7 +1497,7 @@ TEST(FileToolTest, EditStripsTrailingWhitespaceForNonMarkdown) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "const x = 1;";
   input.new_string = "const x = 2;   ";  // trailing spaces
@@ -1533,7 +1523,7 @@ TEST(FileToolTest, EditPreservesTrailingSpacesForMarkdown) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "line one";
   input.new_string = "line one  ";  // markdown hard break
@@ -1559,7 +1549,7 @@ TEST(FileToolTest, EditAmbiguousMatchReportsCount) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "foo";
   input.new_string = "qux";
@@ -1570,7 +1560,7 @@ TEST(FileToolTest, EditAmbiguousMatchReportsCount) {
 
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("ambiguous_match", result.error_code);
-  EXPECT_NE(std::string::npos, result.error_message.find("3"));
+  EXPECT_EQ(3, result.error_params.FindInt("count").value_or(0));
 }
 
 // Spec 2-2-4 code 9: multiple matches + replace_all:true → replaces all.
@@ -1585,7 +1575,7 @@ TEST(FileToolTest, EditReplaceAllReplacesEveryOccurrence) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "foo";
   input.new_string = "qux";
@@ -1598,9 +1588,7 @@ TEST(FileToolTest, EditReplaceAllReplacesEveryOccurrence) {
   std::string written;
   ASSERT_TRUE(base::ReadFileToString(file, &written));
   EXPECT_EQ("qux bar qux baz qux\n", written);
-  EXPECT_NE(std::string::npos,
-            result.value.GetDict().FindString("message")->find(
-                "All occurrences"));
+  EXPECT_EQ("updated_all", *result.value.GetDict().FindString("outcome"));
 }
 
 // Spec 2-2-4 code 1: old_string === new_string → no-op error.
@@ -1613,7 +1601,7 @@ TEST(FileToolTest, EditNoOpRejects) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "same";
   input.new_string = "same";
@@ -1622,8 +1610,8 @@ TEST(FileToolTest, EditNoOpRejects) {
   task_environment.RunUntilIdle();
 
   EXPECT_TRUE(result.rejected);
-  EXPECT_NE(std::string::npos,
-            result.error_message.find("No changes to make"));
+  EXPECT_EQ("invalid_args", result.error_code);
+  EXPECT_EQ("same_strings", *result.error_params.FindString("reason"));
 }
 
 // Spec 2-2-6.9: desanitize — old has the sanitized `<e>`, file has `<error>`
@@ -1641,7 +1629,7 @@ TEST(FileToolTest, EditDesanitizesMatchAndNewString) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "<e>oops</e>";  // sanitized form from model
   input.new_string = "<e>fixed</e>";
@@ -1668,7 +1656,7 @@ TEST(FileToolTest, WriteNormalizesCRLFToLF) {
 
   // Model sends CRLF content — Write must normalize to LF on disk.
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "new1\r\nnew2\r\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1694,7 +1682,7 @@ TEST(FileToolTest, WritePreservesUtf8Bom) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "world\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1725,7 +1713,7 @@ TEST(FileToolTest, WritePreservesUtf16LeEncoding) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "world\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1760,7 +1748,7 @@ TEST(FileToolTest, EditPreservesUtf16LeEncoding) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::EditInput input;
+  ::nexus::generated::FilesEditInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.old_string = "hello";
   input.new_string = "world";
@@ -1784,7 +1772,7 @@ TEST(FileToolTest, WriteRejectsUncPath) {
   ToolSession session(/*profile=*/nullptr, kSessionKey);
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = "\\\\server\\share\\file.txt";
   input.content = "data";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1793,8 +1781,7 @@ TEST(FileToolTest, WriteRejectsUncPath) {
 
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("invalid_args", result.error_code);
-  EXPECT_NE(std::string::npos,
-            result.error_message.find("UNC paths are not supported"));
+  EXPECT_EQ("unc_path", *result.error_params.FindString("reason"));
 }
 
 // Spec 2-3-4 item 3: forward-slash UNC variant is also rejected.
@@ -1803,7 +1790,7 @@ TEST(FileToolTest, WriteRejectsForwardSlashUncPath) {
   ToolSession session(/*profile=*/nullptr, kSessionKey);
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = "//server/share/file.txt";
   input.content = "data";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1827,7 +1814,7 @@ TEST(FileToolTest, WriteUpdateRendersUpdateMessage) {
   SeedReadState(session, task_environment, file);
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "new content\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1836,9 +1823,9 @@ TEST(FileToolTest, WriteUpdateRendersUpdateMessage) {
 
   ASSERT_TRUE(result.resolved) << result.error_message;
   ASSERT_TRUE(result.value.is_dict());
-  const std::string* msg = result.value.GetDict().FindString("message");
-  ASSERT_TRUE(msg);
-  EXPECT_NE(std::string::npos, msg->find("has been updated successfully"));
+  const std::string* outcome = result.value.GetDict().FindString("outcome");
+  ASSERT_TRUE(outcome);
+  EXPECT_EQ("updated", *outcome);
   // original_file must be present for the update branch.
   EXPECT_TRUE(result.value.GetDict().FindString("original_file"));
 }
@@ -1862,7 +1849,7 @@ TEST(FileToolTest, WritePassesWhenContentUnchangedDespiteMtimeAdvance) {
   ASSERT_TRUE(base::WriteFile(file, "unchanged\n"));
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "replaced\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1889,7 +1876,7 @@ TEST(FileToolTest, WriteUpdatesReadStateForSubsequentWrite) {
 
   // First write.
   CallResult first;
-  ::nexus::generated::WriteInput input1;
+  ::nexus::generated::FilesWriteInput input1;
   input1.file_path = file.AsUTF8Unsafe();
   input1.content = "v2\n";
   session.file_tool().RunWriteOnUI(std::move(input1),
@@ -1900,7 +1887,7 @@ TEST(FileToolTest, WriteUpdatesReadStateForSubsequentWrite) {
   // Second write without a fresh Read — must succeed because Write updated
   // ReadState with the content it wrote.
   CallResult second;
-  ::nexus::generated::WriteInput input2;
+  ::nexus::generated::FilesWriteInput input2;
   input2.file_path = file.AsUTF8Unsafe();
   input2.content = "v3\n";
   session.file_tool().RunWriteOnUI(std::move(input2),
@@ -1925,7 +1912,7 @@ TEST(FileToolTest, WriteCreatesMissingParentDirectory) {
   ToolSession session(/*profile=*/nullptr, kSessionKey);
 
   CallResult result;
-  ::nexus::generated::WriteInput input;
+  ::nexus::generated::FilesWriteInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.content = "created\n";
   session.file_tool().RunWriteOnUI(std::move(input),
@@ -1952,7 +1939,7 @@ TEST(FileToolTest, ReadExactLineNumberedContent) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -1973,7 +1960,7 @@ TEST(FileToolTest, ReadOffsetZeroEquivalentToOffsetOne) {
 
   ToolSession session0(/*profile=*/nullptr, kSessionKey);
   CallResult result0;
-  ::nexus::generated::ReadInput input0;
+  ::nexus::generated::FilesReadInput input0;
   input0.file_path = file.AsUTF8Unsafe();
   input0.offset = 0;
   session0.file_tool().RunReadOnUI(std::move(input0),
@@ -1982,7 +1969,7 @@ TEST(FileToolTest, ReadOffsetZeroEquivalentToOffsetOne) {
 
   ToolSession session1(/*profile=*/nullptr, kSessionKey);
   CallResult result1;
-  ::nexus::generated::ReadInput input1;
+  ::nexus::generated::FilesReadInput input1;
   input1.file_path = file.AsUTF8Unsafe();
   input1.offset = 1;
   session1.file_tool().RunReadOnUI(std::move(input1),
@@ -2007,7 +1994,7 @@ TEST(FileToolTest, ReadStripsCrlfToLf) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -2032,7 +2019,7 @@ TEST(FileToolTest, ReadClampsNegativeOffsetToOne) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.offset = -1;
   session.file_tool().RunReadOnUI(std::move(input),
@@ -2054,7 +2041,7 @@ TEST(FileToolTest, ReadTreatsZeroLimitAsNoLimit) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   input.limit = 0;
   session.file_tool().RunReadOnUI(std::move(input),
@@ -2084,7 +2071,7 @@ TEST(FileToolTest, ReadFileTooLargeDoesNotSetReadState) {
 
   // Read fails with file_too_large.
   CallResult read_result;
-  ::nexus::generated::ReadInput read_input;
+  ::nexus::generated::FilesReadInput read_input;
   read_input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(read_input),
                                   MakeRecordingCallback(&read_result));
@@ -2094,7 +2081,7 @@ TEST(FileToolTest, ReadFileTooLargeDoesNotSetReadState) {
 
   // Edit must still fail with file_not_read (read state was NOT set).
   CallResult edit_result;
-  ::nexus::generated::EditInput edit_input;
+  ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
   edit_input.old_string = "alpha";
   edit_input.new_string = "beta";
@@ -2118,7 +2105,7 @@ TEST(FileToolTest, ReadRejectsZipAsBinary) {
 
   ToolSession session(/*profile=*/nullptr, kSessionKey);
   CallResult result;
-  ::nexus::generated::ReadInput input;
+  ::nexus::generated::FilesReadInput input;
   input.file_path = file.AsUTF8Unsafe();
   session.file_tool().RunReadOnUI(std::move(input),
                                   MakeRecordingCallback(&result));
@@ -2127,6 +2114,27 @@ TEST(FileToolTest, ReadRejectsZipAsBinary) {
   EXPECT_FALSE(result.resolved);
   EXPECT_TRUE(result.rejected);
   EXPECT_EQ("unsupported_binary_file", result.error_code);
+}
+
+
+// The ripgrep runner's pre-launch failure rejects Glob with the tool's own
+// declared code; the runner's code is a param (see ProcessToolTest).
+TEST(FileToolTest, RipgrepFailureRejectsGlobWithTheToolsDeclaredCode) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  RipgrepRunResult rg;
+  rg.launched = false;
+  rg.error_code = "INVALID_CWD";
+  rg.error_message = "the search directory does not exist";
+  CallResult result;
+  session.file_tool().CompleteGlobForTesting(MakeRecordingCallback(&result),
+                                             std::move(rg));
+  ASSERT_TRUE(result.rejected);
+  EXPECT_EQ("glob_failed", result.error_code);
+  EXPECT_TRUE(::nexus::generated::IsFilesErrorCode(result.error_code));
+  EXPECT_EQ("INVALID_CWD", *result.error_params.FindString("service_code"));
+  EXPECT_EQ("the search directory does not exist",
+            *result.error_params.FindString("detail"));
 }
 
 }  // namespace nexus

@@ -11,14 +11,13 @@
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_registry.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
 
 // Generated category-aggregate base. One pure virtual per *.tool.json
 // under declarations/process_tool/ — currently just `bash`. The header
 // transitively pulls in each per-tool *.gen.h.
-#include "custom_browser/browser/nexus/tools/process_tool.gen.h"
+#include "custom_browser/browser/nexus/api/exec/exec_api.gen.h"
+#include "custom_browser/browser/nexus/api/files/files_api.gen.h"
 
 class Profile;
 
@@ -44,8 +43,7 @@ class ToolSession;  // for CategoryAccessor specialization below
 // `OnStop` invalidates the WeakPtrFactory so any pending mojo callbacks
 // drop cleanly. The per-profile shared launcher is not shut down here;
 // it self-recycles when idle.
-class ProcessTool : public ToolBase,
-                    public ::nexus::generated::ProcessToolBase {
+class ProcessTool : public ToolBase {
  public:
   ProcessTool(ToolSession* session, Profile* profile,
               const std::string& session_key);
@@ -60,16 +58,16 @@ class ProcessTool : public ToolBase,
   // generated::ProcessToolBase overrides. Public because the codegen
   // dispatcher in nexus_tools_registry.gen.cc invokes through a
   // `ProcessTool*` it gets from `CategoryAccessor::Get(session)`.
-  void RunBashOnUI(::nexus::generated::BashInput input,
-                   ToolCallback done) override;
-  void RunGrepOnUI(::nexus::generated::GrepInput input,
-                   ToolCallback done) override;
+  void RunBashOnUI(::nexus::generated::ExecBashInput input,
+                   ToolCallback done);
+  void RunGrepOnUI(::nexus::generated::FilesGrepInput input,
+                   ToolCallback done);
 
   // Test-only entry points for the anonymous-namespace Grep helpers.
   // Exposed so process_tool_unittest.cc can pin spec 2-4-5 (arg build)
   // and 2-4-6 (result shaping) without a live utility process.
   static std::vector<std::string> BuildRipgrepArgsForTesting(
-      const ::nexus::generated::GrepInput& input,
+      const ::nexus::generated::FilesGrepInput& input,
       const std::string& output_mode,
       bool show_line_numbers);
   static std::vector<std::string> SplitGlobPatternsForTesting(
@@ -78,15 +76,29 @@ class ProcessTool : public ToolBase,
   // OnGrepPathChecked does before building argv; `target_is_file` is what
   // ClassifyGrepTargetOnBlocking would have reported.
   static void ApplySingleFileGrepDefaultsForTesting(
-      ::nexus::generated::GrepInput& input,
+      ::nexus::generated::FilesGrepInput& input,
       std::string& output_mode,
       bool target_is_file);
-  // Windows-only model-facing PowerShell tool (gated into the catalog by
-  // the listHostedTools filter). Tries PowerShell 7 (`pwsh`) first, falling
+  // Drive the exec / grep completion handlers with a service's pre-launch
+  // failure, without a live service: the unit test pins that the rejected
+  // code is the tool's own declared one and the service code is a param.
+  void CompleteExecForTesting(ToolCallback done,
+                              const std::string& tool_label,
+                              const std::optional<std::string>& error_code,
+                              const std::optional<std::string>& error_message,
+                              const std::optional<std::string>& install_hint);
+  void CompleteGrepForTesting(ToolCallback done, RipgrepRunResult result);
+  void CompleteHookExecForTesting(
+      ToolCallback done,
+      const std::optional<std::string>& error_code,
+      const std::optional<std::string>& error_message,
+      const std::optional<std::string>& install_hint);
+  // Windows-only PowerShell tool (the runtime offers it only when
+  // `exec.listShells` reports a PowerShell). Tries PowerShell 7 (`pwsh`) first, falling
   // back to Windows PowerShell (`powershell`) when pwsh isn't installed, and
   // shapes the result through OnBashExecDone like the Bash tool's prose path.
-  void RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
-                         ToolCallback done) override;
+  void RunPowerShellOnUI(::nexus::generated::ExecPowerShellInput input,
+                         ToolCallback done);
 
  private:
   // Mojo callback for `NexusShellService::Exec` from `RunBashOnUI`.
@@ -206,7 +218,7 @@ class ProcessTool : public ToolBase,
   // `path_not_found` when the target is missing; applies the single-file
   // defaults when it is a regular file; then launches ripgrep through
   // `ripgrep_runner_` (exec + auto-install + line shaping).
-  void OnGrepPathChecked(::nexus::generated::GrepInput input,
+  void OnGrepPathChecked(::nexus::generated::FilesGrepInput input,
                          ToolCallback done,
                          std::string output_mode,
                          bool show_line_numbers,
@@ -221,7 +233,7 @@ class ProcessTool : public ToolBase,
   // `base::ThreadPool` worker (MayBlock) — NEVER on the UI thread — because it
   // stats every matched file (`base::GetFileInfo`) to sort by mtime descending
   // (CC parity). Returns the fully-shaped result body (or "No files found").
-  static std::string ShapeGrepFilesWithMatchesBlocking(
+  static base::DictValue ShapeGrepFilesWithMatchesBlocking(
       std::vector<std::string> lines,
       int head_limit,
       int offset,
@@ -229,7 +241,7 @@ class ProcessTool : public ToolBase,
 
   // UI-thread reply to `ShapeGrepFilesWithMatchesBlocking`. Resolves `done`
   // with the shaped body.
-  void OnGrepFilesShaped(ToolCallback done, std::string body);
+  void OnGrepFilesShaped(ToolCallback done, base::DictValue body);
 
   // Per-PROFILE shared launcher (Profile user-data via
   // `GetSharedShellLauncher`), NOT owned — one utility process for the
@@ -249,11 +261,5 @@ class ProcessTool : public ToolBase,
 
 }  // namespace nexus
 
-// Declare the macro DSL's category accessor for `ProcessTool`. The
-// matching `NEXUS_DEFINE_CATEGORY(ProcessTool, process_tool)` lives in
-// `process_tool.cc`, which can include `tool_session.h` (the header
-// can't — `tool_session.h` includes this file to embed `ProcessTool`
-// as a member).
-NEXUS_DECLARE_CATEGORY(nexus::ProcessTool);
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_PROCESS_TOOL_PROCESS_TOOL_H_

@@ -14,7 +14,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "custom_browser/browser/nexus/api/alarms/nexus_alarm_service.h"
 #include "custom_browser/browser/nexus/api/alarms/nexus_alarms_bridge_adapter.h"
-#include "custom_browser/browser/nexus/api/catalog/nexus_catalog_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/fs/nexus_fs_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/sqlite/nexus_sqlite_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_adapter.h"
@@ -30,7 +29,14 @@
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/shell/nexus_shell_bridge_adapter.h"
 #include "custom_browser/browser/nexus/nexus_bridge_capability_handler.h"
-#include "custom_browser/browser/nexus/tools/tools_adapter.h"
+#include "custom_browser/browser/nexus/api/browser/nexus_browser_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/exec/nexus_exec_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/files/nexus_files_bridge_adapter.h"
+#include "custom_browser/browser/nexus/tools/tool_session_registry.h"
+#include "custom_browser/log/bridge_audit_log.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
+#include "crypto/sha2.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/nexus_message_port_endpoint.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
@@ -45,9 +51,60 @@ using Dict = base::DictValue;
 
 constexpr char kBridgeNamespace[] = "nexus";
 
+// The envelope tag every bridge frame carries.
+bool HasBridgeTag(const Dict& request) {
+  return request.FindBool("hostBridge").value_or(false);
+}
+
+void SetBridgeTags(Dict& envelope) {
+  envelope.Set("hostBridge", true);
+}
+
+// The audit digest of a request's arguments: the handful of fields that
+// identify what was touched (a path, a pattern, an element, a tab) and a
+// hash of any command — never file contents, command text, secrets,
+// headers or env.
+std::string AuditDigest(const Dict& payload) {
+  static constexpr std::string_view kPlainKeys[] = {
+      "file_path", "path", "pattern", "glob", "url", "index", "tab_id",
+      "from_index", "to_index", "cwd"};
+  std::string digest;
+  for (std::string_view key : kPlainKeys) {
+    const Value* v = payload.Find(key);
+    if (!v) {
+      continue;
+    }
+    std::string text;
+    if (v->is_string()) {
+      text = v->GetString();
+    } else if (v->is_int()) {
+      text = base::NumberToString(v->GetInt());
+    } else if (v->is_double()) {
+      text = base::NumberToString(v->GetDouble());
+    } else {
+      continue;
+    }
+    if (!digest.empty()) {
+      digest.push_back(',');
+    }
+    digest.append(key);
+    digest.push_back(':');
+    digest.append(text);
+  }
+  if (const std::string* command = payload.FindString("command")) {
+    if (!digest.empty()) {
+      digest.push_back(',');
+    }
+    digest.append("command_sha:");
+    digest.append(
+        base::HexEncode(crypto::SHA256HashString(*command)).substr(0, 12));
+  }
+  return digest;
+}
+
 Dict BuildResponseBase(const std::string& id, const Dict& route) {
   Dict response;
-  response.Set("claudeBridge", true);
+  SetBridgeTags(response);
   response.Set("direction", "response");
   response.Set("id", id);
   response.Set("route", route.Clone());
@@ -57,13 +114,17 @@ Dict BuildResponseBase(const std::string& id, const Dict& route) {
 Dict BuildErrorResponse(const std::string& id,
                         const Dict& route,
                         const std::string& code,
-                        const std::string& message) {
+                        const std::string& message,
+                        const Dict* params = nullptr) {
   Dict response = BuildResponseBase(id, route);
   response.Set("ok", false);
 
   Dict error;
   error.Set("code", code);
   error.Set("message", message);
+  if (params && !params->empty()) {
+    error.Set("data", params->Clone());
+  }
   response.Set("error", std::move(error));
   return response;
 }
@@ -141,21 +202,26 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   // api/network/nexus_network_bridge_adapter.cc for details.
   network_adapter_ =
       std::make_unique<NexusNetworkBridgeAdapter>(this, profile);
-  catalog_adapter_ = std::make_unique<NexusCatalogBridgeAdapter>(this);
-  // The `browser` capability is the single dispatch surface for the
-  // macro-DSL-declared tool catalog (see `ToolCatalog::Get()`).
-  // `ToolsAdapter` owns the per-session `ToolSession` instances (one
-  // `BrowserTool` per session) and routes each request through
-  // `executionContext.sessionId`. Session lifecycle (`onStop`,
+  // The host tools: `files` / `exec` / `browser` are the API families behind
+  // the runtime's tool definitions. `ToolSessionRegistry` owns the
+  // per-session `ToolSession` instances (one `BrowserTool` per session) and
+  // resolves each request's session from the frame context (else the
+  // legacy `executionContext.sessionId`). Session lifecycle (`onStop`,
   // `setAgentLoopSettings`) lives on the dedicated `session`
   // capability below, not under `browser`.
-  tools_adapter_ = std::make_unique<ToolsAdapter>(this, profile);
+  tool_sessions_ = std::make_unique<ToolSessionRegistry>(profile);
+  files_adapter_ =
+      std::make_unique<NexusFilesBridgeAdapter>(this, tool_sessions_.get());
+  exec_adapter_ =
+      std::make_unique<NexusExecBridgeAdapter>(this, tool_sessions_.get());
+  browser_adapter_ =
+      std::make_unique<NexusBrowserBridgeAdapter>(this, tool_sessions_.get());
   // Phase 12f: dedicated `session` capability. Hosts `onStop` (rename of
   // pre-12f `browser.endSession`), `setAgentLoopSettings` and
   // `setActiveSession`. Holds a back-pointer to
   // `tools_adapter_` for the lifecycle handlers.
   session_adapter_ = std::make_unique<NexusSessionBridgeAdapter>(
-      this, profile, tools_adapter_.get());
+      this, profile, tool_sessions_.get());
   // Guest `shell` capability — the child-process primitive (streaming spawn,
   // persistent children, shell.env) over the per-Profile shared launcher.
   shell_adapter_ = std::make_unique<NexusShellBridgeAdapter>(this, profile);
@@ -192,10 +258,9 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
       std::make_unique<NexusRemoteAccessBridgeAdapter>(this, profile);
   RegisterCapability("remoteAccess", remote_access_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
-  RegisterCapability("browser", tools_adapter_.get());
-  // Phase 12: `catalog` capability — listHostedTools, listSkills. Exports to
-  // the JS guest what the bootstrap manifest used to push (hostedTools).
-  RegisterCapability("catalog", catalog_adapter_.get());
+  RegisterCapability("files", files_adapter_.get());
+  RegisterCapability("exec", exec_adapter_.get());
+  RegisterCapability("browser", browser_adapter_.get());
 
   // Settings · Tools "Open agent tabs in a separate window" toggle. The same
   // adapter the panel registers above, now also reachable on the guest direct
@@ -349,8 +414,7 @@ void NexusBridgePortService::DispatchRequest(
   }
 
   const std::string* direction = request.FindString("direction");
-  if (!request.FindBool("claudeBridge").value_or(false) || !direction ||
-      *direction != "request") {
+  if (!HasBridgeTag(request) || !direction || *direction != "request") {
     SendErrorResponse(*id, *route, "INVALID_REQUEST",
                       "Invalid bridge request envelope");
     return;
@@ -375,6 +439,9 @@ void NexusBridgePortService::DispatchRequest(
   Dict empty_payload;
   const Dict& payload =
       payload_value ? payload_value->GetDict() : empty_payload;
+  // The frame-level call context (advisory; see
+  // NexusBridgeCapabilityHandler::Dispatch).
+  const Dict* context = request.FindDict("context");
 
   auto capability_it = capability_handlers_.find(*capability);
   if (capability_it == capability_handlers_.end()) {
@@ -388,16 +455,71 @@ void NexusBridgePortService::DispatchRequest(
   // LOG(INFO) << "[NexusTrace][PortService] Dispatching route "
   //           << *route_namespace << "/" << *capability << "/" << *action
   //           << " request_id=" << *id;
+  BeginAudit(*id, *route, payload, context,
+             static_cast<int64_t>(json_request.size()));
   if (!capability_it->second->Dispatch(*action, *id, *route, payload,
-                                       std::move(ports))) {
+                                       std::move(ports), context)) {
     SendErrorResponse(*id, *route, "NOT_IMPLEMENTED",
                       "Unsupported action for capability: " + *action);
   }
 }
 
+NexusBridgePortService::PendingAudit::PendingAudit() = default;
+NexusBridgePortService::PendingAudit::PendingAudit(PendingAudit&&) noexcept =
+    default;
+NexusBridgePortService::PendingAudit&
+NexusBridgePortService::PendingAudit::operator=(PendingAudit&&) noexcept =
+    default;
+NexusBridgePortService::PendingAudit::~PendingAudit() = default;
+
+void NexusBridgePortService::BeginAudit(const std::string& id,
+                                        const Dict& route,
+                                        const Dict& payload,
+                                        const Dict* context,
+                                        int64_t request_bytes) {
+  // A request that never gets a response (a crashed handler, a reset port)
+  // would otherwise pin its entry forever; flush the oldest as abandoned.
+  constexpr size_t kMaxPending = 2048;
+  while (pending_audits_.size() >= kMaxPending) {
+    FinishAudit(pending_audits_.begin()->first, "abandoned");
+  }
+  PendingAudit audit;
+  audit.started = base::TimeTicks::Now();
+  const std::string* capability = route.FindString("capability");
+  const std::string* action = route.FindString("action");
+  audit.capability = capability ? *capability : std::string();
+  audit.action = action ? *action : std::string();
+  audit.session_key =
+      NexusBridgeCapabilityHandler::SessionKeyFor(&payload, context);
+  audit.digest = AuditDigest(payload);
+  audit.request_bytes = request_bytes;
+  pending_audits_.insert_or_assign(id, std::move(audit));
+}
+
+void NexusBridgePortService::FinishAudit(const std::string& id,
+                                         std::string_view outcome) {
+  auto it = pending_audits_.find(id);
+  if (it == pending_audits_.end()) {
+    return;
+  }
+  const PendingAudit& audit = it->second;
+  custom_browser::log::BridgeAuditLine line;
+  line.Add("id", id)
+      .Add("route", audit.capability + "." + audit.action)
+      .Add("session", audit.session_key)
+      .Add("args", audit.digest)
+      .Add("request_bytes", audit.request_bytes)
+      .Add("outcome", outcome)
+      .Add("duration_ms",
+           (base::TimeTicks::Now() - audit.started).InMilliseconds());
+  std::move(line).Commit();
+  pending_audits_.erase(it);
+}
+
 void NexusBridgePortService::SendSuccessResponse(const std::string& id,
                                                  const Dict& route,
                                                  Value result) {
+  FinishAudit(id, "ok");
   SendResponse(bridge_support::SerializeJson(
       Value(BuildSuccessResponse(id, route, std::move(result)))));
 }
@@ -423,6 +545,7 @@ void NexusBridgePortService::SendBinaryResponse(
     Value result,
     mojo_base::BigBuffer data,
     std::string_view result_binary_field) {
+  FinishAudit(id, "ok");
   blink::MessagePortDescriptorPair port_pair;
   std::vector<blink::MessagePortDescriptor> ports;
   ports.push_back(port_pair.TakePort1());
@@ -453,18 +576,29 @@ void NexusBridgePortService::SendErrorResponse(const std::string& id,
                                                const Dict& route,
                                                const std::string& code,
                                                const std::string& message) {
+  FinishAudit(id, code);
   SendResponse(bridge_support::SerializeJson(
       Value(BuildErrorResponse(id, route, code, message))));
+}
+
+void NexusBridgePortService::SendErrorResponse(const std::string& id,
+                                               const Dict& route,
+                                               const std::string& code,
+                                               const std::string& message,
+                                               const Dict& params) {
+  FinishAudit(id, code);
+  SendResponse(bridge_support::SerializeJson(
+      Value(BuildErrorResponse(id, route, code, message, &params))));
 }
 
 void NexusBridgePortService::SendEvent(const Dict& route, Value payload) {
   // Event envelope mirrors `DirectPortEventEnvelope` on the TS side
   // (`nexus_web/src/browser/bridge/DirectPortBridgeTransport.ts`):
-  //   { claudeBridge: true, direction: "event", route, payload }
+  //   { hostBridge: true, direction: "event", route, payload }
   // No `id` field — events are not request-correlated. The TS dispatcher
   // routes by `route.capability` + `route.action`.
   Dict envelope;
-  envelope.Set("claudeBridge", true);
+  SetBridgeTags(envelope);
   envelope.Set("direction", "event");
   envelope.Set("route", route.Clone());
   envelope.Set("payload", std::move(payload));

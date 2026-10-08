@@ -1,5 +1,9 @@
 #include "custom_browser/browser/nexus/tools/tool_base.h"
 
+#include "base/task/task_traits.h"
+#include "base/task/thread_pool.h"
+#include "custom_browser/browser/nexus/tools/tool_session.h"
+
 namespace nexus {
 
 ToolBase::ToolBase(ToolSession* session, Profile* profile,
@@ -7,6 +11,14 @@ ToolBase::ToolBase(ToolSession* session, Profile* profile,
     : session_(session), profile_(profile), session_key_(session_key) {}
 
 ToolBase::~ToolBase() = default;
+
+scoped_refptr<base::SequencedTaskRunner> ToolBase::BlockingRunner() const {
+  if (session_) {
+    return session_->blocking_runner();
+  }
+  return base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
+}
 
 void ToolBase::OnStop(OnStopReason /*reason*/) {
   // Default no-op. Subclasses that own per-session state override this

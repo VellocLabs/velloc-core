@@ -95,7 +95,7 @@ class DownloadCapture : public content::DownloadManager::Observer,
                   base::FilePath dest,
                   bool moved);
   void ResolveInProgress();
-  void RejectAndFinalize(std::string code, std::string message);
+  void RejectAndFinalize(std::string code, base::DictValue params);
   void StopObserving();
   void Finalize();
 

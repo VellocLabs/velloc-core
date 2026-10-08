@@ -1,0 +1,143 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "navigate",
+  "description": "Host action behind the BrowserNavigate tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "BrowserNavigate",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "new_tab",
+      "type": "boolean",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "no_profile",
+      "params": [
+        "phase",
+        "action"
+      ]
+    },
+    {
+      "code": "no_actor_service",
+      "params": [
+        "phase",
+        "action"
+      ]
+    },
+    {
+      "code": "no_policy_checker",
+      "params": [
+        "phase"
+      ]
+    },
+    {
+      "code": "task_create_failed"
+    },
+    {
+      "code": "task_create_unhealthy",
+      "params": [
+        "reason",
+        "state"
+      ]
+    },
+    {
+      "code": "invalid_action",
+      "params": [
+        "action",
+        "phase"
+      ]
+    },
+    {
+      "code": "tool_gone",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "task_missing",
+      "params": [
+        "action",
+        "phase"
+      ]
+    },
+    {
+      "code": "actor_engine_wedged",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "task_went_away",
+      "params": [
+        "action",
+        "state"
+      ]
+    },
+    {
+      "code": "no_tabs",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "tool_action_timeout",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "tab_not_in_session",
+      "params": [
+        "tool",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "no_session_tab",
+      "params": [
+        "tool"
+      ]
+    },
+    {
+      "code": "no_active_tab",
+      "params": [
+        "reason",
+        "tool"
+      ]
+    },
+    {
+      "code": "no_active_window",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "create_tab_failed",
+      "params": [
+        "action",
+        "code"
+      ]
+    },
+    {
+      "code": "tab_not_observed",
+      "params": [
+        "action"
+      ]
+    },
+    {
+      "code": "tab_gone",
+      "params": [
+        "action"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

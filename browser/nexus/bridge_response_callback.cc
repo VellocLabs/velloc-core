@@ -73,6 +73,13 @@ void BridgeResponseCallback::SuccessVoid() && {
 }
 
 void BridgeResponseCallback::Error(std::string code, std::string message) && {
+  std::move(*this).Error(std::move(code), std::move(message),
+                         base::DictValue());
+}
+
+void BridgeResponseCallback::Error(std::string code,
+                                   std::string message,
+                                   base::DictValue params) && {
   if (fired_) {
     return;
   }
@@ -81,7 +88,7 @@ void BridgeResponseCallback::Error(std::string code, std::string message) && {
       FROM_HERE,
       base::BindOnce(&BridgeResponseCallback::DispatchError,
                      base::Owned(new BridgeResponseCallback(std::move(*this))),
-                     std::move(code), std::move(message)));
+                     std::move(code), std::move(message), std::move(params)));
 }
 
 void BridgeResponseCallback::InvalidArgs(std::string message) && {
@@ -124,11 +131,16 @@ void BridgeResponseCallback::DispatchSuccess(base::Value value) {
 }
 
 void BridgeResponseCallback::DispatchError(std::string code,
-                                           std::string message) {
+                                           std::string message,
+                                           base::DictValue params) {
   if (!handler_) {
     return;
   }
-  handler_->SendErrorResponse(id_, route_, code, message);
+  if (params.empty()) {
+    handler_->SendErrorResponse(id_, route_, code, message);
+  } else {
+    handler_->SendErrorResponse(id_, route_, code, message, params);
+  }
 }
 
 void BridgeResponseCallback::DispatchInvalidArgs(std::string message) {

@@ -19,7 +19,7 @@
  * path the bytes took.
  *
  * `isFrame` is the port-level gate (the successor of the direct bridge's
- * `claudeBridge: true` tag) and it validates the ENVELOPE completely: kind,
+ * `hostBridge: true` tag) and it validates the ENVELOPE completely: kind,
  * every required field, every enumeration (against the same `as const` lists
  * the types are derived from), and every element of a nested collection — so
  * code that trusts the `value is Frame` narrowing never dispatches on an

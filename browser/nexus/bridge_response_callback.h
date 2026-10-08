@@ -74,6 +74,9 @@ class BridgeResponseCallback {
   // Generic error. `code` is the symbolic error tag (e.g. "FS_ERROR",
   // "LLM_ERROR"); `message` is the human-readable detail.
   void Error(std::string code, std::string message) &&;
+  // An error with structured detail: the envelope carries
+  // `error.data = params` next to `code` / `message`.
+  void Error(std::string code, std::string message, base::DictValue params) &&;
 
   // Invalid-args specialization. Maps to SendInvalidArgsResponse, which
   // is wire-distinct from a generic error so the JS guest can route it
@@ -101,7 +104,9 @@ class BridgeResponseCallback {
   // public terminal). They invoke the matching Send*Response on the
   // captured handler, which checks `delegate_` validity itself.
   void DispatchSuccess(base::Value value);
-  void DispatchError(std::string code, std::string message);
+  void DispatchError(std::string code,
+                     std::string message,
+                     base::DictValue params);
   void DispatchInvalidArgs(std::string message);
   void DispatchBinary(base::Value envelope,
                       mojo_base::BigBuffer data,

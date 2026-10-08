@@ -40,7 +40,7 @@ namespace nexus {
 // `session.setActiveSession`'s tab activation.
 //
 // Why this exists when BrowserTool already keeps `session_tabs_` /
-// `last_work_tab_`: every NexusBridgePortService owns its own ToolsAdapter
+// `last_work_tab_`: every NexusBridgePortService owns its own ToolSessionRegistry
 // (and therefore its own BrowserTool instances), so that state is invisible
 // across ports. The guest's `session.setActiveSession` arrives on the page
 // port while tools execute on the worker port. The tracker is profile-keyed

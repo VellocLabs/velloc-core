@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "done",
+  "description": "Host action behind the Done tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "BrowserDone",
+  "inputs": [
+    {
+      "name": "success",
+      "type": "boolean",
+      "required": true
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "errors": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

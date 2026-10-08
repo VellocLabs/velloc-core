@@ -14,9 +14,8 @@ namespace nexus {
 // the guest applies it once after building the runtime, and subsequent
 // changes arrive live via the `session.applyAgentConfig` event.
 //
-// Phase 12c: the pre-Phase-12c `hostedTools` field moved to the `catalog`
-// bridge capability — the JS guest pulls them via
-// `nexus.catalog.listHostedTools` after the bootstrap port is alive.
+// The manifest carries no tool definitions: the runtime defines the host
+// tools itself and offers them by the advertised capabilities.
 base::DictValue BuildNexusHostManifest(base::DictValue agent_config);
 
 // Convenience wrapper that serializes the bootstrap message envelope

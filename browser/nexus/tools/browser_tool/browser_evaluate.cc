@@ -21,7 +21,7 @@ void BrowserEvaluateSession::Start(content::WebContents* web_contents,
   if (!web_contents) {
     EvaluateOutcome out;
     out.error_code = "no_active_tab";
-    out.error_message = "evaluate: no active tab to run on.";
+    out.error_params.Set("reason", "evaluate");
     std::move(done).Run(std::move(out));
     return;
   }
@@ -38,17 +38,12 @@ BrowserEvaluateSession::BrowserEvaluateSession(
   if (!agent_host_) {
     EvaluateOutcome out;
     out.error_code = "agent_host_unavailable";
-    out.error_message =
-        "evaluate: failed to acquire a DevToolsAgentHost for the tab.";
     Finish(std::move(out));
     return;
   }
   if (!agent_host_->AttachClient(this)) {
     EvaluateOutcome out;
     out.error_code = "attach_refused";
-    out.error_message =
-        "evaluate: DevTools attach refused (another debugger may already be "
-        "attached). Detach DevTools or other CDP clients and retry.";
     // `agent_host_` will fall out of scope; nothing else to detach.
     Finish(std::move(out));
     return;
@@ -79,7 +74,6 @@ BrowserEvaluateSession::BrowserEvaluateSession(
   if (!SendCommand("Runtime.evaluate", std::move(params))) {
     EvaluateOutcome out;
     out.error_code = "send_failed";
-    out.error_message = "evaluate: failed to serialize the CDP command.";
     Finish(std::move(out));
     return;
   }
@@ -139,9 +133,9 @@ void BrowserEvaluateSession::DispatchProtocolMessage(
   if (const base::DictValue* err = dict.FindDict("error")) {
     // CDP-level transport error (method not found, invalid params, etc.).
     out.error_code = "cdp_error";
-    const std::string* msg = err->FindString("message");
-    out.error_message =
-        msg ? *msg : std::string("Runtime.evaluate returned a CDP error.");
+    if (const std::string* msg = err->FindString("message")) {
+      out.error_params.Set("detail", *msg);
+    }
   } else if (const base::DictValue* result = dict.FindDict("result")) {
     // Normal completion path. Hand the result envelope to the caller — the
     // tool-side glue translates `result.value` / `exceptionDetails` into the
@@ -149,7 +143,6 @@ void BrowserEvaluateSession::DispatchProtocolMessage(
     out.result = result->Clone();
   } else {
     out.error_code = "cdp_no_result";
-    out.error_message = "Runtime.evaluate returned no result and no error.";
   }
   Finish(std::move(out));
 }
@@ -166,9 +159,6 @@ void BrowserEvaluateSession::AgentHostClosed(
     return;
   }
   out.error_code = "agent_host_closed";
-  out.error_message =
-      "evaluate: DevTools session ended before Runtime.evaluate returned "
-      "(tab likely closed or navigated).";
   Finish(std::move(out));
 }
 

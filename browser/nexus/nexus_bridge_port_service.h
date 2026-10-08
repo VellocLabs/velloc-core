@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -22,7 +23,6 @@ class NexusBridgeCapabilityHandler;
 class NexusAppInfoBridgeAdapter;
 class NexusAppearanceBridgeAdapter;
 class NexusBrowserToolsBridgeAdapter;
-class NexusCatalogBridgeAdapter;
 class NexusFsBridgeAdapter;
 class NexusLlmBridgeAdapter;
 class NexusMessagePortEndpoint;
@@ -37,7 +37,10 @@ class NexusShellBridgeAdapter;
 class NexusSqliteBridgeAdapter;
 class NexusSystemPrefsBridgeAdapter;
 class NexusUiBridgeAdapter;
-class ToolsAdapter;
+class NexusBrowserBridgeAdapter;
+class NexusExecBridgeAdapter;
+class NexusFilesBridgeAdapter;
+class ToolSessionRegistry;
 
 // Approach 5 (A5): which "audience" this port service exposes capabilities
 // to. Determines the capability registration set.
@@ -71,10 +74,10 @@ enum class PortServiceMode {
 // page/worker/panel bridge services and fresh entangled port pairs.
 //
 // The browser end receives JSON messages of the form:
-//   { claudeBridge: true, direction: "request",
+//   { hostBridge: true, direction: "request",
 //     id, route: { namespace, capability, action }, payload }
 // and responds with:
-//   { claudeBridge: true, direction: "response",
+//   { hostBridge: true, direction: "response",
 //     id, route, ok, result/error }
 class NexusBridgePortService : public NexusBridgeResponseDelegate {
  public:
@@ -113,6 +116,11 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
                          const base::DictValue& route,
                          const std::string& code,
                          const std::string& message) override;
+  void SendErrorResponse(const std::string& id,
+                         const base::DictValue& route,
+                         const std::string& code,
+                         const std::string& message,
+                         const base::DictValue& params) override;
   void SendEvent(const base::DictValue& route, base::Value payload) override;
 
  private:
@@ -130,6 +138,29 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
                        std::vector<blink::MessagePortDescriptor> ports);
   void SendResponse(const std::string& json_response,
                     std::vector<blink::MessagePortDescriptor> ports = {});
+
+  // The bridge audit log (custom_browser/log/bridge_audit_log.h): one line
+  // per request, written when its response goes out.
+  struct PendingAudit {
+    PendingAudit();
+    PendingAudit(PendingAudit&&) noexcept;
+    PendingAudit& operator=(PendingAudit&&) noexcept;
+    ~PendingAudit();
+
+    base::TimeTicks started;
+    std::string capability;
+    std::string action;
+    std::string session_key;
+    std::string digest;
+    int64_t request_bytes = 0;
+  };
+  void BeginAudit(const std::string& id,
+                  const base::DictValue& route,
+                  const base::DictValue& payload,
+                  const base::DictValue* context,
+                  int64_t request_bytes);
+  void FinishAudit(const std::string& id, std::string_view outcome);
+  std::map<std::string, PendingAudit> pending_audits_;
 
   std::unique_ptr<NexusFsBridgeAdapter> fs_adapter_;
   std::unique_ptr<NexusLlmBridgeAdapter> llm_adapter_;
@@ -153,21 +184,24 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // api/network/nexus_network_bridge_adapter.h for the contract and
   // api/declarations/network/httpGet.api.json for the wire schema.
   std::unique_ptr<NexusNetworkBridgeAdapter> network_adapter_;
-  // Phase 12: serves the `catalog` capability — listHostedTools (lazy-
-  // pull replacement for the bootstrap manifest's hostedTools field) and
-  // listSkills.
-  std::unique_ptr<NexusCatalogBridgeAdapter> catalog_adapter_;
-  // Owns the per-LLM-session sessions map (`ToolSession` per sessionId)
-  // and routes catalog dispatchers from `ToolCatalog::Get()` through
-  // session lookup before invoking the per-category methods (currently
-  // `BrowserTool`'s 16 `browser_*` methods). The legacy
-  // `NexusGlicBridgeAdapter` and the `glic` capability it served have
-  // been retired — every browser-actor tool call now arrives via
-  // `browser.<tool_name>` and lifecycle cleanup arrives via
+  // Owns the per-LLM-session sessions map (`ToolSession` per sessionId);
+  // the `files` / `exec` / `browser` adapters resolve a call's session here
+  // before invoking the tool class. The legacy `NexusGlicBridgeAdapter` and
+  // the `glic` capability it served have been retired — every host tool
+  // call arrives on its family's action and lifecycle cleanup arrives via
   // `session.onStop` (Phase 12f, formerly `browser.endSession`).
-  std::unique_ptr<ToolsAdapter> tools_adapter_;
+  // The per-connection host tool sessions (one ToolSession per runtime
+  // session id), shared by the three tool adapters below and the `session`
+  // adapter. Declared before them so it outlives them.
+  std::unique_ptr<ToolSessionRegistry> tool_sessions_;
+  // W16: the host actions behind the hosted tools, one capability per
+  // family. `browser` also serves the legacy `browser.<ToolName>` routes
+  // until W16 step 3.
+  std::unique_ptr<NexusFilesBridgeAdapter> files_adapter_;
+  std::unique_ptr<NexusExecBridgeAdapter> exec_adapter_;
+  std::unique_ptr<NexusBrowserBridgeAdapter> browser_adapter_;
   // Phase 12f: serves the `session` capability — `onStop` (rename of
-  // pre-12f `browser.endSession`; cascades through ToolsAdapter),
+  // pre-12f `browser.endSession`; cascades through ToolSessionRegistry),
   // `setAgentLoopSettings` (per-session wall-clock budgets) and
   // `setActiveSession`. Holds a
   // raw back-pointer to `tools_adapter_`; the two adapters share a

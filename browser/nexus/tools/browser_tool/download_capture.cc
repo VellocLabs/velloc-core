@@ -10,6 +10,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 
 namespace nexus {
 
@@ -41,8 +42,7 @@ DownloadCapture::~DownloadCapture() = default;
 void DownloadCapture::ArmForClickCapture(base::TimeDelta arm_window) {
   self_ = this;  // stay alive until Finalize().
   if (!manager_) {
-    RejectAndFinalize("download_failed",
-                      "the browser download manager is unavailable.");
+    RejectAndFinalize("download_failed", browser_tool_internal::ReasonParams("manager_unavailable"));
     return;
   }
   manager_->AddObserver(this);
@@ -56,9 +56,7 @@ void DownloadCapture::BindStartedItem(download::DownloadItem* item,
                                       bool started_ok) {
   self_ = this;  // stay alive until Finalize().
   if (!started_ok || !item) {
-    RejectAndFinalize("download_failed",
-                      "the download could not be started (bad URL, blocked, "
-                      "or no network).");
+    RejectAndFinalize("download_failed", browser_tool_internal::ReasonParams("not_started"));
     return;
   }
   StartObservingItem(item);
@@ -83,9 +81,7 @@ void DownloadCapture::ManagerGoingDown(content::DownloadManager* manager) {
     }
     manager_ = nullptr;
   }
-  RejectAndFinalize("download_failed",
-                    "the browser download manager shut down before the "
-                    "download completed.");
+  RejectAndFinalize("download_failed", browser_tool_internal::ReasonParams("manager_shutdown"));
 }
 
 void DownloadCapture::StartObservingItem(download::DownloadItem* item) {
@@ -113,15 +109,14 @@ void DownloadCapture::OnDownloadUpdated(download::DownloadItem* item) {
       OnItemComplete();
       break;
     case download::DownloadItem::CANCELLED:
-      RejectAndFinalize("download_cancelled", "the download was cancelled.");
+      RejectAndFinalize("download_cancelled", base::DictValue());
       break;
     case download::DownloadItem::INTERRUPTED:
-      RejectAndFinalize(
-          "download_failed",
-          base::StrCat({"the download was interrupted (reason code ",
-                        base::NumberToString(
-                            static_cast<int>(item_->GetLastReason())),
-                        ")."}));
+      {
+        base::DictValue params = browser_tool_internal::ReasonParams("interrupted");
+        params.Set("reason_code", static_cast<int>(item_->GetLastReason()));
+        RejectAndFinalize("download_failed", std::move(params));
+      }
       break;
     case download::DownloadItem::IN_PROGRESS:
     default:
@@ -138,8 +133,7 @@ void DownloadCapture::OnDownloadDestroyed(download::DownloadItem* item) {
   observing_item_ = false;
   item_ = nullptr;
   if (!completing_) {
-    RejectAndFinalize("download_failed",
-                      "the download was removed before it completed.");
+    RejectAndFinalize("download_failed", browser_tool_internal::ReasonParams("removed"));
   }
 }
 
@@ -192,10 +186,7 @@ void DownloadCapture::OnMoveDone(double bytes,
   result.Set("filename", final_path.BaseName().AsUTF8Unsafe());
   result.Set("bytes", bytes);
   if (!moved) {
-    result.Set("note",
-               "the file finished downloading but could not be relocated into "
-               "the workspace downloads folder; the `path` above is its actual "
-               "location.");
+    result.Set("notice", "not_relocated");
   }
   std::move(done_).Resolve(std::move(result));
   Finalize();
@@ -205,11 +196,7 @@ void DownloadCapture::OnArmWindowElapsed() {
   if (finalized_ || item_) {
     return;
   }
-  RejectAndFinalize(
-      "no_download",
-      "clicking that element did not start a download. It may not be a "
-      "download trigger — verify it's a download link/button from the latest "
-      "observation, or pass a direct `url` to BrowserDownload instead.");
+  RejectAndFinalize("no_download", base::DictValue());
 }
 
 void DownloadCapture::OnBudgetElapsed() {
@@ -237,20 +224,17 @@ void DownloadCapture::ResolveInProgress() {
       result.Set("percent", static_cast<int>((received * 100) / total));
     }
   }
-  result.Set("note",
-             "the file is still downloading in the background. Do NOT re-issue "
-             "BrowserDownload — re-check the `path` above with the file tools "
-             "in a little while; it will appear once the transfer finishes.");
+  result.Set("notice", "in_progress");
   std::move(done_).Resolve(std::move(result));
   Finalize();
 }
 
 void DownloadCapture::RejectAndFinalize(std::string code,
-                                        std::string message) {
+                                        base::DictValue params) {
   if (finalized_) {
     return;
   }
-  std::move(done_).Reject(std::move(code), std::move(message));
+  std::move(done_).Reject(std::move(code), std::move(params));
   Finalize();
 }
 

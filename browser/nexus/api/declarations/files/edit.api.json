@@ -1,0 +1,98 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "edit",
+  "description": "Host action behind the Edit tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "FilesEdit",
+  "inputs": [
+    {
+      "name": "file_path",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "old_string",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "new_string",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "replace_all",
+      "type": "boolean",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "notebook_file"
+    },
+    {
+      "code": "file_too_large",
+      "params": [
+        "size_bytes",
+        "limit_bytes",
+        "kind"
+      ]
+    },
+    {
+      "code": "write_failed",
+      "params": [
+        "path",
+        "reason"
+      ]
+    },
+    {
+      "code": "file_not_found",
+      "params": [
+        "cwd"
+      ]
+    },
+    {
+      "code": "file_not_read",
+      "params": [
+        "phase",
+        "offset",
+        "limit"
+      ]
+    },
+    {
+      "code": "file_already_exists"
+    },
+    {
+      "code": "read_failed",
+      "params": [
+        "path",
+        "phase"
+      ]
+    },
+    {
+      "code": "file_modified_since_read"
+    },
+    {
+      "code": "no_match",
+      "params": [
+        "old_string",
+        "reason"
+      ]
+    },
+    {
+      "code": "ambiguous_match",
+      "params": [
+        "count",
+        "old_string"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

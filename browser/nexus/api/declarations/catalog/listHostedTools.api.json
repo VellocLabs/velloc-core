@@ -1,9 +1,0 @@
-{
-  "$schema": "../../../codegen/api_schema.json",
-  "name": "listHostedTools",
-  "description": "Return the LLM-facing tool catalog (HostedToolDefinition[]) sourced from the C++ ToolCatalog. Replaces the bootstrap manifest's hostedTools field.",
-  "inputs": [],
-  "runtime": {
-    "thread": "ui"
-  }
-}

@@ -44,14 +44,59 @@ bool NexusBridgeCapabilityHandler::Dispatch(
     const std::string& id,
     const base::DictValue& route,
     const base::DictValue& payload,
-    std::vector<blink::MessagePortDescriptor> ports) {
+    std::vector<blink::MessagePortDescriptor> ports,
+    const base::DictValue* context) {
   auto it = handlers_.find(action);
   if (it == handlers_.end()) {
     return false;
   }
 
+  RequestScope scope;
+  scope.id = &id;
+  scope.route = &route;
+  scope.payload = &payload;
+  scope.context = context;
+  // A handler may tear the adapter down (relaunch, port reset); only clear
+  // the scope if `this` is still alive afterwards.
+  base::WeakPtr<NexusBridgeCapabilityHandler> self = AsWeakPtr();
+  current_request_ = &scope;
   it->second(id, route, payload, std::move(ports));
+  if (self) {
+    current_request_ = nullptr;
+  }
   return true;
+}
+
+std::string NexusBridgeCapabilityHandler::RequestSessionKey() const {
+  if (!current_request_) {
+    return SessionKeyFor(nullptr, nullptr);
+  }
+  return SessionKeyFor(current_request_->payload, current_request_->context);
+}
+
+// static
+std::string NexusBridgeCapabilityHandler::SessionKeyFor(
+    const base::DictValue* payload,
+    const base::DictValue* context) {
+  if (context) {
+    if (const std::string* sid = context->FindString("sessionId");
+        sid && !sid->empty()) {
+      return *sid;
+    }
+  }
+  if (payload) {
+    if (const base::DictValue* ctx = payload->FindDict("executionContext")) {
+      if (const std::string* sid = ctx->FindString("sessionId");
+          sid && !sid->empty()) {
+        return *sid;
+      }
+    }
+    if (const std::string* sid = payload->FindString("sessionId");
+        sid && !sid->empty()) {
+      return *sid;
+    }
+  }
+  return "__default__";
 }
 
 void NexusBridgeCapabilityHandler::SendSuccessResponse(
@@ -77,6 +122,15 @@ void NexusBridgeCapabilityHandler::SendErrorResponse(
     const std::string& code,
     const std::string& message) const {
   delegate_->SendErrorResponse(id, route, code, message);
+}
+
+void NexusBridgeCapabilityHandler::SendErrorResponse(
+    const std::string& id,
+    const base::DictValue& route,
+    const std::string& code,
+    const std::string& message,
+    const base::DictValue& params) const {
+  delegate_->SendErrorResponse(id, route, code, message, params);
 }
 
 void NexusBridgeCapabilityHandler::SendInvalidArgsResponse(

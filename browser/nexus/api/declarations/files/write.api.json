@@ -1,0 +1,45 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "write",
+  "description": "Host action behind the Write tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "FilesWrite",
+  "inputs": [
+    {
+      "name": "file_path",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "content",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "file_not_read",
+      "params": [
+        "phase"
+      ]
+    },
+    {
+      "code": "file_modified_since_read"
+    },
+    {
+      "code": "write_failed",
+      "params": [
+        "path",
+        "reason"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

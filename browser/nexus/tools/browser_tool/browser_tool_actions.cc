@@ -57,7 +57,7 @@
 //   * the file-local UTF-8 / walker helpers those completions need.
 //
 // Everything else (lifecycle, actor pipeline, observation builder,
-// EnsureTaskCreated, LookupNode, RejectNotYetImplemented, ctor/dtor,
+// EnsureTaskCreated, LookupNode, ctor/dtor,
 // OnStop, timeout management) stays in browser_tool.cc. Both files
 // share helpers via browser_tool_internal.{h,cc} — see the `using`
 // directive below.
@@ -156,8 +156,9 @@ ToolCallback WrapWithScreenshotShaping(ToolCallback inner,
           holder, crop_index),
       base::BindOnce(
           [](scoped_refptr<base::RefCountedData<ToolCallback>> h,
-             std::string code, std::string message) {
-            std::move(h->data).Reject(std::move(code), std::move(message));
+             std::string code, std::string /*message*/,
+             base::DictValue params) {
+            std::move(h->data).Reject(std::move(code), std::move(params));
           },
           holder));
 }
@@ -389,10 +390,7 @@ void BrowserTool::RunCreateTabAction(std::string url,
   std::optional<int32_t> active_window =
       ResolveCreateTabWindowSessionId(profile);
   if (!active_window.has_value()) {
-    std::move(done).Reject(
-        "no_active_window",
-        base::StrCat({action_name,
-                      ": no active window available to create a tab in"}));
+    std::move(done).Reject("no_active_window", ActionParams(action_name));
     return;
   }
 
@@ -406,16 +404,12 @@ void BrowserTool::RunCreateTabAction(std::string url,
   }
   auto* service = actor::ActorKeyedService::Get(profile);
   if (!service) {
-    std::move(done).Reject(
-        "no_actor_service",
-        base::StrCat({action_name, ": ActorKeyedService unavailable"}));
+    std::move(done).Reject("no_actor_service", ActionParams(action_name, "unavailable"));
     return;
   }
   actor::ActorTask* task = service->GetTask(*task_id);
   if (!task) {
-    std::move(done).Reject(
-        "task_missing",
-        base::StrCat({action_name, ": actor task no longer exists"}));
+    std::move(done).Reject("task_missing", ActionParams(action_name, "actor"));
     return;
   }
   actor::ActorTask::TabHandleSet tabs_before = task->GetTabs();
@@ -431,10 +425,7 @@ void BrowserTool::RunCreateTabAction(std::string url,
   actor::BuildToolRequestResult tool_request_result =
       actor::BuildToolRequest(create_actions);
   if (!tool_request_result.has_value()) {
-    std::move(done).Reject(
-        "invalid_action",
-        base::StrCat({action_name,
-                      ": failed to build CreateTab ToolRequest"}));
+    std::move(done).Reject("invalid_action", ActionParams(action_name, "create_tab"));
     return;
   }
 
@@ -462,34 +453,26 @@ void BrowserTool::OnCreateTabActionDone(
   const actor::mojom::ActionResultCode result_code =
       OverallActorResultCode(action_results);
   if (!actor::IsOk(result_code)) {
-    std::move(done).Reject(
-        "create_tab_failed",
-        base::StrCat({action_name,
-                      ": actor CreateTab failed with code ",
-                      base::NumberToString(static_cast<int>(result_code))}));
+    {
+      base::DictValue reject_params = ActionParams(action_name);
+      reject_params.Set("code", static_cast<int>(result_code));
+      std::move(done).Reject("create_tab_failed", std::move(reject_params));
+    }
     return;
   }
   Profile* profile = GetProfile();
   if (!profile || !task_id_.has_value()) {
-    std::move(done).Reject(
-        "task_missing",
-        base::StrCat({action_name, ": task gone before navigate phase"}));
+    std::move(done).Reject("task_missing", ActionParams(action_name, "navigate"));
     return;
   }
   auto* service = actor::ActorKeyedService::Get(profile);
   if (!service) {
-    std::move(done).Reject(
-        "no_actor_service",
-        base::StrCat({action_name,
-                      ": ActorKeyedService disappeared before navigate"}));
+    std::move(done).Reject("no_actor_service", ActionParams(action_name, "navigate"));
     return;
   }
   actor::ActorTask* task = service->GetTask(*task_id_);
   if (!task) {
-    std::move(done).Reject(
-        "task_missing",
-        base::StrCat({action_name,
-                      ": actor task gone before navigate phase"}));
+    std::move(done).Reject("task_missing", ActionParams(action_name, "navigate_actor"));
     return;
   }
 
@@ -505,10 +488,7 @@ void BrowserTool::OnCreateTabActionDone(
     }
   }
   if (!new_tab.has_value()) {
-    std::move(done).Reject(
-        "tab_not_observed",
-        base::StrCat({action_name,
-                      ": created tab not visible in task tab set"}));
+    std::move(done).Reject("tab_not_observed", ActionParams(action_name));
     return;
   }
 
@@ -579,9 +559,7 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
 
   Profile* profile = GetProfile();
   if (!profile) {
-    std::move(done).Reject(
-        "no_profile",
-        base::StrCat({action_name, ": no profile"}));
+    std::move(done).Reject("no_profile", ActionParams(action_name, "tab"));
     return;
   }
   std::optional<actor::TaskId> task_id_opt = EnsureTaskCreated(done);
@@ -590,16 +568,12 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   }
   auto* service = actor::ActorKeyedService::Get(profile);
   if (!service) {
-    std::move(done).Reject(
-        "no_actor_service",
-        base::StrCat({action_name, ": ActorKeyedService unavailable"}));
+    std::move(done).Reject("no_actor_service", ActionParams(action_name, "unavailable"));
     return;
   }
   actor::ActorTask* task = service->GetTask(*task_id_opt);
   if (!task) {
-    std::move(done).Reject(
-        "task_missing",
-        base::StrCat({action_name, ": actor task no longer exists"}));
+    std::move(done).Reject("task_missing", ActionParams(action_name, "actor"));
     return;
   }
 
@@ -612,9 +586,7 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   // OnActorPerformActionsDone guard.
   tabs::TabHandle target_handle(tab_id_value);
   if (!target_handle.Get()) {
-    std::move(done).Reject(
-        "tab_gone",
-        base::StrCat({action_name, ": target tab no longer exists"}));
+    std::move(done).Reject("tab_gone", ActionParams(action_name));
     return;
   }
   task->ObserveTabOnce(target_handle);
@@ -624,10 +596,7 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   // empty-set guard mirrored from OnActorPerformActionsDone has to be
   // checked against that union here.
   if (task->GetLastActedTabs().empty()) {
-    std::move(done).Reject(
-        "no_tabs",
-        base::StrCat({action_name,
-                      ": actor task has no live tabs for observation"}));
+    std::move(done).Reject("no_tabs", ActionParams(action_name));
     return;
   }
 
@@ -661,7 +630,7 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
 // input pre-extracted from the LLM's tool_use args.
 // =============================================================================
 
-void BrowserTool::RunScreenshotOnUI(::nexus::generated::ScreenshotInput input,
+void BrowserTool::RunScreenshotOnUI(::nexus::generated::BrowserScreenshotInput input,
                                     ToolCallback done) {
   // Phase 13: schema no longer exposes tab_id — always target the
   // currently-active tab. Cross-tab screenshots require BrowserActivateTab
@@ -687,7 +656,7 @@ void BrowserTool::RunScreenshotOnUI(::nexus::generated::ScreenshotInput input,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
-void BrowserTool::RunReadPageOnUI(::nexus::generated::ReadPageInput input,
+void BrowserTool::RunReadPageOnUI(::nexus::generated::BrowserReadPageInput input,
                                   ToolCallback done) {
   // Phase 13: schema no longer exposes tab_id / scope / max_chars.
   // tab_id → always-active; scope/max_chars → fixed server-side defaults
@@ -712,7 +681,7 @@ void BrowserTool::RunReadPageOnUI(::nexus::generated::ReadPageInput input,
                      input.include_observation.value_or(false)));
 }
 
-void BrowserTool::RunNavigateOnUI(::nexus::generated::NavigateInput input,
+void BrowserTool::RunNavigateOnUI(::nexus::generated::BrowserNavigateInput input,
                                   ToolCallback done) {
   // Phase 13: `BrowserNavigate { url, new_tab? }`. Replaces the legacy
   // `navigate` + `create_tab` tools. new_tab=true routes through
@@ -768,17 +737,14 @@ void BrowserTool::RunNavigateOnUI(::nexus::generated::NavigateInput input,
                   *resolved_tab_id);
 }
 
-void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
+void BrowserTool::RunDownloadOnUI(::nexus::generated::BrowserDownloadInput input,
                                   ToolCallback done) {
   // Exactly one of index|url. (index = click to trigger a download whose
   // URL we can't see; url = direct download using the page's session.)
   const bool has_index = input.index.has_value();
   const bool has_url = input.url.has_value() && !input.url->empty();
   if (has_index == has_url) {
-    std::move(done).Reject(
-        "invalid_args",
-        "BrowserDownload needs EXACTLY ONE of `index` (click an element to "
-        "trigger a download) or `url` (download a direct URL).");
+    std::move(done).Reject("invalid_args", ReasonParams("download_mode"));
     return;
   }
 
@@ -787,10 +753,7 @@ void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
   ::nexus::ToolSession* session = GetSession();
   const base::FilePath cwd = session ? session->cwd() : base::FilePath();
   if (cwd.empty()) {
-    std::move(done).Reject(
-        "no_workspace",
-        "no workspace directory is configured for this session; cannot save "
-        "the download.");
+    std::move(done).Reject("no_workspace", ReasonParams("download"));
     return;
   }
   const base::FilePath dest_dir = cwd.Append(FILE_PATH_LITERAL("downloads"));
@@ -798,8 +761,7 @@ void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
   content::DownloadManager* manager =
       GetProfile() ? GetProfile()->GetDownloadManager() : nullptr;
   if (!manager) {
-    std::move(done).Reject("download_failed",
-                           "the browser download manager is unavailable.");
+    std::move(done).Reject("download_failed", ReasonParams("manager_unavailable"));
     return;
   }
 
@@ -829,16 +791,16 @@ void BrowserTool::RunDownloadOnUI(::nexus::generated::DownloadInput input,
     content::RenderFrameHost* rfh =
         contents ? contents->GetPrimaryMainFrame() : nullptr;
     if (!rfh) {
-      std::move(done).Reject(
-          "no_active_tab",
-          "no active page to download from; open a page first, or use index "
-          "mode to click a download control.");
+      std::move(done).Reject("no_active_tab", ReasonParams("download_page"));
       return;
     }
     GURL url(*input.url);
     if (!url.is_valid()) {
-      std::move(done).Reject("invalid_args",
-                             base::StrCat({"not a valid URL: ", *input.url}));
+      {
+      base::DictValue reject_params = ReasonParams("invalid_url");
+      reject_params.Set("url", *input.url);
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
       return;
     }
     // Derive a name from the URL when the caller didn't supply one.
@@ -902,9 +864,7 @@ void BrowserTool::StartUrlDownloadAfterDirReady(int32_t tab_id,
                                                 ToolCallback done,
                                                 bool dir_ok) {
   if (!dir_ok) {
-    std::move(done).Reject(
-        "download_failed",
-        "could not create the workspace downloads directory.");
+    std::move(done).Reject("download_failed", ReasonParams("downloads_dir"));
     return;
   }
   // Re-resolve everything on the UI thread — pointers can't safely cross the
@@ -912,8 +872,7 @@ void BrowserTool::StartUrlDownloadAfterDirReady(int32_t tab_id,
   content::DownloadManager* manager =
       GetProfile() ? GetProfile()->GetDownloadManager() : nullptr;
   if (!manager) {
-    std::move(done).Reject("download_failed",
-                           "the browser download manager is unavailable.");
+    std::move(done).Reject("download_failed", ReasonParams("manager_unavailable"));
     return;
   }
   tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
@@ -921,9 +880,7 @@ void BrowserTool::StartUrlDownloadAfterDirReady(int32_t tab_id,
   content::RenderFrameHost* rfh =
       contents ? contents->GetPrimaryMainFrame() : nullptr;
   if (!rfh) {
-    std::move(done).Reject(
-        "no_active_tab",
-        "the page to download from is no longer available.");
+    std::move(done).Reject("no_active_tab", ReasonParams("download_page_gone"));
     return;
   }
   const base::FilePath dest =
@@ -947,7 +904,7 @@ void BrowserTool::StartUrlDownloadAfterDirReady(int32_t tab_id,
                        /*blob_url_loader_factory=*/nullptr);
 }
 
-void BrowserTool::RunUploadOnUI(::nexus::generated::UploadInput input,
+void BrowserTool::RunUploadOnUI(::nexus::generated::BrowserUploadInput input,
                                 ToolCallback done) {
   // The file <input> (or the control that opens the picker). Its home tab
   // is the upload target.
@@ -964,9 +921,7 @@ void BrowserTool::RunUploadOnUI(::nexus::generated::UploadInput input,
     ::nexus::ToolSession* session = GetSession();
     const base::FilePath cwd = session ? session->cwd() : base::FilePath();
     if (cwd.empty()) {
-      std::move(done).Reject(
-          "no_workspace",
-          "no workspace directory is configured; pass an absolute file_path.");
+      std::move(done).Reject("no_workspace", ReasonParams("file_path"));
       return;
     }
     path = cwd.Append(path);
@@ -975,8 +930,7 @@ void BrowserTool::RunUploadOnUI(::nexus::generated::UploadInput input,
   tabs::TabInterface* tab = tabs::TabHandle(entry->tab_id).Get();
   content::WebContents* contents = tab ? tab->GetContents() : nullptr;
   if (!contents) {
-    std::move(done).Reject("no_active_tab",
-                           "the target tab is no longer available.");
+    std::move(done).Reject("no_active_tab", ReasonParams("target_tab_gone"));
     return;
   }
 
@@ -1046,8 +1000,11 @@ base::DictValue BuildEvaluateObservation(base::DictValue cdp_result) {
     // The JS threw. We pass `ok:true` (the tool *call* succeeded — only the
     // user-supplied JS failed) but surface the exception verbatim so the model
     // can read the stack and adapt.
-    const std::string* text = exc->FindString("text");
-    out.Set("error", text ? *text : std::string("uncaught exception"));
+    // The page's own exception text when it gave one; the runtime renders
+    // the fallback for a bare `exception`.
+    if (const std::string* text = exc->FindString("text")) {
+      out.Set("error", *text);
+    }
     out.Set("exception", base::Value(std::move(*exc)));
     return out;
   }
@@ -1087,17 +1044,14 @@ base::DictValue BuildEvaluateObservation(base::DictValue cdp_result) {
 
 }  // namespace
 
-void BrowserTool::RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
+void BrowserTool::RunEvaluateOnUI(::nexus::generated::BrowserEvaluateInput input,
                                   ToolCallback done) {
   // BrowserEvaluate is a first-class browser tool, always available like
   // the rest of the Browser* surface — no opt-in gate. (The former
   // `nexus.browser_tools_allow_evaluate` pref + Settings · Tools toggle +
   // `ShouldAllowAgentEvaluate` gate were removed.)
   if (input.code.empty()) {
-    std::move(done).Reject(
-        "invalid_args",
-        "evaluate: `code` is required and must be a non-empty JavaScript "
-        "expression or statement.");
+    std::move(done).Reject("invalid_args", ReasonParams("code_required"));
     return;
   }
 
@@ -1111,11 +1065,12 @@ void BrowserTool::RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
   tabs::TabInterface* tab = tabs::TabHandle(*resolved_tab_id).Get();
   content::WebContents* contents = tab ? tab->GetContents() : nullptr;
   if (!contents) {
-    std::move(done).Reject(
-        "tab_not_found",
-        base::StrCat({"evaluate: tab_id ",
-                      base::NumberToString(*resolved_tab_id),
-                      " is no longer alive"}));
+    {
+      base::DictValue reject_params;
+      reject_params.Set("tool", "evaluate");
+      reject_params.Set("tab_id", *resolved_tab_id);
+      std::move(done).Reject("tab_not_found", std::move(reject_params));
+    }
     return;
   }
 
@@ -1131,7 +1086,7 @@ void BrowserTool::RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
             if (!outcome.error_code.empty()) {
               std::move(inner_done)
                   .Reject(std::move(outcome.error_code),
-                          std::move(outcome.error_message));
+                          std::move(outcome.error_params));
               return;
             }
             base::DictValue observation =
@@ -1142,7 +1097,7 @@ void BrowserTool::RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
           tab_id, std::move(done)));
 }
 
-void BrowserTool::RunBackOnUI(::nexus::generated::BackInput input,
+void BrowserTool::RunBackOnUI(::nexus::generated::BrowserBackInput input,
                               ToolCallback done) {
   // Phase 13: schema dropped tab_id; always act on the active tab.
   std::optional<int32_t> resolved_tab_id =
@@ -1162,7 +1117,7 @@ void BrowserTool::RunBackOnUI(::nexus::generated::BackInput input,
 // keeping the surface area was net-negative; if a model goes back and
 // then wants to "return", it can `BrowserNavigate(<original_url>)`.
 
-void BrowserTool::RunCloseTabOnUI(::nexus::generated::CloseTabInput input,
+void BrowserTool::RunCloseTabOnUI(::nexus::generated::BrowserCloseTabInput input,
                                   ToolCallback done) {
   // close_tab is one of two tools that KEEP `tab_id` (the other is
   // activate_tab). Both intentionally let the model target a non-active
@@ -1190,7 +1145,7 @@ void BrowserTool::RunCloseTabOnUI(::nexus::generated::CloseTabInput input,
                   std::nullopt);
 }
 
-void BrowserTool::RunActivateTabOnUI(::nexus::generated::ActivateTabInput input,
+void BrowserTool::RunActivateTabOnUI(::nexus::generated::BrowserActivateTabInput input,
                                      ToolCallback done) {
   // ActivateTabInput.tab_id is required (bare int32_t, not optional);
   // the codegen-emitted Extract() rejects a missing key with
@@ -1222,7 +1177,7 @@ void BrowserTool::RunActivateTabOnUI(::nexus::generated::ActivateTabInput input,
 // If a specific page genuinely needs an extra settle, that's a bug in
 // the actor pipeline to fix — not an LLM-facing parameter.
 
-void BrowserTool::RunClickOnUI(::nexus::generated::ClickInput input,
+void BrowserTool::RunClickOnUI(::nexus::generated::BrowserClickInput input,
                                ToolCallback done) {
   // Phase 13: dropped tab_id (always the index's home tab), button
   // (always LEFT), and click_count (always SINGLE). Right-click /
@@ -1247,7 +1202,7 @@ void BrowserTool::RunClickOnUI(::nexus::generated::ClickInput input,
                   entry->tab_id);
 }
 
-void BrowserTool::RunInputOnUI(::nexus::generated::InputInput input,
+void BrowserTool::RunInputOnUI(::nexus::generated::BrowserInputInput input,
                                ToolCallback done) {
   // Phase 13: dropped tab_id. The index's home tab is the implicit
   // target — if it's not the active tab, BrowserActivateTab(N) first.
@@ -1274,7 +1229,7 @@ void BrowserTool::RunInputOnUI(::nexus::generated::InputInput input,
                   entry->tab_id);
 }
 
-void BrowserTool::RunSelectOnUI(::nexus::generated::SelectInput input,
+void BrowserTool::RunSelectOnUI(::nexus::generated::BrowserSelectInput input,
                                 ToolCallback done) {
   // Phase 13: dropped tab_id. Uses the registry's home tab for the index.
   const NodeRegistry::Entry* entry =
@@ -1295,7 +1250,7 @@ void BrowserTool::RunSelectOnUI(::nexus::generated::SelectInput input,
                   entry->tab_id);
 }
 
-void BrowserTool::RunHoverOnUI(::nexus::generated::HoverInput input,
+void BrowserTool::RunHoverOnUI(::nexus::generated::BrowserHoverInput input,
                                ToolCallback done) {
   // Phase 13: dropped tab_id. Uses the registry's home tab for the index.
   const NodeRegistry::Entry* entry =
@@ -1314,7 +1269,7 @@ void BrowserTool::RunHoverOnUI(::nexus::generated::HoverInput input,
                   entry->tab_id);
 }
 
-void BrowserTool::RunDragAndDropOnUI(::nexus::generated::DragAndDropInput input,
+void BrowserTool::RunDragAndDropOnUI(::nexus::generated::BrowserDragAndDropInput input,
                                      ToolCallback done) {
   // Phase 13: dropped tab_id. Both indices must be on the same tab —
   // checked below — and that tab is always the registry's home tab
@@ -1334,15 +1289,14 @@ void BrowserTool::RunDragAndDropOnUI(::nexus::generated::DragAndDropInput input,
     // operates within one renderer; allowing different home tabs for
     // the two endpoints would silently drop one of them. Reject up
     // front with a clear message instead.
-    std::move(done).Reject(
-        "invalid_args",
-        base::StrCat({"drag_and_drop: from_index ",
-                      base::NumberToString(input.from_index), " (tab=",
-                      base::NumberToString(from_entry->tab_id),
-                      ") and to_index ",
-                      base::NumberToString(input.to_index), " (tab=",
-                      base::NumberToString(to_entry->tab_id),
-                      ") are on different tabs"}));
+    {
+      base::DictValue reject_params = ReasonParams("different_tabs");
+      reject_params.Set("from_index", input.from_index);
+      reject_params.Set("from_tab", from_entry->tab_id);
+      reject_params.Set("to_index", input.to_index);
+      reject_params.Set("to_tab", to_entry->tab_id);
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
     return;
   }
   apc::Actions actions;
@@ -1361,7 +1315,7 @@ void BrowserTool::RunDragAndDropOnUI(::nexus::generated::DragAndDropInput input,
                   from_entry->tab_id);
 }
 
-void BrowserTool::RunScrollToOnUI(::nexus::generated::ScrollToInput input,
+void BrowserTool::RunScrollToOnUI(::nexus::generated::BrowserScrollToInput input,
                                   ToolCallback done) {
   // Phase 13: dropped tab_id. Uses the registry's home tab for the index.
   const NodeRegistry::Entry* entry =
@@ -1382,7 +1336,7 @@ void BrowserTool::RunScrollToOnUI(::nexus::generated::ScrollToInput input,
                   entry->tab_id);
 }
 
-void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
+void BrowserTool::RunScrollOnUI(::nexus::generated::BrowserScrollInput input,
                                 ToolCallback done) {
   // Phase 13: schema reshaped. `amount` (optional, default 1.0) is in
   // viewport-units. Old `distance` (pixels-with-magic-wheel-notches) is
@@ -1457,11 +1411,11 @@ void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
     scroll->set_direction(apc::ScrollAction::RIGHT);
     pixel_distance = amount * kAssumedViewportWidthPx;
   } else {
-    std::move(done).Reject(
-        "invalid_args",
-        base::StrCat({"scroll `direction` must be one of "
-                      "up/down/left/right; got: \"", input.direction,
-                      "\""}));
+    {
+      base::DictValue reject_params = ReasonParams("scroll_direction");
+      reject_params.Set("value", input.direction);
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
     return;
   }
 
@@ -1470,7 +1424,7 @@ void BrowserTool::RunScrollOnUI(::nexus::generated::ScrollInput input,
                   resolved_tab_id);
 }
 
-void BrowserTool::RunSearchOnUI(::nexus::generated::SearchInput input,
+void BrowserTool::RunSearchOnUI(::nexus::generated::BrowserSearchInput input,
                                 ToolCallback done) {
   // No `input.query.empty()` guard — the codegen-emitted Extract()
   // already rejects an empty required string with `invalid_args`
@@ -1524,7 +1478,7 @@ void BrowserTool::RunSearchOnUI(::nexus::generated::SearchInput input,
 // which routes through `RunCreateTabAction` — the same helper this
 // retired override used to call.
 
-void BrowserTool::RunDoneOnUI(::nexus::generated::DoneInput input,
+void BrowserTool::RunDoneOnUI(::nexus::generated::BrowserDoneInput input,
                               ToolCallback done) {
   // `done` resolves the per-call envelope with `is_done: true`; the
   // JS-side agent loop reads that flag to terminate.
@@ -1543,7 +1497,7 @@ void BrowserTool::RunDoneOnUI(::nexus::generated::DoneInput input,
 // tools became one; one extra field traded for two fewer tools is a
 // catalog-complexity win.
 void BrowserTool::RunMediaControlOnUI(
-    ::nexus::generated::MediaControlInput input, ToolCallback done) {
+    ::nexus::generated::BrowserMediaControlInput input, ToolCallback done) {
   std::optional<int32_t> resolved_tab_id =
       ResolveTabIdOrReject(std::nullopt, GetProfile(), "media_control", done, this);
   if (!resolved_tab_id.has_value()) {
@@ -1563,9 +1517,7 @@ void BrowserTool::RunMediaControlOnUI(
     media->mutable_pause();
   } else if (input.action == "seek") {
     if (!input.seek_time_ms.has_value()) {
-      std::move(done).Reject(
-          "invalid_args",
-          "media_control: action='seek' requires `seek_time_ms`");
+      std::move(done).Reject("invalid_args", ReasonParams("seek_time_required"));
       return;
     }
     // Negative seek positions are clamped to 0 — the proto doc says
@@ -1576,18 +1528,18 @@ void BrowserTool::RunMediaControlOnUI(
     media->mutable_seek()->set_seek_time_milliseconds(
         static_cast<int64_t>(ms < 0 ? 0 : ms));
   } else {
-    std::move(done).Reject(
-        "invalid_args",
-        base::StrCat({"media_control `action` must be one of "
-                      "'play' | 'pause' | 'seek'; got: \"",
-                      input.action, "\""}));
+    {
+      base::DictValue reject_params = ReasonParams("media_action");
+      reject_params.Set("value", input.action);
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
     return;
   }
   RunActorAction(std::move(actions), "media_control", std::move(done),
                   *resolved_tab_id);
 }
 
-void BrowserTool::RunMediaStateOnUI(::nexus::generated::MediaStateInput input,
+void BrowserTool::RunMediaStateOnUI(::nexus::generated::BrowserMediaStateInput input,
                                     ToolCallback done) {
   // Synchronous read: no actor task, no PerformActions round-trip,
   // no APC fetch. We just resolve the target WebContents and read
@@ -1601,11 +1553,12 @@ void BrowserTool::RunMediaStateOnUI(::nexus::generated::MediaStateInput input,
   }
   tabs::TabInterface* tab = tabs::TabHandle(*resolved_tab_id).Get();
   if (!tab || !tab->GetContents()) {
-    std::move(done).Reject(
-        "tab_not_found",
-        base::StrCat({"media_state: tab_id ",
-                      base::NumberToString(*resolved_tab_id),
-                      " is no longer alive"}));
+    {
+      base::DictValue reject_params;
+      reject_params.Set("tool", "media_state");
+      reject_params.Set("tab_id", *resolved_tab_id);
+      std::move(done).Reject("tab_not_found", std::move(reject_params));
+    }
     return;
   }
 
@@ -1675,7 +1628,7 @@ void BrowserTool::RunMediaStateOnUI(::nexus::generated::MediaStateInput input,
   std::move(done).Resolve(std::move(result));
 }
 
-void BrowserTool::RunReadElementOnUI(::nexus::generated::ReadElementInput input,
+void BrowserTool::RunReadElementOnUI(::nexus::generated::BrowserReadElementInput input,
                                      ToolCallback done) {
   // Pure registry lookup. The node_registry already cached the
   // visible label / inner text from the most recent observation, so
@@ -1710,7 +1663,7 @@ void BrowserTool::RunReadElementOnUI(::nexus::generated::ReadElementInput input,
   std::move(done).Resolve(std::move(result));
 }
 
-void BrowserTool::RunFindTextOnUI(::nexus::generated::FindTextInput input,
+void BrowserTool::RunFindTextOnUI(::nexus::generated::BrowserFindTextInput input,
                                   ToolCallback done) {
   // No `input.query.empty()` guard — the codegen-emitted Extract()
   // already rejects an empty required string with `invalid_args`
@@ -1772,8 +1725,7 @@ void BrowserTool::OnReadPageObservationBuilt(
   result.Set("scope", scope);
   if (!actor::IsOk(result_code)) {
     result.Set("ok", false);
-    result.Set("result",
-                DescribeActorErrorForTool(action_name, result_code));
+    result.Set("error_code", static_cast<int>(result_code));
     std::move(done).Resolve(std::move(result));
     return;
   }
@@ -1902,8 +1854,7 @@ void BrowserTool::OnFindTextObservationBuilt(
   result.Set("query", query);
   if (!actor::IsOk(result_code)) {
     result.Set("ok", false);
-    result.Set("result",
-                DescribeActorErrorForTool(action_name, result_code));
+    result.Set("error_code", static_cast<int>(result_code));
     std::move(done).Resolve(std::move(result));
     return;
   }
@@ -1915,7 +1866,7 @@ void BrowserTool::OnFindTextObservationBuilt(
   }
 
   // Refresh the observation (also updates the node registry and
-  // last_observation_* fields used by ToolsAdapter for agent_meta).
+  // last_observation_* fields used by ToolSessionRegistry for agent_meta).
   // T0-b: default to basics-only — find_text's answer is its matches[]
   // (each already carries `clickable_ancestor_index`, enough to click
   // the result directly). `include_observation:true` returns the full
@@ -2003,38 +1954,30 @@ struct FillFormFieldOp {
 bool ParseFillFormEntry(const base::DictValue& entry,
                         size_t array_pos,
                         FillFormFieldOp* out_op,
-                        std::string* error) {
+                        base::DictValue* error) {
+  error->Set("position", static_cast<int>(array_pos));
   const std::optional<int> index_opt = entry.FindInt("index");
   if (!index_opt.has_value()) {
-    *error = base::StrCat({"fill_form: fields[",
-                           base::NumberToString(array_pos),
-                           "] missing required integer `index`"});
+    error->Set("reason", "field_index_missing");
     return false;
   }
   const std::string* action = entry.FindString("action");
   if (!action || action->empty()) {
-    *error = base::StrCat({"fill_form: fields[",
-                           base::NumberToString(array_pos),
-                           "] missing required string `action`"});
+    error->Set("reason", "field_action_missing");
     return false;
   }
   // Whitelist match — keep this in sync with the schema's enum hint.
   if (*action != "type" && *action != "select" && *action != "check" &&
       *action != "uncheck" && *action != "click") {
-    *error = base::StrCat({"fill_form: fields[",
-                           base::NumberToString(array_pos),
-                           "].action must be one of "
-                           "type|select|check|uncheck|click; got \"",
-                           *action, "\""});
+    error->Set("reason", "field_action_invalid");
+    error->Set("value", *action);
     return false;
   }
   const bool needs_value = (*action == "type" || *action == "select");
   const std::string* value = entry.FindString("value");
   if (needs_value && (!value || value->empty())) {
-    *error = base::StrCat({"fill_form: fields[",
-                           base::NumberToString(array_pos),
-                           "].value is required when action=\"",
-                           *action, "\""});
+    error->Set("reason", "field_value_required");
+    error->Set("value", *action);
     return false;
   }
   out_op->index = *index_opt;
@@ -2047,31 +1990,29 @@ bool ParseFillFormEntry(const base::DictValue& entry,
 
 }  // namespace
 
-void BrowserTool::RunFillFormOnUI(::nexus::generated::FillFormInput input,
+void BrowserTool::RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input,
                                   ToolCallback done) {
   // ---- Parse + validate fields[] --------------------------------------
   if (input.fields.empty()) {
-    std::move(done).Reject(
-        "invalid_args",
-        "fill_form: `fields` is empty; pass at least one field operation");
+    std::move(done).Reject("invalid_args", ReasonParams("fields_empty"));
     return;
   }
   if (input.fields.size() > static_cast<size_t>(kFillFormMaxFields)) {
-    std::move(done).Reject(
-        "invalid_args",
-        base::StrCat({"fill_form: too many fields (",
-                      base::NumberToString(input.fields.size()),
-                      "); max is ",
-                      base::NumberToString(kFillFormMaxFields)}));
+    {
+      base::DictValue reject_params = ReasonParams("too_many_fields");
+      reject_params.Set("count", static_cast<int>(input.fields.size()));
+      reject_params.Set("max", static_cast<int>(kFillFormMaxFields));
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
     return;
   }
   std::vector<FillFormFieldOp> ops;
   ops.reserve(input.fields.size());
   for (size_t i = 0; i < input.fields.size(); ++i) {
     FillFormFieldOp op;
-    std::string err;
+    base::DictValue err;
     if (!ParseFillFormEntry(input.fields[i], i, &op, &err)) {
-      std::move(done).Reject("invalid_args", err);
+      std::move(done).Reject("invalid_args", std::move(err));
       return;
     }
     ops.push_back(std::move(op));
@@ -2095,16 +2036,14 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::FillFormInput input,
     // pathological case the LLM should split into two BrowserFillForm
     // calls with a BrowserActivateTab between.
     if (common_tab_id.has_value() && *common_tab_id != entry->tab_id) {
-      std::move(done).Reject(
-          "invalid_args",
-          base::StrCat({"fill_form: fields[",
-                        base::NumberToString(i),
-                        "] (index ",
-                        base::NumberToString(ops[i].index),
-                        ", tab ", base::NumberToString(entry->tab_id),
-                        ") is on a different tab than the prior fields ",
-                        "(tab ",
-                        base::NumberToString(*common_tab_id), ")"}));
+      {
+      base::DictValue reject_params = ReasonParams("field_tab_mismatch");
+      reject_params.Set("position", static_cast<int>(i));
+      reject_params.Set("index", ops[i].index);
+      reject_params.Set("tab", entry->tab_id);
+      reject_params.Set("common_tab", *common_tab_id);
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
       return;
     }
     common_tab_id = entry->tab_id;
@@ -2121,14 +2060,13 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::FillFormInput input,
     }
     if (common_tab_id.has_value() &&
         submit_entry->tab_id != *common_tab_id) {
-      std::move(done).Reject(
-          "invalid_args",
-          base::StrCat({"fill_form: submit_index ",
-                        base::NumberToString(*input.submit_index),
-                        " (tab ",
-                        base::NumberToString(submit_entry->tab_id),
-                        ") is on a different tab than the form fields (tab ",
-                        base::NumberToString(*common_tab_id), ")"}));
+      {
+      base::DictValue reject_params = ReasonParams("submit_tab_mismatch");
+      reject_params.Set("submit_index", *input.submit_index);
+      reject_params.Set("tab", submit_entry->tab_id);
+      reject_params.Set("common_tab", *common_tab_id);
+      std::move(done).Reject("invalid_args", std::move(reject_params));
+    }
       return;
     }
   }

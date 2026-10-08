@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "powerShell",
+  "description": "Host action behind the PowerShell tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "ExecPowerShell",
+  "inputs": [
+    {
+      "name": "command",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "timeout",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "run_in_background",
+      "type": "boolean",
+      "required": false
+    },
+    {
+      "name": "cwd",
+      "type": "string",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "background_unsupported"
+    },
+    {
+      "code": "process_unavailable"
+    },
+    {
+      "code": "powershell_failed",
+      "params": [
+        "detail",
+        "install_hint",
+        "reason",
+        "stdout",
+        "stderr",
+        "exit_code",
+        "timed_out",
+        "truncated",
+        "interpretation",
+        "service_code"
+      ]
+    },
+    {
+      "code": "powershell_timeout",
+      "params": [
+        "stdout",
+        "stderr",
+        "exit_code",
+        "timed_out",
+        "truncated",
+        "interpretation"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

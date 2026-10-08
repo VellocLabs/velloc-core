@@ -1,15 +1,13 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_NEXUS_TOOL_CALLBACK_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_NEXUS_TOOL_CALLBACK_H_
 
+#include <optional>
 #include <string>
 
 #include "base/functional/callback.h"
-#include "base/memory/ref_counted.h"
-#include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "base/values.h"
 
-// `ToolCallback` — the async resolver passed to every macro-DSL tool method.
+// `ToolCallback` — the async resolver passed to every host tool method.
 //
 // The framework-generated dispatcher pre-binds the request id, the route
 // dict, and a weak pointer to the owning adapter into two `base::OnceCallback`s
@@ -25,7 +23,8 @@
 //   - hop sequences before resolving (PostTask, BindOnce);
 //   - chain through the actor service / network / DOM observation and
 //     resolve from a callback minutes later;
-//   - fail with `std::move(done).Reject("description")`.
+//   - fail with `std::move(done).Reject("code", params)` — a code the
+//     action's `.api.json` declares; the runtime renders the text.
 //
 // Resolve / Reject are `&&`-qualified — single-fire by construction. If
 // the adapter weak ptr captured by the inner callback has been
@@ -37,11 +36,25 @@
 
 namespace nexus {
 
+// The `params` for a failure a service reported before the tool's own work
+// started (the shell launcher's BINARY_NOT_FOUND / INVALID_CWD, the ripgrep
+// runner's pre-launch error). The tool rejects with its OWN declared code;
+// the service's code travels as `service_code` so the runtime's fallback
+// (pwsh → powershell) can still read it, next to the service's sentence in
+// `detail` and, when present, the manual `install_hint`.
+base::DictValue ServiceFailureParams(
+    const std::optional<std::string>& service_code,
+    const std::optional<std::string>& detail,
+    const std::optional<std::string>& install_hint);
+
 class ToolCallback {
  public:
   using SuccessCallback = base::OnceCallback<void(base::Value result)>;
-  using ErrorCallback =
-      base::OnceCallback<void(std::string code, std::string message)>;
+  // `params` is the error's structured detail (`{code, params}` is what the
+  // runtime renders text from; the host sends no model-visible prose).
+  // `message` repeats the code for clients that read only the message.
+  using ErrorCallback = base::OnceCallback<
+      void(std::string code, std::string message, base::DictValue params)>;
 
   // Default-constructs an inert callback. Used only by std::move targets
   // and tests; the real construction path is the dispatcher.
@@ -75,40 +88,23 @@ class ToolCallback {
   // so the JS guest gets a stable, non-null result shape.
   void ResolveVoid() &&;
 
-  // Error completion with the default error code "tool_error".
-  void Reject(std::string message) &&;
-
-  // Error completion with a caller-chosen error code.
-  void Reject(std::string code, std::string message) &&;
+  // A declared error code with its parameters (`{code, params}`); the
+  // message is the code itself — the runtime renders the text.
+  void Reject(std::string code, base::DictValue params) &&;
 
   // True once Resolve / Reject has run. Mostly useful for tests.
   bool fired() const { return fired_; }
 
  private:
   void DispatchSuccess(base::Value value);
-  void DispatchError(std::string code, std::string message);
+  void DispatchError(std::string code,
+                     std::string message,
+                     base::DictValue params);
 
   SuccessCallback on_success_;
   ErrorCallback on_error_;
   bool fired_ = false;
 };
-
-// Wrap a `ToolCallback` with a wall-clock budget so a hung actor
-// call can't deadlock the loop. Returns a fresh `ToolCallback` whose
-// Resolve / Reject path forwards to the wrapped inner callback,
-// canceling the timer first; if the timer fires before either path
-// runs, it rejects the inner with a `tool_action_timeout` error code.
-//
-// First-write-wins: whichever of (Resolve, Reject, OnTimeout) runs
-// first settles the inner callback; the others become no-ops. This
-// mirrors the Browser-Use reference's `action_timeout` semantics.
-//
-// `budget <= 0` short-circuits — returns the inner callback unchanged
-// so callers can pass `BudgetWrap(done, base::TimeDelta())` to
-// disable budgeting per-call.
-ToolCallback BudgetWrap(ToolCallback inner,
-                        base::TimeDelta budget,
-                        std::string action_name);
 
 }  // namespace nexus
 

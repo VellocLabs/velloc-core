@@ -12,22 +12,23 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 12> kBridgeCapabilities = {
+constexpr std::array<const char*, 13> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
     "shell",
-    // The macro-DSL-driven browser tool catalog. Always advertised: the
-    // adapter is unconditionally constructed by NexusBridgePortService
-    // and its catalog is the source of truth for the LLM-facing browser
-    // tools. See custom_browser/browser/nexus/tools/.
-    //
-    // Replaced the legacy `glic` capability that used to be advertised
-    // here. Every browser-actor tool now arrives via
-    // `browser.<tool_name>`. Session lifecycle (`onStop`,
-    // `setAgentLoopSettings`) moved to the dedicated `session`
-    // capability in Phase 12f.
+    // The host actions behind the browser tools (navigate, click,
+    // screenshot, …); the runtime defines the tools themselves. Always
+    // advertised: the adapter is unconditionally constructed by
+    // NexusBridgePortService. Replaced the legacy `glic` capability that
+    // used to be advertised here. Session lifecycle (`onStop`,
+    // `setAgentLoopSettings`) lives on the dedicated `session` capability.
     "browser",
+    // W16: the host actions behind the file and shell tools. The runtime
+    // defines the tools themselves and offers them only when these are
+    // advertised.
+    "files",
+    "exec",
     // Phase 12f: dedicated session capability. `onStop` (LLM-session
     // OnStop cascade — renamed from `browser.endSession`),
     // `setAgentLoopSettings` (per-session wall-clock budgets),
@@ -38,11 +39,6 @@ constexpr std::array<const char*, 12> kBridgeCapabilities = {
     // dialog + topbar button on this advertisement, so an older binary
     // simply hides the feature. See custom_browser/browser/nexus/search/.
     "search",
-    // Phase 12: catalog metadata served lazily over the bridge. JS
-    // pulls `listHostedTools` (replacing the bootstrap manifest's
-    // hostedTools field) and `listSkills`. See
-    // custom_browser/browser/nexus/api/catalog/.
-    "catalog",
     // Native `sqlite` capability: read/write host SQLite files from the guest
     // (one-shot path form + connection handles). Advertised so consumers gate
     // on it — an older binary that lacks it simply exposes no SQLite surface,
@@ -148,9 +144,8 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   // the runtime; later changes arrive live via `session.applyAgentConfig`.
   manifest.Set("agentConfig", std::move(agent_config));
 
-  // Phase 12c: hostedTools used to live here. They now flow through the
-  // `catalog` capability — JS calls `nexus.catalog.listHostedTools`
-  // post-bootstrap to fetch the same array.
+  // No tool definitions here: the runtime defines the host tools itself and
+  // offers them by `capabilities` (and `exec.listShells` for the shells).
   return manifest;
 }
 

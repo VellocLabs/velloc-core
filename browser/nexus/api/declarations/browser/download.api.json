@@ -1,0 +1,82 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "download",
+  "description": "Host action behind the BrowserDownload tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "BrowserDownload",
+  "inputs": [
+    {
+      "name": "index",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "filename",
+      "type": "string",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "tab_not_in_session",
+      "params": [
+        "tool",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "no_session_tab",
+      "params": [
+        "tool"
+      ]
+    },
+    {
+      "code": "no_active_tab",
+      "params": [
+        "reason",
+        "tool"
+      ]
+    },
+    {
+      "code": "index_not_found",
+      "params": [
+        "tool",
+        "index",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason",
+        "url"
+      ]
+    },
+    {
+      "code": "no_workspace",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "download_failed",
+      "params": [
+        "reason",
+        "reason_code"
+      ]
+    },
+    {
+      "code": "download_cancelled"
+    },
+    {
+      "code": "no_download"
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -11,19 +11,28 @@
 
 #include "custom_browser/browser/nexus/tools/process_tool/process_tool.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "base/test/bind.h"
+#include "base/test/task_environment.h"
+#include "base/values.h"
+#include "custom_browser/browser/nexus/api/exec/exec_api.gen.h"
+#include "custom_browser/browser/nexus/api/files/files_api.gen.h"
+#include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
+#include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
+#include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
 namespace {
 
-using ::nexus::generated::GrepInput;
+using ::nexus::generated::FilesGrepInput;
 
-// Helper: build a minimal GrepInput with just a pattern.
-GrepInput MakeInput(const std::string& pattern) {
-  GrepInput input;
+// Helper: build a minimal FilesGrepInput with just a pattern.
+FilesGrepInput MakeInput(const std::string& pattern) {
+  FilesGrepInput input;
   input.pattern = pattern;
   return input;
 }
@@ -43,7 +52,7 @@ size_t FindArg(const std::vector<std::string>& args, const std::string& flag) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, BaselineArgs) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "files_with_matches", /*show_line_numbers=*/true);
 
@@ -76,7 +85,7 @@ TEST(ProcessToolGrepTest, BaselineArgs) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, MultilineFlags) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.multiline = true;
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
@@ -86,7 +95,7 @@ TEST(ProcessToolGrepTest, MultilineFlags) {
 }
 
 TEST(ProcessToolGrepTest, NoMultilineByDefault) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -99,7 +108,7 @@ TEST(ProcessToolGrepTest, NoMultilineByDefault) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, CaseInsensitive) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.case_insensitive = true;
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
@@ -108,7 +117,7 @@ TEST(ProcessToolGrepTest, CaseInsensitive) {
 }
 
 TEST(ProcessToolGrepTest, CaseSensitiveByDefault) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -120,7 +129,7 @@ TEST(ProcessToolGrepTest, CaseSensitiveByDefault) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, OutputModeFilesWithMatches) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "files_with_matches", /*show_line_numbers=*/true);
 
@@ -129,7 +138,7 @@ TEST(ProcessToolGrepTest, OutputModeFilesWithMatches) {
 }
 
 TEST(ProcessToolGrepTest, OutputModeCount) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "count", /*show_line_numbers=*/true);
 
@@ -138,7 +147,7 @@ TEST(ProcessToolGrepTest, OutputModeCount) {
 }
 
 TEST(ProcessToolGrepTest, OutputModeContent) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -151,7 +160,7 @@ TEST(ProcessToolGrepTest, OutputModeContent) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, ContentModeLineNumbers) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -159,7 +168,7 @@ TEST(ProcessToolGrepTest, ContentModeLineNumbers) {
 }
 
 TEST(ProcessToolGrepTest, ContentModeNoLineNumbers) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/false);
 
@@ -167,7 +176,7 @@ TEST(ProcessToolGrepTest, ContentModeNoLineNumbers) {
 }
 
 TEST(ProcessToolGrepTest, LineNumbersOnlyInContentMode) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   // -n should NOT appear in files_with_matches mode even if show_line_numbers
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "files_with_matches", /*show_line_numbers=*/true);
@@ -176,7 +185,7 @@ TEST(ProcessToolGrepTest, LineNumbersOnlyInContentMode) {
 }
 
 TEST(ProcessToolGrepTest, ContextFlag) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.context = 3;
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
@@ -187,7 +196,7 @@ TEST(ProcessToolGrepTest, ContextFlag) {
 }
 
 TEST(ProcessToolGrepTest, ContextCFlag) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.context_c = 5;
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
@@ -198,7 +207,7 @@ TEST(ProcessToolGrepTest, ContextCFlag) {
 }
 
 TEST(ProcessToolGrepTest, ContextBeforeAfterFlags) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.context_before = 2;
   input.context_after = 1;
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
@@ -215,7 +224,7 @@ TEST(ProcessToolGrepTest, ContextBeforeAfterFlags) {
 
 TEST(ProcessToolGrepTest, ContextPrecedenceOverBeforeAfter) {
   // context takes precedence over -B/-A
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.context = 3;
   input.context_before = 2;
   input.context_after = 1;
@@ -228,7 +237,7 @@ TEST(ProcessToolGrepTest, ContextPrecedenceOverBeforeAfter) {
 }
 
 TEST(ProcessToolGrepTest, ContextIgnoredInNonContentMode) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.context = 3;
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "files_with_matches", /*show_line_numbers=*/true);
@@ -243,7 +252,7 @@ TEST(ProcessToolGrepTest, ContextIgnoredInNonContentMode) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, LeadingDashPattern) {
-  GrepInput input = MakeInput("-foo");
+  FilesGrepInput input = MakeInput("-foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -253,7 +262,7 @@ TEST(ProcessToolGrepTest, LeadingDashPattern) {
 }
 
 TEST(ProcessToolGrepTest, NormalPatternNoDashE) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -266,7 +275,7 @@ TEST(ProcessToolGrepTest, NormalPatternNoDashE) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, TypeFilter) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.type = "js";
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
@@ -277,7 +286,7 @@ TEST(ProcessToolGrepTest, TypeFilter) {
 }
 
 TEST(ProcessToolGrepTest, NoTypeByDefault) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
 
@@ -309,7 +318,7 @@ TEST(ProcessToolGrepTest, GlobWhitespaceSplit) {
 }
 
 TEST(ProcessToolGrepTest, GlobInArgs) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.glob = "*.ts,*.tsx";
   auto args = ProcessTool::BuildRipgrepArgsForTesting(
       input, "content", /*show_line_numbers=*/true);
@@ -332,7 +341,7 @@ TEST(ProcessToolGrepTest, GlobInArgs) {
 // =============================================================================
 
 TEST(ProcessToolGrepTest, SingleFileDefaultsModeAndContext) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   std::string mode = "files_with_matches";  // what value_or() yields
   ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode,
                                                      /*target_is_file=*/true);
@@ -349,7 +358,7 @@ TEST(ProcessToolGrepTest, SingleFileDefaultsModeAndContext) {
 }
 
 TEST(ProcessToolGrepTest, SingleFileExplicitContentStillGetsContext) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   input.output_mode = "content";
   std::string mode = "content";
   ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode, true);
@@ -359,34 +368,34 @@ TEST(ProcessToolGrepTest, SingleFileExplicitContentStillGetsContext) {
 }
 
 TEST(ProcessToolGrepTest, SingleFileExplicitContextFlagsWin) {
-  const auto check = [](GrepInput input) {
+  const auto check = [](FilesGrepInput input) {
     std::string mode = "content";
     ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode, true);
     return input;
   };
-  GrepInput a = MakeInput("foo");
+  FilesGrepInput a = MakeInput("foo");
   a.context_before = 2;
   EXPECT_FALSE(check(a).context_c.has_value());
-  GrepInput b = MakeInput("foo");
+  FilesGrepInput b = MakeInput("foo");
   b.context_after = 2;
   EXPECT_FALSE(check(b).context_c.has_value());
-  GrepInput c = MakeInput("foo");
+  FilesGrepInput c = MakeInput("foo");
   c.context = 0;  // an explicit zero is still explicit
   EXPECT_FALSE(check(c).context_c.has_value());
-  GrepInput d = MakeInput("foo");
+  FilesGrepInput d = MakeInput("foo");
   d.context_c = 9;
   EXPECT_EQ(*check(d).context_c, 9);
 }
 
 TEST(ProcessToolGrepTest, SingleFileExplicitNonContentModeUntouched) {
-  GrepInput files = MakeInput("foo");
+  FilesGrepInput files = MakeInput("foo");
   files.output_mode = "files_with_matches";
   std::string mode = "files_with_matches";
   ProcessTool::ApplySingleFileGrepDefaultsForTesting(files, mode, true);
   EXPECT_EQ(mode, "files_with_matches");
   EXPECT_FALSE(files.context_c.has_value());
 
-  GrepInput count = MakeInput("foo");
+  FilesGrepInput count = MakeInput("foo");
   count.output_mode = "count";
   mode = "count";
   ProcessTool::ApplySingleFileGrepDefaultsForTesting(count, mode, true);
@@ -395,7 +404,7 @@ TEST(ProcessToolGrepTest, SingleFileExplicitNonContentModeUntouched) {
 }
 
 TEST(ProcessToolGrepTest, DirectoryTargetGetsNoDefaults) {
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   std::string mode = "files_with_matches";
   ProcessTool::ApplySingleFileGrepDefaultsForTesting(input, mode,
                                                      /*target_is_file=*/false);
@@ -414,12 +423,89 @@ TEST(ProcessToolGrepTest, DirectoryTargetGetsNoDefaults) {
 
 TEST(ProcessToolGrepTest, HeadLimitDefault250) {
   // Verify the constant matches spec
-  GrepInput input = MakeInput("foo");
+  FilesGrepInput input = MakeInput("foo");
   // The default head_limit=250 is applied in RunGrepOnUI, not in
   // BuildRipgrepArgs. We verify the constant is correct by checking
   // the tool JSON declaration matches.
   // (This is a documentation pin — the actual enforcement is in RunGrepOnUI.)
   SUCCEED();
+}
+
+
+// A service's pre-launch failure (the shell launcher's BINARY_NOT_FOUND /
+// INVALID_CWD, the ripgrep runner's error) rejects with the tool's OWN
+// declared code; the service code is a param. An undeclared code would trip
+// ToolSessionRegistry's DCHECK and crash the browser.
+struct RejectRecord {
+  bool rejected = false;
+  std::string code;
+  base::DictValue params;
+};
+
+ToolCallback RecordReject(RejectRecord* out) {
+  return ToolCallback(
+      base::BindLambdaForTesting([](base::Value) {}),
+      base::BindLambdaForTesting(
+          [out](std::string code, std::string, base::DictValue params) {
+            out->rejected = true;
+            out->code = std::move(code);
+            out->params = std::move(params);
+          }));
+}
+
+TEST(ProcessToolTest, ShellServiceFailureRejectsWithTheToolsDeclaredCode) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, "process-tool-test");
+  for (const char* service_code : {"BINARY_NOT_FOUND", "INVALID_CWD"}) {
+    RejectRecord record;
+    session.process_tool().CompleteExecForTesting(
+        RecordReject(&record), "bash", std::string(service_code),
+        std::string("bash is not available"), std::string("Install Git Bash."));
+    ASSERT_TRUE(record.rejected) << service_code;
+    EXPECT_EQ("bash_failed", record.code);
+    EXPECT_TRUE(::nexus::generated::IsExecErrorCode(record.code));
+    EXPECT_EQ(service_code, *record.params.FindString("service_code"));
+    EXPECT_EQ("bash is not available", *record.params.FindString("detail"));
+    EXPECT_EQ("Install Git Bash.", *record.params.FindString("install_hint"));
+  }
+}
+
+// The hook path (`exec.bash` with `hook_shell`) goes through the same
+// registry check, so its code must be declared too — round 2 of the review
+// found `hook_exec_failed` was not.
+TEST(ProcessToolTest, HookShellServiceFailureRejectsWithADeclaredCode) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, "process-tool-test");
+  for (const char* service_code : {"BINARY_NOT_FOUND", "INVALID_CWD"}) {
+    RejectRecord record;
+    session.process_tool().CompleteHookExecForTesting(
+        RecordReject(&record), std::string(service_code),
+        std::string("bash is not available"), std::nullopt);
+    ASSERT_TRUE(record.rejected) << service_code;
+    EXPECT_EQ("hook_exec_failed", record.code);
+    EXPECT_TRUE(::nexus::generated::IsExecErrorCode(record.code));
+    EXPECT_EQ(service_code, *record.params.FindString("service_code"));
+    EXPECT_EQ("bash is not available", *record.params.FindString("detail"));
+    EXPECT_FALSE(record.params.FindString("install_hint"));
+  }
+}
+
+TEST(ProcessToolTest, RipgrepFailureRejectsGrepWithTheToolsDeclaredCode) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, "process-tool-test");
+  RipgrepRunResult result;
+  result.launched = false;
+  result.error_code = "BINARY_NOT_FOUND";
+  result.error_message = "rg could not be installed. Install it manually.";
+  RejectRecord record;
+  session.process_tool().CompleteGrepForTesting(RecordReject(&record),
+                                                std::move(result));
+  ASSERT_TRUE(record.rejected);
+  EXPECT_EQ("grep_failed", record.code);
+  EXPECT_TRUE(::nexus::generated::IsFilesErrorCode(record.code));
+  EXPECT_EQ("BINARY_NOT_FOUND", *record.params.FindString("service_code"));
+  EXPECT_EQ("rg could not be installed. Install it manually.",
+            *record.params.FindString("detail"));
 }
 
 }  // namespace

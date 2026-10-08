@@ -137,24 +137,21 @@ void PausableToolCallbackHolder::Resolve(base::Value value) {
 }
 
 void PausableToolCallbackHolder::Reject(std::string code,
-                                        std::string message) {
+                                        base::DictValue params) {
   if (timeout_) {
     timeout_->Stop();
   }
   if (inner_.fired()) {
     return;
   }
-  std::move(inner_).Reject(std::move(code), std::move(message));
+  std::move(inner_).Reject(std::move(code), std::move(params));
 }
 
 void PausableToolCallbackHolder::OnTimeout() {
   if (inner_.fired()) {
     return;
   }
-  std::move(inner_).Reject(
-      "tool_action_timeout",
-      base::StrCat({action_name_,
-                    ": exceeded per-action wall-clock budget"}));
+  std::move(inner_).Reject("tool_action_timeout", ActionParams(action_name_));
 }
 
 const actor::EnterprisePolicyChecker* GetPolicyChecker(Profile* profile) {
@@ -169,368 +166,28 @@ const actor::EnterprisePolicyChecker* GetPolicyChecker(Profile* profile) {
   return &service->actor_policy_checker();
 }
 
-std::string DescribeActorError(actor::mojom::ActionResultCode code) {
-  const int n = static_cast<int>(code);
-  std::string_view desc;
-  switch (code) {
-    case actor::mojom::ActionResultCode::kUrlBlocked:
-      desc = "actions are not allowed on the current URL";
-      break;
-    case actor::mojom::ActionResultCode::kNewTabCreationFailed:
-      desc = "could not open a new tab";
-      break;
-    case actor::mojom::ActionResultCode::kTabWentAway:
-      desc = "the target tab no longer exists";
-      break;
-    case actor::mojom::ActionResultCode::kTaskWentAway:
-      desc = "the actor task for this action no longer exists";
-      break;
-    case actor::mojom::ActionResultCode::kCrossOriginNavigation:
-      desc =
-          "the tab performed a cross-origin navigation and can't be acted "
-          "on; re-observe before retrying";
-      break;
-    case actor::mojom::ActionResultCode::kToolUnknown:
-      desc = "unknown tool requested";
-      break;
-    case actor::mojom::ActionResultCode::kFrameWentAway:
-      desc = "the target frame is gone or shutting down";
-      break;
-    case actor::mojom::ActionResultCode::kInvalidDomNodeId:
-      desc =
-          "the target index is no longer in the DOM (stale index — "
-          "re-observe and use indexes from the latest observation)";
-      break;
-    case actor::mojom::ActionResultCode::kElementDisabled:
-      desc = "the target element is disabled";
-      break;
-    case actor::mojom::ActionResultCode::kElementOffscreen:
-      desc =
-          "the element is offscreen — prepend a scroll_to action "
-          "targeting that index, then retry";
-      break;
-    case actor::mojom::ActionResultCode::kCoordinatesOutOfBounds:
-      desc = "the supplied coordinate is outside the viewport";
-      break;
-    case actor::mojom::ActionResultCode::kArgumentsInvalid:
-      desc = "the action's arguments are invalid for this target";
-      break;
-    case actor::mojom::ActionResultCode::kTaskPaused:
-      desc = "the actor task was paused";
-      break;
-    case actor::mojom::ActionResultCode::kExecutorDestroyed:
-      desc =
-          "the tool executor was destroyed before the action finished — "
-          "the page may have navigated";
-      break;
-    case actor::mojom::ActionResultCode::kWindowWentAway:
-      desc = "the target window no longer exists";
-      break;
-    case actor::mojom::ActionResultCode::kFrameLocationChangedSinceObservation:
-      desc =
-          "the page changed location since the observation — re-observe "
-          "before retrying";
-      break;
-    case actor::mojom::ActionResultCode::kTriggeredNavigationBlocked:
-      desc = "the action triggered a navigation that was blocked";
-      break;
-    case actor::mojom::ActionResultCode::kEmptyActionSequence:
-      desc = "the actor was given no actions to run";
-      break;
-    case actor::mojom::ActionResultCode::kExecutorBusy:
-      desc =
-          "the tool executor is busy with another action — wait briefly "
-          "and retry";
-      break;
-    case actor::mojom::ActionResultCode::kObservedTargetElementDestroyed:
-      desc =
-          "the target element was destroyed between observation and "
-          "action — re-observe before retrying";
-      break;
-    case actor::mojom::ActionResultCode::kObservedTargetElementChanged:
-      desc =
-          "the target element changed between observation and action — "
-          "re-observe before retrying";
-      break;
-    case actor::mojom::ActionResultCode::kTargetNodeInteractionPointObscured:
-      desc =
-          "the target's interaction point is obscured by another element "
-          "— try a different element (e.g. find_text on the visible "
-          "label and click the clickable_ancestor_index)";
-      break;
-    case actor::mojom::ActionResultCode::kToolTimeout:
-      desc =
-          "the action took too long to execute — try a smaller batch or "
-          "a different element";
-      break;
-    case actor::mojom::ActionResultCode::kFilePickerTriggered:
-      desc =
-          "the action triggered a file picker — file uploads aren't "
-          "automatable; ask the user to handle this step";
-      break;
-    case actor::mojom::ActionResultCode::kFilePickerConfirmed:
-      desc = "a file picker was confirmed";
-      break;
-    case actor::mojom::ActionResultCode::kFilePickerCancelled:
-      desc = "the file picker was cancelled";
-      break;
-    case actor::mojom::ActionResultCode::kExecutionEngineExistingAction:
-      desc =
-          "the execution engine already has an action sequence in flight "
-          "(typically from a prior bridge_timeout that left a stale "
-          "task) — wait briefly, or close and reopen the tab to recover";
-      break;
-    case actor::mojom::ActionResultCode::kExternalProtocolNavigationBlocked:
-      desc = "navigation to an external protocol was blocked";
-      break;
-    case actor::mojom::ActionResultCode::kRendererCrashed:
-      desc = "the renderer process crashed; the page is unusable";
-      break;
-    case actor::mojom::ActionResultCode::kNotImplemented:
-      desc = "this action is not yet implemented";
-      break;
-    case actor::mojom::ActionResultCode::kInvokeCanceled:
-      desc = "the action was canceled before it ran";
-      break;
-    case actor::mojom::ActionResultCode::kInvalidTaskStateForAct:
-      desc = "the actor task is in an invalid state for this action";
-      break;
-    case actor::mojom::ActionResultCode::kActionsCancelled:
-      desc = "the remaining actions in this batch were cancelled";
-      break;
-    case actor::mojom::ActionResultCode::kNavigateInvalidUrl:
-      desc = "navigate: the URL is not valid";
-      break;
-    case actor::mojom::ActionResultCode::kNavigateFailedToStart:
-      desc =
-          "navigate: the navigation failed before it started "
-          "(network/DNS/blocked)";
-      break;
-    case actor::mojom::ActionResultCode::kNavigateCommittedErrorPage:
-      desc =
-          "navigate: landed on an error page (404 / 500 / cert error) — "
-          "report and don't retry blindly";
-      break;
-    case actor::mojom::ActionResultCode::kClickSuppressed:
-      desc = "click: the click event was suppressed by the page";
-      break;
-    case actor::mojom::ActionResultCode::kScrollNoScrollingElement:
-      desc =
-          "scroll: the document has no scrollable viewport element (rare "
-          "quirks-mode page); target a specific scrollable element instead "
-          "of the page";
-      break;
-    case actor::mojom::ActionResultCode::kScrollTargetNotUserScrollable:
-      desc =
-          "scroll: the targeted element isn't user-scrollable (no "
-          "scrollable overflow) — scroll the page/viewport instead, or "
-          "pick a container that actually scrolls";
-      break;
-    case actor::mojom::ActionResultCode::kScrollOffsetDidNotChange:
-      desc =
-          "scroll: the page did not move — you're already at the edge in "
-          "that direction (top or bottom), or the target can't scroll "
-          "further. Do NOT repeat the same scroll; if you were looking for "
-          "more content, treat the current view as the end, or try the "
-          "opposite direction / a different scrollable element";
-      break;
-
-    // ── Policy / safety blocks (44–49). The action was refused for a
-    // policy or safety reason, not a transient page state — do NOT retry;
-    // report the reason to the user. (Chromium 149+ taxonomy.) ──
-    case actor::mojom::ActionResultCode::kActionsBlockedForSiteRisk:
-      desc =
-          "actions are blocked on this site because it was flagged as "
-          "risky — do not retry; tell the user the site is blocked";
-      break;
-    case actor::mojom::ActionResultCode::kActionsBlockedSafeBrowsingDisabled:
-      desc =
-          "actions are blocked because Safe Browsing is disabled in the "
-          "user's settings (it's required) — ask the user to enable it";
-      break;
-    case actor::mojom::ActionResultCode::kActionsBlockedByEnterprisePolicy:
-      desc =
-          "the administrator's enterprise policy forbids acting on this "
-          "page — do not retry; report this to the user";
-      break;
-    case actor::mojom::ActionResultCode::kActionsBlockedForScheme:
-      desc =
-          "only http(s) pages can be acted on — this page's scheme isn't "
-          "supported";
-      break;
-    case actor::mojom::ActionResultCode::kActionsBlockedOnErrorPage:
-      desc =
-          "the tab is showing a browser error page; navigate to a working "
-          "URL before acting";
-      break;
-    case actor::mojom::ActionResultCode::kActionBlockedByEnterpriseContentScan:
-      desc =
-          "the text was blocked by an enterprise data-loss policy scan — "
-          "do not retry; report this to the user";
-      break;
-
-    // ── Drag-and-drop (300–305). ──
-    case actor::mojom::ActionResultCode::kDragAndReleaseFromOffscreen:
-      desc =
-          "drag: the source (from_index) is offscreen — scroll it into "
-          "view first with BrowserScrollToElement";
-      break;
-    case actor::mojom::ActionResultCode::kDragAndReleaseToOffscreen:
-      desc =
-          "drag: the destination (to_index) is offscreen — scroll it into "
-          "view first with BrowserScrollToElement";
-      break;
-    case actor::mojom::ActionResultCode::kDragAndReleaseFromMoveSuppressed:
-    case actor::mojom::ActionResultCode::kDragAndReleaseDownSuppressed:
-    case actor::mojom::ActionResultCode::kDragAndReleaseToMoveSuppressed:
-    case actor::mojom::ActionResultCode::kDragAndReleaseUpSuppressed:
-      desc =
-          "drag: the page suppressed one of the drag mouse events — this "
-          "element may not accept a synthetic drag; try a different "
-          "approach";
-      break;
-
-    // ── Hover / mouse-move (400). ──
-    case actor::mojom::ActionResultCode::kMouseMoveEventSuppressed:
-      desc = "hover: the page suppressed the mouse-move event";
-      break;
-
-    // ── Select (600–602). ──
-    case actor::mojom::ActionResultCode::kSelectInvalidElement:
-      desc =
-          "select: the target index is not a native <select> — for a "
-          "custom dropdown, BrowserClick to open it, then click the option";
-      break;
-    case actor::mojom::ActionResultCode::kSelectNoSuchOption:
-      desc =
-          "select: no <option> in that <select> has the given value — "
-          "BrowserReadElement the <select> to see the exact option values "
-          "(match the value attribute, not the visible label)";
-      break;
-    case actor::mojom::ActionResultCode::kSelectOptionDisabled:
-      desc = "select: the requested option exists but is disabled";
-      break;
-
-    // ── Type (700–705). ──
-    case actor::mojom::ActionResultCode::kTypeTargetNotElement:
-      desc = "type: the target index is not a typeable element";
-      break;
-    case actor::mojom::ActionResultCode::kTypeTargetNotFocusable:
-      desc =
-          "type: the target can't be focused — BrowserClick it first, or "
-          "target the actual input field";
-      break;
-    case actor::mojom::ActionResultCode::kTypeUnsupportedCharacters:
-    case actor::mojom::ActionResultCode::kTypeFailedMappingCharToKey:
-      desc =
-          "type: some characters in the text can't be sent as key events "
-          "(unsupported / unmappable)";
-      break;
-    case actor::mojom::ActionResultCode::kTypeKeyDownSuppressed:
-      desc = "type: the page suppressed a keydown event while typing";
-      break;
-    case actor::mojom::ActionResultCode::kTypeInvalidTextEncoding:
-      desc = "type: the text to type is not valid UTF-8";
-      break;
-
-    // ── History / back (800–801). ──
-    case actor::mojom::ActionResultCode::kHistoryNoNavigationsCreated:
-      desc = "back: there's no earlier entry in this tab's history";
-      break;
-    case actor::mojom::ActionResultCode::kHistoryCancelledBeforeStart:
-      desc =
-          "back: the history navigation was cancelled before it started";
-      break;
-
-    default:
-      // Unknown code — fall back to the bare numeric form so the LLM
-      // still has a stable identifier and humans can map it via the
-      // mojom enum.
-      return base::StrCat({"actor_error_", base::NumberToString(n)});
+base::DictValue ActionParams(std::string_view action,
+                             std::string_view phase) {
+  base::DictValue params;
+  if (!action.empty()) {
+    params.Set("action", action);
   }
-  return base::StrCat({"actor_error_", base::NumberToString(n), ": ", desc});
+  if (!phase.empty()) {
+    params.Set("phase", phase);
+  }
+  return params;
 }
 
-std::string DescribeActorErrorForTool(std::string_view action_name,
-                                       actor::mojom::ActionResultCode code) {
-  // Scroll-tools failing with `kElementOffscreen` are the loop trap.
-  // `BrowserScrollToElement` / `BrowserScroll` exist to FIX offscreen
-  // errors; getting that same code back from them means the upstream
-  // `ScrollIntoViewIfNeeded()` was clipped by an ancestor (see
-  // `chrome/renderer/actor/tool_base.cc:224-258`) and there's no
-  // recovery the model can do by re-issuing the same action. Override
-  // the generic "prepend a scroll_to" advice with explicit alternate
-  // tactics so the model breaks out of the retry loop.
-  const bool is_scroll_tool =
-      action_name == "scroll_to" || action_name == "scroll";
-  if (is_scroll_tool &&
-      code == actor::mojom::ActionResultCode::kElementOffscreen) {
-    return base::StrCat(
-        {"actor_error_",
-         base::NumberToString(static_cast<int>(code)),
-         ": ", action_name,
-         ": the element is in the DOM but cannot be scrolled into "
-         "view (typically clipped by an `overflow:hidden` ancestor — "
-         "e.g. a card carousel). Do NOT re-issue ", action_name,
-         " on the same index — it will fail the same way. Instead: "
-         "use BrowserFindText with the element's visible text and "
-         "click the returned clickable_ancestor_index, OR pick a "
-         "different element from the latest observation that has a "
-         "visible bounding box (one with `box: [x,y,w,h]` where y is "
-         "smaller than the viewport height)."});
-  }
+base::DictValue PhaseParams(std::string_view phase) {
+  base::DictValue params;
+  params.Set("phase", phase);
+  return params;
+}
 
-  // Non-scroll interaction tools (click / fill_form / type / hover /
-  // select_option) failing with `kElementOffscreen`. The base advice is
-  // "prepend a scroll_to", which is correct when the target is genuinely
-  // below the fold. But a very common web pattern produces this same code
-  // on a target that scroll_to can NEVER fix: custom / "sr-only"
-  // checkboxes and radios where the real <input> is visually hidden
-  // (clipped to a 1px rect, `appearance:none`, etc.) behind a styled
-  // <label>. The input node has an empty `VisibleBoundsInWidget`
-  // (see `chrome/renderer/actor/tool_base.cc`), so click/fill_form/
-  // scroll_to all target a rectangle-less node and all return code 20 —
-  // the observation shows these elements with NO `box`. Surface BOTH
-  // tactics in order so the model tries scroll_to once, then escapes to
-  // the visible label instead of looping. (Diagnostic tell: the failing
-  // index has `role: checkbox`/`radio` and no `box` in the observation.)
-  if (!is_scroll_tool &&
-      code == actor::mojom::ActionResultCode::kElementOffscreen) {
-    return base::StrCat(
-        {"actor_error_", base::NumberToString(static_cast<int>(code)),
-         ": ", action_name,
-         ": the target element is offscreen. First try BrowserScrollToElement "
-         "on that index, then retry. If scroll_to ALSO returns an offscreen "
-         "or clipped error, the element is NOT a normal below-the-fold node — "
-         "it's likely a hidden/custom form control (an `sr-only` checkbox or "
-         "radio behind a styled <label>; in the observation it shows `role: "
-         "checkbox`/`radio` with no `box`), which has no clickable rectangle "
-         "of its own. Do NOT keep retrying this index. Instead: use "
-         "BrowserFindText on the control's visible label text and click the "
-         "returned clickable_ancestor_index, or apply the setting via the "
-         "page's URL / query parameters if it encodes filters there (many "
-         "faceted-search pages do)."});
-  }
-
-  // `kTargetNodeInteractionPointObscured` from a scroll-tool is rare
-  // but follows the same pattern: prepending a SCROLL of the obscuring
-  // element won't help. Echo the existing advice plus the breadcrumb
-  // that scroll_to itself returned it.
-  if (is_scroll_tool &&
-      code == actor::mojom::ActionResultCode::
-                  kTargetNodeInteractionPointObscured) {
-    return base::StrCat(
-        {"actor_error_",
-         base::NumberToString(static_cast<int>(code)),
-         ": ", action_name,
-         ": the target's interaction point is obscured by another "
-         "element — use BrowserFindText with the element's visible "
-         "text and click the returned clickable_ancestor_index, or "
-         "pick a different element."});
-  }
-
-  // Default — base description unchanged for every other combination.
-  return DescribeActorError(code);
+base::DictValue ReasonParams(std::string_view reason) {
+  base::DictValue params;
+  params.Set("reason", reason);
+  return params;
 }
 
 actor::mojom::ActionResultCode OverallActorResultCode(
@@ -708,11 +365,12 @@ std::optional<int32_t> ResolveTabIdOrReject(
       const std::string* tag =
           ::nexus::NexusSessionTabTag::SessionKeyFor(contents);
       if (!tag || *tag != browser_tool->GetSessionKey()) {
-        std::move(done).Reject(
-            "tab_not_in_session",
-            base::StrCat({tool_name, ": tab_id ",
-                          base::NumberToString(*explicit_tab_id),
-                          " is not owned by this Nexus session"}));
+        {
+      base::DictValue reject_params;
+      reject_params.Set("tool", tool_name);
+      reject_params.Set("tab_id", *explicit_tab_id);
+      std::move(done).Reject("tab_not_in_session", std::move(reject_params));
+    }
         return std::nullopt;
       }
     }
@@ -723,11 +381,11 @@ std::optional<int32_t> ResolveTabIdOrReject(
     std::optional<int32_t> resolved =
         GetSessionScopedActiveTabHandleId(browser_tool);
     if (!resolved.has_value()) {
-      std::move(done).Reject(
-          "no_session_tab",
-          base::StrCat({tool_name,
-                        ": this Nexus session owns no tabs; open one with "
-                        "navigate(new_tab=true) or search first"}));
+      {
+      base::DictValue reject_params;
+      reject_params.Set("tool", tool_name);
+      std::move(done).Reject("no_session_tab", std::move(reject_params));
+    }
       return std::nullopt;
     }
     return *resolved;
@@ -735,10 +393,11 @@ std::optional<int32_t> ResolveTabIdOrReject(
 
   std::optional<int32_t> active = GetActiveTabHandleId(profile);
   if (!active.has_value()) {
-    std::move(done).Reject(
-        "no_active_tab",
-        base::StrCat({tool_name,
-                      ": no active tab; pass `tab_id` explicitly"}));
+    {
+    base::DictValue reject_params = ReasonParams("no_active");
+    reject_params.Set("tool", tool_name);
+    std::move(done).Reject("no_active_tab", std::move(reject_params));
+  }
     return std::nullopt;
   }
   return *active;

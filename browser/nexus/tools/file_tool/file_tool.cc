@@ -70,37 +70,6 @@ constexpr size_t kMediaReadByteCap = 12 * 1024 * 1024;  // raw bytes
 // errorCode 8 (spec 2-1-5).
 constexpr int kPdfMaxPagesPerRead = 20;
 
-constexpr char kFileUnchangedStub[] =
-    "File unchanged since last read. The content from the earlier Read "
-    "tool_result in this conversation is still current — refer to that instead "
-    "of re-reading.";
-
-std::string FormatOneDecimal(double value) {
-  const int scaled = static_cast<int>(std::round(value * 10.0));
-  const int whole = scaled / 10;
-  const int fraction = scaled % 10;
-  if (fraction == 0) {
-    return base::NumberToString(whole);
-  }
-  return base::StrCat(
-      {base::NumberToString(whole), ".", base::NumberToString(fraction)});
-}
-
-std::string FormatFileSize(int64_t size_in_bytes) {
-  const double kb = static_cast<double>(size_in_bytes) / 1024.0;
-  if (kb < 1.0) {
-    return base::StrCat({base::NumberToString(size_in_bytes), " bytes"});
-  }
-  if (kb < 1024.0) {
-    return base::StrCat({FormatOneDecimal(kb), "KB"});
-  }
-  const double mb = kb / 1024.0;
-  if (mb < 1024.0) {
-    return base::StrCat({FormatOneDecimal(mb), "MB"});
-  }
-  return base::StrCat({FormatOneDecimal(mb / 1024.0), "GB"});
-}
-
 int BytesPerTokenForFileType(std::string_view ext) {
   if (ext == "json" || ext == "jsonl" || ext == "jsonc") {
     return 2;
@@ -117,32 +86,12 @@ int EstimateReadTokens(std::string_view content, std::string_view ext) {
   return static_cast<int>(std::llround(estimate));
 }
 
-std::string BuildFileTooLargeMessage(int64_t size_in_bytes) {
-  return base::StrCat(
-      {"File content (", FormatFileSize(size_in_bytes),
-       ") exceeds maximum allowed size (",
-       FormatFileSize(kDefaultReadMaxSizeBytes),
-       "). Use offset and limit parameters to read specific portions of the "
-       "file, "
-       "or search for specific content instead of reading the whole file."});
-}
-
 struct ReadBudget {
   int max_output_tokens;
 };
 
 ReadBudget GetReadBudget() {
   return {kReadMaxOutputTokens};
-}
-
-std::string BuildTokenLimitMessage(int token_count, int max_output_tokens) {
-  return base::StrCat(
-      {"File content (", base::NumberToString(token_count),
-       " tokens) exceeds maximum allowed tokens (",
-       base::NumberToString(max_output_tokens),
-       "). Use offset and limit parameters to read specific portions of the "
-       "file, "
-       "or search for specific content instead of reading the whole file."});
 }
 
 std::string LowercaseExtension(const base::FilePath& path) {
@@ -289,14 +238,15 @@ void AppendDocumentPart(base::ListValue* parts,
 }
 
 FileTool::ReadResult MakeContentPartsResult(base::FilePath path,
-                                            std::string message,
+                                            base::DictValue media,
                                             base::ListValue parts,
                                             base::Time last_modified) {
   FileTool::ReadResult result;
   result.ok = true;
+  media.Set("path", path.AsUTF8Unsafe());
   result.file_path = std::move(path);
   result.last_modified = last_modified;
-  result.payload.Set("message", std::move(message));
+  result.payload.Set("media", std::move(media));
   result.payload.Set("content_parts", std::move(parts));
   return result;
 }
@@ -308,21 +258,20 @@ std::optional<std::vector<uint8_t>> ReadBytesWithCap(
   if (base::GetFileInfo(path, &info) && info.size > 0 &&
       static_cast<uint64_t>(info.size) > kMediaReadByteCap) {
     result->error_code = "file_too_large";
-    result->error_message = base::StrCat(
-        {"file is too large to read as media: ", path.AsUTF8Unsafe()});
+    result->error_params.Set("kind", "media");
+    result->error_params.Set("path", path.AsUTF8Unsafe());
     return std::nullopt;
   }
   std::optional<std::vector<uint8_t>> bytes = base::ReadFileToBytes(path);
   if (!bytes.has_value()) {
     result->error_code = "read_failed";
-    result->error_message =
-        base::StrCat({"failed to read file: ", path.AsUTF8Unsafe()});
+    result->error_params.Set("path", path.AsUTF8Unsafe());
     return std::nullopt;
   }
   if (bytes->size() > kMediaReadByteCap) {
     result->error_code = "file_too_large";
-    result->error_message = base::StrCat(
-        {"file is too large to read as media: ", path.AsUTF8Unsafe()});
+    result->error_params.Set("kind", "media");
+    result->error_params.Set("path", path.AsUTF8Unsafe());
     return std::nullopt;
   }
   return bytes;
@@ -431,7 +380,7 @@ FileTool::ReadResult ReadNotebookFile(const base::FilePath& path,
       base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
   if (!parsed || !parsed->is_dict()) {
     result.error_code = "invalid_notebook";
-    result.error_message = "failed to parse notebook JSON";
+    result.error_params.Set("reason", "parse");
     return result;
   }
 
@@ -439,7 +388,7 @@ FileTool::ReadResult ReadNotebookFile(const base::FilePath& path,
   const base::ListValue* cells = notebook.FindList("cells");
   if (!cells) {
     result.error_code = "invalid_notebook";
-    result.error_message = "notebook JSON does not contain a cells array";
+    result.error_params.Set("reason", "no_cells");
     return result;
   }
 
@@ -488,11 +437,11 @@ FileTool::ReadResult ReadNotebookFile(const base::FilePath& path,
     ++index;
   }
 
-  result = MakeContentPartsResult(
-      path,
-      base::StrCat({"Notebook read: ", path.AsUTF8Unsafe(), " (",
-                    base::NumberToString(cells->size()), " cells)"}),
-      std::move(parts), last_modified);
+  base::DictValue media;
+  media.Set("kind", "notebook");
+  media.Set("cells", static_cast<int>(cells->size()));
+  result = MakeContentPartsResult(path, std::move(media), std::move(parts),
+                                  last_modified);
   result.full_content = contents;
   result.cache_read_state = true;
   return result;
@@ -570,14 +519,13 @@ FileTool::ReadResult ReadImageFile(const base::FilePath& path,
                                    base::Time last_modified) {
   EncodedImage encoded = MaybeCompressImageForRead(bytes, mime_type);
   base::ListValue parts;
-  AppendTextPart(&parts,
-                 base::StrCat({"Image file read: ", path.AsUTF8Unsafe(), " (",
-                               base::NumberToString(bytes.size()), " bytes)"}));
   AppendImagePart(&parts, base::Base64Encode(encoded.bytes),
                   std::move(encoded.mime_type));
-  return MakeContentPartsResult(
-      path, base::StrCat({"Image file read: ", path.AsUTF8Unsafe()}),
-      std::move(parts), last_modified);
+  base::DictValue media;
+  media.Set("kind", "image");
+  media.Set("bytes", static_cast<double>(bytes.size()));
+  return MakeContentPartsResult(path, std::move(media), std::move(parts),
+                                last_modified);
 }
 
 // Build the "1\tline\n2\tline\n…" projection that Claude Code's Read
@@ -1141,7 +1089,7 @@ void FileTool::OnStop(OnStopReason reason) {
   //
   // Per-turn cleanup reasons (kCompleted, kUserStopped) fire OnStop
   // while the ToolSession stays warm in the adapter map (typed-OnStop
-  // refactor — see tools_adapter.cc). The agent loop blocks on tool
+  // refactor — see tool_session_registry.cc). The agent loop blocks on tool
   // results before declaring a turn complete, so there is no in-flight
   // file I/O to cancel at those points; invalidating would be pure
   // churn (and `GetWeakPtr()` simply re-vends a fresh, valid WeakPtr on
@@ -1186,7 +1134,7 @@ void FileTool::ClearReadState() {
 //     invalidated and the reply drops; otherwise it does the single
 //     `done.Resolve` / `done.Reject`. Resolve/Reject must run on UI
 //     because the callbacks inside `done` hold a UI-resident
-//     `WeakPtr<ToolsAdapter>`.
+//     `WeakPtr<ToolSessionRegistry>`.
 //
 // Validation failures reject `done` inline — we're already on UI, so
 // there's no need to round-trip through the reply trampoline.
@@ -1197,12 +1145,13 @@ void FileTool::ClearReadState() {
 // download path and ProcessTool.
 // =============================================================================
 
-void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
+void FileTool::RunReadOnUI(::nexus::generated::FilesReadInput input,
                            ToolCallback done) {
   base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
   if (!path.IsAbsolute()) {
-    std::move(done).Reject("invalid_args",
-                           "file_path must be an absolute path");
+    base::DictValue params;
+    params.Set("reason", "file_path_not_absolute");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1214,11 +1163,9 @@ void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
     int first_page = 0;
     int last_page = 0;
     if (!ParsePdfPageRange(*input.pages, &first_page, &last_page)) {
-      std::move(done).Reject(
-          "invalid_pages",
-          base::StrCat({"Invalid pages parameter: \"", *input.pages,
-                        "\". Use formats like \"1-5\", \"3\", or \"10-20\". "
-                        "Pages are 1-indexed."}));
+      base::DictValue params;
+      params.Set("pages", *input.pages);
+      std::move(done).Reject("invalid_pages", std::move(params));
       return;
     }
     const int range_size =
@@ -1226,12 +1173,10 @@ void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
             ? kPdfMaxPagesPerRead + 1
             : last_page - first_page + 1;
     if (range_size > kPdfMaxPagesPerRead) {
-      std::move(done).Reject(
-          "too_many_pages",
-          base::StrCat({"Page range \"", *input.pages,
-                        "\" exceeds maximum of ",
-                        base::NumberToString(kPdfMaxPagesPerRead),
-                        " pages per request. Please use a smaller range."}));
+      base::DictValue params;
+      params.Set("pages", *input.pages);
+      params.Set("max_pages", kPdfMaxPagesPerRead);
+      std::move(done).Reject("too_many_pages", std::move(params));
       return;
     }
   }
@@ -1240,11 +1185,9 @@ void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
   // errorCode 9): a path-based check (no I/O) for device files that would hang
   // the read. Safe devices like /dev/null are intentionally allowed.
   if (IsBlockedDevicePath(input.file_path)) {
-    std::move(done).Reject(
-        "blocked_device_path",
-        base::StrCat({"Cannot read '", input.file_path,
-                      "': this device file would block or produce infinite "
-                      "output."}));
+    base::DictValue params;
+    params.Set("path", input.file_path);
+    std::move(done).Reject("blocked_device_path", std::move(params));
     return;
   }
 
@@ -1282,8 +1225,8 @@ void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
     last_read = read_it->second;
   }
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+  BlockingRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&FileTool::ReadFileBlocking, std::move(path), input.offset,
                      input.limit, input.pages, input.context_window,
                      std::move(last_read)),
@@ -1291,12 +1234,13 @@ void FileTool::RunReadOnUI(::nexus::generated::ReadInput input,
                      std::move(done)));
 }
 
-void FileTool::RunWriteOnUI(::nexus::generated::WriteInput input,
+void FileTool::RunWriteOnUI(::nexus::generated::FilesWriteInput input,
                             ToolCallback done) {
   base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
   if (!path.IsAbsolute()) {
-    std::move(done).Reject("invalid_args",
-                           "file_path must be an absolute path");
+    base::DictValue params;
+    params.Set("reason", "file_path_not_absolute");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1306,7 +1250,9 @@ void FileTool::RunWriteOnUI(::nexus::generated::WriteInput input,
   if (base::StartsWith(input.file_path, "\\\\",
                        base::CompareCase::SENSITIVE) ||
       base::StartsWith(input.file_path, "//", base::CompareCase::SENSITIVE)) {
-    std::move(done).Reject("invalid_args", "UNC paths are not supported.");
+    base::DictValue params;
+    params.Set("reason", "unc_path");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1316,33 +1262,34 @@ void FileTool::RunWriteOnUI(::nexus::generated::WriteInput input,
     last_read = read_it->second;
   }
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+  BlockingRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&FileTool::WriteFileBlocking, std::move(path),
                      std::move(input.content), std::move(last_read)),
       base::BindOnce(&FileTool::OnWriteDone, weak_ptr_factory_.GetWeakPtr(),
                      std::move(done)));
 }
 
-void FileTool::RunEditOnUI(::nexus::generated::EditInput input,
+void FileTool::RunEditOnUI(::nexus::generated::FilesEditInput input,
                            ToolCallback done) {
   base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
   // Edit's pre-flight has more invariants than read/write.
   if (!path.IsAbsolute()) {
-    std::move(done).Reject("invalid_args",
-                           "file_path must be an absolute path");
+    base::DictValue params;
+    params.Set("reason", "file_path_not_absolute");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
   if (input.old_string == input.new_string) {
-    std::move(done).Reject("invalid_args",
-                           "No changes to make: old_string and new_string are exactly the same.");
+    base::DictValue params;
+    params.Set("reason", "same_strings");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
   // CC parity (spec 2-2-4 code 5): .ipynb files must use NotebookEdit.
   if (LowercaseExtension(path) == "ipynb") {
-    std::move(done).Reject(
-        "notebook_file",
-        "File is a Jupyter Notebook. Use the NotebookEdit tool to edit this file.");
+    base::DictValue params;
+    std::move(done).Reject("notebook_file", std::move(params));
     return;
   }
 
@@ -1353,8 +1300,8 @@ void FileTool::RunEditOnUI(::nexus::generated::EditInput input,
     last_read = read_it->second;
   }
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+  BlockingRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&FileTool::EditFileBlocking, std::move(path),
                      std::move(input.old_string), std::move(input.new_string),
                      replace_all, std::move(last_read)),
@@ -1362,10 +1309,12 @@ void FileTool::RunEditOnUI(::nexus::generated::EditInput input,
                      std::move(done)));
 }
 
-void FileTool::RunGlobOnUI(::nexus::generated::GlobInput input,
+void FileTool::RunGlobOnUI(::nexus::generated::FilesGlobInput input,
                            ToolCallback done) {
   if (input.pattern.empty()) {
-    std::move(done).Reject("invalid_args", "pattern is required");
+    base::DictValue params;
+    params.Set("reason", "pattern_required");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1394,10 +1343,9 @@ void FileTool::RunGlobOnUI(::nexus::generated::GlobInput input,
     target = ResolveAgainstCwd(input.path.value_or(""), default_root);
   }
   if (target.empty()) {
-    std::move(done).Reject(
-        "invalid_args",
-        "session cwd is not set and no absolute `path` was provided. "
-        "Push a cwd via setAgentLoopSettings or pass an absolute path.");
+    base::DictValue params;
+    params.Set("reason", "no_cwd");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1461,8 +1409,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     std::string contents;
     if (!base::ReadFileToString(path, &contents)) {
       result.error_code = "read_failed";
-      result.error_message =
-          base::StrCat({"failed to read file: ", path.AsUTF8Unsafe()});
+      result.error_params.Set("path", path.AsUTF8Unsafe());
       return result;
     }
     result = ReadNotebookFile(path, contents, last_modified);
@@ -1493,16 +1440,16 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   // of retrying, rather than collapsing to the generic "failed to read file".
   if (have_file_info && file_info.is_directory) {
     result.error_code = "is_directory";
-    result.error_message = base::StrCat(
-        {"EISDIR: illegal operation on a directory, read '",
-         path.AsUTF8Unsafe(), "'"});
+    result.error_params.Set("path", path.AsUTF8Unsafe());
     return result;
   }
 
   if (!limit.has_value() && have_file_info && !file_info.is_directory &&
       file_info.size > kDefaultReadMaxSizeBytes) {
     result.error_code = "file_too_large";
-    result.error_message = BuildFileTooLargeMessage(file_info.size);
+    result.error_params.Set("size_bytes", static_cast<double>(file_info.size));
+    result.error_params.Set("limit_bytes",
+                            static_cast<double>(kDefaultReadMaxSizeBytes));
     return result;
   }
 
@@ -1513,12 +1460,10 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     // treating it as an opaque I/O failure.
     if (!base::PathExists(path)) {
       result.error_code = "file_not_found";
-      result.error_message = "File does not exist.";
       return result;
     }
     result.error_code = "read_failed";
-    result.error_message =
-        base::StrCat({"failed to read file: ", path.AsUTF8Unsafe()});
+    result.error_params.Set("path", path.AsUTF8Unsafe());
     return result;
   }
 
@@ -1532,9 +1477,6 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
 
   if (!is_utf16le && net::LooksLikeBinary(contents)) {
     result.error_code = "unsupported_binary_file";
-    result.error_message =
-        "File appears to be binary and is not a supported Read media type. "
-        "Use a dedicated binary-capable tool or convert it to text first.";
     return result;
   }
 
@@ -1544,7 +1486,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
       last_modified == last_read->last_modified &&
       contents == last_read->content) {
     result.ok = true;
-    result.message = kFileUnchangedStub;
+    result.notice.Set("kind", "unchanged");
     return result;
   }
 
@@ -1600,16 +1542,11 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     // the content comparison, not the read's range).
     result.cache_read_state = true;
     if (projection.total_lines == 0) {
-      result.message =
-          "<system-reminder>Warning: the file exists but the contents are "
-          "empty.</system-reminder>";
+      result.notice.Set("kind", "empty");
     } else {
-      result.message = base::StrCat(
-          {"<system-reminder>Warning: the file exists but is shorter than the "
-           "provided offset (",
-           base::NumberToString(start_line), "). The file has ",
-           base::NumberToString(projection.total_lines),
-           " lines.</system-reminder>"});
+      result.notice.Set("kind", "short");
+      result.notice.Set("offset", start_line);
+      result.notice.Set("total_lines", projection.total_lines);
     }
     return result;
   }
@@ -1617,8 +1554,8 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   const int token_estimate = EstimateReadTokens(projection.content, ext);
   if (token_estimate > read_budget.max_output_tokens) {
     result.error_code = "max_file_read_token_exceeded";
-    result.error_message =
-        BuildTokenLimitMessage(token_estimate, read_budget.max_output_tokens);
+    result.error_params.Set("tokens", token_estimate);
+    result.error_params.Set("max_tokens", read_budget.max_output_tokens);
     return result;
   }
 
@@ -1634,7 +1571,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   result.limit = limit;
   // CC parity (2-1-8 / 2-1-10 inv.4): Read never sets isPartialView.
   result.cache_read_state = true;
-  result.message = std::move(projection.projection);
+  result.content = std::move(projection.projection);
   return result;
 }
 
@@ -1661,8 +1598,7 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
   if (!was_create) {
     if (!last_read.has_value() || last_read->is_partial_view) {
       result.error_code = "file_not_read";
-      result.error_message =
-          "File must be fully read before editing. A partial read (using offset/limit) does not count, read the entire file first, then retry the edit.";
+      result.error_params.Set("phase", "write");
       return result;
     }
     have_original = base::ReadFileToString(path, &original_contents);
@@ -1670,9 +1606,6 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
         have_original && original_contents == last_read->content;
     if (!content_unchanged) {
       result.error_code = "file_modified_since_read";
-      result.error_message =
-          "File has been modified since read, either by the user or by a "
-          "linter. Read it again before attempting to write it.";
       return result;
     }
   }
@@ -1685,8 +1618,8 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
   if (!parent.empty() && !base::DirectoryExists(parent)) {
     if (!base::CreateDirectory(parent)) {
       result.error_code = "write_failed";
-      result.error_message = base::StrCat(
-          {"failed to create parent directory: ", parent.AsUTF8Unsafe()});
+      result.error_params.Set("reason", "parent_dir");
+      result.error_params.Set("path", parent.AsUTF8Unsafe());
       return result;
     }
   }
@@ -1707,8 +1640,7 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
 
   if (!base::WriteFile(path, write_bytes)) {
     result.error_code = "write_failed";
-    result.error_message =
-        base::StrCat({"failed to write file: ", path.AsUTF8Unsafe()});
+    result.error_params.Set("path", path.AsUTF8Unsafe());
     return result;
   }
 
@@ -1739,14 +1671,8 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
   //    (update-only variant; same ambiguity)
   // Both produced retry spirals. Do not revert to either.
   result.ok = true;
-  const std::string byte_str = base::NumberToString(write_bytes.size());
-  result.message =
-      was_create
-          ? base::StrCat({"File created successfully at: ", path.AsUTF8Unsafe(),
-                          ". Wrote ", byte_str, " bytes."})
-          : base::StrCat({"The file ", path.AsUTF8Unsafe(),
-                          " has been updated successfully. Wrote ", byte_str,
-                          " bytes."});
+  result.outcome = was_create ? "created" : "updated";
+  result.bytes_written = static_cast<int64_t>(write_bytes.size());
   if (have_original) {
     result.original_file = std::move(original_contents);
     result.original_file_set = true;
@@ -1774,10 +1700,10 @@ FileTool::EditResult FileTool::EditFileBlocking(
   if (base::GetFileInfo(path, &pre_info) &&
       pre_info.size > kMaxEditFileSize) {
     result.error_code = "file_too_large";
-    result.error_message = base::StrCat(
-        {"File is too large to edit (", FormatFileSize(pre_info.size),
-         "). Maximum editable file size is ",
-         FormatFileSize(kMaxEditFileSize), "."});
+    result.error_params.Set("kind", "edit");
+    result.error_params.Set("size_bytes", static_cast<double>(pre_info.size));
+    result.error_params.Set("limit_bytes",
+                            static_cast<double>(kMaxEditFileSize));
     return result;
   }
 
@@ -1793,13 +1719,11 @@ FileTool::EditResult FileTool::EditFileBlocking(
       }
       if (!base::WriteFile(path, new_string)) {
         result.error_code = "write_failed";
-        result.error_message = base::StrCat(
-            {"failed to write file: ", path.AsUTF8Unsafe()});
+        result.error_params.Set("path", path.AsUTF8Unsafe());
         return result;
       }
       result.ok = true;
-      result.message = base::StrCat({"The file ", path.AsUTF8Unsafe(),
-                                     " has been updated successfully."});
+      result.outcome = "updated";
       result.file_path = std::move(path);
       result.updated_content = std::move(new_string);
       base::File::Info after_info;
@@ -1810,17 +1734,13 @@ FileTool::EditResult FileTool::EditFileBlocking(
     }
     // File doesn't exist and old_string is non-empty.
     result.error_code = "file_not_found";
-    result.error_message = base::StrCat(
-        {"File does not exist. Current working directory: ",
-         path.DirName().AsUTF8Unsafe(), "."});
+    result.error_params.Set("cwd", path.DirName().AsUTF8Unsafe());
     return result;
   }
 
   // CC parity (spec 2-2-4 code 6): file must have been fully read first.
   if (!last_read.has_value()) {
     result.error_code = "file_not_read";
-    result.error_message =
-        "File has not been read yet. Read it first before writing to it.";
     return result;
   }
   if (last_read->is_partial_view) {
@@ -1833,10 +1753,9 @@ FileTool::EditResult FileTool::EditFileBlocking(
             ? base::NumberToString(*last_read->limit)
             : "end";
     result.error_code = "file_not_read";
-    result.error_message = base::StrCat(
-        {"File was only partially read (offset: ", offset_str,
-         ", limit: ", limit_str, "). "
-         "Read the full file without offset/limit before editing."});
+    result.error_params.Set("phase", "partial");
+    result.error_params.Set("offset", offset_str);
+    result.error_params.Set("limit", limit_str);
     return result;
   }
 
@@ -1848,19 +1767,16 @@ FileTool::EditResult FileTool::EditFileBlocking(
     if (!existing.empty() &&
         base::TrimWhitespaceASCII(existing, base::TRIM_ALL).size() > 0) {
       result.error_code = "file_already_exists";
-      result.error_message = "Cannot create new file - file already exists.";
       return result;
     }
     // Empty file with empty old_string: replace empty with new_string.
     if (!base::WriteFile(path, new_string)) {
       result.error_code = "write_failed";
-      result.error_message = base::StrCat(
-          {"failed to write file: ", path.AsUTF8Unsafe()});
+      result.error_params.Set("path", path.AsUTF8Unsafe());
       return result;
     }
     result.ok = true;
-    result.message = base::StrCat({"The file ", path.AsUTF8Unsafe(),
-                                   " has been updated successfully."});
+    result.outcome = "updated";
     result.original_file = std::move(existing);
     result.original_file_set = true;
     result.file_path = std::move(path);
@@ -1878,8 +1794,8 @@ FileTool::EditResult FileTool::EditFileBlocking(
   std::string contents;
   if (!base::ReadFileToString(path, &contents)) {
     result.error_code = "read_failed";
-    result.error_message =
-        base::StrCat({"failed to read file for edit: ", path.AsUTF8Unsafe()});
+    result.error_params.Set("path", path.AsUTF8Unsafe());
+    result.error_params.Set("phase", "edit");
     return result;
   }
 
@@ -1888,9 +1804,6 @@ FileTool::EditResult FileTool::EditFileBlocking(
   // was modified since read.
   if (contents != last_read->content) {
     result.error_code = "file_modified_since_read";
-    result.error_message =
-        "File has been modified since read, either by the user or by a "
-        "linter. Read it again before attempting to write it.";
     return result;
   }
 
@@ -1944,8 +1857,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
 
   if (!found) {
     result.error_code = "no_match";
-    result.error_message = base::StrCat(
-        {"String to replace not found in file.\nString: ", old_string});
+    result.error_params.Set("old_string", old_string);
     return result;
   }
 
@@ -1959,13 +1871,8 @@ FileTool::EditResult FileTool::EditFileBlocking(
       CountOccurrences(work_content, actual_old_string);
   if (occurrences > 1 && !replace_all) {
     result.error_code = "ambiguous_match";
-    result.error_message = base::StrCat(
-        {"Found ", base::NumberToString(occurrences),
-         " matches of the string to replace, but replace_all is false. "
-         "To replace all occurrences, set replace_all to true. To replace "
-         "only one occurrence, please provide more context to uniquely "
-         "identify the instance.\nString: ",
-         old_string});
+    result.error_params.Set("count", static_cast<int>(occurrences));
+    result.error_params.Set("old_string", old_string);
     return result;
   }
 
@@ -1977,8 +1884,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
                                         work_new_string, replace_all);
   if (updated == work_content) {
     result.error_code = "no_match";
-    result.error_message =
-        "String not found in file. Failed to apply edit.";
+    result.error_params.Set("reason", "apply");
     return result;
   }
 
@@ -1993,19 +1899,14 @@ FileTool::EditResult FileTool::EditFileBlocking(
 
   if (!base::WriteFile(path, write_bytes)) {
     result.error_code = "write_failed";
-    result.error_message = base::StrCat(
-        {"failed to write back after edit: ", path.AsUTF8Unsafe()});
+    result.error_params.Set("path", path.AsUTF8Unsafe());
+    result.error_params.Set("reason", "write_back");
     return result;
   }
 
   // CC parity: prose success string. Match FileEditTool.ts wording exactly.
   result.ok = true;
-  result.message =
-      replace_all ? base::StrCat({"The file ", path.AsUTF8Unsafe(),
-                                  " has been updated. All occurrences were "
-                                  "successfully replaced."})
-                  : base::StrCat({"The file ", path.AsUTF8Unsafe(),
-                                  " has been updated successfully."});
+  result.outcome = replace_all ? "updated_all" : "updated";
   // Carry the pre-edit content on a UI-only side channel (see OnEditDone) so the
   // browser can render a file-relative diff. It never reaches the model. This is
   // the decoded + LF-normalized view (what old_string matched), so the JS diff
@@ -2074,10 +1975,10 @@ std::pair<std::string, std::string> FileTool::ExtractGlobBaseDirectory(
 void FileTool::OnReadDone(ToolCallback done, ReadResult result) {
   if (!result.ok) {
     std::move(done).Reject(std::move(result.error_code),
-                           std::move(result.error_message));
+                           std::move(result.error_params));
     return;
   }
-  if (!result.message.empty()) {
+  if (!result.content.empty() || !result.notice.empty()) {
     if (!result.file_path.empty() && result.cache_read_state) {
       ReadState state;
       state.content = result.full_content;
@@ -2088,7 +1989,13 @@ void FileTool::OnReadDone(ToolCallback done, ReadResult result) {
       state.from_read = true;
       read_state_[result.file_path] = std::move(state);
     }
-    std::move(done).Resolve(base::Value(std::move(result.message)));
+    if (!result.content.empty()) {
+      std::move(done).Resolve(base::Value(std::move(result.content)));
+      return;
+    }
+    base::DictValue dict;
+    dict.Set("notice", std::move(result.notice));
+    std::move(done).Resolve(std::move(dict));
     return;
   }
   if (!result.payload.empty()) {
@@ -2116,8 +2023,16 @@ void FileTool::OnReadMediaDone(
     const std::optional<std::string>& error_code,
     const std::optional<std::string>& error_message) {
   if (!ok || !result) {
+    base::DictValue params;
+    // The media service names its own failure; `detail` is its sentence and
+    // `source` tells the runtime to show that sentence, not a files one.
+    params.Set("path", path.AsUTF8Unsafe());
+    params.Set("source", "media");
+    if (error_message.has_value()) {
+      params.Set("detail", *error_message);
+    }
     std::move(done).Reject(error_code.value_or("media_read_failed"),
-                           error_message.value_or("failed to read media"));
+                           std::move(params));
     return;
   }
 
@@ -2161,8 +2076,10 @@ void FileTool::OnReadMediaDone(
   }
 
   base::DictValue payload;
-  payload.Set("message",
-              base::StrCat({"Media file read: ", path.AsUTF8Unsafe()}));
+  base::DictValue media;
+  media.Set("kind", "media");
+  media.Set("path", path.AsUTF8Unsafe());
+  payload.Set("media", std::move(media));
   payload.Set("content_parts", std::move(parts));
   std::move(done).Resolve(base::Value(std::move(payload)));
 }
@@ -2170,14 +2087,12 @@ void FileTool::OnReadMediaDone(
 void FileTool::OnWriteDone(ToolCallback done, WriteResult result) {
   if (!result.ok) {
     std::move(done).Reject(std::move(result.error_code),
-                           std::move(result.error_message));
+                           std::move(result.error_params));
     return;
   }
-  // On success, forward a structured dict `{ message, original_file? }`. The JS
-  // hostedTools.ts pulls `message` back out as the model-facing prose (so the
-  // model still sees the CC-style string, never the JSON) and uses
-  // `original_file` — present only when overwriting — to render a file-relative
-  // diff. Absent original_file → the JS side treats it as a newly created file.
+  // On success, forward `{ outcome, path, bytes?, original_file? }`; the
+  // runtime renders the sentence the model reads and uses `original_file`
+  // — present only when overwriting — for the file-relative diff.
   if (!result.file_path.empty()) {
     ReadState state;
     state.content = result.updated_content;
@@ -2185,9 +2100,13 @@ void FileTool::OnWriteDone(ToolCallback done, WriteResult result) {
     state.is_partial_view = false;
     read_state_[result.file_path] = std::move(state);
   }
-  if (!result.message.empty()) {
+  if (!result.outcome.empty()) {
     base::DictValue dict;
-    dict.Set("message", std::move(result.message));
+    dict.Set("outcome", std::move(result.outcome));
+    dict.Set("path", result.file_path.AsUTF8Unsafe());
+    if (result.bytes_written > 0) {
+      dict.Set("bytes", static_cast<double>(result.bytes_written));
+    }
     if (result.original_file_set) {
       // original_file may be raw UTF-16LE bytes (not valid UTF-8) — decode
       // for the JS diff renderer which expects a UTF-8 string.
@@ -2204,7 +2123,7 @@ void FileTool::OnWriteDone(ToolCallback done, WriteResult result) {
 void FileTool::OnEditDone(ToolCallback done, EditResult result) {
   if (!result.ok) {
     std::move(done).Reject(std::move(result.error_code),
-                           std::move(result.error_message));
+                           std::move(result.error_params));
     return;
   }
   // On success, forward a structured dict `{ message, original_file }`. The JS
@@ -2218,9 +2137,13 @@ void FileTool::OnEditDone(ToolCallback done, EditResult result) {
     state.is_partial_view = false;
     read_state_[result.file_path] = std::move(state);
   }
-  if (!result.message.empty()) {
+  if (!result.outcome.empty()) {
     base::DictValue dict;
-    dict.Set("message", std::move(result.message));
+    dict.Set("outcome", std::move(result.outcome));
+    dict.Set("path", result.file_path.AsUTF8Unsafe());
+    if (result.bytes_written > 0) {
+      dict.Set("bytes", static_cast<double>(result.bytes_written));
+    }
     if (result.original_file_set) {
       // original_file may be raw UTF-16LE bytes (not valid UTF-8) — decode
       // for the JS diff renderer which expects a UTF-8 string.
@@ -2234,6 +2157,11 @@ void FileTool::OnEditDone(ToolCallback done, EditResult result) {
   std::move(done).Resolve(std::move(result.payload));
 }
 
+void FileTool::CompleteGlobForTesting(ToolCallback done,
+                                      RipgrepRunResult result) {
+  OnGlobRgDone(std::move(done), /*limit=*/0, std::move(result));
+}
+
 void FileTool::OnGlobRgDone(ToolCallback done,
                             int limit,
                             RipgrepRunResult result) {
@@ -2241,9 +2169,10 @@ void FileTool::OnGlobRgDone(ToolCallback done,
   // auto-install didn't recover it. The runner already shaped a diagnostic
   // message (+ manual-install hint); surface it under a Glob-labeled code.
   if (!result.launched) {
-    std::string code = result.error_code.empty() ? std::string("glob_failed")
-                                                 : std::move(result.error_code);
-    std::move(done).Reject(std::move(code), std::move(result.error_message));
+    std::move(done).Reject(
+        "glob_failed",
+        ServiceFailureParams(result.error_code, result.error_message,
+                             std::nullopt));
     return;
   }
 
@@ -2254,28 +2183,19 @@ void FileTool::OnGlobRgDone(ToolCallback done,
   // caveat when there were more than `limit`. The model uses an anchored Glob
   // (the exact path as the pattern) as a file-exists probe and keys off the
   // "No files found" sentinel — rg exits 1 (no matches) → empty lines here.
-  if (lines.empty()) {
-    std::move(done).Resolve(base::Value("No files found"));
-    return;
-  }
   bool truncated = static_cast<int>(lines.size()) > limit;
   if (truncated) {
     lines.resize(limit);
   }
-  std::string body = base::JoinString(lines, "\n");
-  if (truncated) {
-    body.append(
-        "\n(Results are truncated. Consider using a more specific pattern "
-        "or increasing the limit.)");
+  base::ListValue files;
+  for (std::string& line : lines) {
+    files.Append(std::move(line));
   }
-  std::move(done).Resolve(base::Value(std::move(body)));
+  base::DictValue dict;
+  dict.Set("files", std::move(files));
+  dict.Set("truncated", truncated);
+  std::move(done).Resolve(std::move(dict));
 }
 
 }  // namespace nexus
 
-// Definition matching the NEXUS_DECLARE_CATEGORY in the header. Lives
-// in the .cc so it can include `tool_session.h` (the header can't —
-// `tool_session.h` itself includes file_tool.h to embed the FileTool
-// member). The dispatcher in nexus_tools_registry.gen.cc invokes this
-// via `CategoryAccessor<FileTool>::Get(session)`.
-NEXUS_DEFINE_CATEGORY(nexus::FileTool, file_tool);

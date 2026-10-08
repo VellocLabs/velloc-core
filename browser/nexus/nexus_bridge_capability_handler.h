@@ -50,11 +50,33 @@ class NexusBridgeCapabilityHandler {
   NexusBridgeCapabilityHandler& operator=(const NexusBridgeCapabilityHandler&) =
       delete;
 
+  // `context` is the frame-level `context` object the runtime sends next to
+  // `payload` (null when absent). It is advisory and guest-reported: routing
+  // (the session key) and attribution only, never authorization.
   bool Dispatch(std::string_view action,
                 const std::string& id,
                 const base::DictValue& route,
                 const base::DictValue& payload,
-                std::vector<blink::MessagePortDescriptor> ports);
+                std::vector<blink::MessagePortDescriptor> ports,
+                const base::DictValue* context = nullptr);
+
+  // The frame a handler is serving right now. Non-null only synchronously
+  // inside the handler's entry (Dispatch clears it on return), so a handler
+  // copies what it needs before hopping threads.
+  struct RequestScope {
+    raw_ptr<const std::string> id = nullptr;
+    raw_ptr<const base::DictValue> route = nullptr;
+    raw_ptr<const base::DictValue> payload = nullptr;
+    raw_ptr<const base::DictValue> context = nullptr;
+  };
+  const RequestScope* current_request() const { return current_request_; }
+
+  // The session key of the frame being served: `context.sessionId`, else the
+  // legacy `payload.executionContext.sessionId` / `payload.sessionId`, else
+  // "__default__". `SessionKeyFor` is the same rule on raw frame parts.
+  std::string RequestSessionKey() const;
+  static std::string SessionKeyFor(const base::DictValue* payload,
+                                   const base::DictValue* context);
 
   // The guest end of the bridge port went away (its page reloaded, the port
   // was replaced, or it disconnected). The adapter itself lives on with the
@@ -166,6 +188,11 @@ class NexusBridgeCapabilityHandler {
                          const base::DictValue& route,
                          const std::string& code,
                          const std::string& message) const;
+  void SendErrorResponse(const std::string& id,
+                         const base::DictValue& route,
+                         const std::string& code,
+                         const std::string& message,
+                         const base::DictValue& params) const;
   void SendInvalidArgsResponse(const std::string& id,
                                const base::DictValue& route,
                                std::string_view message) const;
@@ -179,7 +206,7 @@ class NexusBridgeCapabilityHandler {
                                            std::string* out) const;
 
   // Type alias for the shape that goes into the dispatch table. Exposed
-  // protected so the macro-DSL adapter (`ToolsAdapter`) can synthesize
+  // protected so the tool session registry can synthesize
   // its own session-routing dispatcher lambdas via `RegisterHandler`
   // below without duplicating the parent class's dispatch machinery.
   using DispatchHandler = std::function<void(
@@ -209,6 +236,9 @@ class NexusBridgeCapabilityHandler {
   // callback rather than promoting the methods to public — keeps
   // direct call sites under the existing access discipline.
   friend class BridgeResponseCallback;
+  // Runs host tool calls on behalf of the files / exec / browser adapters
+  // and needs RegisterHandler + SendEvent.
+  friend class ToolSessionRegistry;
 
   // Per-pending-receive state for AwaitBinaryFromPort. The endpoint
   // and the on_done callback are stored together; whichever path
@@ -232,6 +262,8 @@ class NexusBridgeCapabilityHandler {
 
   raw_ptr<NexusBridgeResponseDelegate> delegate_;
   std::map<std::string, DispatchHandler, std::less<>> handlers_;
+  // Set by Dispatch for the duration of the synchronous handler call.
+  raw_ptr<const RequestScope> current_request_ = nullptr;
 
   // Pending binary receives, keyed by an internal counter. Each entry
   // outlives its dispatcher closure until the port delivers bytes or

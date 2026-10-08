@@ -37,18 +37,12 @@ constexpr int kDefaultBashTimeoutMs = 120000;
 constexpr int kMaxBashTimeoutMs = 600000;
 constexpr int kMaxOutputBytes = 30000;
 constexpr char kProcessUnavailableCode[] = "process_unavailable";
-constexpr char kProcessUnavailableMessage[] =
-    "process tools require an attached browser profile";
 // `run_in_background` is served by the runtime, which starts the command as a
 // persistent host child (`shell.spawn` + `persist`) and owns the task. The host
 // keeps no background-shell registry any more (removed under interface 1 on
 // 2026-10-04), so an explicit background request that still reaches the hosted
 // tool is refused loudly instead of silently blocking in the foreground.
 constexpr char kBackgroundUnsupportedCode[] = "background_unsupported";
-constexpr char kBackgroundUnsupportedMessage[] =
-    "run_in_background is not served by the host: the runtime starts "
-    "background commands itself. Run the command in the foreground, or retry "
-    "from a runtime that owns background shells.";
 
 // Per-platform shell invocation. Mirrors `buildShellInvocation` in the
 // retired BashTool.ts but trimmed to one shell per platform — the
@@ -62,9 +56,9 @@ struct ShellInvocation {
 ShellInvocation BuildShellInvocation(const std::string& command_line) {
   ShellInvocation inv;
 #if BUILDFLAG(IS_WIN)
-  // Windows: run git-bash directly. The Bash tool is only surfaced on
-  // Windows when `bash` resolves on PATH (see the listHostedTools filter in
-  // nexus_catalog_bridge_adapter.cc); on a no-bash host the model gets the
+  // Windows: run git-bash directly. The runtime offers the Bash tool on
+  // Windows only when `exec.listShells` reports `bash` (see
+  // api/shell/host_shell.h); on a no-bash host the model gets the
   // PowerShell tool instead. We invoke bash explicitly (RunBashOnUI sets
   // use_shell=false) rather than wrapping in cmd/pwsh, so bash syntax works.
   inv.command = "bash";
@@ -249,21 +243,19 @@ struct CommandInterpretation {
 // gets the default "exit code N" interpretation.
 CommandInterpretation InterpretExit(const std::string& base, int exit) {
   if (base == "grep" || base == "rg") {
-    return {exit >= 2, exit == 1 ? "No matches found" : ""};
+    return {exit >= 2, exit == 1 ? "no_matches" : ""};
   }
   if (base == "find") {
-    return {exit >= 2, exit == 1 ? "Some directories were inaccessible" : ""};
+    return {exit >= 2, exit == 1 ? "inaccessible_dirs" : ""};
   }
   if (base == "diff") {
-    return {exit >= 2, exit == 1 ? "Files differ" : ""};
+    return {exit >= 2, exit == 1 ? "files_differ" : ""};
   }
   if (base == "test" || base == "[") {
-    return {exit >= 2, exit == 1 ? "Condition is false" : ""};
+    return {exit >= 2, exit == 1 ? "condition_false" : ""};
   }
-  // Default semantic.
-  return {exit != 0, exit != 0 ? base::StrCat({"Command failed with exit code ",
-                                               base::NumberToString(exit)})
-                               : ""};
+  // Default semantic: the runtime renders "exit code N" from exit_code.
+  return {exit != 0, exit != 0 ? "failed" : ""};
 }
 
 // =============================================================================
@@ -325,7 +317,7 @@ std::vector<std::string> SplitGlobPatterns(const std::string& glob) {
 // Build the rg argv for a Grep call. Mirrors `buildRipgrepArgs` from
 // the retired GrepTool.ts. `pattern` is the user's regex.
 std::vector<std::string> BuildRipgrepArgs(
-    const ::nexus::generated::GrepInput& input,
+    const ::nexus::generated::FilesGrepInput& input,
     const std::string& output_mode,
     bool show_line_numbers) {
   std::vector<std::string> args;
@@ -411,7 +403,7 @@ std::vector<std::string> BuildRipgrepArgs(
 // when it is `files_with_matches`, and any -A/-B/-C/context disables the
 // default. Directories and UNC targets (existence assumed, type unknown)
 // are left alone — a repo-wide grep with context is unbounded in size.
-void ApplySingleFileGrepDefaults(::nexus::generated::GrepInput& input,
+void ApplySingleFileGrepDefaults(::nexus::generated::FilesGrepInput& input,
                                  std::string& output_mode,
                                  bool target_is_file) {
   if (!target_is_file) {
@@ -588,17 +580,18 @@ void ProcessTool::OnStop(OnStopReason reason) {
 // RunBashOnUI override
 // =============================================================================
 
-void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
+void ProcessTool::RunBashOnUI(::nexus::generated::ExecBashInput input,
                               ToolCallback done) {
   // The dispatcher already validated input shape (command is required
   // string). We add semantic validation here.
   if (input.command.empty()) {
-    std::move(done).Reject("invalid_args", "command must not be empty");
+    base::DictValue params;
+    params.Set("reason", "command_empty");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
   if (input.run_in_background.value_or(false)) {
-    std::move(done).Reject(kBackgroundUnsupportedCode,
-                           kBackgroundUnsupportedMessage);
+    std::move(done).Reject(kBackgroundUnsupportedCode, base::DictValue());
     return;
   }
 
@@ -612,22 +605,22 @@ void ProcessTool::RunBashOnUI(::nexus::generated::BashInput input,
   if (input.cwd.has_value() && !input.cwd->empty()) {
     cwd = base::FilePath::FromUTF8Unsafe(*input.cwd);
     if (!cwd.IsAbsolute()) {
-      std::move(done).Reject("invalid_args",
-                             "cwd override must be an absolute path");
+      base::DictValue params;
+      params.Set("reason", "cwd_not_absolute");
+      std::move(done).Reject("invalid_args", std::move(params));
       return;
     }
   } else {
     cwd = session ? session->cwd() : base::FilePath();
   }
   if (cwd.empty()) {
-    std::move(done).Reject(
-        "invalid_args",
-        "session cwd is not set. Push a cwd via setAgentLoopSettings "
-        "before running shell commands.");
+    base::DictValue params;
+    params.Set("reason", "no_cwd");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
   if (!launcher_) {
-    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    std::move(done).Reject(kProcessUnavailableCode, base::DictValue());
     return;
   }
 
@@ -717,15 +710,11 @@ void ProcessTool::OnForegroundSpawnDone(
     const std::optional<std::string>& error_message,
     const std::optional<std::string>& install_hint) {
   if (!ok || !shell_id.has_value() || shell_id->empty()) {
-    std::string msg = error_message.value_or(std::string());
-    if (install_hint.has_value() && !install_hint->empty()) {
-      if (!msg.empty()) {
-        msg.append("\n\n");
-      }
-      msg.append(*install_hint);
-    }
-    std::move(done).Reject(error_code.value_or(base::StrCat({tool_label, "_failed"})),
-                           std::move(msg));
+    // The service's code (BINARY_NOT_FOUND, INVALID_CWD, …) is a param;
+    // the rejected code is the tool's own, declared one.
+    std::move(done).Reject(
+        base::StrCat({tool_label, "_failed"}),
+        ServiceFailureParams(error_code, error_message, install_hint));
     return;
   }
   PollForegroundShell(std::move(done), *shell_id, std::move(original_command),
@@ -738,7 +727,7 @@ void ProcessTool::PollForegroundShell(ToolCallback done,
                                       base::TimeTicks start_time,
                                       std::string tool_label) {
   if (!launcher_) {
-    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    std::move(done).Reject(kProcessUnavailableCode, base::DictValue());
     return;
   }
   launcher_->GetService()->ReadBackgroundOutput(
@@ -757,8 +746,10 @@ void ProcessTool::OnForegroundShellStatus(
     std::string tool_label,
     mojom::ShellBackgroundOutputPtr output) {
   if (!output || !output->found) {
+    base::DictValue params;
+    params.Set("reason", "shell_disappeared");
     std::move(done).Reject(base::StrCat({tool_label, "_failed"}),
-                           "Foreground shell disappeared before completion");
+                           std::move(params));
     return;
   }
 
@@ -814,15 +805,16 @@ void ProcessTool::OnForegroundShellStatus(
 // RunPowerShellOnUI override (Windows model-facing PowerShell tool)
 // =============================================================================
 
-void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
+void ProcessTool::RunPowerShellOnUI(::nexus::generated::ExecPowerShellInput input,
                                     ToolCallback done) {
   if (input.command.empty()) {
-    std::move(done).Reject("invalid_args", "command must not be empty");
+    base::DictValue params;
+    params.Set("reason", "command_empty");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
   if (input.run_in_background.value_or(false)) {
-    std::move(done).Reject(kBackgroundUnsupportedCode,
-                           kBackgroundUnsupportedMessage);
+    std::move(done).Reject(kBackgroundUnsupportedCode, base::DictValue());
     return;
   }
 
@@ -836,18 +828,18 @@ void ProcessTool::RunPowerShellOnUI(::nexus::generated::PowerShellInput input,
   if (input.cwd.has_value() && !input.cwd->empty()) {
     cwd = base::FilePath::FromUTF8Unsafe(*input.cwd);
     if (!cwd.IsAbsolute()) {
-      std::move(done).Reject("invalid_args",
-                             "cwd override must be an absolute path");
+      base::DictValue params;
+      params.Set("reason", "cwd_not_absolute");
+      std::move(done).Reject("invalid_args", std::move(params));
       return;
     }
   } else {
     cwd = session ? session->cwd() : base::FilePath();
   }
   if (cwd.empty()) {
-    std::move(done).Reject(
-        "invalid_args",
-        "session cwd is not set. Push a cwd via setAgentLoopSettings "
-        "before running shell commands.");
+    base::DictValue params;
+    params.Set("reason", "no_cwd");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -870,7 +862,7 @@ void ProcessTool::LaunchPowerShellAttempt(std::string command,
                                           std::string shell_id,
                                           ToolCallback done) {
   if (!launcher_) {
-    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    std::move(done).Reject(kProcessUnavailableCode, base::DictValue());
     return;
   }
 
@@ -966,31 +958,18 @@ void ProcessTool::OnBashExecDone(
 
   if (!ok || !result) {
     // Pre-launch failure (BINARY_NOT_FOUND, COMMAND_NOT_ALLOWED,
-    // CWD_INVALID, …). CC parity: surface as a tool error via
-    // done.Reject — the framework marks the tool_result as an error,
-    // matching how CC's BashTool emits failures. install_hint, when
-    // present, is appended to the message so the model has a recovery
-    // suggestion inline.
-    std::string msg =
-        error_message.has_value() ? *error_message : std::string();
-    if (install_hint.has_value() && !install_hint->empty()) {
-      if (!msg.empty()) {
-        msg.append("\n\n");
-      }
-      msg.append(*install_hint);
-    }
-    std::string code =
-        error_code.value_or(base::StrCat({tool_label, "_failed"}));
-    std::move(done).Reject(std::move(code), std::move(msg));
+    // CWD_INVALID, …): a tool error carrying the runner's diagnostic and,
+    // when present, the manual-install hint as params.
+    std::move(done).Reject(
+        base::StrCat({tool_label, "_failed"}),
+        ServiceFailureParams(error_code, error_message, install_hint));
     return;
   }
 
-  // Post-launch path — the child ran (success or non-zero exit), and
-  // `result` carries the captured streams. CC parity: emit
-  // [stdout, stderr].filter(Boolean).join('\n') as the model-visible
-  // result string. Non-zero exit codes get a leading annotation line
-  // so the model knows the command failed, mirroring CC's behavior of
-  // surfacing exit_code via is_error.
+  // Post-launch path: the child ran (success or non-zero exit) and
+  // `result` carries the captured streams. Each stream is sanitised to
+  // UTF-8 by BigBufferToString; the guard below is belt-and-braces since
+  // a non-UTF-8 byte in a base::Value string DCHECKs.
   std::string stdout_text =
       BigBufferToString(result->stdout_buffer, kMaxOutputBytes);
   std::string stderr_text =
@@ -1007,72 +986,60 @@ void ProcessTool::OnBashExecDone(
   CommandInterpretation interp = InterpretExit(base, exit_code);
   bool is_error = timed_out || interp.is_error;
 
-  // Build the prose body.
-  std::string body;
-  if (timed_out) {
-    body.append("Command timed out.\n");
-  } else if (exit_code != 0) {
-    body.append(base::StrCat(
-        {"Command exited with code ", base::NumberToString(exit_code), ".\n"}));
+  // The structured result; the runtime composes the text the model reads.
+  if (!base::IsStringUTF8AllowingNoncharacters(stdout_text)) {
+    stdout_text = base::UTF16ToUTF8(base::UTF8ToUTF16(stdout_text));
   }
-  if (!stdout_text.empty()) {
-    body.append(stdout_text);
+  if (!base::IsStringUTF8AllowingNoncharacters(stderr_text)) {
+    stderr_text = base::UTF16ToUTF8(base::UTF8ToUTF16(stderr_text));
   }
-  if (!stderr_text.empty()) {
-    if (!stdout_text.empty()) {
-      body.push_back('\n');
-    }
-    body.append(stderr_text);
-  }
-  if (result->stdout_truncated || result->stderr_truncated) {
-    if (!body.empty() && body.back() != '\n') {
-      body.push_back('\n');
-    }
-    body.append(
-        "[output truncated — re-run with a narrower scope to capture more]");
-  }
+  base::DictValue body;
+  body.Set("stdout", std::move(stdout_text));
+  body.Set("stderr", std::move(stderr_text));
+  body.Set("exit_code", exit_code);
+  body.Set("timed_out", timed_out);
+  body.Set("truncated",
+           result->stdout_truncated || result->stderr_truncated);
   if (!interp.message.empty() && is_error) {
-    if (!body.empty() && body.back() != '\n') {
-      body.push_back('\n');
-    }
-    body.append(interp.message);
-  }
-  if (body.empty()) {
-    body = "(no output)";
+    body.Set("interpretation", interp.message);
   }
 
-  // Defensive UTF-8 guard. `body` should already be valid UTF-8 by the
-  // time we get here (`BigBufferToString` sanitises every shell stream
-  // via `EnsureUtf8`). If anything ever slips a non-UTF-8 byte past
-  // that path, `base::Value`'s std::string ctor DCHECKs and the
-  // browser fatals at base/values.cc:191 — and from that crash site
-  // we cannot tell *which* command produced the bad bytes. Log first,
-  // sanitise second, so we keep both the diagnostic and the no-crash
-  // property. ERROR (not DCHECK / LOG(FATAL)) so this surfaces in
-  // release builds too — the whole point is to catch a hit in the
-  // wild without taking down the browser.
-  if (!base::IsStringUTF8AllowingNoncharacters(body)) {
-    LOG(ERROR) << "[ProcessTool] non-UTF-8 body before reply"
-               << "; tool_label=" << tool_label << " original_command='"
-               << original_command << "'"
-               << " is_error=" << is_error << " body_size=" << body.size()
-               << " first_128_bytes_hex="
-               << base::HexEncode(std::string_view(
-                      body.data(),
-                      std::min(body.size(), static_cast<size_t>(128))));
-    body = base::UTF16ToUTF8(base::UTF8ToUTF16(body));
-  }
-
-  // Failures Reject so the framework marks the tool_result as
-  // isError, matching CC's BashTool which sets is_error: true when
-  // exit_code != 0 / timed_out.
+  // Failures Reject with the same structured params under
+  // `<label>_timeout` / `<label>_failed`; the runtime marks the tool
+  // result as an error and renders the body text.
   if (is_error) {
     std::string code =
         base::StrCat({tool_label, timed_out ? "_timeout" : "_failed"});
     std::move(done).Reject(std::move(code), std::move(body));
     return;
   }
-  std::move(done).Resolve(base::Value(std::move(body)));
+  std::move(done).Resolve(std::move(body));
+}
+
+void ProcessTool::CompleteExecForTesting(
+    ToolCallback done,
+    const std::string& tool_label,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  OnBashExecDone(std::move(done), std::string(), base::TimeTicks::Now(),
+                 tool_label, /*ok=*/false, /*result=*/nullptr, error_code,
+                 error_message, install_hint);
+}
+
+void ProcessTool::CompleteGrepForTesting(ToolCallback done,
+                                         RipgrepRunResult result) {
+  OnGrepRgDone(std::move(done), "content", /*head_limit=*/0, /*offset=*/0,
+               base::FilePath(), std::move(result));
+}
+
+void ProcessTool::CompleteHookExecForTesting(
+    ToolCallback done,
+    const std::optional<std::string>& error_code,
+    const std::optional<std::string>& error_message,
+    const std::optional<std::string>& install_hint) {
+  OnHookExecDone(std::move(done), /*ok=*/false, /*result=*/nullptr,
+                 error_code, error_message, install_hint);
 }
 
 // =============================================================================
@@ -1092,15 +1059,9 @@ void ProcessTool::OnHookExecDone(
   // was the default bash list, it retries with PowerShell. install_hint is
   // appended when present.
   if (!ok || !result) {
-    std::string msg = error_message.value_or(std::string());
-    if (install_hint.has_value() && !install_hint->empty()) {
-      if (!msg.empty()) {
-        msg.append("\n\n");
-      }
-      msg.append(*install_hint);
-    }
-    std::move(done).Reject(error_code.value_or("hook_exec_failed"),
-                           std::move(msg));
+    std::move(done).Reject(
+        "hook_exec_failed",
+        ServiceFailureParams(error_code, error_message, install_hint));
     return;
   }
 
@@ -1142,10 +1103,12 @@ void ProcessTool::OnHookExecDone(
 // RunGrepOnUI override
 // =============================================================================
 
-void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
+void ProcessTool::RunGrepOnUI(::nexus::generated::FilesGrepInput input,
                               ToolCallback done) {
   if (input.pattern.empty()) {
-    std::move(done).Reject("invalid_args", "pattern must not be empty");
+    base::DictValue params;
+    params.Set("reason", "pattern_empty");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1154,10 +1117,9 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   base::FilePath target =
       ResolveAgainstCwd(input.path.value_or(""), default_root);
   if (target.empty()) {
-    std::move(done).Reject(
-        "invalid_args",
-        "session cwd is not set and no absolute `path` was provided. "
-        "Push a cwd via setAgentLoopSettings or pass an absolute path.");
+    base::DictValue params;
+    params.Set("reason", "no_cwd");
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1167,11 +1129,10 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   std::string output_mode = input.output_mode.value_or("files_with_matches");
   if (output_mode != "content" && output_mode != "files_with_matches" &&
       output_mode != "count") {
-    std::move(done).Reject(
-        "invalid_args",
-        base::StrCat({"output_mode must be 'content', 'files_with_matches', "
-                      "or 'count'; got '",
-                      output_mode, "'"}));
+    base::DictValue params;
+    params.Set("reason", "output_mode");
+    params.Set("value", output_mode);
+    std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
 
@@ -1191,7 +1152,7 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   options.max_output_bytes = static_cast<uint32_t>(kMaxOutputBytes);
 
   if (!launcher_) {
-    std::move(done).Reject(kProcessUnavailableCode, kProcessUnavailableMessage);
+    std::move(done).Reject(kProcessUnavailableCode, base::DictValue());
     return;
   }
 
@@ -1213,8 +1174,8 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::GrepInput input,
   }
 
   base::FilePath target_for_check = target;
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+  BlockingRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&ProcessTool::ClassifyGrepTargetOnBlocking,
                      std::move(target_for_check)),
       base::BindOnce(&ProcessTool::OnGrepPathChecked,
@@ -1234,7 +1195,7 @@ ProcessTool::GrepTargetKind ProcessTool::ClassifyGrepTargetOnBlocking(
                            : GrepTargetKind::kFile;
 }
 
-void ProcessTool::OnGrepPathChecked(::nexus::generated::GrepInput input,
+void ProcessTool::OnGrepPathChecked(::nexus::generated::FilesGrepInput input,
                                     ToolCallback done,
                                     std::string output_mode,
                                     bool show_line_numbers,
@@ -1245,9 +1206,9 @@ void ProcessTool::OnGrepPathChecked(::nexus::generated::GrepInput input,
                                     RipgrepRunOptions options,
                                     GrepTargetKind target_kind) {
   if (target_kind == GrepTargetKind::kMissing) {
-    std::move(done).Reject(
-        "path_not_found",
-        base::StrCat({"Path does not exist: ", input.path.value_or("")}));
+    base::DictValue params;
+    params.Set("path", input.path.value_or(""));
+    std::move(done).Reject("path_not_found", std::move(params));
     return;
   }
 
@@ -1276,38 +1237,35 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
   // auto-install didn't recover it. The runner already shaped a diagnostic
   // message (+ manual-install hint); surface it under a Grep-labeled code.
   if (!result.launched) {
-    std::string code = result.error_code.empty() ? std::string("grep_failed")
-                                                 : std::move(result.error_code);
-    std::move(done).Reject(std::move(code), std::move(result.error_message));
+    std::move(done).Reject(
+        "grep_failed",
+        ServiceFailureParams(result.error_code, result.error_message,
+                             std::nullopt));
     return;
   }
 
   std::vector<std::string> lines = std::move(result.lines);
 
-  // CC parity: GrepTool.ts emits per-mode prose strings. Mirror those
-  // exactly so the model's recognition pattern is shared with CC.
+  // Structured per-mode results; the runtime renders the text the model
+  // reads (lines, totals, pagination note).
 
   if (output_mode == "content") {
     SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
-    if (sliced.items.empty()) {
-      std::move(done).Resolve(base::Value("No matches found"));
-      return;
-    }
     // Relativize file paths in content lines (first colon separator).
     for (auto& line : sliced.items) {
       line = RelativizeGrepLine(line, cwd, /*use_last_colon=*/false);
     }
-    std::string body = base::JoinString(sliced.items, "\n");
-    if (sliced.truncated) {
-      body.append(base::StrCat(
-          {"\n\n[Showing results with pagination = limit: ",
-           base::NumberToString(sliced.applied_limit),
-           offset > 0
-               ? base::StrCat({", offset: ", base::NumberToString(offset)})
-               : std::string(),
-           "]"}));
+    base::ListValue items;
+    for (std::string& line : sliced.items) {
+      items.Append(std::move(line));
     }
-    std::move(done).Resolve(base::Value(std::move(body)));
+    base::DictValue body;
+    body.Set("mode", "content");
+    body.Set("lines", std::move(items));
+    body.Set("truncated", sliced.truncated);
+    body.Set("limit", sliced.applied_limit);
+    body.Set("offset", offset);
+    std::move(done).Resolve(std::move(body));
     return;
   }
 
@@ -1329,31 +1287,28 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
         ++file_count;
       }
     }
-    std::string body = base::JoinString(sliced.items, "\n");
-    // CC format: "Found N total occurrence(s) across M file(s)."
-    body.append(base::StrCat({"\n\nFound ", base::NumberToString(total_matches),
-                              " total ", total_matches == 1 ? "occurrence" : "occurrences",
-                              " across ", base::NumberToString(file_count),
-                              " ", file_count == 1 ? "file" : "files", "."}));
-    if (sliced.truncated) {
-      body.append(
-          base::StrCat({" with pagination = limit: ",
-                        base::NumberToString(sliced.applied_limit),
-                        offset > 0
-                            ? base::StrCat({", offset: ", base::NumberToString(offset)})
-                            : std::string()}));
+    base::ListValue items;
+    for (std::string& line : sliced.items) {
+      items.Append(std::move(line));
     }
-    std::move(done).Resolve(base::Value(std::move(body)));
+    base::DictValue body;
+    body.Set("mode", "count");
+    body.Set("lines", std::move(items));
+    body.Set("total_matches", total_matches);
+    body.Set("file_count", file_count);
+    body.Set("truncated", sliced.truncated);
+    body.Set("limit", sliced.applied_limit);
+    body.Set("offset", offset);
+    std::move(done).Resolve(std::move(body));
     return;
   }
-
   // files_with_matches: rg already returns one path per line.
-  // CC parity: sort by mtime descending before applying head_limit. The sort
+  // Sort by mtime descending before applying head_limit. The sort
   // stats every matched file (base::GetFileInfo — blocking I/O), so it must
   // run on a ThreadPool worker, never on this UI thread. The worker shapes the
   // full body; OnGrepFilesShaped just resolves `done` back on UI.
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+  BlockingRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&ProcessTool::ShapeGrepFilesWithMatchesBlocking,
                      std::move(lines), head_limit, offset, std::move(cwd)),
       base::BindOnce(&ProcessTool::OnGrepFilesShaped,
@@ -1361,48 +1316,36 @@ void ProcessTool::OnGrepRgDone(ToolCallback done,
 }
 
 // static
-std::string ProcessTool::ShapeGrepFilesWithMatchesBlocking(
+base::DictValue ProcessTool::ShapeGrepFilesWithMatchesBlocking(
     std::vector<std::string> lines,
     int head_limit,
     int offset,
     base::FilePath cwd) {
   SortByMtimeDesc(&lines);
   SliceResult sliced = ApplyHeadLimit(std::move(lines), head_limit, offset);
-  if (sliced.items.empty()) {
-    return "No files found";
-  }
   // Relativize all file paths.
   for (auto& path : sliced.items) {
     path = ToRelativePath(base::FilePath::FromUTF8Unsafe(path), cwd);
   }
-  // CC format: "Found N file(s)" + optional limit info + newline + paths
-  std::string body = base::StrCat(
-      {"Found ", base::NumberToString(sliced.items.size()), " ",
-       sliced.items.size() == 1 ? "file" : "files"});
-  if (sliced.truncated) {
-    body.append(base::StrCat({" limit: ", base::NumberToString(sliced.applied_limit)}));
-    if (offset > 0) {
-      body.append(base::StrCat({", offset: ", base::NumberToString(offset)}));
-    }
+  base::ListValue files;
+  for (std::string& path : sliced.items) {
+    files.Append(std::move(path));
   }
-  body.push_back('\n');
-  body.append(base::JoinString(sliced.items, "\n"));
+  base::DictValue body;
+  body.Set("mode", "files");
+  body.Set("files", std::move(files));
+  body.Set("truncated", sliced.truncated);
+  body.Set("limit", sliced.applied_limit);
+  body.Set("offset", offset);
   return body;
 }
 
-void ProcessTool::OnGrepFilesShaped(ToolCallback done, std::string body) {
-  std::move(done).Resolve(base::Value(std::move(body)));
+void ProcessTool::OnGrepFilesShaped(ToolCallback done, base::DictValue body) {
+  std::move(done).Resolve(std::move(body));
 }
 
 }  // namespace nexus
 
-// Definition matching the NEXUS_DECLARE_CATEGORY in the header. Lives
-// in the .cc so it can include `tool_session.h` (the header can't —
-// `tool_session.h` itself includes process_tool.h to embed
-// ProcessTool as a member). The dispatcher in
-// nexus_tools_registry.gen.cc invokes this via
-// `CategoryAccessor<ProcessTool>::Get(session)`.
-NEXUS_DEFINE_CATEGORY(nexus::ProcessTool, process_tool);
 
 // =============================================================================
 // Test-only static wrappers — thin shims around the anonymous-namespace
@@ -1412,7 +1355,7 @@ NEXUS_DEFINE_CATEGORY(nexus::ProcessTool, process_tool);
 
 // static
 std::vector<std::string> nexus::ProcessTool::BuildRipgrepArgsForTesting(
-    const ::nexus::generated::GrepInput& input,
+    const ::nexus::generated::FilesGrepInput& input,
     const std::string& output_mode,
     bool show_line_numbers) {
   return BuildRipgrepArgs(input, output_mode, show_line_numbers);
@@ -1420,7 +1363,7 @@ std::vector<std::string> nexus::ProcessTool::BuildRipgrepArgsForTesting(
 
 // static
 void nexus::ProcessTool::ApplySingleFileGrepDefaultsForTesting(
-    ::nexus::generated::GrepInput& input,
+    ::nexus::generated::FilesGrepInput& input,
     std::string& output_mode,
     bool target_is_file) {
   ApplySingleFileGrepDefaults(input, output_mode, target_is_file);

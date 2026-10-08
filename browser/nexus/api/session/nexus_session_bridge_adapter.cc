@@ -13,7 +13,7 @@
 #include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
-#include "custom_browser/browser/nexus/tools/tools_adapter.h"
+#include "custom_browser/browser/nexus/tools/tool_session_registry.h"
 
 namespace nexus {
 
@@ -27,41 +27,15 @@ using Dict = base::DictValue;
 //     produces): `{ executionContext: { sessionId: "..." } }`
 //   * legacy: top-level `{ sessionId: "..." }`
 //
-// A missing or empty session id falls through to the "__default__"
-// sentinel so single-session callers don't have to thread the field
-// every call. Multi-session callers always populate it. Mirrors the
-// file-local `ExtractSessionKey` in `tools/tools_adapter.cc` — kept
-// duplicated rather than exported because (a) the two callers have
-// slightly different input shapes (typed struct vs raw dict) and (b)
-// the helper is small enough that pulling it into a header isn't
-// worth the additional include.
-constexpr char kDefaultSessionKey[] = "__default__";
-
-std::string SessionKeyFromExecutionContext(
-    const std::optional<base::DictValue>& execution_context,
-    const std::optional<std::string>& legacy_session_id) {
-  if (execution_context.has_value()) {
-    if (const std::string* sid =
-            execution_context->FindString("sessionId");
-        sid && !sid->empty()) {
-      return *sid;
-    }
-  }
-  if (legacy_session_id.has_value() && !legacy_session_id->empty()) {
-    return *legacy_session_id;
-  }
-  return kDefaultSessionKey;
-}
-
 }  // namespace
 
 NexusSessionBridgeAdapter::NexusSessionBridgeAdapter(
     NexusBridgeResponseDelegate* delegate,
     Profile* profile,
-    ToolsAdapter* tools_adapter)
+    ToolSessionRegistry* sessions)
     : ::nexus::generated::SessionApiBase(delegate),
       profile_(profile),
-      tools_adapter_(tools_adapter) {
+      sessions_(sessions) {
   // Register(...) calls live in `SessionApiBase`'s ctor, generated from
   // api/declarations/session/*.api.json. Adding a new session wire
   // action: drop a *.api.json under api/declarations/session/, add a
@@ -92,7 +66,7 @@ NexusSessionBridgeAdapter::~NexusSessionBridgeAdapter() = default;
 
 void NexusSessionBridgeAdapter::PushAgentConfig() {
   // Mirror the TS-side `session.applyAgentConfig` event envelope; the
-  // transport wraps this as {claudeBridge:true, direction:"event", ...}.
+  // transport wraps this as {hostBridge:true, direction:"event", ...}.
   Dict route;
   route.Set("namespace", "nexus");
   route.Set("capability", "session");
@@ -107,13 +81,13 @@ void NexusSessionBridgeAdapter::HandleOnStopOnUI(
     ::nexus::generated::OnStopInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  if (!tools_adapter_) {
-    std::move(done).Error("SESSION_ERROR", "ToolsAdapter unavailable");
+  if (!sessions_) {
+    std::move(done).Error("SESSION_ERROR", "tool sessions unavailable");
     return;
   }
 
-  const std::string session_key =
-      SessionKeyFromExecutionContext(input.executionContext, input.sessionId);
+  // The frame context (`context.sessionId`), else the legacy payload fields.
+  const std::string session_key = RequestSessionKey();
 
   // Recognized reason values are enumerated in
   // `custom_browser/browser/nexus/tools/tool_base.h::OnStopReason`.
@@ -122,7 +96,7 @@ void NexusSessionBridgeAdapter::HandleOnStopOnUI(
   // reason; the safe default preserves that contract).
   //
   // `kSessionDeleted` is the only reason that erases the ToolSession
-  // from `ToolsAdapter::sessions_` and (consequently) destroys the
+  // from `ToolSessionRegistry::sessions_` and (consequently) destroys the
   // BrowserTool, which closes the session's tagged tabs. The JS guest
   // must pass that exact string when wiring sidebar delete; every
   // other reason leaves the ToolSession warm so the next turn reuses
@@ -136,8 +110,8 @@ void NexusSessionBridgeAdapter::HandleOnStopOnUI(
   // Was the session live before this call? Useful for the JS caller to
   // distinguish "actually stopped something" from "no-op (session
   // already absent)" — surfaced as `{ ok, stopped }`.
-  const bool was_live = tools_adapter_->HasSession(session_key);
-  tools_adapter_->OnSessionStopped(session_key, reason);
+  const bool was_live = sessions_->HasSession(session_key);
+  sessions_->OnSessionStopped(session_key, reason);
 
   Dict result;
   result.Set("ok", true);
@@ -149,18 +123,18 @@ void NexusSessionBridgeAdapter::HandleSetAgentLoopSettingsOnUI(
     ::nexus::generated::SetAgentLoopSettingsInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  if (!tools_adapter_) {
-    std::move(done).Error("SESSION_ERROR", "ToolsAdapter unavailable");
+  if (!sessions_) {
+    std::move(done).Error("SESSION_ERROR", "tool sessions unavailable");
     return;
   }
 
-  const std::string session_key =
-      SessionKeyFromExecutionContext(input.executionContext, input.sessionId);
+  // The frame context (`context.sessionId`), else the legacy payload fields.
+  const std::string session_key = RequestSessionKey();
 
   // Lazily create the session so JS can push settings before the first
   // tool call. The OnStop cascade still cleans this up if the session
   // is later torn down without ever running a tool.
-  ToolSession& session = tools_adapter_->GetOrCreateSession(session_key);
+  ToolSession& session = sessions_->GetOrCreateSession(session_key);
 
   if (input.actionTimeoutMs.has_value()) {
     session.set_action_timeout(base::Milliseconds(*input.actionTimeoutMs));
@@ -205,9 +179,9 @@ void NexusSessionBridgeAdapter::HandleSetActiveSessionOnUI(
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
   // Deliberately routed through the profile-keyed tracker, NOT
-  // tools_adapter_: this action arrives on the page port while the
+  // sessions_: this action arrives on the page port while the
   // session's BrowserTool (and its tab state) lives on the worker port's
-  // ToolsAdapter. The tracker is the only cross-port view of the tab set.
+  // ToolSessionRegistry. The tracker is the only cross-port view of the tab set.
   // Never creates a ToolSession — switching to a fresh chat session must
   // not allocate tool state.
   NexusSessionTabTracker* tracker =
@@ -232,7 +206,7 @@ void NexusSessionBridgeAdapter::OnSessionTabCountsChanged(
     const std::string& session_key,
     const SessionTabCounts& counts) {
   // Event envelope mirrors PushAgentConfig: the transport wraps this as
-  // {claudeBridge:true, direction:"event", ...}. The guest's
+  // {hostBridge:true, direction:"event", ...}. The guest's
   // `subscribeSessionTabsChanged` (nexusBridgeActions.ts) filters on the
   // route; sessions it doesn't know (e.g. "__default__") are ignored there.
   Dict route;

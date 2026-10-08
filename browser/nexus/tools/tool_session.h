@@ -6,6 +6,8 @@
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
@@ -20,7 +22,7 @@ namespace nexus {
 // per-category tool class (currently just `BrowserTool`; future
 // categories — skill tools, etc. — add a member here).
 //
-// Created lazily by `ToolsAdapter::GetOrCreateSession(session_key)` on
+// Created lazily by `ToolSessionRegistry::GetOrCreateSession(session_key)` on
 // the first tool call carrying a new sessionId. Destroyed when the
 // session ends (explicit endSession RPC, bridge port reset, or profile
 // shutdown).
@@ -37,9 +39,8 @@ class ToolSession {
   ToolSession(const ToolSession&) = delete;
   ToolSession& operator=(const ToolSession&) = delete;
 
-  // Per-category accessors. Used by Phase C's macro-DSL category
-  // accessor specialization (and by Phase A/B forwarders on the
-  // adapter). Returns mutable refs because tool method bodies modify
+  // Per-category accessors, used by the `files` / `exec` / `browser`
+  // adapters. Returns mutable refs because tool method bodies modify
   // per-category state.
   BrowserTool& browser_tool() { return browser_tool_; }
   FileTool& file_tool() { return file_tool_; }
@@ -50,7 +51,7 @@ class ToolSession {
   const std::string& session_key() const { return session_key_; }
 
   // Cascades the OnStop notification to every per-category member.
-  // Called from `ToolsAdapter::OnSessionStopped(session_key, reason)`
+  // Called from `ToolSessionRegistry::OnSessionStopped(session_key, reason)`
   // before the session is (conditionally) erased from the sessions map.
   // The dtor also runs `OnStop(OnStopReason::kDestructor)` as a
   // defensive fallback.
@@ -63,6 +64,13 @@ class ToolSession {
   void set_progress_sink(ProgressSink sink);
   void ClearProgressSink();
   void EmitToolProgress(base::Value progress);
+
+  // The session's blocking sequence. File reads / writes / edits and grep
+  // shaping post their bodies here (never on UI), so calls within one
+  // session complete in arrival order — an Edit issued after a Write sees
+  // the written file — while sessions run in parallel. Created on first use
+  // so a session built in a test without a thread pool still constructs.
+  scoped_refptr<base::SequencedTaskRunner> blocking_runner();
 
   // Per-action wall-clock budget. Used by individual tool methods that
   // wrap their actor work (PerformActions / observation builds) with a
@@ -83,7 +91,7 @@ class ToolSession {
   // need a default cwd for shell / fs operations (Bash, Glob, Grep,
   // and any future tool whose call payload doesn't carry an absolute
   // path). Set via the existing `setAgentLoopSettings` bridge route
-  // (parsed in `ToolsAdapter::HandleSetAgentLoopSettings`).
+  // (parsed in `ToolSessionRegistry::HandleSetAgentLoopSettings`).
   //
   // The setter only accepts absolute paths — relative paths are
   // dropped silently with a [ToolSession] log entry. An unset cwd
@@ -106,6 +114,7 @@ class ToolSession {
   // Populated by `set_cwd(...)` from the bridge.
   base::FilePath cwd_;
   ProgressSink progress_sink_;
+  scoped_refptr<base::SequencedTaskRunner> blocking_runner_;
 
   // Each per-category class is a member. Construction order is
   // declaration order; destruction reverses. ToolSession::OnStop

@@ -32,8 +32,6 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/node_registry.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_registry.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
 
 // Generated category-aggregate base. One *.gen.h per category holds
@@ -43,7 +41,7 @@
 // transitively pulls in each per-tool *.gen.h (for the typed
 // `<Name>Input` structs the virtuals receive), so a single include
 // covers the entire generated-base-class surface.
-#include "custom_browser/browser/nexus/tools/browser_tool.gen.h"
+#include "custom_browser/browser/nexus/api/browser/browser_api.gen.h"
 
 class Profile;
 
@@ -74,8 +72,7 @@ class ToolSession;  // for CategoryAccessor specialization below
 // per `*.tool.json` in the category) and BrowserTool grows matching
 // overrides. Phase 4 removes the old macro entries once every action
 // has migrated.
-class BrowserTool : public ToolBase,
-                    public ::nexus::generated::BrowserToolBase {
+class BrowserTool : public ToolBase {
  public:
   BrowserTool(ToolSession* session, Profile* profile,
               const std::string& session_key);
@@ -84,14 +81,6 @@ class BrowserTool : public ToolBase,
   BrowserTool(const BrowserTool&) = delete;
   BrowserTool& operator=(const BrowserTool&) = delete;
 
-  // Required by the framework's catalog construction (called by
-  // `ToolCatalog::Get()`). Phase 4 retired the macro-based tool
-  // registration this method used to populate; the body is now a
-  // no-op kept around as a migration anchor in case a future
-  // category needs the macro DSL again. The 24 split browser tools
-  // are registered via `generated::PopulateRegistry()` instead, see
-  // tools/codegen/generate.py + declarations/browser_tool/.
-  static void DefineTools(ToolRegistry& registry);
 
   // Notification override — stops the per-session actor task and
   // clears the node registry. Called by the cascade through
@@ -100,7 +89,7 @@ class BrowserTool : public ToolBase,
   //
   // Note: this does NOT close the session's tabs. Tab teardown is
   // attached to `~BrowserTool` instead — the "tabs close with the
-  // panel" UX maps onto the destructor running whenever ToolsAdapter
+  // panel" UX maps onto the destructor running whenever ToolSessionRegistry
   // erases the session (kSessionDeleted) or the adapter itself dies
   // (panel close → port-service teardown).
   void OnStop(OnStopReason reason) override;
@@ -114,7 +103,7 @@ class BrowserTool : public ToolBase,
   // Inlined from the pre-refactor profile-scoped
   // `NexusSessionTabGroupRegistry`. The registry's purpose — bridge
   // BrowserTool lifetimes across per-turn OnStop / re-create cycles —
-  // disappeared once ToolsAdapter stopped erasing on kCompleted /
+  // disappeared once ToolSessionRegistry stopped erasing on kCompleted /
   // kUserStopped; the state now belongs to BrowserTool itself.
 
   // Attach the session tag to the WebContents and add the tab to this
@@ -160,11 +149,11 @@ class BrowserTool : public ToolBase,
   void set_step_timeout(base::TimeDelta timeout) { step_timeout_ = timeout; }
   base::TimeDelta step_timeout() const { return step_timeout_; }
 
-  // Last-observation snapshot used by ToolsAdapter to build the
+  // Last-observation snapshot used by ToolSessionRegistry to build the
   // `agent_meta` envelope it appends to every tool result. Populated
   // from inside `BuildObservationDict` / `WalkContentNode` so each
   // tool method's completion path picks up the freshest values
-  // automatically. Public so `ToolsAdapter::ForwardSuccessWithAgentMeta`
+  // automatically. Public so `ToolSessionRegistry::ForwardSuccessWithAgentMeta`
   // can read them per-call without needing friendship.
   //
   // `last_normalized_projection_` is a deterministic serialization of
@@ -222,44 +211,44 @@ class BrowserTool : public ToolBase,
   // Public visibility is required because the codegen dispatcher in
   // nexus_tools_registry.gen.cc invokes through a `BrowserTool*` it
   // gets from `CategoryAccessor::Get(session)`.
-  void RunScreenshotOnUI(::nexus::generated::ScreenshotInput input,
-                     ToolCallback done) override;
-  void RunReadPageOnUI(::nexus::generated::ReadPageInput input,
-                   ToolCallback done) override;
-  void RunNavigateOnUI(::nexus::generated::NavigateInput input,
-                   ToolCallback done) override;
-  void RunBackOnUI(::nexus::generated::BackInput input,
-               ToolCallback done) override;
-  void RunCloseTabOnUI(::nexus::generated::CloseTabInput input,
-                   ToolCallback done) override;
-  void RunActivateTabOnUI(::nexus::generated::ActivateTabInput input,
-                      ToolCallback done) override;
-  void RunClickOnUI(::nexus::generated::ClickInput input,
-                ToolCallback done) override;
-  void RunInputOnUI(::nexus::generated::InputInput input,
-                ToolCallback done) override;
-  void RunSelectOnUI(::nexus::generated::SelectInput input,
-                 ToolCallback done) override;
-  void RunHoverOnUI(::nexus::generated::HoverInput input,
-                ToolCallback done) override;
-  void RunDragAndDropOnUI(::nexus::generated::DragAndDropInput input,
-                      ToolCallback done) override;
-  void RunScrollToOnUI(::nexus::generated::ScrollToInput input,
-                   ToolCallback done) override;
-  void RunScrollOnUI(::nexus::generated::ScrollInput input,
-                 ToolCallback done) override;
-  void RunSearchOnUI(::nexus::generated::SearchInput input,
-                 ToolCallback done) override;
-  void RunDoneOnUI(::nexus::generated::DoneInput input,
-               ToolCallback done) override;
-  void RunMediaControlOnUI(::nexus::generated::MediaControlInput input,
-                       ToolCallback done) override;
-  void RunMediaStateOnUI(::nexus::generated::MediaStateInput input,
-                     ToolCallback done) override;
-  void RunReadElementOnUI(::nexus::generated::ReadElementInput input,
-                      ToolCallback done) override;
-  void RunFindTextOnUI(::nexus::generated::FindTextInput input,
-                   ToolCallback done) override;
+  void RunScreenshotOnUI(::nexus::generated::BrowserScreenshotInput input,
+                     ToolCallback done);
+  void RunReadPageOnUI(::nexus::generated::BrowserReadPageInput input,
+                   ToolCallback done);
+  void RunNavigateOnUI(::nexus::generated::BrowserNavigateInput input,
+                   ToolCallback done);
+  void RunBackOnUI(::nexus::generated::BrowserBackInput input,
+               ToolCallback done);
+  void RunCloseTabOnUI(::nexus::generated::BrowserCloseTabInput input,
+                   ToolCallback done);
+  void RunActivateTabOnUI(::nexus::generated::BrowserActivateTabInput input,
+                      ToolCallback done);
+  void RunClickOnUI(::nexus::generated::BrowserClickInput input,
+                ToolCallback done);
+  void RunInputOnUI(::nexus::generated::BrowserInputInput input,
+                ToolCallback done);
+  void RunSelectOnUI(::nexus::generated::BrowserSelectInput input,
+                 ToolCallback done);
+  void RunHoverOnUI(::nexus::generated::BrowserHoverInput input,
+                ToolCallback done);
+  void RunDragAndDropOnUI(::nexus::generated::BrowserDragAndDropInput input,
+                      ToolCallback done);
+  void RunScrollToOnUI(::nexus::generated::BrowserScrollToInput input,
+                   ToolCallback done);
+  void RunScrollOnUI(::nexus::generated::BrowserScrollInput input,
+                 ToolCallback done);
+  void RunSearchOnUI(::nexus::generated::BrowserSearchInput input,
+                 ToolCallback done);
+  void RunDoneOnUI(::nexus::generated::BrowserDoneInput input,
+               ToolCallback done);
+  void RunMediaControlOnUI(::nexus::generated::BrowserMediaControlInput input,
+                       ToolCallback done);
+  void RunMediaStateOnUI(::nexus::generated::BrowserMediaStateInput input,
+                     ToolCallback done);
+  void RunReadElementOnUI(::nexus::generated::BrowserReadElementInput input,
+                      ToolCallback done);
+  void RunFindTextOnUI(::nexus::generated::BrowserFindTextInput input,
+                   ToolCallback done);
   // Phase 13: batch form-fill. Runs the entries in `fields[]`
   // sequentially on the active tab via the same primitives used by
   // RunInputOnUI / RunSelectOnUI / RunClickOnUI. Optionally clicks
@@ -267,8 +256,8 @@ class BrowserTool : public ToolBase,
   // in the schema (untyped at codegen level — pragmatic Option B from
   // the planning conversation), so the body manually parses each
   // base::DictValue into a typed FieldOp inside browser_tool.cc.
-  void RunFillFormOnUI(::nexus::generated::FillFormInput input,
-                   ToolCallback done) override;
+  void RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input,
+                   ToolCallback done);
   // BrowserDownload. Two modes (exactly one of index|url): `index` clicks
   // an element to trigger a download and captures whatever the click
   // produces (handles blob:/POST/Content-Disposition/JS downloads with no
@@ -276,16 +265,16 @@ class BrowserTool : public ToolBase,
   // session. Saves into `<cwd>/downloads/` and resolves via DownloadCapture
   // (bounded wait + in-progress reporting for large files). See
   // download_capture.{h,cc}.
-  void RunDownloadOnUI(::nexus::generated::DownloadInput input,
-                   ToolCallback done) override;
+  void RunDownloadOnUI(::nexus::generated::BrowserDownloadInput input,
+                   ToolCallback done);
   // BrowserUpload. Arms `NexusPendingUpload` for the target tab with the
   // resolved local file path, then clicks the file <input> via the actor;
   // the chooser the click opens is answered by the guarded hook in
   // Browser::RunFileChooser. The model gets the post-click observation
   // (which should show the attached filename). See
   // upload/nexus_file_chooser_interceptor.{h,cc}.
-  void RunUploadOnUI(::nexus::generated::UploadInput input,
-                   ToolCallback done) override;
+  void RunUploadOnUI(::nexus::generated::BrowserUploadInput input,
+                   ToolCallback done);
 
   // BrowserEvaluate. Runs arbitrary JavaScript in the active tab's MAIN world
   // via a one-shot CDP `Runtime.evaluate` (BrowserEvaluateSession in
@@ -295,8 +284,8 @@ class BrowserTool : public ToolBase,
   // removed). Returns the JSON-stringified result (capped at 20k chars) or,
   // when the JS threw, the CDP exceptionDetails surfaced as `{ error: …,
   // exception: … }`.
-  void RunEvaluateOnUI(::nexus::generated::EvaluateInput input,
-                       ToolCallback done) override;
+  void RunEvaluateOnUI(::nexus::generated::BrowserEvaluateInput input,
+                       ToolCallback done);
 
  private:
   // ----------------------------------------------------------------
@@ -609,9 +598,6 @@ class BrowserTool : public ToolBase,
       bool include_screenshot_image = false,
       bool force_full = false);
 
-  // Phase 2 stop-gap for tools that aren't actor-wired yet.
-  void RejectNotYetImplemented(std::string_view tool_name, ToolCallback done);
-
   // Looks up `index` in the per-session registry. When `tab_id` is
   // provided, resolution is unambiguous via `(index, tab_id)`;
   // otherwise the registry returns the most-recently-registered tab
@@ -719,7 +705,7 @@ class BrowserTool : public ToolBase,
   NodeRegistry node_registry_;
 
   // Last-observation snapshot. Populated by `BuildObservationDict`
-  // each time it walks an ActionsResult; read by ToolsAdapter when
+  // each time it walks an ActionsResult; read by ToolSessionRegistry when
   // wrapping the tool result with `agent_meta`. Plain string members
   // (no smart pointers) so the cost of always populating them is one
   // string copy per observation.
@@ -772,11 +758,5 @@ class BrowserTool : public ToolBase,
 
 }  // namespace nexus
 
-// Declare the macro DSL's category accessor for `BrowserTool`. The
-// matching `NEXUS_DEFINE_CATEGORY(BrowserTool, browser_tool)` lives
-// in `browser_tool.cc`, which can include `tool_session.h` (the
-// header can't, because `tool_session.h` already includes this file
-// to embed `BrowserTool` as a member).
-NEXUS_DECLARE_CATEGORY(nexus::BrowserTool);
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_H_

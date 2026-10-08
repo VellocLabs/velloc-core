@@ -3,6 +3,8 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/task/task_traits.h"
+#include "base/task/thread_pool.h"
 
 namespace nexus {
 
@@ -36,6 +38,14 @@ void ToolSession::OnStop(OnStopReason reason) {
   file_tool_.OnStop(reason);
   process_tool_.OnStop(reason);
   // skill_tool_.OnStop(reason);  // future
+}
+
+scoped_refptr<base::SequencedTaskRunner> ToolSession::blocking_runner() {
+  if (!blocking_runner_) {
+    blocking_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
+        {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
+  }
+  return blocking_runner_;
 }
 
 void ToolSession::set_progress_sink(ProgressSink sink) {

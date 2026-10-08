@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "listShells",
+  "description": "Which host shells the exec family can run: bash (Git for Windows on Windows) and PowerShell (pwsh or Windows PowerShell).",
+  "struct_name": "ExecListShells",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

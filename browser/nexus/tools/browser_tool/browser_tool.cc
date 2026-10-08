@@ -67,7 +67,7 @@ namespace {
 
 namespace apc = optimization_guide::proto;
 
-// All cross-cutting helpers (DescribeActorError, ToActorStoppedReason,
+// All cross-cutting helpers (ActionParams, ToActorStoppedReason,
 // GetActiveBrowserForProfile, GetActiveWindowSessionId,
 // GetActiveTabHandleId, ResolveTabIdOrReject, MaybePrependActivateTab,
 // GetPolicyChecker, ContentAttributeTypeName, ExtractNodeText,
@@ -141,19 +141,6 @@ LocatedTab LocateTabForHandle(tabs::TabHandle handle) {
 // PausableTimeout + PausableToolCallbackHolder class definitions live
 // in browser_tool_internal.h (alongside the cross-cutting helpers).
 
-// static
-void BrowserTool::DefineTools(ToolRegistry& /*registry*/) {
-  // Body intentionally empty.
-  //
-  // Phase 4 retired the macro-based `browser_actions` umbrella tool —
-  // every action it dispatched (click, input, navigate, …) is now its
-  // own top-level declarative tool whose schema + dispatcher come from
-  // generate.py via PopulateRegistry() (called by ToolCatalog right
-  // after this no-op). The 24 split tools structurally prevent the
-  // empty-args failure mode that motivated the migration: each tool
-  // has at least one required field whose absence produces a clean
-  // `invalid_args` reject before reaching the body.
-}
 
 BrowserTool::BrowserTool(ToolSession* session, Profile* profile,
                          const std::string& session_key)
@@ -164,7 +151,7 @@ BrowserTool::~BrowserTool() {
   //    the node registry if they survived prior OnStop calls.
   OnStop(OnStopReason::kDestructor);
   // 2) Tab teardown lives in the destructor — fires for kSessionDeleted
-  //    (ToolsAdapter erases the session), the ~ToolsAdapter cascade
+  //    (ToolSessionRegistry erases the session), the ~ToolSessionRegistry cascade
   //    (panel close / port-service teardown), and any other path that
   //    destroys the ToolSession. "Tabs close with the panel" is the
   //    chosen UX.
@@ -452,7 +439,9 @@ ToolCallback BrowserTool::PausableBudgetWrap(ToolCallback inner,
           holder),
       base::BindOnce(
           [](scoped_refptr<PausableToolCallbackHolder> h, std::string c,
-             std::string m) { h->Reject(std::move(c), std::move(m)); },
+             std::string /*message*/, base::DictValue params) {
+            h->Reject(std::move(c), std::move(params));
+          },
           holder));
 }
 
@@ -597,22 +586,17 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
   }
   Profile* profile = GetProfile();
   if (!profile) {
-    std::move(done).Reject("no_profile",
-                           "actor task creation: no profile available");
+    std::move(done).Reject("no_profile", PhaseParams("task_create"));
     return std::nullopt;
   }
   auto* service = actor::ActorKeyedService::Get(profile);
   if (!service) {
-    std::move(done).Reject(
-        "no_actor_service",
-        "actor task creation: ActorKeyedService unavailable");
+    std::move(done).Reject("no_actor_service", PhaseParams("task_create"));
     return std::nullopt;
   }
   const auto* policy_checker = GetPolicyChecker(profile);
   if (!policy_checker) {
-    std::move(done).Reject(
-        "no_policy_checker",
-        "actor task creation: enterprise policy checker unavailable");
+    std::move(done).Reject("no_policy_checker", PhaseParams("task_create"));
     return std::nullopt;
   }
 
@@ -647,11 +631,7 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
     LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
                  << GetSessionKey()
                  << " CreateTaskWithOptions returned null TaskId";
-    std::move(done).Reject(
-        "task_create_failed",
-        "actor task creation: CreateTaskWithOptions returned a null "
-        "TaskId — the actor service may still be cleaning up the "
-        "previous task. Retry the tool call.");
+    std::move(done).Reject("task_create_failed", base::DictValue());
     task_id_.reset();
     return std::nullopt;
   }
@@ -660,11 +640,7 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
     LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
                  << GetSessionKey() << " GetTask(" << task_id_->value()
                  << ") returned null immediately after creation";
-    std::move(done).Reject(
-        "task_create_unhealthy",
-        "actor task creation: GetTask returned null immediately "
-        "after CreateTaskWithOptions — the task is not registered. "
-        "Retry the tool call.");
+    std::move(done).Reject("task_create_unhealthy", ReasonParams("not_registered"));
     task_id_.reset();
     return std::nullopt;
   }
@@ -677,14 +653,11 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
                  << GetSessionKey() << " task " << task_id_->value()
                  << " in unexpected initial state "
                  << static_cast<int>(new_task->GetState());
-    std::move(done).Reject(
-        "task_create_unhealthy",
-        base::StrCat(
-            {"actor task creation: new task is in state ",
-             base::NumberToString(static_cast<int>(new_task->GetState())),
-             " immediately after creation (expected kCreated=0). "
-             "The actor service may still be tearing down the "
-             "previous task. Retry the tool call."}));
+    {
+      base::DictValue reject_params = ReasonParams("bad_state");
+      reject_params.Set("state", static_cast<int>(new_task->GetState()));
+      std::move(done).Reject("task_create_unhealthy", std::move(reject_params));
+    }
     task_id_.reset();
     return std::nullopt;
   }
@@ -730,9 +703,7 @@ void BrowserTool::RunActorAction(apc::Actions actions,
   }
   auto* service = actor::ActorKeyedService::Get(GetProfile());
   if (!service) {
-    std::move(done).Reject(
-        "no_actor_service",
-        base::StrCat({action_name, ": ActorKeyedService disappeared"}));
+    std::move(done).Reject("no_actor_service", ActionParams(action_name, "dispatch"));
     return;
   }
 
@@ -741,9 +712,7 @@ void BrowserTool::RunActorAction(apc::Actions actions,
   actor::BuildToolRequestResult tool_request_result =
       actor::BuildToolRequest(actions);
   if (!tool_request_result.has_value()) {
-    std::move(done).Reject(
-        "invalid_action",
-        base::StrCat({action_name, ": failed to build ToolRequest"}));
+    std::move(done).Reject("invalid_action", ActionParams(action_name, "build"));
     return;
   }
 
@@ -815,17 +784,12 @@ void BrowserTool::OnActorPerformActionsDone(
   // Without this stage the LLM has no way to know what the action did.
   Profile* profile = GetProfile();
   if (!profile) {
-    std::move(done).Reject(
-        "no_profile",
-        base::StrCat({action_name, ": Profile gone before observation"}));
+    std::move(done).Reject("no_profile", ActionParams(action_name, "observe"));
     return;
   }
   auto* service = actor::ActorKeyedService::Get(profile);
   if (!service) {
-    std::move(done).Reject(
-        "no_actor_service",
-        base::StrCat({action_name,
-                      ": ActorKeyedService disappeared before observation"}));
+    std::move(done).Reject("no_actor_service", ActionParams(action_name, "observe"));
     return;
   }
 
@@ -849,30 +813,18 @@ void BrowserTool::OnActorPerformActionsDone(
                std::string action_name, base::TimeTicks start_time,
                ToolCallback done) {
               if (!self) {
-                std::move(done).Reject(
-                    "tool_gone",
-                    base::StrCat({action_name,
-                                  ": BrowserTool destroyed before the "
-                                  "offscreen retry"}));
+                std::move(done).Reject("tool_gone", ActionParams(action_name));
                 return;
               }
               auto* svc = actor::ActorKeyedService::Get(self->GetProfile());
               if (!svc || !self->task_id_.has_value()) {
-                std::move(done).Reject(
-                    "no_actor_service",
-                    base::StrCat({action_name,
-                                  ": actor service/task gone before the "
-                                  "offscreen retry"}));
+                std::move(done).Reject("no_actor_service", ActionParams(action_name, "offscreen_retry"));
                 return;
               }
               actor::BuildToolRequestResult req =
                   actor::BuildToolRequest(actions);
               if (!req.has_value()) {
-                std::move(done).Reject(
-                    "invalid_action",
-                    base::StrCat({action_name,
-                                  ": failed to rebuild ToolRequest for the "
-                                  "offscreen retry"}));
+                std::move(done).Reject("invalid_action", ActionParams(action_name, "offscreen_retry"));
                 return;
               }
               svc->PerformActions(
@@ -890,16 +842,12 @@ void BrowserTool::OnActorPerformActionsDone(
     return;
   }
   if (!task_id_.has_value()) {
-    std::move(done).Reject(
-        "task_missing",
-        base::StrCat({action_name, ": session task no longer present"}));
+    std::move(done).Reject("task_missing", ActionParams(action_name, "session"));
     return;
   }
   actor::ActorTask* task = service->GetTask(*task_id_);
   if (!task) {
-    std::move(done).Reject(
-        "task_missing",
-        base::StrCat({action_name, ": actor task no longer exists"}));
+    std::move(done).Reject("task_missing", ActionParams(action_name, "actor"));
     return;
   }
   // Auto-recover from a wedged execution engine.
@@ -913,10 +861,9 @@ void BrowserTool::OnActorPerformActionsDone(
   // session keeps hitting 37 until the C++-side action_timeout (180s
   // default) finally fires — a 60-180s dead window during which the
   // model can do nothing. Even `BrowserCloseTab` re-hits 37 because
-  // it dispatches through the same actor task; the
-  // "close-and-reopen-the-tab-to-recover" advice from
-  // DescribeActorError is therefore unreachable from inside the
-  // model.
+  // it dispatches through the same actor task; the runtime's
+  // "close-and-reopen-the-tab-to-recover" advice for code 37 is
+  // therefore unreachable from inside the model.
   //
   // The recovery is the same one the model is being asked to do
   // manually: stop the wedged task, reset cached id + subscription,
@@ -939,18 +886,7 @@ void BrowserTool::OnActorPerformActionsDone(
       t->Stop();
     }
     active_timeouts_.clear();
-    std::move(done).Reject(
-        "actor_engine_wedged",
-        base::StrCat(
-            {"actor_error_37: ", action_name,
-             ": the actor execution engine was wedged by a prior "
-             "timeout or renderer crash (the previous action never "
-             "settled, blocking new dispatches). The host has reset "
-             "the actor task automatically. Retry the SAME tool call "
-             "ONCE — the next dispatch will mint a fresh task and "
-             "should succeed. If it fails the same way again, the "
-             "underlying tab may have crashed; tell the user instead "
-             "of looping."}));
+    std::move(done).Reject("actor_engine_wedged", ActionParams(action_name));
     return;
   }
   // Defense-in-depth — aligned to upstream glic
@@ -982,15 +918,11 @@ void BrowserTool::OnActorPerformActionsDone(
                  << " session=" << GetSessionKey();
     task_state_subscription_ = {};
     task_id_.reset();
-    std::move(done).Reject(
-        "task_went_away",
-        base::StrCat(
-            {action_name,
-             ": actor task is already in a terminal state (",
-             base::NumberToString(static_cast<int>(task->GetState())),
-             ") — likely caused by a cross-origin navigation or tab "
-             "detach. The next tool call will create a fresh task; "
-             "retry the action."}));
+    {
+      base::DictValue reject_params = ActionParams(action_name);
+      reject_params.Set("state", static_cast<int>(task->GetState()));
+      std::move(done).Reject("task_went_away", std::move(reject_params));
+    }
     return;
   }
   // Defensive: don't kick off the observation pipeline when the task has
@@ -1008,10 +940,7 @@ void BrowserTool::OnActorPerformActionsDone(
   // session has at least one live tab, so this is a tight guard for the
   // genuinely-empty edge case (e.g. last tab closed mid-batch).
   if (task->GetTabs().empty()) {
-    std::move(done).Reject(
-        "no_tabs",
-        base::StrCat({action_name,
-                      ": actor task has no live tabs for observation"}));
+    std::move(done).Reject("no_tabs", ActionParams(action_name));
     return;
   }
 
@@ -1090,14 +1019,10 @@ void BrowserTool::OnActionsResultBuilt(
   if (!actor::IsOk(result_code)) {
     // Tool result still includes the observation so the LLM can see
     // why the page rejected the action (e.g. element became stale).
-    // Tool-aware error string: when the failing tool was a scroll-tool
-    // and the code is kElementOffscreen, override the generic
-    // "prepend a scroll_to" advice (which would create an infinite
-    // retry loop). See `DescribeActorErrorForTool` in
-    // browser_tool_internal.cc for the override rules.
     result.Set("ok", false);
-    result.Set("result",
-                DescribeActorErrorForTool(action_name, result_code));
+    // The numeric actor code; the runtime's table renders the description
+    // (including the tool-aware offscreen / obscured overrides).
+    result.Set("error_code", static_cast<int>(result_code));
     // The observation (with its elements[]) rides this error result, so
     // the model does receive it — it is the new T0-c baseline.
     observation_baseline_.Commit();
@@ -2113,16 +2038,6 @@ base::DictValue BrowserTool::BuildObservationDict(
   return observation;
 }
 
-void BrowserTool::RejectNotYetImplemented(std::string_view tool_name,
-                                          ToolCallback done) {
-  std::move(done).Reject(
-      "not_yet_implemented",
-      base::StrCat({"C++ implementation of ", tool_name,
-                    " has not landed yet. The JS path is the live "
-                    "executor; reaching this code means the JS-side "
-                    "catalog was bypassed — check tools.ts ordering."}));
-}
-
 const NodeRegistry::Entry* BrowserTool::LookupNode(
     int node_id,
     std::optional<int> tab_id,
@@ -2132,17 +2047,15 @@ const NodeRegistry::Entry* BrowserTool::LookupNode(
       ? node_registry_.FindIn(node_id, *tab_id)
       : node_registry_.Find(node_id);
   if (!entry) {
-    std::move(done).Reject(
-        "index_not_found",
-        base::StrCat({tool_name, ": index ",
-                      base::NumberToString(node_id),
-                      tab_id.has_value()
-                          ? base::StrCat({" in tab ",
-                                          base::NumberToString(*tab_id)})
-                          : std::string(),
-                      " not in this session's registry. Run a "
-                      "screenshot or read_page to "
-                      "observe the page first."}));
+    {
+      base::DictValue reject_params;
+      reject_params.Set("tool", tool_name);
+      reject_params.Set("index", node_id);
+      if (tab_id.has_value()) {
+        reject_params.Set("tab_id", *tab_id);
+      }
+      std::move(done).Reject("index_not_found", std::move(reject_params));
+    }
   }
   return entry;
 }
@@ -2164,9 +2077,3 @@ const NodeRegistry::Entry* BrowserTool::LookupNode(
 
 }  // namespace nexus
 
-// Macro DSL category accessor — descends from `ToolSession` to its
-// `browser_tool_` member. Pairs with the `NEXUS_DECLARE_CATEGORY`
-// in `browser_tool.h`. Lives at file scope (outside `namespace nexus`)
-// because the macro expands to `namespace nexus::detail { ... }` and
-// we don't want to nest namespaces.
-NEXUS_DEFINE_CATEGORY(nexus::BrowserTool, browser_tool);

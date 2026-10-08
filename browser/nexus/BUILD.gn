@@ -72,105 +72,17 @@ source_set("interface_version") {
   deps = [ ":check_interface_version" ]
 }
 
-# =============================================================================
-# Tool declaration codegen
-#
-# Reads `tools/declarations/<category>/<name>.tool.json` files and emits
-# `$target_gen_dir/tools/<name>.gen.h` headers. Each header declares a
-# typed input struct + abstract base class for the corresponding tool.
-# Implementations inherit the base class and override `Run<Name>`.
-#
-# Phase 1 of the declarative tool-definition migration. Only one
-# declaration today (`screenshot`); when Phase 3 splits browser_actions
-# the inputs/outputs lists below grow correspondingly. See plan
-# `giggly-watching-pie.md` for the migration path.
-#
-# To keep deps tracking precise, both `inputs` (files that influence
-# the output) and `outputs` (files emitted) must be enumerated. A
-# `*.tool.json` glob would miss new files and break incremental builds.
-# =============================================================================
+# Bridge-API codegen. Reads `api/declarations/<category>/<name>.api.json`
+# and emits `<category>_api.gen.{h,cc}` under `$target_gen_dir/api/`: one
+# typed input struct + extractor per action and a `<Category>ApiBase`
+# whose ctor registers every action. Adding an action = drop a
+# *.api.json next to its peers and list it (and a new category's two
+# outputs) here — GN needs the explicit lists for incremental builds.
 action("nexus_tools_codegen") {
   script = "codegen/generate.py"
 
   inputs = [
-    # The codegen script itself — re-run when this changes.
-    "codegen/tool_schema.json",
-    "codegen/skill_schema.json",
-
-    # Skill declarations — currently used only for editor validation +
-    # codegen-side malformed-shape rejection. Phase 5+ runtime gating
-    # will read these to decide which tools to omit from tools[] until
-    # Skill('<name>') activates the bucket.
-    "tools/declarations/skills/browser.skill.json",
-
-    # Browser skill prose, split by audience into two .md under
-    # `browser_tool/`, pulled in via `@file:` references:
-    #   - browser-skill-description.md  → browser.skill.json `description`
-    #       (Position 1: the 1-line skill-menu advertisement).
-    #   - browser-skill-instructions.md → browser.skill.json `instructions`
-    #       (Position 3: the workflow playbook injected on activation).
-    # (The system-prompt `## Browser tools` catalog and the other
-    # prompt-section prose live in the runtime since 2026-10-04 —
-    # nexus_web src/constants/promptSections/ and src/tools/glic/prompts/.)
-    "tools/declarations/browser_tool/browser-skill-description.md",
-    "tools/declarations/browser_tool/browser-skill-instructions.md",
-
-    # Every *.tool.json declaration. Add a line per new file.
-    # Phase 13: collapsed catalog — was 24 tools, now 20. Cuts:
-    #   - wait/forward removed (low utility); create_tab merged into navigate
-    #     (new_tab boolean); media_play/pause/seek merged into media_control
-    #     (action discriminator); BrowserFillForm added for batch form fills.
-    "tools/declarations/browser_tool/activate_tab.tool.json",
-    "tools/declarations/browser_tool/back.tool.json",
-    "tools/declarations/browser_tool/click.tool.json",
-    "tools/declarations/browser_tool/close_tab.tool.json",
-    "tools/declarations/browser_tool/done.tool.json",
-    "tools/declarations/browser_tool/download.tool.json",
-    "tools/declarations/browser_tool/drag_and_drop.tool.json",
-    "tools/declarations/browser_tool/evaluate.tool.json",
-    "tools/declarations/browser_tool/fill_form.tool.json",
-    "tools/declarations/browser_tool/find_text.tool.json",
-    "tools/declarations/browser_tool/hover.tool.json",
-    "tools/declarations/browser_tool/input.tool.json",
-    "tools/declarations/browser_tool/media_control.tool.json",
-    "tools/declarations/browser_tool/media_state.tool.json",
-    "tools/declarations/browser_tool/navigate.tool.json",
-    "tools/declarations/browser_tool/read_element.tool.json",
-    "tools/declarations/browser_tool/read_page.tool.json",
-    "tools/declarations/browser_tool/screenshot.tool.json",
-    "tools/declarations/browser_tool/scroll.tool.json",
-    "tools/declarations/browser_tool/scroll_to.tool.json",
-    "tools/declarations/browser_tool/search.tool.json",
-    "tools/declarations/browser_tool/select.tool.json",
-    "tools/declarations/browser_tool/upload.tool.json",
-
-    # file_tool category — Claude-Code-style local-filesystem tools.
-    # runtime.thread = "ui": the dispatcher invokes each method on UI,
-    # and the body hops its blocking disk I/O to base::ThreadPool itself
-    # via PostTaskAndReplyWithResult (the per-session FileTool must not be
-    # bound onto a worker via base::Unretained — see file_tool.h).
-    "tools/declarations/file_tool/edit.tool.json",
-    "tools/declarations/file_tool/glob.tool.json",
-    "tools/declarations/file_tool/read.tool.json",
-    "tools/declarations/file_tool/write.tool.json",
-
-    # process_tool category — UI-thread tools that fire async mojo
-    # calls into NexusShellService. Bash runs arbitrary host shell
-    # commands; Grep shells out to ripgrep.
-    "tools/declarations/process_tool/bash.tool.json",
-    "tools/declarations/process_tool/grep.tool.json",
-    "tools/declarations/process_tool/power_shell.tool.json",
-
-    # Bridge-API declarations (Phase 10c). Each *.api.json names a
-    # single wire action under one of the categories below. Codegen
-    # produces a per-category abstract base (e.g. `FsApiBase`,
-    # `LlmApiBase`) whose ctor calls Register(...) for every action,
-    # so the hand-written adapter only declares Handle*() overrides.
-    # Adding a new action = drop a *.api.json next to its peers and
-    # add it to the inputs/outputs lists below.
     "codegen/api_schema.json",
-
-    # fs category — 19 actions, all proxied through NexusFsHost.
     "api/declarations/fs/appendFile.api.json",
     "api/declarations/fs/chmod.api.json",
     "api/declarations/fs/copyFile.api.json",
@@ -202,11 +114,6 @@ action("nexus_tools_codegen") {
     "api/declarations/sqlite/execute.api.json",
     "api/declarations/sqlite/open.api.json",
     "api/declarations/sqlite/query.api.json",
-
-    # llm category — 9 actions: the catalog / provider-config publishing
-    # (NexusLlmHost / LlmBroker) and the `rawStream*` byte transport.
-    # call / streamStart / streamRead / streamCancel were removed under
-    # interface 1 on 2026-10-04 (the runtime speaks every wire format).
     "api/declarations/llm/catalog.api.json",
     "api/declarations/llm/encryptSecret.api.json",
     "api/declarations/llm/publishBinaryRegistry.api.json",
@@ -216,11 +123,6 @@ action("nexus_tools_codegen") {
     "api/declarations/llm/rawStreamOpen.api.json",
     "api/declarations/llm/rawStreamRead.api.json",
     "api/declarations/llm/setDefaultSelection.api.json",
-
-    # network category — V1 of the WebFetch tool. General-purpose HTTP
-    # GET over the Chromium net stack, exposed to TS-side tools that
-    # need to fetch URLs without renderer-CORS gating. Wraps
-    # `network::SimpleURLLoader` in `NexusNetworkHost`.
     "api/declarations/network/httpGet.api.json",
     "api/declarations/network/httpRequest.api.json",
     "api/declarations/network/streamCancel.api.json",
@@ -229,13 +131,6 @@ action("nexus_tools_codegen") {
     "api/declarations/network/wsClose.api.json",
     "api/declarations/network/wsOpen.api.json",
     "api/declarations/network/wsSend.api.json",
-
-    # shell category — the child-process primitive: streaming spawn (shell or
-    # argv form; `persist` hands the child to NexusPersistentShells), stdin,
-    # kill, the persistent list/kill and shell.env. All go through the
-    # per-Profile shared NexusShellServiceLauncher. (The background-shell
-    # registry actions `status` / `kill` + the `onExit` event were removed
-    # under interface 1 on 2026-10-04 — the runtime owns background shells.)
     "api/declarations/shell/closeStdin.api.json",
     "api/declarations/shell/env.api.json",
     "api/declarations/shell/persistentKill.api.json",
@@ -243,55 +138,21 @@ action("nexus_tools_codegen") {
     "api/declarations/shell/spawn.api.json",
     "api/declarations/shell/streamKill.api.json",
     "api/declarations/shell/writeStdin.api.json",
-
-    # session category — 3 actions (Phase 12f, +setActiveSession; the
-    # write-only `publishStatus` was removed on 2026-10-04).
-    # Dedicated capability for the LLM-session lifecycle: `onStop`
-    # (renamed from `browser.endSession`) plus `setAgentLoopSettings`
-    # (renamed from
-    # `browser.setAgentLoopSettings`). `setActiveSession` reports the
-    # guest's active chat session: activates one of its kNexus-window
-    # tabs and returns the tab counts that gate the webview_area.
-    # (Named setActiveSession, not setActive — codegen emits all input
-    # structs into one `nexus::generated` namespace and providers/
-    # setActive.api.json already owns `SetActiveInput`.)
     "api/declarations/session/onStop.api.json",
     "api/declarations/session/setActiveSession.api.json",
     "api/declarations/session/setAgentLoopSettings.api.json",
-
-    # search category — span-index transcript search (Ctrl+K dialog).
     "api/declarations/search/queryTranscripts.api.json",
-
-    # alarms category — persisted wall-clock alarms.
     "api/declarations/alarms/clear.api.json",
     "api/declarations/alarms/create.api.json",
     "api/declarations/alarms/list.api.json",
-
-    # secrets category — namespaced, origin-bound secrets (no get).
     "api/declarations/secrets/delete.api.json",
     "api/declarations/secrets/has.api.json",
     "api/declarations/secrets/listNames.api.json",
     "api/declarations/secrets/set.api.json",
-
-    # remote_access category — the desktop's embedded-relay status +
-    # configure (remote-browser-client plan §8.4). getStatus is the
-    # full-trust snapshot (carries the control token); configure applies a
-    # partial {enabled, bindAddress, port}. Input structs are globally
-    # unique (RemoteAccessGetStatusInput / RemoteAccessConfigureInput).
-    # Directory is snake_case like every other category; the capability
-    # wire name is camelCase ("remoteAccess") via RegisterCapability.
     "api/declarations/remote_access/configure.api.json",
     "api/declarations/remote_access/getPairings.api.json",
     "api/declarations/remote_access/getStatus.api.json",
     "api/declarations/remote_access/setPairings.api.json",
-
-    # ui category — 14 actions; settings shortcut + boot-state events
-    # + open-url + native window title + the guest-webview Inspect
-    # context-menu pref. All run on UI (the bridge's home thread).
-    # broadcastCurrentSessionState + broadcastSessionsSummary +
-    # dismissBootWelcome + showMainContents retired — all four were
-    # C++ pass-through relays for events the SharedWorker now fans
-    # directly through the WebUI bridge.
     "api/declarations/ui/getBootTimings.api.json",
     "api/declarations/ui/getInspectMenuEnabled.api.json",
     "api/declarations/ui/getProviderMissingPrompt.api.json",
@@ -307,18 +168,6 @@ action("nexus_tools_codegen") {
     "api/declarations/ui/setWindowDragRegions.api.json",
     "api/declarations/ui/showNotification.api.json",
     "api/declarations/ui/writeClipboard.api.json",
-
-    # catalog category — 3 actions; replaces the bootstrap manifest's
-    # hostedTools field with a lazy-pull API and moves prompt-section
-    # rendering (was getUsingYourToolsSection in TS) to C++ as the
-    # single source of truth for tool-name knowledge.
-    "api/declarations/catalog/listHostedTools.api.json",
-
-    # providers category — Approach 5 (A5): WebUI panel ↔ C++ bridge
-    # port. Used ONLY on the panel WebUI bridge port (not exposed to
-    # the SharedWorker / guest). Migrates settings-page chrome.send
-    # routes (`getAgentProviders`, etc.) to the bridge protocol one
-    # action at a time.
     "api/declarations/providers/beginOAuth.api.json",
     "api/declarations/providers/list.api.json",
     "api/declarations/providers/oauthStatus.api.json",
@@ -327,22 +176,8 @@ action("nexus_tools_codegen") {
     "api/declarations/providers/setActive.api.json",
     "api/declarations/providers/update.api.json",
     "api/declarations/providers/verify.api.json",
-
-    # browser_tools category — A5 panel-port-only capability. Replaces
-    # the chrome.send `get/setBrowserToolsSeparateWindow` routes. Single
-    # field today; the snapshot/setField shape mirrors the existing
-    # `agent` and `features` capabilities so adding a future toggle is
-    # purely a dict extension.
     "api/declarations/browser_tools/setField.api.json",
     "api/declarations/browser_tools/snapshot.api.json",
-
-    # app_info + system_prefs categories — the React Settings · About and
-    # Settings · System pages. Both were missing from this list even though
-    # their per-category `*_api.gen.{h,cc}` are declared under `outputs`;
-    # generate.py rglobs `api/declarations/`, so the actions were emitted
-    # anyway, but ninja had no edge from the declarations to the codegen and
-    # would not re-run it when one changed. Listed now so an edit to a
-    # declaration regenerates.
     "api/declarations/app_info/getVersionInfo.api.json",
     "api/declarations/app_info/getWebappUrl.api.json",
     "api/declarations/app_info/relaunch.api.json",
@@ -350,70 +185,45 @@ action("nexus_tools_codegen") {
     "api/declarations/system_prefs/get.api.json",
     "api/declarations/system_prefs/setBackgroundMode.api.json",
     "api/declarations/system_prefs/setLauncher.api.json",
-
-    # appearance category — per-client appearance (2026-09-20). resolveTheme
-    # resolves a full colour theme for ONE client (no pref write, no
-    # broadcast); getAppearance reports the locale + one-release legacy colour
-    # fields; setUiLocale writes kApplicationLocale. setColorScheme /
-    # setUserColor are DEPRECATED but kept for one release: the /v1/ guest
-    # currently served (nexus_web main) still calls them from its
-    # Settings · Appearance page, so a binary without them breaks that page.
-    # They write the profile theme pref exactly as before; remove them once
-    # the per-client guest (resolveTheme + caller-localStorage) is served.
     "api/declarations/appearance/getAppearance.api.json",
     "api/declarations/appearance/resolveTheme.api.json",
     "api/declarations/appearance/setColorScheme.api.json",
     "api/declarations/appearance/setUiLocale.api.json",
     "api/declarations/appearance/setUserColor.api.json",
+    "api/declarations/browser/activateTab.api.json",
+    "api/declarations/browser/back.api.json",
+    "api/declarations/browser/click.api.json",
+    "api/declarations/browser/closeTab.api.json",
+    "api/declarations/browser/done.api.json",
+    "api/declarations/browser/download.api.json",
+    "api/declarations/browser/dragAndDrop.api.json",
+    "api/declarations/browser/evaluate.api.json",
+    "api/declarations/browser/fillForm.api.json",
+    "api/declarations/browser/findText.api.json",
+    "api/declarations/browser/hover.api.json",
+    "api/declarations/browser/input.api.json",
+    "api/declarations/browser/mediaControl.api.json",
+    "api/declarations/browser/mediaState.api.json",
+    "api/declarations/browser/navigate.api.json",
+    "api/declarations/browser/readElement.api.json",
+    "api/declarations/browser/readPage.api.json",
+    "api/declarations/browser/screenshot.api.json",
+    "api/declarations/browser/scroll.api.json",
+    "api/declarations/browser/scrollTo.api.json",
+    "api/declarations/browser/search.api.json",
+    "api/declarations/browser/select.api.json",
+    "api/declarations/browser/upload.api.json",
+    "api/declarations/exec/bash.api.json",
+    "api/declarations/exec/listShells.api.json",
+    "api/declarations/exec/powerShell.api.json",
+    "api/declarations/files/edit.api.json",
+    "api/declarations/files/glob.api.json",
+    "api/declarations/files/grep.api.json",
+    "api/declarations/files/read.api.json",
+    "api/declarations/files/write.api.json",
   ]
 
   outputs = [
-    # Per-tool: one *.gen.h per *.tool.json above, in the same order.
-    "$target_gen_dir/tools/activate_tab.gen.h",
-    "$target_gen_dir/tools/back.gen.h",
-    "$target_gen_dir/tools/click.gen.h",
-    "$target_gen_dir/tools/close_tab.gen.h",
-    "$target_gen_dir/tools/done.gen.h",
-    "$target_gen_dir/tools/download.gen.h",
-    "$target_gen_dir/tools/drag_and_drop.gen.h",
-    "$target_gen_dir/tools/evaluate.gen.h",
-    "$target_gen_dir/tools/fill_form.gen.h",
-    "$target_gen_dir/tools/find_text.gen.h",
-    "$target_gen_dir/tools/hover.gen.h",
-    "$target_gen_dir/tools/input.gen.h",
-    "$target_gen_dir/tools/media_control.gen.h",
-    "$target_gen_dir/tools/media_state.gen.h",
-    "$target_gen_dir/tools/navigate.gen.h",
-    "$target_gen_dir/tools/read_element.gen.h",
-    "$target_gen_dir/tools/read_page.gen.h",
-    "$target_gen_dir/tools/screenshot.gen.h",
-    "$target_gen_dir/tools/scroll.gen.h",
-    "$target_gen_dir/tools/scroll_to.gen.h",
-    "$target_gen_dir/tools/search.gen.h",
-    "$target_gen_dir/tools/select.gen.h",
-    "$target_gen_dir/tools/upload.gen.h",
-
-    # file_tool category — sorted by tool name within the category to
-    # match generate.py's sorted-by-name emission order.
-    "$target_gen_dir/tools/edit.gen.h",
-    "$target_gen_dir/tools/glob.gen.h",
-    "$target_gen_dir/tools/read.gen.h",
-    "$target_gen_dir/tools/write.gen.h",
-
-    # process_tool category — UI-thread tools that fire async mojo
-    # calls into NexusShellService.
-    "$target_gen_dir/tools/bash.gen.h",
-    "$target_gen_dir/tools/grep.gen.h",
-    "$target_gen_dir/tools/power_shell.gen.h",
-
-    # Bridge-API codegen (Phase 10c). One <category>_api.gen.{h,cc}
-    # pair per category. The .h holds the abstract base class with
-    # Handle*() pure virtuals; the .cc holds the ctor body whose
-    # Register() calls bind action names to those virtuals. The .h
-    # is consumed by the matching adapter header
-    # (api/<cat>/nexus_<cat>_bridge_adapter.h); the .cc is compiled
-    # into the `bridge` source_set so its FsApiBase / LlmApiBase
-    # ctor symbols satisfy the linker.
     "$target_gen_dir/api/alarms/alarms_api.gen.h",
     "$target_gen_dir/api/alarms/alarms_api.gen.cc",
     "$target_gen_dir/api/fs/fs_api.gen.h",
@@ -426,8 +236,6 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/shell/shell_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.h",
     "$target_gen_dir/api/ui/ui_api.gen.cc",
-    "$target_gen_dir/api/catalog/catalog_api.gen.h",
-    "$target_gen_dir/api/catalog/catalog_api.gen.cc",
     "$target_gen_dir/api/session/session_api.gen.h",
     "$target_gen_dir/api/session/session_api.gen.cc",
     "$target_gen_dir/api/search/search_api.gen.h",
@@ -448,41 +256,15 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/sqlite/sqlite_api.gen.cc",
     "$target_gen_dir/api/appearance/appearance_api.gen.h",
     "$target_gen_dir/api/appearance/appearance_api.gen.cc",
-
-    # Per-category aggregate: one *.gen.h per UNIQUE folder under
-    # declarations/. Holds the abstract base class (e.g.
-    # `BrowserToolBase`) whose pure virtuals aggregate every tool in
-    # the category. The implementation class inherits this base.
-    # Add a line whenever a new declarations/<category>/ folder is
-    # introduced.
-    "$target_gen_dir/tools/browser_tool.gen.h",
-    "$target_gen_dir/tools/file_tool.gen.h",
-    "$target_gen_dir/tools/process_tool.gen.h",
-
-    # Combined registry: one .gen.h declaring AllSchemas() +
-    # PopulateRegistry(), one .gen.cc defining them. The .gen.cc is the
-    # only source-of-record of the combined registry plumbing; it gets
-    # compiled into the `bridge` source_set below.
-    "$target_gen_dir/tools/nexus_tools_registry.gen.h",
-    "$target_gen_dir/tools/nexus_tools_registry.gen.cc",
-
-    # Skill registry: one .gen.h declaring AllSkills(), one .gen.cc
-    # defining it (one SkillSchema per *.skill.json under
-    # declarations/skills/). Consumed by api/catalog/
-    # nexus_catalog_bridge_adapter.cc to serve `catalog.listSkills`.
-    "$target_gen_dir/tools/nexus_skills_registry.gen.h",
-    "$target_gen_dir/tools/nexus_skills_registry.gen.cc",
+    "$target_gen_dir/api/files/files_api.gen.h",
+    "$target_gen_dir/api/files/files_api.gen.cc",
+    "$target_gen_dir/api/exec/exec_api.gen.h",
+    "$target_gen_dir/api/exec/exec_api.gen.cc",
+    "$target_gen_dir/api/browser/browser_api.gen.h",
+    "$target_gen_dir/api/browser/browser_api.gen.cc",
   ]
 
   args = [
-    "--declarations-dir",
-    rebase_path("tools/declarations", root_build_dir),
-    "--output-dir",
-    rebase_path("$target_gen_dir/tools", root_build_dir),
-
-    # Bridge-API codegen (Phase 10c). Optional flags; when present, the
-    # script ALSO emits one <category>_api.gen.{h,cc} per category under
-    # api/declarations/<category>/.
     "--api-declarations-dir",
     rebase_path("api/declarations", root_build_dir),
     "--api-output-dir",
@@ -492,7 +274,7 @@ action("nexus_tools_codegen") {
 
 # Which shells the host can run, and the shell name the guest prompt's
 # `Shell:` line carries. A //base-only leaf shared by `fs` (systemInfo) and
-# `bridge` (the listHostedTools shell gate), so the two never disagree.
+# `bridge` (`exec.listShells`), so the two never disagree.
 source_set("host_shell") {
   sources = [
     "api/shell/host_shell.cc",
@@ -672,14 +454,6 @@ source_set("remote_access_service") {
 # codegen/) without dragging in the rest of the bridge — which
 # pulls in //chrome/browser, content::, mojom bindings, and the actor
 # stack. Kept header-only-clean so the extraction stays cheap.
-source_set("tool_schema") {
-  sources = [
-    "tools/nexus_tool_schema.cc",
-    "tools/nexus_tool_schema.h",
-  ]
-
-  public_deps = [ "//base" ]
-}
 
 # At-rest secret encryption (os_crypt_async wrapper) shared by the LLM
 # provider-config path + the MCP server store. Small standalone set so the
@@ -793,10 +567,14 @@ source_set("bridge") {
     "api/appearance/nexus_appearance_bridge_adapter.h",
     "api/browser_tools/nexus_browser_tools_bridge_adapter.cc",
     "api/browser_tools/nexus_browser_tools_bridge_adapter.h",
-    "api/catalog/nexus_catalog_bridge_adapter.cc",
-    "api/catalog/nexus_catalog_bridge_adapter.h",
     "api/fs/nexus_fs_bridge_adapter.cc",
     "api/fs/nexus_fs_bridge_adapter.h",
+    "api/browser/nexus_browser_bridge_adapter.cc",
+    "api/browser/nexus_browser_bridge_adapter.h",
+    "api/exec/nexus_exec_bridge_adapter.cc",
+    "api/exec/nexus_exec_bridge_adapter.h",
+    "api/files/nexus_files_bridge_adapter.cc",
+    "api/files/nexus_files_bridge_adapter.h",
     "api/llm/nexus_llm_bridge_adapter.cc",
     "api/llm/nexus_llm_bridge_adapter.h",
     "api/llm/nexus_llm_bridge_support.cc",
@@ -841,6 +619,7 @@ source_set("bridge") {
     "nexus_bridge_capability_handler.h",
     "nexus_bridge_port_service.cc",
     "nexus_bridge_port_service.h",
+    "nexus_bridge_response_delegate.cc",
     "nexus_bridge_response_delegate.h",
     "nexus_bridge_support.cc",
     "nexus_bridge_support.h",
@@ -873,21 +652,16 @@ source_set("bridge") {
     "tools/process_tool/nexus_search_service_launcher.h",
     "tools/nexus_tool_callback.cc",
     "tools/nexus_tool_callback.h",
-    "tools/nexus_tool_macros.h",
-    "tools/nexus_tool_registry.cc",
-    "tools/nexus_tool_registry.h",
     "tools/nexus_tool_signature.cc",
     "tools/nexus_tool_signature.h",
     "tools/process_tool/process_tool.cc",
     "tools/process_tool/process_tool.h",
     "tools/tool_base.cc",
     "tools/tool_base.h",
-    "tools/tool_catalog.cc",
-    "tools/tool_catalog.h",
     "tools/tool_session.cc",
     "tools/tool_session.h",
-    "tools/tools_adapter.cc",
-    "tools/tools_adapter.h",
+    "tools/tool_session_registry.cc",
+    "tools/tool_session_registry.h",
 
     # ui/nexus_ui_broadcast.{cc,h} retired — its sole helper
     # `BroadcastWebUiListenerEventToProfile` had no remaining call
@@ -896,16 +670,7 @@ source_set("bridge") {
     # direct worker → port broadcasts. nexusPermissionsChanged was
     # vapor and was deleted alongside. See nexus-web-parity-audit.md.
 
-    # Codegen output. Compiled into bridge so generated::AllSchemas()
-    # and the per-tool inline schema builders / extractors are linked
-    # into anything that consumes bridge. Phase 3 will start calling
-    # AllSchemas() from ToolCatalog::Get(); for now the symbol is
-    # defined-but-unused (linker keeps it; harmless).
-    "$target_gen_dir/tools/nexus_tools_registry.gen.cc",
 
-    # Skill registry codegen. Defines generated::AllSkills(); compiled
-    # into bridge so the catalog adapter (catalog.listSkills) links it.
-    "$target_gen_dir/tools/nexus_skills_registry.gen.cc",
 
     # Bridge-API codegen (Phase 10c). The per-category .gen.cc holds
     # `FsApiBase`/`LlmApiBase`'s ctor body — the Register() block that
@@ -913,11 +678,13 @@ source_set("bridge") {
     # because the adapters (also in bridge) inherit those bases and
     # need their ctors/dtors to link.
     "$target_gen_dir/api/fs/fs_api.gen.cc",
+    "$target_gen_dir/api/files/files_api.gen.cc",
+    "$target_gen_dir/api/exec/exec_api.gen.cc",
+    "$target_gen_dir/api/browser/browser_api.gen.cc",
     "$target_gen_dir/api/alarms/alarms_api.gen.cc",
     "$target_gen_dir/api/app_info/app_info_api.gen.cc",
     "$target_gen_dir/api/appearance/appearance_api.gen.cc",
     "$target_gen_dir/api/browser_tools/browser_tools_api.gen.cc",
-    "$target_gen_dir/api/catalog/catalog_api.gen.cc",
     "$target_gen_dir/api/llm/llm_api.gen.cc",
     "$target_gen_dir/api/network/network_api.gen.cc",
     "$target_gen_dir/api/providers/providers_api.gen.cc",
@@ -939,10 +706,6 @@ source_set("bridge") {
     # At-rest secret encryption (NexusSecretCrypt) appears in bridge headers.
     ":secret_crypt",
 
-    # nexus_tool_schema's types appear in bridge's public headers
-    # (tool_base.h, tool_catalog.h, …) so consumers of bridge transitively
-    # need access to them. Promote to public_deps to keep that link.
-    ":tool_schema",
   ]
 
   deps = [
@@ -958,7 +721,7 @@ source_set("bridge") {
     ":agent_notice",
     ":fs",
 
-    # The listHostedTools shell gate (catalog adapter).
+    # `exec.listShells` (the exec adapter).
     ":host_shell",
     ":network_egress_policy",
 
@@ -1346,7 +1109,6 @@ source_set("unit_tests_lite") {
     "api/network/nexus_guest_request_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
-    "codegen/codegen_smoke_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
@@ -1387,7 +1149,6 @@ source_set("unit_tests_lite") {
     # `:tool_schema` source_set is deliberately tiny (only depends on
     # //base) so adding it here doesn't drag bridge into the lite
     # test binary.
-    ":tool_schema",
     "//base/test:test_support",
     "//components/os_crypt/async/browser:test_support",
     "//components/prefs",
@@ -1416,6 +1177,7 @@ source_set("unit_tests") {
   sources = [
     "api/alarms/nexus_alarm_service_unittest.cc",
     "api/appearance/nexus_appearance_bridge_adapter_unittest.cc",
+    "api/files/nexus_files_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_host_unittest.cc",
     "api/llm/nexus_llm_raw_stream_unittest.cc",
@@ -1461,11 +1223,11 @@ source_set("unit_tests") {
     "tools/browser_tool/observation_slim_unittest.cc",
     "tools/browser_tool/screenshot_shaping_unittest.cc",
     "tools/file_tool/file_tool_unittest.cc",
-    "tools/nexus_tool_schema_unittest.cc",
     "tools/nexus_tool_signature_unittest.cc",
     "tools/process_tool/nexus_shell_service_launcher_unittest.cc",
     "tools/process_tool/process_tool_unittest.cc",
     "tools/tool_base_unittest.cc",
+    "tools/tool_session_registry_unittest.cc",
     "tools/tool_session_unittest.cc",
     "upload/nexus_pending_agent_notice_unittest.cc",
   ]

@@ -19,19 +19,19 @@ class MessagePortDescriptor;
 namespace nexus {
 
 class NexusBridgeResponseDelegate;
-class ToolsAdapter;
+class ToolSessionRegistry;
 
 // Concrete adapter implementing the generated `SessionApiBase` virtuals.
 //
 // Phase 12f architecture: the `session` capability consolidates what used
-// to be a pair of manual handlers in `ToolsAdapter`
+// to be a pair of manual handlers in `ToolSessionRegistry`
 // (`browser.endSession`, `browser.setAgentLoopSettings`) under one
 // capability served by a dedicated codegen base class. (`publishStatus`,
 // a write-only SessionStatus cache in LlmBroker with no host reader, was
 // removed under interface 1 on 2026-10-04.)
 //
 //   - `onStop` — renamed from the manual `browser.endSession` handler.
-//     Cascades through `ToolsAdapter::OnSessionStopped` →
+//     Cascades through `ToolSessionRegistry::OnSessionStopped` →
 //     `ToolSession::OnStop(reason)` → each per-category OnStop. The
 //     JS-side stop hook in nexus_web fires this with
 //     `reason: 'completed'` on conversation completion; the Stop
@@ -47,14 +47,14 @@ class ToolsAdapter;
 //   - `setActiveSession` — guest reports the active chat session on boot
 //     and on every switch. Activates one of the session's kNexus-window
 //     tabs (via the profile-keyed `NexusSessionTabTracker` — NOT this
-//     port's ToolsAdapter, whose BrowserTool state belongs to a
+//     port's ToolSessionRegistry, whose BrowserTool state belongs to a
 //     different port) and resolves with the session's tab counts.
 //
 // All actions run on UI (the bridge's home thread) — they touch
-// browser-process state (ToolsAdapter's per-session map, the
+// browser-process state (ToolSessionRegistry's per-session map, the
 // profile-keyed tab tracker) which is UI-bound.
 //
-// The adapter holds a back-reference to `ToolsAdapter` because two
+// The adapter holds a back-reference to `ToolSessionRegistry` because two
 // of its actions need to reach into the session map. The lifetime
 // invariant is set by `NexusBridgePortService`: both adapters are
 // owned by the same port service and destroyed together, so the raw
@@ -72,7 +72,7 @@ class NexusSessionBridgeAdapter
  public:
   NexusSessionBridgeAdapter(NexusBridgeResponseDelegate* delegate,
                             Profile* profile,
-                            ToolsAdapter* tools_adapter);
+                            ToolSessionRegistry* sessions);
   ~NexusSessionBridgeAdapter() override;
 
   NexusSessionBridgeAdapter(const NexusSessionBridgeAdapter&) = delete;
@@ -116,7 +116,7 @@ class NexusSessionBridgeAdapter
   void PushAgentConfig();
 
   raw_ptr<Profile> profile_;
-  raw_ptr<ToolsAdapter> tools_adapter_;
+  raw_ptr<ToolSessionRegistry> sessions_;
 
   // Observes `nexus.agent_config`; on change → PushAgentConfig().
   // See PushAgentConfig() for the post-Path-2 scope reduction.

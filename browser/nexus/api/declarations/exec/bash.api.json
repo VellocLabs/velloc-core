@@ -1,0 +1,99 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "bash",
+  "description": "Host action behind the Bash tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "ExecBash",
+  "inputs": [
+    {
+      "name": "command",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "timeout",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "run_in_background",
+      "type": "boolean",
+      "required": false
+    },
+    {
+      "name": "hook_shell",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "hook_stdin",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "hook_env",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "cwd",
+      "type": "string",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "background_unsupported"
+    },
+    {
+      "code": "process_unavailable"
+    },
+    {
+      "code": "bash_failed",
+      "params": [
+        "detail",
+        "install_hint",
+        "reason",
+        "stdout",
+        "stderr",
+        "exit_code",
+        "timed_out",
+        "truncated",
+        "interpretation",
+        "service_code"
+      ]
+    },
+    {
+      "code": "bash_timeout",
+      "params": [
+        "stdout",
+        "stderr",
+        "exit_code",
+        "timed_out",
+        "truncated",
+        "interpretation"
+      ]
+    },
+    {
+      "code": "hook_exec_failed",
+      "params": [
+        "detail",
+        "service_code",
+        "install_hint"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

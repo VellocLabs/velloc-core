@@ -44,9 +44,10 @@ struct EvaluateOutcome {
   // threw). Empty when transport failed before any response arrived.
   base::DictValue result;
   // Non-empty on transport / attach failure. Surfaces as the tool's
-  // `Reject(error_code, message)` at the call site.
+  // `Reject(error_code, params)` at the call site; `error_params` carries
+  // only data (the CDP error text under `detail`), never our own prose.
   std::string error_code;
-  std::string error_message;
+  base::DictValue error_params;
 };
 
 class BrowserEvaluateSession : public content::DevToolsAgentHostClient {

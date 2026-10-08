@@ -74,8 +74,8 @@ That allows:
 
 Control messages still use the existing bridge envelope:
 
-- request: `claudeBridge: true`, `direction: "request"`
-- response: `claudeBridge: true`, `direction: "response"`
+- request: `hostBridge: true`, `direction: "request"`
+- response: `hostBridge: true`, `direction: "response"`
 
 Transport modes:
 

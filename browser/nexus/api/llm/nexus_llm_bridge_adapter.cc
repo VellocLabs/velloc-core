@@ -222,7 +222,7 @@ void NexusLlmBridgeAdapter::PushSessionApplySelection(
     bool also_update_default) {
   // Build the route + payload that mirror the TS-side
   // `session.applySelection` event envelope. The transport wraps this in
-  // `{claudeBridge:true, direction:"event", route, payload}` automatically.
+  // `{hostBridge:true, direction:"event", route, payload}` automatically.
   Dict route;
   route.Set("namespace", "nexus");
   route.Set("capability", "session");

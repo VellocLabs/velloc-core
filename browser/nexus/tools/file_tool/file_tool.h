@@ -16,8 +16,6 @@
 #include "custom_browser/browser/nexus/mojom/nexus_media.mojom.h"
 #include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_macros.h"
-#include "custom_browser/browser/nexus/tools/nexus_tool_registry.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
 
 // Generated category-aggregate base. One *.gen.h per category holds the
@@ -26,7 +24,7 @@
 // The category header transitively pulls in each per-tool *.gen.h (for
 // the typed `<Name>Input` structs the virtuals receive), so a single
 // include covers the entire generated-base-class surface.
-#include "custom_browser/browser/nexus/tools/file_tool.gen.h"
+#include "custom_browser/browser/nexus/api/files/files_api.gen.h"
 
 class Profile;
 
@@ -61,7 +59,7 @@ class ToolSession;  // for CategoryAccessor specialization below
 //       is dropped cleanly (the discarded `ToolCallback`'s destructor
 //       emits `tool_dropped`) instead of resolving into a freed object.
 //       Resolve/Reject must run on UI anyway because the success/error
-//       callbacks inside `done` capture a `base::WeakPtr<ToolsAdapter>`
+//       callbacks inside `done` capture a `base::WeakPtr<ToolSessionRegistry>`
 //       whose home sequence is UI.
 //
 // Why the body — not the dispatcher — owns the hop: the codegen
@@ -73,14 +71,13 @@ class ToolSession;  // for CategoryAccessor specialization below
 // window entirely. See docs/agents/nexus-tools-api.md §6.
 //
 // FileTool itself is owned by `ToolSession`, which is owned by
-// `ToolsAdapter::sessions_` (UI-thread).
+// `ToolSessionRegistry::sessions_` (UI-thread).
 //
 // No `Profile`-level state is currently used — the tools operate on
 // absolute paths the LLM provides. The sandboxing decision (which
 // paths are reachable) is deferred to a future change; for now the
 // implementation enforces only the absolute-path invariant.
-class FileTool : public ToolBase,
-                 public ::nexus::generated::FileToolBase {
+class FileTool : public ToolBase {
  public:
   FileTool(ToolSession* session, Profile* profile,
            const std::string& session_key);
@@ -102,14 +99,14 @@ class FileTool : public ToolBase,
   // Public visibility is required because the codegen dispatcher
   // invokes through a `FileTool*` it gets from
   // `CategoryAccessor::Get(session)`.
-  void RunReadOnUI(::nexus::generated::ReadInput input,
-                   ToolCallback done) override;
-  void RunWriteOnUI(::nexus::generated::WriteInput input,
-                    ToolCallback done) override;
-  void RunEditOnUI(::nexus::generated::EditInput input,
-                   ToolCallback done) override;
-  void RunGlobOnUI(::nexus::generated::GlobInput input,
-                   ToolCallback done) override;
+  void RunReadOnUI(::nexus::generated::FilesReadInput input,
+                   ToolCallback done);
+  void RunWriteOnUI(::nexus::generated::FilesWriteInput input,
+                    ToolCallback done);
+  void RunEditOnUI(::nexus::generated::FilesEditInput input,
+                   ToolCallback done);
+  void RunGlobOnUI(::nexus::generated::FilesGlobInput input,
+                   ToolCallback done);
 
   // Clears per-session read-state used for Read dedup and Edit/Write stale-read
   // guards. Used after compaction/clear because prior Read content may have been
@@ -130,6 +127,9 @@ class FileTool : public ToolBase,
   // here (not in the anonymous namespace) so it can be unit-tested.
   static std::pair<std::string, std::string> ExtractGlobBaseDirectory(
       const std::string& pattern);
+  // Drives the Glob completion with a runner's pre-launch failure, without
+  // a live runner (see process_tool.h CompleteGrepForTesting).
+  void CompleteGlobForTesting(ToolCallback done, RipgrepRunResult result);
 
  public:
   // Read helpers in file_tool.cc construct this move-only result before the
@@ -145,13 +145,18 @@ class FileTool : public ToolBase,
 
     bool ok = false;
     std::string error_code;
-    std::string error_message;
-    // When non-empty, the OnDone trampoline forwards `message` as a
-    // plain-string result to the bridge — the model sees CC-style
-    // prose like "File created successfully at: <path>". Otherwise
-    // `payload` is forwarded as a Dict (legacy / structured-telemetry
-    // path). Exactly one of the two should be populated on success.
-    std::string message;
+    // The error's parameters (`{code, params}`); the runtime renders the
+    // text, the host sends no prose.
+    base::DictValue error_params;
+    // Structured success detail the runtime renders: for Read a notice
+    // (`{kind: "unchanged" | "empty" | "short", offset?, total_lines?}`),
+    // for Write / Edit the outcome ("created" / "updated" / "updated_all")
+    // and the bytes written. Otherwise `payload` is forwarded as a Dict.
+    base::DictValue notice;
+    // Read: the line-numbered projection the model reads (a plain string).
+    std::string content;
+    std::string outcome;
+    int64_t bytes_written = 0;
     base::DictValue payload;
     base::FilePath file_path;
     std::string full_content;
@@ -194,13 +199,18 @@ class FileTool : public ToolBase,
 
     bool ok = false;
     std::string error_code;
-    std::string error_message;
-    // When non-empty, the OnDone trampoline forwards `message` as a
-    // plain-string result to the bridge — the model sees CC-style
-    // prose like "File created successfully at: <path>". Otherwise
-    // `payload` is forwarded as a Dict (legacy / structured-telemetry
-    // path). Exactly one of the two should be populated on success.
-    std::string message;
+    // The error's parameters (`{code, params}`); the runtime renders the
+    // text, the host sends no prose.
+    base::DictValue error_params;
+    // Structured success detail the runtime renders: for Read a notice
+    // (`{kind: "unchanged" | "empty" | "short", offset?, total_lines?}`),
+    // for Write / Edit the outcome ("created" / "updated" / "updated_all")
+    // and the bytes written. Otherwise `payload` is forwarded as a Dict.
+    base::DictValue notice;
+    // Read: the line-numbered projection the model reads (a plain string).
+    std::string content;
+    std::string outcome;
+    int64_t bytes_written = 0;
     base::DictValue payload;
     // Pre-edit file contents (CC's FileWriteOutput original content). Set only
     // when overwriting an existing file (not on create). When `set`, OnWriteDone
@@ -224,13 +234,18 @@ class FileTool : public ToolBase,
 
     bool ok = false;
     std::string error_code;
-    std::string error_message;
-    // When non-empty, the OnDone trampoline forwards `message` as a
-    // plain-string result to the bridge — the model sees CC-style
-    // prose like "File created successfully at: <path>". Otherwise
-    // `payload` is forwarded as a Dict (legacy / structured-telemetry
-    // path). Exactly one of the two should be populated on success.
-    std::string message;
+    // The error's parameters (`{code, params}`); the runtime renders the
+    // text, the host sends no prose.
+    base::DictValue error_params;
+    // Structured success detail the runtime renders: for Read a notice
+    // (`{kind: "unchanged" | "empty" | "short", offset?, total_lines?}`),
+    // for Write / Edit the outcome ("created" / "updated" / "updated_all")
+    // and the bytes written. Otherwise `payload` is forwarded as a Dict.
+    base::DictValue notice;
+    // Read: the line-numbered projection the model reads (a plain string).
+    std::string content;
+    std::string outcome;
+    int64_t bytes_written = 0;
     base::DictValue payload;
     // Pre-edit file contents (CC's FileEditOutput.originalFile). Always set on
     // a successful edit. When `set`, OnEditDone forwards a dict
@@ -330,11 +345,5 @@ class FileTool : public ToolBase,
 
 }  // namespace nexus
 
-// Declare the macro DSL's category accessor for `FileTool`. The
-// matching `NEXUS_DEFINE_CATEGORY(FileTool, file_tool)` lives in
-// `file_tool.cc`, which can include `tool_session.h` (the header
-// can't, because `tool_session.h` includes this file to embed
-// `FileTool` as a member).
-NEXUS_DECLARE_CATEGORY(nexus::FileTool);
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_FILE_TOOL_FILE_TOOL_H_

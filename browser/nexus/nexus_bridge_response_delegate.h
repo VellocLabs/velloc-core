@@ -25,6 +25,13 @@ class NexusBridgeResponseDelegate {
                                  const base::DictValue& route,
                                  const std::string& code,
                                  const std::string& message) = 0;
+  // An error with structured detail (`error.data`). Delegates that do not
+  // carry data answer with the plain form.
+  virtual void SendErrorResponse(const std::string& id,
+                                 const base::DictValue& route,
+                                 const std::string& code,
+                                 const std::string& message,
+                                 const base::DictValue& params);
 
   // Host-initiated event push (no client request to correlate with). The
   // envelope mirrors a normal bridge response except `direction: "event"`

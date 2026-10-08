@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "mediaControl",
+  "description": "Host action behind the BrowserMediaControl tool. The model-facing definition (name, description, schema) lives in the runtime; this declares only the wire parameters.",
+  "struct_name": "BrowserMediaControl",
+  "inputs": [
+    {
+      "name": "action",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "seek_time_ms",
+      "type": "integer",
+      "required": false
+    }
+  ],
+  "errors": [
+    {
+      "code": "tab_not_in_session",
+      "params": [
+        "tool",
+        "tab_id"
+      ]
+    },
+    {
+      "code": "no_session_tab",
+      "params": [
+        "tool"
+      ]
+    },
+    {
+      "code": "no_active_tab",
+      "params": [
+        "reason",
+        "tool"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason",
+        "value"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

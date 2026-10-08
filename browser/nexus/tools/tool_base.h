@@ -5,6 +5,8 @@
 #include <string_view>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"
 
 class Profile;
 
@@ -29,11 +31,11 @@ class ToolSession;
 //                          the adapter map so the next turn reuses it.
 //   - kUserStopped     — user pressed Stop. Same lifetime as kCompleted.
 //   - kSessionDeleted  — user deleted the session from the sidebar.
-//                          ToolsAdapter erases the ToolSession on this
+//                          ToolSessionRegistry erases the ToolSession on this
 //                          reason ONLY; ~BrowserTool then closes the
 //                          session's tabs.
 //   - kDisconnected    — bridge port service teardown (panel close /
-//                          webview reload). `~ToolsAdapter` cascades
+//                          webview reload). `~ToolSessionRegistry` cascades
 //                          this before the sessions map clears, which
 //                          triggers ~BrowserTool → tab close.
 //   - kShutdown        — profile / process teardown. Same behavior as
@@ -72,7 +74,7 @@ std::string_view OnStopReasonToString(OnStopReason reason);
 // need cleanup don't have to override.
 //
 // Lifetime contract: a ToolBase subclass is a member of a ToolSession,
-// which is owned by ToolsAdapter::sessions_. When the session ends —
+// which is owned by ToolSessionRegistry::sessions_. When the session ends —
 // either via an explicit endSession RPC, a port-service tear-down, or
 // profile shutdown — the framework calls OnStop(reason) before the
 // member's destructor runs. OnStop must be idempotent because
@@ -99,8 +101,14 @@ class ToolBase {
   Profile* GetProfile() const { return profile_.get(); }
   const std::string& GetSessionKey() const { return session_key_; }
 
+  // Where a tool posts its blocking work: the session's sequence
+  // (ToolSession::blocking_runner), or a private sequence when the tool was
+  // built without a session (unit tests). Never run blocking work on the
+  // UI entry.
+  scoped_refptr<base::SequencedTaskRunner> BlockingRunner() const;
+
   // Called when the LLM session is stopping. The cascade is driven by
-  // `ToolsAdapter::OnSessionStopped(session_key, reason)` →
+  // `ToolSessionRegistry::OnSessionStopped(session_key, reason)` →
   // `ToolSession::OnStop(reason)` → each per-category member's
   // `OnStop(reason)`. See `OnStopReason` above for per-value semantics.
   //

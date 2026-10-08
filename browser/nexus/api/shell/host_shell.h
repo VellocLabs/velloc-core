@@ -6,10 +6,11 @@
 
 namespace nexus {
 
-// Which shells this host can run. The one resolver behind both the
-// listHostedTools gate (whether the Bash / PowerShell tools are offered) and
-// the `fs.systemInfo` shell name (the guest prompt's `Shell:` line), so the
-// shell the prompt names is always the shell the offered tool runs.
+// Which shells this host can run. The one resolver behind both
+// `exec.listShells` (the runtime offers the Bash / PowerShell tools only for
+// a shell reported here) and the `fs.systemInfo` shell name (the guest
+// prompt's `Shell:` line), so the shell the prompt names is always the shell
+// the offered tool runs.
 struct HostShellAvailability {
   // `bash` on PATH, or (Windows) a Git for Windows install — what the Bash
   // tool invokes (process_tool.cc BuildShellInvocation).

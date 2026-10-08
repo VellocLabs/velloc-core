@@ -1,9 +1,0 @@
-{
-  "$schema": "../../codegen/skill_schema.json",
-
-  "name": "browser",
-
-  "description": "@file:../browser_tool/browser-skill-description.md",
-
-  "instructions": "@file:../browser_tool/browser-skill-instructions.md"
-}

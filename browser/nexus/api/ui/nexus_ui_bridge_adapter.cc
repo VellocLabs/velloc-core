@@ -634,9 +634,7 @@ void NexusUiBridgeAdapter::HandleShowNotificationOnUI(
   // The SharedWorker fires this on every turn-end (phase → idle). We only
   // want to surface an OS notification when the user isn't actively looking
   // at Nexus, so suppress it whenever the Nexus browser window is the active
-  // window. This is the browser-process analog of Claude Code's "notify only
-  // after the user has been idle" gate — except here we consult real OS
-  // window activation instead of an idle timer.
+  // window. We consult real OS window activation rather than an idle timer.
   if (IsNexusBrowserWindowActiveForProfile(profile_)) {
     std::move(done).SuccessVoid();
     return;

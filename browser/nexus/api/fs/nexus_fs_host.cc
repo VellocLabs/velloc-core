@@ -672,8 +672,8 @@ NexusFsHost::ReadResult NexusFsHost::ReadFile(const std::string& path) const {
     // (settings / plugins loaders) treat a missing file as the benign
     // first-run case and only warn on real read errors. Emit ENOENT-style
     // wording for the absent case so the guest's isMissingFileError()
-    // detector (regex on ENOENT / "no such file") recognizes it — Node
-    // parity, since CC relies on err.code === 'ENOENT'.
+    // detector (regex on ENOENT / "no such file") recognizes it — same as
+    // Node, since guest code checks err.code === 'ENOENT'.
     // Same taxonomy as Stat, from the same last-error capture. The captured
     // NOT_FOUND leads unconditionally — a PathExists probe can race a
     // concurrent re-create and would then bury the ENOENT inside the

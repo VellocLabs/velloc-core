@@ -81,8 +81,7 @@ void WriteNexusClipboardText(const std::string& text,
 // dismissBootWelcome / showMainContents) — those events now ride
 // direct worker → port broadcasts instead of profile-wide C++
 // re-fanning. No remaining caller of
-// `BroadcastWebUiListenerEventToProfile` exists; see
-// `nexus-web-parity-audit.md` for the migration record.
+// `BroadcastWebUiListenerEventToProfile` exists.
 class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
                              public ui::SelectFileDialog::Listener {
  public:
@@ -112,8 +111,7 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
   // same events directly to attached WebUI bridge ports via
   // `broadcastWebUiBridgeEvent`. Guest triggers via a new
   // `ui.broadcastEvent` SharedWorker port message; panel pages
-  // subscribe via `nexus_ui_event_client.ts`. See
-  // nexus-web-parity-audit.md for the migration story.
+  // subscribe via `nexus_ui_event_client.ts`.
   void HandleOpenUrlOnUI(
       ::nexus::generated::OpenUrlInput input,
       std::vector<blink::MessagePortDescriptor> ports,

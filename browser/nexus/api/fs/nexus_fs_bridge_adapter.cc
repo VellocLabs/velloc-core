@@ -44,7 +44,7 @@ using Dict = base::DictValue;
 // (file-path affordances in a transcript) sees tens.
 constexpr size_t kMaxStatBatchPaths = 2000;
 
-// Depth 1 == readdir parity, so a caller who omits the arg gets the cheap
+// Depth 1 == plain readdir, so a caller who omits the arg gets the cheap
 // thing rather than a surprise tree walk. The session-store scan asks for 3.
 constexpr int32_t kDefaultTreeDepth = 1;
 constexpr int32_t kMaxTreeDepth = 8;

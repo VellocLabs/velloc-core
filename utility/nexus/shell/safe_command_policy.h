@@ -26,9 +26,8 @@ struct SafeCommandLimits {
   // 600000) so the utility never silently kills a command earlier than
   // the Bash tool advertises to the model — previously this was 5 min
   // while the tool accepted `timeout` up to 10 min, so a command set to
-  // the advertised max was killed at the half-way point. Matches Claude
-  // Code's `getMaxBashTimeoutMs()` default of 10 minutes
-  // (claude_code/src/utils/timeouts.ts: MAX_TIMEOUT_MS = 600_000).
+  // the advertised max was killed at the half-way point. Same 10-minute
+  // ceiling as the Bash tool's `timeout` schema (spec 2-6).
   static constexpr uint32_t kMaxTimeoutMs = 10u * 60u * 1000u;
 
   // No-timeout-cap sentinel. When a command's requested timeout equals this,

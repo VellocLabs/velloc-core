@@ -246,8 +246,7 @@ void NexusSettingsHandler::RegisterMessages() {
   // bridge (`providers.refresh` / `providers.beginOAuth` /
   // `providers.oauthStatus`). Zero remaining chrome.send callers
   // anywhere in the codebase (verified via string-literal grep). See
-  // `api/providers/nexus_providers_bridge_adapter.cc` for the new path
-  // and the parity-audit doc for the migration record.
+  // `api/providers/nexus_providers_bridge_adapter.cc` for the new path.
   web_ui()->RegisterMessageCallback(
       "getWebappUrl",
       base::BindRepeating(&NexusSettingsHandler::HandleGetWebappUrl,

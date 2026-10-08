@@ -44,7 +44,7 @@ void AppendGitBashCandidatesFromRoot(const base::FilePath& root,
 
 bool IsGitBashInstalledForWindows() {
   std::vector<base::FilePath> candidates;
-  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "CLAUDE_CODE_SHELL", "SHELL"}) {
+  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "SHELL"}) {
     if (std::optional<base::FilePath> p = EnvPath(env_name); p.has_value()) {
       candidates.push_back(*p);
     }
@@ -148,7 +148,7 @@ std::string ExtractShellBasename(std::optional<std::string> raw) {
   std::string basename = shell_path.BaseName().AsUTF8Unsafe();
 #if BUILDFLAG(IS_WIN)
   // Strip a trailing .exe on Windows so the model sees "bash" not
-  // "bash.exe" — matches the shell names Claude Code uses.
+  // "bash.exe" — the plain shell name the prompt's Shell line reports.
   constexpr char kExeSuffix[] = ".exe";
   constexpr size_t kExeSuffixLen = sizeof(kExeSuffix) - 1;
   if (basename.size() > kExeSuffixLen) {

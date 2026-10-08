@@ -75,9 +75,8 @@ ShellInvocation BuildShellInvocation(const std::string& command_line) {
 
 // Hook-exec variant: run `command` in the explicitly requested shell
 // rather than the platform default. bash/sh/zsh use `-c <command>`;
-// pwsh/powershell use the non-interactive `-Command` form (mirrors
-// claude_code's execCommandHook PowerShell argv:
-// `-NoProfile -NonInteractive -Command`). The shell id is resolved by the
+// pwsh/powershell use the non-interactive form
+// `-NoProfile -NonInteractive -Command`. The shell id is resolved by the
 // utility process against the SafeCommandPolicy allowlist; an unavailable
 // shell surfaces as BINARY_NOT_FOUND (the JS runner falls back).
 ShellInvocation BuildHookShellInvocation(const std::string& shell_id,
@@ -395,8 +394,7 @@ std::vector<std::string> BuildRipgrepArgs(
 // A Grep whose `path` names one regular file is locating, not discovering:
 // `files_with_matches` would answer with the path the model already typed,
 // and a bare matching line is followed by a targeted Read of the lines
-// around it in roughly half of such calls (Sep-2026 transcript corpus, CC
-// and Velloc alike). Passing any context cuts that follow-up to ~16-29% and
+// around it in roughly half of such calls (Sep-2026 transcript corpus). Passing any context cuts that follow-up to ~16-29% and
 // the effect saturates at -C 4-6 — larger windows buy nothing, so 5.
 //
 // Explicit values always win: an `output_mode` the model set is kept even
@@ -458,8 +456,7 @@ SliceResult ApplyHeadLimit(std::vector<std::string>&& items,
 // (tools/nexus_ripgrep_runner.cc), shared by Grep and Glob. The runner hands
 // back already-parsed `lines`, so the Grep path below only shapes them.
 
-// Convert an absolute path to a path relative to `cwd`, mirroring CC's
-// `toRelativePath`: if the relative form would escape cwd (starts with ".."),
+// Convert an absolute path to a path relative to `cwd`: if the relative form would escape cwd (starts with ".."),
 // keep the absolute path. Saves tokens in tool output.
 std::string ToRelativePath(const base::FilePath& abs,
                            const base::FilePath& cwd) {
@@ -499,7 +496,7 @@ std::string RelativizeGrepLine(const std::string& line,
 }
 
 // Sort file paths by modification time descending (most recent first),
-// matching CC GrepTool's files_with_matches sort. Falls back to filename
+// the files_with_matches order (spec 2-4). Falls back to filename
 // ascending as a tiebreaker. Paths that can't be stat'd sort as mtime 0.
 void SortByMtimeDesc(std::vector<std::string>* paths) {
   struct Entry {
@@ -634,8 +631,8 @@ void ProcessTool::RunBashOnUI(::nexus::generated::ExecBashInput input,
   // Hook-exec path: the host-internal `hook_shell` field (set by the JS hook
   // runner, never the model — it's `"internal": true` in bash.tool.json so it
   // never reaches the model-facing schema) requests an explicit shell with
-  // hook input on stdin and env exported natively — the CC-faithful
-  // command-hook contract. Run the requested shell directly (use_shell =
+  // hook input on stdin and env exported natively — the command-hook
+  // contract. Run the requested shell directly (use_shell =
   // false) and return the RAW exit code + combined output so the JS executor
   // can apply its own protocol (exit 2 = block, 0 = pass, other = non-blocking
   // warning). This bypasses the prose/non-zero-reject shaping of the normal
@@ -1156,8 +1153,8 @@ void ProcessTool::RunGrepOnUI(::nexus::generated::FilesGrepInput input,
     return;
   }
 
-  // CC parity (2-4-4): validate that the target path exists. Skip the check
-  // for UNC paths to avoid NTLM credential leaks (CC validateInput 207-210) —
+  // Spec 2-4-4: validate that the target path exists. Skip the check
+  // for UNC paths to avoid NTLM credential leaks —
   // treat them as existing. base::PathExists is blocking I/O, so it must run
   // on a ThreadPool worker, never on this UI thread (mirrors FileTool's
   // PostTaskAndReplyWithResult idiom).

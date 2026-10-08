@@ -477,8 +477,8 @@ std::string ExtractNodeText(const apc::ContentAttributes& attrs) {
 // (popup management). Those are tracked as a separate follow-up.
 const char* RoleStringFromAXRole(apc::AXRole role) {
   switch (role) {
-    // Batch 1 — list-style picker family (shipped earlier; see Healthgrades
-    // parity-audit entry).
+    // Batch 1 — list-style picker family (shipped earlier; found on a
+    // healthcare-directory site).
     case apc::AX_ROLE_LISTBOXOPTION:
     case apc::AX_ROLE_MENULISTOPTION:
       return "option";

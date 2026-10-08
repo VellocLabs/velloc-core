@@ -13,7 +13,7 @@
       "name": "maxDepth",
       "type": "integer",
       "required": false,
-      "description": "Levels below `path` to descend. 1 = the root's own children (readdir parity). Absent or <= 0 means 1; clamped to 8."
+      "description": "Levels below `path` to descend. 1 = the root's own children (same as readdir). Absent or <= 0 means 1; clamped to 8."
     },
     {
       "name": "maxEntries",

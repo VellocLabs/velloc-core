@@ -232,9 +232,8 @@ void NexusNetworkHost::Start() {
     resource_request->headers.RemoveHeader(net::HttpRequestHeaders::kContentType);
   }
 
-  // Default User-Agent for WebFetch-style requests. CC sends
-  // `Mozilla/5.0 (Claude Code WebFetch)`; we use the analogous
-  // value here. If the caller passed their own User-Agent in
+  // Default User-Agent for WebFetch-style requests: names the product and
+  // the fetcher so a site can tell agent fetches apart. If the caller passed their own User-Agent in
   // `headers`, that takes precedence (SetHeader overwrites).
   if (!resource_request->headers.HasHeader(
           net::HttpRequestHeaders::kUserAgent)) {

@@ -76,7 +76,7 @@ struct ShellSpawnOptions {
   // Bytes written to the child's stdin, after which the stream is closed
   // (EOF). Empty means the child sees an empty stdin (NUL / /dev/null),
   // matching the prior behaviour. Used to deliver hook-input JSON to
-  // command hooks the same way Claude Code does via `child.stdin.write`,
+  // command hooks on the child's stdin (the hook contract),
   // without the caller having to compose a `printf '<json>' | …` pipeline
   // (which only works in a POSIX shell). UTF-8; carried as a string
   // because hook input is always JSON text.

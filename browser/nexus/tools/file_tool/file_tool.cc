@@ -49,15 +49,14 @@ namespace nexus {
 // =============================================================================
 namespace {
 
-// CC rejects no-limit text reads when the total file exceeds 0.25 MiB,
-// before reading. Explicit `limit` skips this total-file guard so targeted
-// large-file reads remain possible. (CC parity: `maxSizeBytes` gates on TOTAL
-// file size, pre-read — see tools/FileReadTool/limits.ts.)
+// A Read without `limit` is refused before any I/O when the whole file is
+// larger than 0.25 MiB (spec 2-1-4: the gate is on TOTAL file size). An
+// explicit `limit` skips this guard so targeted reads of large files still
+// work.
 constexpr int64_t kDefaultReadMaxSizeBytes = 256 * 1024;
 
-// Read max output budget. CC parity (1-1-3 / 2-1-4): a FIXED 25000-token cap,
-// independent of the active model's context window — CC's
-// `DEFAULT_MAX_OUTPUT_TOKENS` does not scale. Nexus cannot call the model
+// Read max output budget (spec 1-1-3 / 2-1-4): a FIXED 25000-token cap,
+// independent of the active model's context window. Nexus cannot call the model
 // token-count API from native C++, so it approximates tokens by file type
 // (EstimateReadTokens below). The prior context-window-scaled 12500/25000
 // budget was removed to match the spec.
@@ -65,8 +64,7 @@ constexpr int kReadMaxOutputTokens = 25000;
 
 constexpr size_t kMediaReadByteCap = 12 * 1024 * 1024;  // raw bytes
 
-// CC parity (constants/apiLimits.ts `PDF_MAX_PAGES_PER_READ`): the most PDF
-// pages a single Read may request. A range larger than this is rejected with
+// The most PDF pages a single Read may request. A range larger than this is rejected with
 // errorCode 8 (spec 2-1-5).
 constexpr int kPdfMaxPagesPerRead = 20;
 
@@ -102,8 +100,7 @@ std::string LowercaseExtension(const base::FilePath& path) {
   return base::ToLowerASCII(ext);
 }
 
-// CC parity (utils/pdfUtils.ts `parsePDFPageRange`): parse a PDF `pages`
-// string into a (first, last) 1-indexed range. Supports "5", "1-10", and the
+// Parse a PDF `pages` string (spec 2-1-5) into a (first, last) 1-indexed range. Supports "5", "1-10", and the
 // open-ended "3-". Returns false on invalid input (empty, non-numeric, <1, or
 // an inverted range). `last` is set to INT_MAX for the open-ended form.
 bool ParsePdfPageRange(const std::string& pages, int* first, int* last) {
@@ -144,28 +141,42 @@ bool ParsePdfPageRange(const std::string& pages, int* first, int* last) {
   return true;
 }
 
-// CC parity (FileReadTool.ts `isBlockedDevicePath` / `BLOCKED_DEVICE_PATHS`):
-// device files that would hang the read (infinite output or blocking input).
-// Path-only check, no I/O; safe devices like /dev/null are intentionally
-// allowed. Nexus runs on a Windows host where these POSIX paths don't resolve,
-// but the check is kept for spec parity and to guard a future POSIX host.
+// Descriptors 0-2: stdin, stdout, stderr.
+bool IsStdioDescriptor(std::string_view name) {
+  return name == "0" || name == "1" || name == "2";
+}
+
+// True when the path names a POSIX device a Read could never finish
+// (spec 2-1-5, errorCode 9). Path-only, no I/O. Two kinds hang a read:
+// devices that produce bytes forever, and the process's own terminal / stdio
+// streams, which block waiting for input. /dev/null and other finite devices
+// are allowed. The Windows host never resolves these paths; the rule is part
+// of the Read contract and guards a POSIX host.
 bool IsBlockedDevicePath(const std::string& path) {
-  static constexpr std::string_view kBlocked[] = {
-      "/dev/zero",   "/dev/random", "/dev/urandom", "/dev/full",
-      "/dev/stdin",  "/dev/tty",    "/dev/console", "/dev/stdout",
-      "/dev/stderr", "/dev/fd/0",   "/dev/fd/1",    "/dev/fd/2",
-  };
-  for (std::string_view blocked : kBlocked) {
-    if (path == blocked) {
+  constexpr std::string_view kDev = "/dev/";
+  if (base::StartsWith(path, kDev, base::CompareCase::SENSITIVE)) {
+    const std::string_view name = std::string_view(path).substr(kDev.size());
+    // Endless output.
+    if (name == "zero" || name == "full" || name == "random" ||
+        name == "urandom") {
       return true;
     }
+    // Interactive streams.
+    if (name == "tty" || name == "console" || name == "stdin" ||
+        name == "stdout" || name == "stderr") {
+      return true;
+    }
+    constexpr std::string_view kFd = "fd/";
+    return base::StartsWith(name, kFd, base::CompareCase::SENSITIVE) &&
+           IsStdioDescriptor(name.substr(kFd.size()));
   }
-  // /proc/self/fd/0-2 and /proc/<pid>/fd/0-2 are Linux aliases for stdio.
-  if (base::StartsWith(path, "/proc/", base::CompareCase::SENSITIVE) &&
-      (base::EndsWith(path, "/fd/0", base::CompareCase::SENSITIVE) ||
-       base::EndsWith(path, "/fd/1", base::CompareCase::SENSITIVE) ||
-       base::EndsWith(path, "/fd/2", base::CompareCase::SENSITIVE))) {
-    return true;
+  // Linux exposes the same stdio streams as /proc/<pid or self>/fd/<n>.
+  if (base::StartsWith(path, "/proc/", base::CompareCase::SENSITIVE)) {
+    const size_t slash = path.rfind('/');
+    return slash != std::string::npos &&
+           base::EndsWith(std::string_view(path).substr(0, slash), "/fd",
+                          base::CompareCase::SENSITIVE) &&
+           IsStdioDescriptor(std::string_view(path).substr(slash + 1));
   }
   return false;
 }
@@ -528,28 +539,29 @@ FileTool::ReadResult ReadImageFile(const base::FilePath& path,
                                 last_modified);
 }
 
-// Build the "1\tline\n2\tline\n…" projection that Claude Code's Read
-// tool returns. The model is trained on this exact shape, so matching
-// it minimizes prompt drift even though it's a presentation choice.
+// Build the "1\tline\n2\tline\n…" line-numbered projection Read returns
+// (spec 2-1-7). Edit's `old_string` is copied from this view, so the
+// line-number prefix shape is part of the Read contract.
 //
 // `start_line_number` is the 1-indexed number to print on the FIRST
 // emitted line (typically `offset` if specified, else 1). When
 // `max_lines` has a value, the function stops after that many lines
 // (the caller-supplied `limit`); when it is nullopt the whole file from
-// `start` is emitted. CC parity (2-1-9 / 2-1-10): there is NO default
-// line cap — `MAX_LINES_TO_READ=2000` is prompt-only — and NO byte cap;
+// `start` is emitted. Spec 2-1-9 / 2-1-10: there is NO default line cap
+// (the 2000-line figure is guidance in the tool description only) and NO
+// byte cap;
 // overflow is enforced by the post-read token guard, which THROWS rather
 // than silently truncating.
 //
 // `content` is the same selected text without line-number prefixes, used for
-// CC-style output token validation.
+// the output token check.
 struct ProjectionResult {
   std::string projection;
   std::string content;
   int lines_emitted = 0;
   // Total number of lines in the file (after stripping the phantom
   // trailing entry of a "\n"-terminated file). Used by the caller to
-  // emit CC's offset-past-EOF warning, which reports the file length.
+  // emit the offset-past-EOF warning, which reports the file length.
   int total_lines = 0;
   bool truncated = false;
 };
@@ -585,7 +597,7 @@ ProjectionResult BuildLineNumberedProjection(std::string_view contents,
   }
 
   // Emit from `start`, honoring the caller's explicit `limit` when set
-  // (no default line cap, no byte cap — CC parity).
+  // (no default line cap, no byte cap — spec 2-1-9).
   out.projection.reserve(contents.size() + 16 * lines.size());
   size_t emitted = 0;
   for (size_t i = start; i < lines.size(); ++i) {
@@ -636,10 +648,11 @@ size_t CountOccurrences(const std::string& haystack,
 }
 
 // =============================================================================
-// Edit helpers — CC FileEditTool/utils.ts parity
+// Edit helpers — matching and rewriting rules from spec 2-2
 // =============================================================================
 
-// CC's MAX_EDIT_FILE_SIZE: 1 GiB (stat bytes). Prevents OOM on multi-GB files.
+// Largest file Edit accepts: 1 GiB (stat bytes). Prevents OOM on multi-GB
+// files (spec 2-2-4 code 10).
 constexpr int64_t kMaxEditFileSize = 1024 * 1024 * 1024;
 
 // Detect whether content uses CRLF line endings.
@@ -647,8 +660,8 @@ bool HasCRLF(const std::string& content) {
   return content.find("\r\n") != std::string::npos;
 }
 
-// Normalize CRLF → LF (CC's readFileSyncWithMetadata does this before
-// matching). Standalone \r is left untouched (CC only strips \r\n pairs).
+// Normalize CRLF → LF before matching (spec 2-2-8). A standalone \r is left
+// untouched; only \r\n pairs are folded.
 std::string NormalizeCRLF(const std::string& content) {
   std::string result;
   result.reserve(content.size());
@@ -678,8 +691,7 @@ std::string RestoreCRLF(const std::string& content) {
 }
 
 // Detect BOM-based encoding from raw file bytes and re-encode UTF-8
-// content to match. Mirrors CC's detectEncodingForResolvedPath
-// (utils/fileRead.ts:20-49) + writeTextContent encoding passthrough.
+// content to match, so a write keeps the file's encoding (spec 2-3-7.2).
 // Returns the bytes to write (may differ from |content| if transcoded).
 std::string PreserveOriginalEncoding(const std::string& original,
                                      const std::string& content) {
@@ -708,8 +720,7 @@ std::string PreserveOriginalEncoding(const std::string& original,
   return content;
 }
 
-// Decode raw on-disk bytes to UTF-8 for text projection/matching. Mirrors CC's
-// readFileSyncWithMetadata encoding detection (utils/fileRead.ts:20-49): a
+// Decode raw on-disk bytes to UTF-8 for text projection/matching: a
 // UTF-16LE BOM (FF FE) triggers a transcode to UTF-8; anything else is treated
 // as UTF-8 and returned unchanged. `is_utf16le` reports whether a transcode
 // happened so callers can (a) skip the binary heuristic for UTF-16LE (its null
@@ -734,15 +745,15 @@ std::string DecodeToUTF8(const std::string& raw, bool* is_utf16le) {
   return raw;
 }
 
-// CC utils.ts normalizeQuotes: convert curly quotes to straight.
+// Fold curly quotes to straight ones, the key for quote-tolerant matching
+// (spec 2-2-6).
 // UTF-8: U+2018 '=E2 80 98, U+2019 '=E2 80 99,
 //        U+201C "=E2 80 9C, U+201D "=E2 80 9D.
 // When `orig_offsets` is non-null, records for each normalized byte the byte
 // offset of the original character it came from, plus one end sentinel
 // (str.size()). Needed because in UTF-8 this normalization is NOT
-// length-preserving (a 3-byte curly quote becomes 1 ASCII byte) — unlike CC's
-// JS strings, where curly and straight quotes are one UTF-16 unit each and
-// normalized indices can be reused against the original directly.
+// length-preserving (a 3-byte curly quote becomes 1 ASCII byte), so a
+// normalized index cannot be reused against the original directly.
 std::string NormalizeQuotes(const std::string& str,
                             std::vector<size_t>* orig_offsets = nullptr) {
   std::string result;
@@ -779,7 +790,7 @@ std::string NormalizeQuotes(const std::string& str,
   return result;
 }
 
-// CC utils.ts findActualString: exact match first, then quote-normalized.
+// Exact match first, then quote-normalized (spec 2-2-6).
 // Returns the actual substring from file_content that matches search_string.
 // The quote-normalized fallback must map the match BACK through the offset
 // map: a curly quote before the match shifts every later normalized position,
@@ -808,7 +819,8 @@ std::string FindActualString(const std::string& file_content,
   return std::string();
 }
 
-// CC utils.ts isOpeningContext heuristic for curly quote direction.
+// Whether a quote at `byte_pos` opens a quotation: start of text, or after
+// whitespace or an opening bracket.
 bool IsOpeningContext(const std::string& str, size_t byte_pos) {
   if (byte_pos == 0) {
     return true;
@@ -818,8 +830,8 @@ bool IsOpeningContext(const std::string& str, size_t byte_pos) {
          prev == '(' || prev == '[' || prev == '{';
 }
 
-// CC utils.ts preserveQuoteStyle: when old_string matched via quote
-// normalization, apply the same curly quote style to new_string.
+// When old_string matched only via quote normalization, write new_string in
+// the file's curly quote style (spec 2-2-6).
 std::string PreserveQuoteStyle(const std::string& old_string,
                                const std::string& actual_old_string,
                                const std::string& new_string) {
@@ -863,7 +875,7 @@ std::string PreserveQuoteStyle(const std::string& old_string,
   return result;
 }
 
-// CC utils.ts stripTrailingWhitespace: strip trailing whitespace per line.
+// Strip trailing whitespace per line.
 std::string StripTrailingWhitespace(const std::string& str) {
   std::string result;
   result.reserve(str.size());
@@ -886,9 +898,11 @@ std::string StripTrailingWhitespace(const std::string& str) {
   return result;
 }
 
-// CC utils.ts DESANITIZATIONS: the model can't see certain XML-like tokens
-// (they're sanitized in the API), so it outputs the sanitized versions.
-// Map sanitized → real so edits match the actual file content.
+// Model-side token abbreviations (spec 2-2-6). The model API abbreviates a
+// few reserved XML-like tokens, so a model quoting a file that contains them
+// writes the short form. When an edit misses, these pairs map the short form
+// back to the file's text. The pairs are a fact of the model's output, not a
+// design choice; see the copyright plan, S5-10.
 struct DesanitizationEntry {
   const char* from;
   const char* to;
@@ -933,7 +947,7 @@ std::string DesanitizeString(
   return result;
 }
 
-// CC utils.ts applyEditToFile: replace with delete-strips-newline logic.
+// Apply one edit (spec 2-2-6).
 // When new_string is empty (deletion) and old_string doesn't end with \n
 // but is followed by \n in the file, the trailing newline is also removed.
 std::string ApplyEditToFile(const std::string& content,
@@ -1014,6 +1028,10 @@ base::FilePath ResolveAgainstCwd(const std::string& path,
 }
 
 }  // namespace
+
+bool IsBlockedDevicePathForTesting(const std::string& path) {
+  return IsBlockedDevicePath(path);
+}
 
 // =============================================================================
 // Out-of-line ctors/dtors for the per-method result structs.
@@ -1155,10 +1173,9 @@ void FileTool::RunReadOnUI(::nexus::generated::FilesReadInput input,
     return;
   }
 
-  // CC parity (FileReadTool.validateInput, spec 2-1-5): validate the `pages`
+  // Spec 2-1-5: validate the `pages`
   // parameter BEFORE any I/O. Bad format → errorCode 7; a range wider than
-  // kPdfMaxPagesPerRead → errorCode 8. The message wording mirrors CC so the
-  // model's correction pattern is shared.
+  // kPdfMaxPagesPerRead → errorCode 8.
   if (input.pages.has_value()) {
     int first_page = 0;
     int last_page = 0;
@@ -1181,8 +1198,7 @@ void FileTool::RunReadOnUI(::nexus::generated::FilesReadInput input,
     }
   }
 
-  // CC parity (FileReadTool.validateInput `isBlockedDevicePath`, spec 2-1-5
-  // errorCode 9): a path-based check (no I/O) for device files that would hang
+  // Spec 2-1-5 errorCode 9: a path-based check (no I/O) for device files that would hang
   // the read. Safe devices like /dev/null are intentionally allowed.
   if (IsBlockedDevicePath(input.file_path)) {
     base::DictValue params;
@@ -1244,9 +1260,10 @@ void FileTool::RunWriteOnUI(::nexus::generated::FilesWriteInput input,
     return;
   }
 
-  // CC parity (2-3-4 item 3): skip filesystem operations for UNC paths to
-  // prevent NTLM credential leaks on Windows. base::PathExists /
-  // base::ReadFileToString on UNC triggers SMB authentication.
+  // Spec 2-3-4 row 1: a network share path is refused before any I/O.
+  // On Windows, merely probing `\\host\share` (base::PathExists and
+  // friends) makes the OS authenticate to that host, handing it the
+  // user's hashed login.
   if (base::StartsWith(input.file_path, "\\\\",
                        base::CompareCase::SENSITIVE) ||
       base::StartsWith(input.file_path, "//", base::CompareCase::SENSITIVE)) {
@@ -1286,7 +1303,7 @@ void FileTool::RunEditOnUI(::nexus::generated::FilesEditInput input,
     std::move(done).Reject("invalid_args", std::move(params));
     return;
   }
-  // CC parity (spec 2-2-4 code 5): .ipynb files must use NotebookEdit.
+  // Spec 2-2-4 code 5: .ipynb files must use NotebookEdit.
   if (LowercaseExtension(path) == "ipynb") {
     base::DictValue params;
     std::move(done).Reject("notebook_file", std::move(params));
@@ -1323,8 +1340,7 @@ void FileTool::RunGlobOnUI(::nexus::generated::FilesGlobInput input,
   ToolSession* session = GetSession();
   base::FilePath default_root = session ? session->cwd() : base::FilePath();
 
-  // Resolve the search root + the ripgrep `--glob` pattern. Mirrors CC's
-  // GlobTool (utils/glob.ts): an ABSOLUTE `pattern` is split into its static
+  // Resolve the search root + the ripgrep `--glob` pattern: an ABSOLUTE `pattern` is split into its static
   // base directory (the search root) + a relative tail (the `--glob`
   // pattern), since rg's `--glob` accepts relative patterns only. A relative
   // pattern searches under `path` (or the session cwd) verbatim, letting rg
@@ -1354,9 +1370,9 @@ void FileTool::RunGlobOnUI(::nexus::generated::FilesGlobInput input,
     limit = kDefaultGlobLimit;
   }
 
-  // CC GlobTool parity (utils/glob.ts): `rg --files --glob <pattern>
-  // --sort=modified --no-ignore --hidden <target>`. `--no-ignore` + `--hidden`
-  // match CC's defaults (find gitignored / hidden files too); `--sort=modified`
+  // `rg --files --glob <pattern> --sort=modified --no-ignore --hidden
+  // <target>`. `--no-ignore` + `--hidden` make Glob find gitignored and hidden
+  // files too; `--sort=modified`
   // gives mtime ordering. ripgrep replaces the old hand-rolled FileEnumerator
   // walk that overran the action budget on large checkouts. The runner owns
   // the exec + BINARY_NOT_FOUND → auto-install rg → retry flow (shared with
@@ -1391,7 +1407,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     std::optional<int> context_window,
     std::optional<FileTool::ReadState> last_read) {
   ReadResult result;
-  // CC parity (1-1-3 / 2-1-4): the token budget is a FIXED 25000 and does not
+  // Spec 1-1-3 / 2-1-4: the token budget is a FIXED 25000 and does not
   // scale with the model context window, so `context_window` is no longer
   // consulted here (kept in the signature for the generated dispatcher).
   (void)context_window;
@@ -1435,7 +1451,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   // source-file reads. Text reads should remain useful in that case.
   pages.reset();
 
-  // CC parity (readFileInRange throws EISDIR): a directory is not a readable
+  // Spec 2-1-5: a directory is not a readable
   // file. Report it distinctly so the model switches to a listing tool instead
   // of retrying, rather than collapsing to the generic "failed to read file".
   if (have_file_info && file_info.is_directory) {
@@ -1455,7 +1471,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
 
   std::string contents;
   if (!base::ReadFileToString(path, &contents)) {
-    // CC parity (FileReadTool ENOENT branch): a missing file gets a distinct
+    // Spec 2-1-5: a missing file gets a distinct
     // "File does not exist." signal so the model corrects the path instead of
     // treating it as an opaque I/O failure.
     if (!base::PathExists(path)) {
@@ -1467,7 +1483,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     return result;
   }
 
-  // CC parity (utils/fileRead.ts:20-49): detect BOM-based encoding and transcode
+  // Spec 2-1-6: detect BOM-based encoding and transcode
   // UTF-16LE → UTF-8 so the model sees readable text (and so the binary
   // heuristic below doesn't trip on UTF-16LE's null bytes). `contents` keeps
   // the RAW on-disk bytes for the read_state_ cache + dedup/staleness symmetry;
@@ -1494,8 +1510,8 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   if (start_line < 1) {
     start_line = 1;
   }
-  // CC parity (2-1-9 / 2-1-10): `MAX_LINES_TO_READ=2000` is prompt-only and NOT
-  // enforced. The only line cap is the caller's explicit `limit`; with no limit
+  // Spec 2-1-9 / 2-1-10: the 2000-line figure in the description is guidance
+  // and is NOT enforced. The only line cap is the caller's explicit `limit`; with no limit
   // the whole file from `start` is projected (overflow is caught by the
   // post-read token guard, which throws rather than truncating).
   std::optional<int> max_lines;
@@ -1503,7 +1519,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     max_lines = *limit;
   }
 
-  // CC parity (readFileInRange strips a leading U+FEFF before line-splitting):
+  // Strip a leading U+FEFF before line-splitting (spec 2-1-6):
   // present the model BOM-free content so an Edit `old_string` copied from line
   // 1 doesn't silently capture the BOM. The strip is applied ONLY to the
   // model-facing projection + its token-estimate `content`; the cached
@@ -1520,15 +1536,14 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   ProjectionResult projection =
       BuildLineNumberedProjection(projection_source, start_line, max_lines);
 
-  // CC parity (FileReadTool.mapToolResultToToolResultBlockParam, `text`
-  // case): when the selected range yields no content the model must
+  // Spec 2-1-6: when the selected range yields no content the model must
   // receive a system-reminder warning *in place of* file content — never
   // an empty result. Without this, an empty file (or an offset past EOF)
   // produced an empty `message`/`payload`, and OnReadDone resolved with an
   // empty dict: the model saw `{}` instead of the documented warning, and
   // the read state was never recorded (so a follow-up Write to a freshly
-  // read empty file was wrongly rejected as "not read yet"). Mirror CC's
-  // two warning strings, distinguishing a genuinely empty file from an
+  // read empty file was wrongly rejected as "not read yet"). Two warnings,
+  // distinguishing a genuinely empty file from an
   // offset past the end of file.
   if (projection.lines_emitted == 0) {
     result.ok = true;
@@ -1537,7 +1552,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     result.last_modified = last_modified;
     result.offset = offset;
     result.limit = limit;
-    // CC parity (2-1-8 / 2-1-10 inv.4): Read NEVER sets isPartialView — a
+    // Spec 2-1-8 / 2-1-10 inv.4: Read NEVER sets isPartialView — a
     // partial read does not block a later Edit/Write (the staleness guard is
     // the content comparison, not the read's range).
     result.cache_read_state = true;
@@ -1559,9 +1574,9 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
     return result;
   }
 
-  // CC parity: Read returns the line-numbered content directly (CC's
-  // FileReadTool emits "cat -n" formatted text as the tool_result string).
-  // No truncation footer is appended — CC never silently truncates; overflow
+  // Read returns the line-numbered content directly as the result text
+  // (spec 2-1-7). No truncation footer is appended — Read never silently
+  // truncates; overflow
   // is enforced by the token guard above, which throws (2-1-4.5).
   result.ok = true;
   result.file_path = std::move(path);
@@ -1569,7 +1584,7 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   result.last_modified = last_modified;
   result.offset = offset;
   result.limit = limit;
-  // CC parity (2-1-8 / 2-1-10 inv.4): Read never sets isPartialView.
+  // Spec 2-1-8 / 2-1-10 inv.4: Read never sets isPartialView.
   result.cache_read_state = true;
   result.content = std::move(projection.projection);
   return result;
@@ -1583,12 +1598,11 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
   WriteResult result;
 
   // Probe existence BEFORE we touch the file so the prose response can
-  // distinguish create-vs-update (CC's FileWriteTool branches on the
-  // same signal). base::WriteFile overwrites on create, so without a
+  // distinguish create-vs-update (spec 2-3-5). base::WriteFile overwrites on create, so without a
   // prior probe we couldn't tell which case applies.
   const bool was_create = !base::PathExists(path);
 
-  // CC parity: overwriting an existing file requires a previous full Read and a
+  // Spec 2-3-4: overwriting an existing file requires a previous full Read and a
   // matching on-disk content snapshot. New files do not require a prior Read.
   // The single read below serves BOTH the staleness guard and the UI-diff
   // snapshot — reading twice would be a TOCTOU window where a concurrent
@@ -1612,8 +1626,8 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
 
   // Ensure the parent directory exists. base::WriteFile fails silently
   // (returns false) when the parent is missing; creating it explicitly
-  // mirrors Claude Code's behavior of working from a clean slate when
-  // the agent writes a file under a not-yet-existing directory tree.
+  // lets the agent write a file under a not-yet-existing directory tree
+  // (spec 2-3-5).
   base::FilePath parent = path.DirName();
   if (!parent.empty() && !base::DirectoryExists(parent)) {
     if (!base::CreateDirectory(parent)) {
@@ -1624,12 +1638,12 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
     }
   }
 
-  // CC parity (2-3-7): Write ALWAYS outputs LF. The model sends explicit
+  // Spec 2-3-7: Write ALWAYS outputs LF. The model sends explicit
   // line endings; do not preserve the old file's CRLF (contrast Edit which
   // restores original line endings via RestoreCRLF).
   content = NormalizeCRLF(content);
 
-  // CC parity (2-3-7.2): preserve the original file's BOM-based encoding.
+  // Spec 2-3-7.2: preserve the original file's BOM-based encoding.
   // The write bytes may differ from |content| (e.g. UTF-16LE transcoding),
   // but ReadState stores the raw on-disk bytes so the staleness check
   // (raw-vs-raw) stays symmetric with Read.
@@ -1644,32 +1658,11 @@ FileTool::WriteResult FileTool::WriteFileBlocking(
     return result;
   }
 
-  // Result-string design (latest iteration — see D7 entry in
-  // C:\Users\myyyb\.claude\plans\compare-the-cc-and-staged-reddy.md and
-  // docs/agents/nexus-web-parity-audit.md → "Write tool success message"):
-  //
-  // CC's wording is reused verbatim ("File created successfully at: <p>"
-  // / "The file <p> has been updated successfully.") so the model's
-  // trained recognition pattern fires. CC's wording on its own was not
-  // enough in Nexus — testing showed the model still re-issued Write
-  // calls because the result didn't confirm the content actually
-  // landed on disk (it only confirmed the file existed afterwards).
-  // The fix is the additive ". Wrote N bytes." suffix: it carries an
-  // unambiguous byte-count signal that the agent's content was
-  // accepted, which closes the verify-loop the model was caught in.
-  //
-  // Echoing the path is intentional — earlier hypotheses worried it
-  // would "create ambiguity about whether the SAME path was written",
-  // but the opposite proved true: the path echo lets the model
-  // pattern-match what it sent vs. what landed in one comparison,
-  // and is consistent with CC's wording.
-  //
-  // Earlier wording variants in this slot:
-  //  - "The function is executed successfully; the file is created and
-  //    the content is updated too." (generic, ambiguous about content)
-  //  - "The function is executed successfully; the content is updated."
-  //    (update-only variant; same ambiguity)
-  // Both produced retry spirals. Do not revert to either.
+  // The result is an outcome code plus the byte count; the runtime turns it
+  // into the model-facing sentence. The byte count matters: a result that
+  // only confirmed the file existed left the model re-issuing Write to
+  // verify its content landed. Echoing the path lets the model compare what
+  // it sent with what was written in one step.
   result.ok = true;
   result.outcome = was_create ? "created" : "updated";
   result.bytes_written = static_cast<int64_t>(write_bytes.size());
@@ -1695,7 +1688,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     std::optional<FileTool::ReadState> last_read) {
   EditResult result;
 
-  // CC parity (spec 2-2-4 code 10): reject files > 1 GiB to prevent OOM.
+  // Spec 2-2-4 code 10: reject files > 1 GiB to prevent OOM.
   base::File::Info pre_info;
   if (base::GetFileInfo(path, &pre_info) &&
       pre_info.size > kMaxEditFileSize) {
@@ -1707,7 +1700,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (spec 2-2-4 codes 4/7): file creation path — old_string empty
+  // Spec 2-2-4 codes 4/7: file creation path — old_string empty
   // and file doesn't exist means new file creation. No prior read required.
   const bool file_exists = base::PathExists(path);
   if (!file_exists) {
@@ -1738,7 +1731,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (spec 2-2-4 code 6): file must have been fully read first.
+  // Spec 2-2-4 code 6: file must have been fully read first.
   if (!last_read.has_value()) {
     result.error_code = "file_not_read";
     return result;
@@ -1759,7 +1752,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (spec 2-2-4 code 3): empty old_string on existing non-empty
+  // Spec 2-2-4 code 3: empty old_string on existing non-empty
   // file is a create-over-existing error.
   if (old_string.empty()) {
     std::string existing;
@@ -1799,7 +1792,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (spec 2-2-4 code 7): staleness check. Compare raw bytes first
+  // Spec 2-2-4 code 7: staleness check. Compare raw bytes first
   // (symmetric with read_state_ which stores raw). If raw differs, the file
   // was modified since read.
   if (contents != last_read->content) {
@@ -1807,7 +1800,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (utils/fileRead.ts:20-49): decode BOM-based encoding to UTF-8
+  // Spec 2-2-8: decode BOM-based encoding to UTF-8
   // for matching. The model's old_string/new_string are UTF-8; a UTF-16LE file
   // must be transcoded before substring matching can work. `contents` keeps the
   // RAW bytes for the read_state_ cache + re-encode on write; `work_content`
@@ -1815,7 +1808,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
   bool is_utf16le = false;
   std::string work_content = DecodeToUTF8(contents, &is_utf16le);
 
-  // CC parity (spec 2-2-8): normalize CRLF → LF for matching. The model sees
+  // Spec 2-2-8: normalize CRLF → LF for matching. The model sees
   // LF-normalized content from Read (the projection strips \r), so old_string
   // will be LF. The file on disk may be CRLF.
   const bool is_crlf = HasCRLF(work_content);
@@ -1823,20 +1816,20 @@ FileTool::EditResult FileTool::EditFileBlocking(
     work_content = NormalizeCRLF(work_content);
   }
 
-  // CC parity (utils.ts normalizeFileEditInput): strip trailing whitespace
+  // Spec 2-2-6: strip trailing whitespace
   // from new_string for non-markdown files.
   const std::string ext = LowercaseExtension(path);
   const bool is_markdown = (ext == "md" || ext == "mdx");
   std::string work_new_string =
       is_markdown ? new_string : StripTrailingWhitespace(new_string);
 
-  // CC parity (utils.ts findActualString): exact match first, then
+  // Spec 2-2-6: exact match first, then
   // quote-normalized fallback.
   bool found = false;
   std::string actual_old_string =
       FindActualString(work_content, old_string, &found);
 
-  // CC parity (utils.ts normalizeFileEditInput / DESANITIZATIONS): if the
+  // Spec 2-2-6: if the
   // exact/quote-normalized match fails, try desanitizing old_string (the model
   // emits sanitized tokens it can't see) and mirror the same replacements onto
   // new_string.
@@ -1861,12 +1854,12 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (utils.ts preserveQuoteStyle): when the file uses curly quotes
+  // Spec 2-2-6: when the file uses curly quotes
   // and the model sent straight quotes, apply curly style to new_string.
   work_new_string =
       PreserveQuoteStyle(old_string, actual_old_string, work_new_string);
 
-  // CC parity (spec 2-2-4 code 9): uniqueness check.
+  // Spec 2-2-4 code 9: uniqueness check.
   const size_t occurrences =
       CountOccurrences(work_content, actual_old_string);
   if (occurrences > 1 && !replace_all) {
@@ -1876,7 +1869,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (utils.ts applyEditToFile): apply with delete-strips-newline.
+  // Spec 2-2-6: apply with delete-strips-newline.
   // `updated` is the UTF-8, LF-normalized post-edit content. `work_content`
   // still holds the decoded + LF-normalized PRE-edit content (what old_string
   // matched against).
@@ -1888,7 +1881,7 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity (spec 2-2-8): restore original line endings, then re-encode to the
+  // Spec 2-2-8: restore original line endings, then re-encode to the
   // original BOM-based encoding before writing. `write_bytes` is what lands on
   // disk — for UTF-16LE this re-introduces the BOM + little-endian code units.
   if (is_crlf) {
@@ -1904,14 +1897,14 @@ FileTool::EditResult FileTool::EditFileBlocking(
     return result;
   }
 
-  // CC parity: prose success string. Match FileEditTool.ts wording exactly.
+  // Outcome code; the runtime renders the model-facing sentence.
   result.ok = true;
   result.outcome = replace_all ? "updated_all" : "updated";
   // Carry the pre-edit content on a UI-only side channel (see OnEditDone) so the
   // browser can render a file-relative diff. It never reaches the model. This is
   // the decoded + LF-normalized view (what old_string matched), so the JS diff
-  // works for UTF-16LE and CRLF alike — CC likewise diffs the LF-normalized
-  // content (readFileForEdit normalizes on read).
+  // works for UTF-16LE and CRLF alike — the diff is of the LF-normalized
+  // content.
   result.original_file = std::move(work_content);
   result.original_file_set = true;
   result.file_path = std::move(path);
@@ -1928,7 +1921,6 @@ FileTool::EditResult FileTool::EditFileBlocking(
 // static
 std::pair<std::string, std::string> FileTool::ExtractGlobBaseDirectory(
     const std::string& pattern_in) {
-  // Faithful port of claude_code utils/glob.ts `extractGlobBaseDirectory`.
   // Splits `pattern` into (baseDir, relativePattern) at the first glob
   // metacharacter. RunGlobOnUI applies it only to ABSOLUTE patterns, to feed
   // rg a concrete search root + a relative `--glob` tail.
@@ -2060,11 +2052,10 @@ void FileTool::OnReadMediaDone(
     }
   }
 
-  // CC parity (FileReadTool.callInner records readFileState for notebooks):
-  // give notebook reads a native read-state entry so a subsequent Edit/Write
+  // Spec 2-1-8: give notebook reads a native read-state entry so a subsequent Edit/Write
   // on the .ipynb passes the "file has been read" precondition. Only notebooks
-  // populate `full_text_for_cache`; images/PDFs leave it null and — exactly
-  // like CC — record no read-state (they aren't text-editable). `last_modified`
+  // populate `full_text_for_cache`; images/PDFs leave it null and record
+  // no read-state (they aren't text-editable). `last_modified`
   // is left null: Edit/Write gate on a content comparison (not mtime), and the
   // media read path has no Read-dedup that would consult mtime.
   if (result->full_text_for_cache.has_value()) {
@@ -2128,7 +2119,7 @@ void FileTool::OnEditDone(ToolCallback done, EditResult result) {
   }
   // On success, forward a structured dict `{ message, original_file }`. The JS
   // hostedTools.ts pulls `message` back out as the model-facing prose (so the
-  // model still sees the CC-style string, never the JSON) and uses
+  // model sees the sentence, never the JSON) and uses
   // `original_file` to render a file-relative diff. See OnWriteDone.
   if (!result.file_path.empty()) {
     ReadState state;
@@ -2178,8 +2169,7 @@ void FileTool::OnGlobRgDone(ToolCallback done,
 
   std::vector<std::string>& lines = result.lines;
 
-  // CC parity (GlobTool.mapToolResultToToolResultBlockParam): "No files found"
-  // on empty, otherwise the matched paths joined by '\n' with a truncation
+  // "No files found" on empty, otherwise the matched paths joined by '\n' with a truncation
   // caveat when there were more than `limit`. The model uses an anchored Glob
   // (the exact path as the pattern) as a file-exists probe and keys off the
   // "No files found" sentinel — rg exits 1 (no matches) → empty lines here.

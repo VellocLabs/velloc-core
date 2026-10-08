@@ -18,7 +18,7 @@ namespace {
 
 // Builds the static provider table once. Reusing OpenAI's Codex CLI client
 // is mandatory to reach the ChatGPT subscription backend — there is no
-// public client for this. See the plan/parity-audit for the ToS note.
+// public client for this.
 const std::vector<OAuthProviderConfig>& GetAllOAuthProviders() {
   static const base::NoDestructor<std::vector<OAuthProviderConfig>> kProviders(
       [] {

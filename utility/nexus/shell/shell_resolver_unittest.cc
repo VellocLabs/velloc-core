@@ -105,8 +105,6 @@ TEST(ShellResolverTest, FindOnPathHonorsExplicitBashPathEnvOverride) {
   // shell (e.g. git-bash, which sets SHELL) it happens to be invoked from.
   base::ScopedEnvironmentVariableOverride velloc_bash_path_env(
       "VELLOC_BASH_PATH");
-  base::ScopedEnvironmentVariableOverride claude_code_shell_env(
-      "CLAUDE_CODE_SHELL");
   base::ScopedEnvironmentVariableOverride shell_env("SHELL");
   base::ScopedEnvironmentVariableOverride override_env(
       "NEXUS_BASH_PATH", bash.AsUTF8Unsafe());
@@ -135,8 +133,6 @@ TEST(ShellResolverTest, FindOnPathFindsGitBashFromCommonProgramFilesLocation) {
       "NEXUS_BASH_PATH");
   base::ScopedEnvironmentVariableOverride velloc_bash_path_env(
       "VELLOC_BASH_PATH");
-  base::ScopedEnvironmentVariableOverride claude_code_shell_env(
-      "CLAUDE_CODE_SHELL");
   base::ScopedEnvironmentVariableOverride shell_env("SHELL");
   base::ScopedEnvironmentVariableOverride program_files_env(
       "ProgramFiles", program_files.AsUTF8Unsafe());

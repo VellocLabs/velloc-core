@@ -232,7 +232,7 @@ class ProcessTool : public ToolBase {
   // Blocking half of the Grep `files_with_matches` result shaping. Runs on a
   // `base::ThreadPool` worker (MayBlock) — NEVER on the UI thread — because it
   // stats every matched file (`base::GetFileInfo`) to sort by mtime descending
-  // (CC parity). Returns the fully-shaped result body (or "No files found").
+  // (spec 2-4). Returns the fully-shaped result body (or "No files found").
   static base::DictValue ShapeGrepFilesWithMatchesBlocking(
       std::vector<std::string> lines,
       int head_limit,

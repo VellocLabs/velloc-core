@@ -108,7 +108,7 @@ void AppendGitBashCandidatesFromRoot(const base::FilePath& root,
 std::vector<base::FilePath> GitBashCandidatePathsForWindows() {
   std::vector<base::FilePath> candidates;
 
-  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "CLAUDE_CODE_SHELL", "SHELL"}) {
+  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "SHELL"}) {
     if (std::optional<base::FilePath> override_path = EnvPath(env_name);
         override_path.has_value() && !override_path->empty()) {
       candidates.push_back(*override_path);

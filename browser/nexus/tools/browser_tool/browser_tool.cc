@@ -502,8 +502,7 @@ void BrowserTool::OnActorTaskStateChanged(actor::ActorTask& task) {
   // task with `StoppedReason::kTabDetached`, transitioning the state
   // to `kCancelled`/`kFailed`. Without this branch the runtime kept
   // the stale id and every subsequent browser tool call returned
-  // `tool_dropped`. See docs/agents/nexus-web-parity-audit.md
-  // ("BrowserTool actor task lifecycle — adopted from glic").
+  // `tool_dropped`. Same lifecycle handling as the glic actor host.
   if (actor::ActorTask::IsCompletedState(state)) {
     // VLOG(1) — visible with --vmodule=browser_tool=1+. The state
     // transition to terminal is an important diagnostic but happens
@@ -624,9 +623,7 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
   //
   // Convert that silent drop into a typed `task_create_*` reject
   // here so the model receives a recoverable error (and we get a
-  // `LOG(WARNING)` for telemetry). Tracked in
-  // `docs/agents/nexus-web-parity-audit.md` under "BrowserTool
-  // restart after turn-end teardown".
+  // `LOG(WARNING)` for telemetry).
   if (task_id_->is_null()) {
     LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
                  << GetSessionKey()

@@ -668,7 +668,7 @@ source_set("bridge") {
     # sites after the WebUI bridge migration moved currentSessionState
     # / summaryChanged / dismissBootWelcome / showMainContents to
     # direct worker → port broadcasts. nexusPermissionsChanged was
-    # vapor and was deleted alongside. See nexus-web-parity-audit.md.
+    # vapor and was deleted alongside.
 
 
 

@@ -106,7 +106,7 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // Binding-sequence sink for live stdout/stderr snapshots emitted by the
   // background runner while the child is still executing. Stores capped
   // accumulated bytes on the registry entry so ReadBackgroundOutput can return
-  // CC-style partial output instead of empty buffers until exit.
+  // the partial output so far instead of empty buffers until exit.
   void OnBackgroundOutput(std::string shell_id,
                           bool is_stdout,
                           std::vector<uint8_t> bytes,

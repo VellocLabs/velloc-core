@@ -37,9 +37,8 @@ namespace nexus {
 
 namespace {
 
-// Hard cap on the input URL length. CC's WebFetch validator uses
-// 2000; matching that here gives forward-compatible error messages
-// if a user migrates settings between CC and Nexus. The cap is also
+// Hard cap on the input URL length: 2000, the WebFetch tool's own limit,
+// so the host and the tool reject the same URLs. The cap is also
 // a defense against absurdly long URLs that would otherwise consume
 // loader-state memory before any redirect / DNS work happens.
 constexpr size_t kMaxUrlLengthChars = 2000;
@@ -385,7 +384,7 @@ void NexusNetworkBridgeAdapter::HandleHttpGetOnUI(
     return;
   }
   // httpGet keeps its pre-policy reach by default (WebFetch, marketplace
-  // and skill downloads may name a local or LAN server, as in CC); a
+  // and skill downloads may name a local or LAN server); a
   // caller opts into the policy with allowPrivateNetwork=false.
   if (!ValidateRequestUrl(input.url, input.allowPrivateNetwork.value_or(true),
                           done)) {

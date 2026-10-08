@@ -265,7 +265,7 @@ base::ScopedFD OpenPosixFileForChildRead(const base::FilePath& path) {
 // `*truncated` when the file is bigger than the cap. Returns false only on
 // I/O error — an empty file is success with `out->empty()`.
 //
-// Tail, not prefix (claude_code `tailFile` parity): for shell output the
+// Tail, not prefix: for shell output the
 // verdict lives at the END — a build/test log's result line follows megabytes
 // of progress spam. The prefix-keeping read this replaces returned the first
 // `max_bytes` and silently dropped the rest, so a capped background build

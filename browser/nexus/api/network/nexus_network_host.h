@@ -110,7 +110,7 @@ class NexusNetworkHost {
   //
   // V2: lifted from 5 MB to 50 MB to support large-binary persistence
   // (PDFs, archives, large API exports) and the new text-overflow
-  // disk-persistence flow in `WebFetchTool/utils.ts`. The 5 MB
+  // disk-persistence flow in the WebFetch tool. The 5 MB
   // ceiling came from `SimpleURLLoader::DownloadToString`'s built-in
   // `DCHECK_LE(max_body_size, kMaxBoundedStringDownloadSize)`. To
   // exceed that, we now use

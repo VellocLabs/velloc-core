@@ -142,7 +142,7 @@ TEST_F(ChildProcessRunnerTest, TruncatesOutputAtCap) {
 }
 
 TEST_F(ChildProcessRunnerTest, TruncatedOutputKeepsTail) {
-  // Regression (claude_code `tailFile` parity): a capped read must keep the
+  // Regression: a capped read must keep the
   // END of the output — the verdict of a long build/test log — not the first
   // `max_output_bytes`. The prefix-keeping read this guards against made a
   // capped background build's shell.status view end right after its first

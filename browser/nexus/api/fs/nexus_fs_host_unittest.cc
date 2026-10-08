@@ -649,7 +649,7 @@ TEST(NexusFsHostTest, RenameMovesFileWithExactBytes) {
   base::RunLoop().RunUntilIdle();
 
   NexusFsHost::SimpleResult result = host->Rename("old.bin", "sub/new.bin");
-  // The destination's parent is NOT auto-created — parity with base::Move.
+  // The destination's parent is NOT auto-created — same as base::Move.
   EXPECT_FALSE(result.success);
 
   ASSERT_TRUE(base::CreateDirectory(temp_dir.GetPath().AppendASCII("sub")));

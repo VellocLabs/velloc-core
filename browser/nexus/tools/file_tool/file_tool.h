@@ -34,7 +34,7 @@ class NexusMediaServiceLauncher;
 class NexusShellServiceLauncher;
 class ToolSession;  // for CategoryAccessor specialization below
 
-// Per-LLM-session class hosting Claude-Code-style local-filesystem
+// Per-LLM-session class hosting the local-filesystem
 // tools (`read`, `write`, `edit`, `glob`). Mirrors the role
 // `BrowserTool` plays for browser actions: one instance per session,
 // owned as a member of `ToolSession`.
@@ -114,8 +114,7 @@ class FileTool : public ToolBase {
   void ClearReadState();
 
   // Splits a glob `pattern` into (baseDir, relativePattern) at its first
-  // glob metacharacter (`* ? [ {`), a faithful port of the reference
-  // GlobTool's `extractGlobBaseDirectory` (claude_code utils/glob.ts).
+  // glob metacharacter (`* ? [ {`).
   // `.first` is the forward-slash-normalized static directory prefix
   // (everything up to the last separator before the first glob char; "" when
   // the pattern begins with a glob char or has no separator; "/" or "C:/" for
@@ -212,7 +211,7 @@ class FileTool : public ToolBase {
     std::string outcome;
     int64_t bytes_written = 0;
     base::DictValue payload;
-    // Pre-edit file contents (CC's FileWriteOutput original content). Set only
+    // Pre-edit file contents, for the UI diff. Set only
     // when overwriting an existing file (not on create). When `set`, OnWriteDone
     // forwards a dict `{ message, original_file }` instead of a bare prose
     // string; the JS hostedTools.ts splits that into the model-facing prose +
@@ -247,7 +246,7 @@ class FileTool : public ToolBase {
     std::string outcome;
     int64_t bytes_written = 0;
     base::DictValue payload;
-    // Pre-edit file contents (CC's FileEditOutput.originalFile). Always set on
+    // Pre-edit file contents, for the UI diff. Always set on
     // a successful edit. When `set`, OnEditDone forwards a dict
     // `{ message, original_file }` instead of a bare prose string; the JS
     // hostedTools.ts splits that into the model-facing prose + a UI-only
@@ -304,8 +303,8 @@ class FileTool : public ToolBase {
 
   // Continuation for `NexusRipgrepRunner::Run` from `RunGlobOnUI`. Unlike the
   // Read/Write/Edit trampolines above, Glob shells out to ripgrep through the
-  // shared runner (CC GlobTool parity — `rg --files --glob`) rather than the
-  // thread-pool path. Shapes the runner's parsed `lines` into the CC-style
+  // shared runner (`rg --files --glob`) rather than the
+  // thread-pool path. Shapes the runner's parsed `lines` into the
   // "No files found" / newline-joined / truncation-caveat result, or rejects
   // a pre-launch failure (rg unavailable after the runner's auto-install).
   void OnGlobRgDone(ToolCallback done, int limit, RipgrepRunResult result);
@@ -342,6 +341,11 @@ class FileTool : public ToolBase {
   // resolving into freed memory.
   base::WeakPtrFactory<FileTool> weak_ptr_factory_{this};
 };
+
+// Read's device refusal (spec 2-1-5, errorCode 9), exposed for unit tests:
+// on a Windows host a POSIX path never reaches it through Read, which
+// refuses it as not absolute first.
+bool IsBlockedDevicePathForTesting(const std::string& path);
 
 }  // namespace nexus
 

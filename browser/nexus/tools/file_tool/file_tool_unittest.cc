@@ -62,8 +62,28 @@ ToolCallback MakeRecordingCallback(CallResult* out) {
   return ToolCallback(std::move(on_success), std::move(on_error));
 }
 
+// Spec 2-1-5 errorCode 9: Read refuses the POSIX devices a read could never
+// finish — endless output, interactive streams, and stdio descriptors 0-2
+// under /dev/fd/ and /proc/<pid|self>/fd/ — and nothing next to them.
+TEST(FileToolTest, BlockedDevicePathsAreExactlyTheUnfinishableOnes) {
+  for (const char* path :
+       {"/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty",
+        "/dev/console", "/dev/stdin", "/dev/stdout", "/dev/stderr",
+        "/dev/fd/0", "/dev/fd/1", "/dev/fd/2", "/proc/self/fd/0",
+        "/proc/self/fd/1", "/proc/self/fd/2", "/proc/123/fd/2"}) {
+    EXPECT_TRUE(IsBlockedDevicePathForTesting(path)) << path;
+  }
+  for (const char* path :
+       {"/dev/null", "/dev/fd/3", "/dev/fd/00", "/proc/self/fd/0/",
+        "/proc/self/fdx/1", "/dev/zero2", "/dev/", "/dev/fd/",
+        "/proc/self/fd/3", "/proc/self/status", "/tmp/dev/zero",
+        "dev/zero"}) {
+    EXPECT_FALSE(IsBlockedDevicePathForTesting(path)) << path;
+  }
+}
+
 // Happy path: Read hops the blocking I/O to base::ThreadPool and resolves
-// back on UI with the Claude-Code-style line-numbered projection.
+// back on UI with the line-numbered projection (spec 2-1-7).
 TEST(FileToolTest, ReadResolvesWithLineNumberedProjection) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
@@ -89,7 +109,7 @@ TEST(FileToolTest, ReadResolvesWithLineNumberedProjection) {
       << result.value.GetString();
 }
 
-// CC parity (2-1-9 / 2-1-10): MAX_LINES_TO_READ=2000 is prompt-only and NOT
+// Spec 2-1-9 / 2-1-10: the 2000-line figure is description guidance and NOT
 // enforced. A no-limit Read returns the whole file regardless of context
 // window; overflow is caught by the token guard (which throws), not a line cap.
 TEST(FileToolTest, ReadWithNoLimitReturnsWholeFile) {
@@ -203,7 +223,7 @@ TEST(FileToolTest, ReadDoesNotDedupAfterContentChange) {
                                    "File unchanged since last read"));
 }
 
-// CC parity (2-1-8 / 2-1-10 inv.4): Read never sets isPartialView, so a partial
+// Spec 2-1-8 / 2-1-10 inv.4: Read never sets isPartialView, so a partial
 // read (offset/limit) does NOT block a later Edit/Write — the staleness guard is
 // the content comparison, not the read's range. Repeated exact-range reads still
 // dedup to the unchanged stub.
@@ -239,7 +259,7 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
   ASSERT_TRUE(second_result.value.is_dict());
   EXPECT_EQ("unchanged", *second_result.value.GetDict().FindDict("notice")->FindString("kind"));
 
-  // CC parity: a partial read does NOT block Edit (no isPartialView).
+  // Spec 2-1-8: a partial read does NOT block Edit (no isPartialView).
   CallResult edit_result;
   ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
@@ -252,7 +272,7 @@ TEST(FileToolTest, RepeatedPartialReadDedupsExactRangeAndAllowsEditWrite) {
       << edit_result.error_code << ": " << edit_result.error_message;
   EXPECT_FALSE(edit_result.rejected);
 
-  // CC parity: a partial read does NOT block Write either.
+  // Spec 2-1-8: a partial read does NOT block Write either.
   CallResult write_result;
   ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
@@ -489,7 +509,7 @@ TEST(FileToolTest, ReadIgnoresPagesForNonPdfTextFile) {
       << result.value.GetString();
 }
 
-// CC parity (spec 2-1-5 errorCode 7): a malformed `pages` string is rejected
+// Spec 2-1-5 errorCode 7: a malformed `pages` string is rejected
 // before any I/O.
 TEST(FileToolTest, ReadRejectsInvalidPagesFormat) {
   base::test::TaskEnvironment task_environment;
@@ -513,7 +533,7 @@ TEST(FileToolTest, ReadRejectsInvalidPagesFormat) {
   EXPECT_TRUE(result.error_params.FindString("pages"));
 }
 
-// CC parity (spec 2-1-5 errorCode 8): a page range wider than 20 pages is
+// Spec 2-1-5 errorCode 8: a page range wider than 20 pages is
 // rejected before any I/O.
 TEST(FileToolTest, ReadRejectsTooManyPages) {
   base::test::TaskEnvironment task_environment;
@@ -558,7 +578,7 @@ TEST(FileToolTest, ReadRejectsUnsupportedBinaryFile) {
   EXPECT_EQ("unsupported_binary_file", result.error_code);
 }
 
-// CC parity (utils/fileRead.ts:20-49): a UTF-16LE file (BOM FF FE) is decoded
+// Spec 2-1-6: a UTF-16LE file (BOM FF FE) is decoded
 // to UTF-8 for the projection, NOT rejected as binary despite its null bytes.
 TEST(FileToolTest, ReadDecodesUtf16LeInsteadOfRejectingAsBinary) {
   base::test::TaskEnvironment task_environment;
@@ -656,8 +676,8 @@ TEST(FileToolTest, ReadRejectsOutputOverDefaultTokenCap) {
             result.error_params.FindInt("max_tokens").value_or(0));
 }
 
-// CC parity: an empty file must resolve with the system-reminder warning
-// (FileReadTool emits it in place of file content), not an empty result.
+// Spec 2-1-6: an empty file must resolve with the system-reminder warning
+// in place of file content, not an empty result.
 TEST(FileToolTest, ReadEmptyFileWarnsInsteadOfEmptyResult) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
@@ -681,7 +701,7 @@ TEST(FileToolTest, ReadEmptyFileWarnsInsteadOfEmptyResult) {
   EXPECT_EQ("empty", *notice->FindString("kind"));
 }
 
-// CC parity: an offset past EOF reports the file length rather than
+// Spec 2-1-6: an offset past EOF reports the file length rather than
 // returning an empty result.
 TEST(FileToolTest, ReadOffsetBeyondEofWarnsWithFileLength) {
   base::test::TaskEnvironment task_environment;
@@ -709,7 +729,7 @@ TEST(FileToolTest, ReadOffsetBeyondEofWarnsWithFileLength) {
   EXPECT_EQ(3, notice->FindInt("total_lines").value_or(0));
 }
 
-// CC parity: reading an empty file records the read state, so a follow-up
+// Spec 2-1-8: reading an empty file records the read state, so a follow-up
 // Write to that (still empty) file is not wrongly rejected as "not read yet".
 TEST(FileToolTest, WriteAfterReadingEmptyFileSucceeds) {
   base::test::TaskEnvironment task_environment;
@@ -742,7 +762,7 @@ TEST(FileToolTest, WriteAfterReadingEmptyFileSucceeds) {
   EXPECT_EQ("beta\n", contents);
 }
 
-// CC parity (readFileInRange strips a leading U+FEFF): the model-facing
+// Spec 2-1-6 (a leading U+FEFF is stripped): the model-facing
 // projection must not carry the BOM bytes on line 1.
 TEST(FileToolTest, ReadStripsLeadingUtf8Bom) {
   base::test::TaskEnvironment task_environment;
@@ -768,7 +788,7 @@ TEST(FileToolTest, ReadStripsLeadingUtf8Bom) {
   EXPECT_EQ(std::string::npos, projection.find("\xEF\xBB\xBF")) << projection;
 }
 
-// CC parity (readFileInRange throws EISDIR): a directory Read is reported
+// Spec 2-1-5: a directory Read is reported
 // distinctly so the model switches to a listing tool instead of retrying.
 TEST(FileToolTest, ReadDirectoryReturnsEisdir) {
   base::test::TaskEnvironment task_environment;
@@ -791,7 +811,7 @@ TEST(FileToolTest, ReadDirectoryReturnsEisdir) {
   EXPECT_TRUE(result.error_params.FindString("path"));
 }
 
-// CC parity (FileReadTool ENOENT branch): a missing file gets a distinct
+// Spec 2-1-5 row 5: a missing file gets a distinct
 // "File does not exist." signal, not an opaque "failed to read file".
 TEST(FileToolTest, ReadMissingFileReturnsFileNotFound) {
   base::test::TaskEnvironment task_environment;
@@ -834,7 +854,7 @@ TEST(FileToolTest, EditRequiresPriorFullRead) {
   EXPECT_EQ("file_not_read", result.error_code);
 }
 
-// CC parity (2-1-8 / 2-1-10 inv.4): a partial read does NOT block Edit. The
+// Spec 2-1-8 / 2-1-10 inv.4: a partial read does NOT block Edit. The
 // read-state content snapshot is the full file (Read caches full_content), so
 // the staleness guard passes and the edit applies.
 TEST(FileToolTest, EditAfterPartialReadSucceeds) {
@@ -855,7 +875,7 @@ TEST(FileToolTest, EditAfterPartialReadSucceeds) {
   task_environment.RunUntilIdle();
   ASSERT_TRUE(read_result.resolved);
 
-  // Edit succeeds — a partial read is not a partial view (CC parity).
+  // Edit succeeds — a partial read is not a partial view (spec 2-1-8).
   CallResult edit_result;
   ::nexus::generated::FilesEditInput edit_input;
   edit_input.file_path = file.AsUTF8Unsafe();
@@ -870,7 +890,7 @@ TEST(FileToolTest, EditAfterPartialReadSucceeds) {
   EXPECT_FALSE(edit_result.rejected);
 }
 
-// CC parity (2-1-8 / 2-1-10 inv.4): a partial read does NOT block Write.
+// Spec 2-1-8 / 2-1-10 inv.4: a partial read does NOT block Write.
 TEST(FileToolTest, WriteAfterPartialReadSucceeds) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;
@@ -890,7 +910,7 @@ TEST(FileToolTest, WriteAfterPartialReadSucceeds) {
   task_environment.RunUntilIdle();
   ASSERT_TRUE(read_result.resolved);
 
-  // Write succeeds — a partial read is not a partial view (CC parity).
+  // Write succeeds — a partial read is not a partial view (spec 2-1-8).
   CallResult write_result;
   ::nexus::generated::FilesWriteInput write_input;
   write_input.file_path = file.AsUTF8Unsafe();
@@ -1138,8 +1158,7 @@ TEST(FileToolTest, DestroyingSessionMidReadDropsReplyWithoutUseAfterFree) {
   EXPECT_EQ("tool_dropped", result.error_code);
 }
 
-// Glob's absolute-pattern → (searchRoot, relativePattern) split, a faithful
-// port of claude_code's extractGlobBaseDirectory (utils/glob.ts). RunGlobOnUI
+// Glob's absolute-pattern → (searchRoot, relativePattern) split. RunGlobOnUI
 // applies it to absolute patterns so ripgrep gets a concrete search root + a
 // relative `--glob` tail (rg's --glob is relative-only). Pure logic; the rg
 // exec itself is covered by the nexus-tools e2e spec.
@@ -1211,7 +1230,7 @@ TEST(NexusRipgrepRunnerTest, ParsesSharedMemoryBackedStdout) {
 
 }  // namespace
 
-// CC parity (FileReadTool records readFileState for notebooks): a notebook
+// Spec 2-1-8: a notebook
 // Read must establish native read-state so a subsequent Write/Edit on the
 // .ipynb passes the read precondition. The live notebook path crosses a
 // utility-process boundary the unit-test harness can't spin up, so this drives
@@ -1256,7 +1275,7 @@ TEST(FileToolTest, NotebookReadRecordsReadStateEnablingWrite) {
 }
 
 // =============================================================================
-// Edit CC-parity regression tests (spec 2-2)
+// Edit regression tests (spec 2-2)
 // =============================================================================
 
 // Helper: seed a full read so EditFileBlocking passes the read gate.
@@ -1696,7 +1715,7 @@ TEST(FileToolTest, WritePreservesUtf8Bom) {
 }
 
 // Spec 2-3-7.2: Write preserves UTF-16LE encoding (BOM-detected) from the
-// original file. Read now decodes UTF-16LE (CC parity 2-1), so SeedReadState
+// original file. Read now decodes UTF-16LE (spec 2-1-6), so SeedReadState
 // can seed the read_state_ cache and Write can re-encode on output.
 TEST(FileToolTest, WritePreservesUtf16LeEncoding) {
   base::test::TaskEnvironment task_environment;
@@ -1926,7 +1945,7 @@ TEST(FileToolTest, WriteCreatesMissingParentDirectory) {
 }
 
 // =============================================================================
-// Read CC-parity regression tests (spec 2-1) — added 2026-07-21
+// Read regression tests (spec 2-1) — added 2026-07-21
 // =============================================================================
 
 // Spec 2-1-6.1: exact line-numbered content for "a\nb\nc".

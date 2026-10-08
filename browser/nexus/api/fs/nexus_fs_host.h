@@ -235,8 +235,8 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   // rather than guessing.
   struct SystemInfoResult {
     // 'win32' | 'darwin' | 'linux', matching Node's process.platform
-    // strings so the guest's `Platform:` line is byte-identical to
-    // Claude Code desktop's.
+    // strings, the values the guest's `Platform:` line reports
+    // (`win32`, `darwin`, `linux`).
     std::string platform;
     // Human-readable OS version, e.g. "Windows 11 Pro 10.0.26200" /
     // "macOS 14.4 23E214" / "Linux 6.6.4".

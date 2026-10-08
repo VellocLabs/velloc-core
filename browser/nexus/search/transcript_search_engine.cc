@@ -26,7 +26,7 @@ namespace nexus {
 
 namespace {
 
-// CC GlobalSearchDialog parity.
+// Per-file and total match caps for transcript search.
 constexpr int kMaxMatchesPerFile = 10;
 constexpr int32_t kDefaultMaxTotal = 500;
 constexpr int32_t kMaxTotalCeiling = 2000;

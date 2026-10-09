@@ -171,6 +171,12 @@ export const BYE_CODES = [
   'unauthorized',
   'replaced',
   'shutting_down',
+  /**
+   * The runtime never came up: the SharedWorker entry stub could not load the
+   * runtime body (`agentRuntimeConnectGate.ts`). Final — there is nothing to
+   * resume into; the page renders its runtime-connection-failed state.
+   */
+  'runtime_unavailable',
 ] as const
 export type ByeCode = (typeof BYE_CODES)[number]
 

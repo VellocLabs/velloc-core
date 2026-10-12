@@ -104,7 +104,7 @@ class InputDecl:
 #   - Tools: only "ui" / "any" (parse_declaration rejects "io" /
 #     "thread_pool"). A per-session tool category can't be safely posted
 #     off-UI via base::Unretained, so it hops blocking work inside its
-#     body instead — see file_tool and docs/agents/nexus-tools-api.md §6.
+#     body instead — see file_tool and F-21.
 #   - API: "ui" / "thread_pool" (and "io" if ever needed). Its adapters'
 #     lifetime is the port service, so off-UI dispatch is permitted.
 THREAD_METHOD_SUFFIX_BY_VALUE: dict[str, str] = {
@@ -349,8 +349,7 @@ def parse_api_declaration(decl_path: Path) -> ApiActionDecl:
             f"API action — only 'ui' or 'any' (synchronous) are. Off-UI work "
             f"must be hopped inside the handler body via "
             f"PostTaskAndReplyWithResult bound to refcounted/owned state (not "
-            f"the adapter); see api/fs/nexus_fs_bridge_adapter.cc and "
-            f"docs/agents/nexus-tools-api.md §6.")
+            f"the adapter); see api/fs/nexus_fs_bridge_adapter.cc.")
 
     struct_name = raw.get("struct_name", "")
     if not isinstance(struct_name, str):

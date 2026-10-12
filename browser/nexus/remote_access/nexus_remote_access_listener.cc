@@ -48,8 +48,8 @@ constexpr net::NetworkTrafficAnnotationTag kListenerTraffic =
       semantics {
         sender: "Nexus Remote Access Listener"
         description:
-          "The desktop's default-OFF embedded relay (remote-browser-client "
-          "plan §8). Reverse-proxies the Nexus guest origin's immutable "
+          "The desktop's default-OFF embedded relay. "
+          "Reverse-proxies the Nexus guest origin's immutable "
           "build entry and exposes /rt so a remote browser on the LAN/VPN "
           "can join this desktop's runtime with scope <= control."
         trigger:
@@ -81,14 +81,14 @@ constexpr net::NetworkTrafficAnnotationTag kListenerTraffic =
       }
     )");
 
-// WebSocket pairing limits (plan §8.3, mirrored from the dev relay).
+// WebSocket pairing limits (mirrored from the dev relay).
 constexpr base::TimeDelta kLegTimeout = base::Seconds(5);
 constexpr size_t kMaxPreLegBufferBytes = 1 * 1024 * 1024;   // 1 MiB → 1009
 // Transcript snapshots can be large; a blob chunk is 64 KiB * 4/3. Both the
-// read and write buffers of every relayed socket are raised to 32 MiB (plan
-// §8.3) so a big snapshot frame is not truncated by the 1 MiB default.
+// read and write buffers of every relayed socket are raised to 32 MiB so a
+// big snapshot frame is not truncated by the 1 MiB default.
 constexpr int32_t kRelayBufferBytes = 32 * 1024 * 1024;
-// The /rt concurrency ceiling (plan §8.3's routing table: < 8).
+// The /rt concurrency ceiling.
 constexpr size_t kMaxClients = 8;
 // /rt is accepted before any authentication (the runtime authenticates over
 // the leg), so the ceiling alone lets one LAN host hold every slot with idle
@@ -102,7 +102,7 @@ constexpr int32_t kProxySendBufferBytes = 16 * 1024 * 1024;
 constexpr char kEntryRedirectCacheControl[] = "private, max-age=31536000";
 
 // Build the 2-byte big-endian close-code payload and wrap it in a server
-// close frame (unmasked — a server never masks, RFC 6455 §5.1).
+// close frame (unmasked — a server never masks, RFC 6455 section 5.1).
 std::string EncodeCloseFrame(int code) {
   std::string payload;
   payload.push_back(static_cast<char>((code >> 8) & 0xFF));
@@ -214,7 +214,7 @@ class NexusRemoteAccessListener::Core : public net::HttpServer::Delegate {
 
   void SendWs(int connection_id, std::string_view text);
   // Write a close frame carrying `code` then close the socket — the only way
-  // to convey the §6.4 codes with net::HttpServer.
+  // to convey the protocol's close codes with net::HttpServer.
   void CloseSocketWithCode(int connection_id, int code);
   void DropControlSocket(int close_code);
   void DropAllClients(int close_code);
@@ -808,7 +808,8 @@ NexusRemoteAccessListener::~NexusRemoteAccessListener() {
     return;
   }
   // Queue the Core's destruction on the IO thread (it closes every socket
-  // with the §6.4 codes), then hand the thread to the pool to be joined:
+  // with the protocol's close codes), then hand the thread to the pool to be
+  // joined:
   // base::Thread::Stop() runs what is already queued before it exits, and the
   // join is a blocking wait that must never happen on the owner's (UI) thread.
   core_.Reset();
@@ -909,9 +910,9 @@ void NexusRemoteAccessListener::OnClientCountChanged(size_t count) {
     return;
   }
   client_count_ = count;
-  // Until 2026-09-22 the count stopped here: `client_count()` was right, but
-  // nothing told the service, so no status event ever carried it and every
-  // surface showed the 0 it read when the listener came up.
+  // `client_count()` alone is not enough: unless the service is told, no
+  // status event carries the count and every surface keeps the 0 it read
+  // when the listener came up.
   if (clients_changed_) {
     clients_changed_.Run(count);
   }

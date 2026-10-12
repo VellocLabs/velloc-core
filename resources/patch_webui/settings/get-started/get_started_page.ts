@@ -143,16 +143,6 @@ interface GetStartedStrings {
   loadingLabel: string;
   searchBrandingTitle: string;
   searchBrandingDescription: string;
-  toolsTitle: string;
-  toolsDescription: string;
-  toolUblockTitle: string;
-  toolUblockStatus: string;
-  toolUblockDescription: string;
-  toolTamperTitle: string;
-  toolTamperStatus: string;
-  toolTamperDescription: string;
-  toolsManageButton: string;
-  toolsFootnote: string;
   finishTitle: string;
   finishDescription: string;
   finishPrimary: string;
@@ -162,8 +152,6 @@ interface GetStartedStrings {
   badgeMinimal: string;
   badgeComingSoon: string;
   badgeAutomatic: string;
-  badgeAdvanced: string;
-  badgeOptional: string;
 }
 
 function getString(key: string, fallback: string): string {
@@ -254,33 +242,8 @@ function getStrings(): GetStartedStrings {
         'customBrowserGetStartedSearchBrandingDescription',
         'If you choose a non-Google default search, Chromium updates the New ' +
             'Tab branding automatically.'),
-    toolsTitle: getString(
-        'customBrowserGetStartedToolsTitle',
-        'Step 4. Built-in power tools'),
-    toolsDescription: getString(
-        'customBrowserGetStartedToolsDescription',
-        'Chromium includes optional built-in extensions. You stay in control.'),
-    toolUblockTitle: getString(
-        'customBrowserGetStartedToolUblockTitle', 'uBlock Origin'),
-    toolUblockStatus: getString(
-        'customBrowserGetStartedToolUblockStatus', 'Enabled by default'),
-    toolUblockDescription: getString(
-        'customBrowserGetStartedToolUblockDescription',
-        'Efficient content blocking for a faster, cleaner web.'),
-    toolTamperTitle: getString(
-        'customBrowserGetStartedToolTamperTitle', 'Tampermonkey (Legacy)'),
-    toolTamperStatus: getString(
-        'customBrowserGetStartedToolTamperStatus', 'Off by default'),
-    toolTamperDescription: getString(
-        'customBrowserGetStartedToolTamperDescription',
-        'Advanced userscript manager for deep site customization.'),
-    toolsManageButton: getString(
-        'customBrowserGetStartedToolsManageButton', 'Manage extensions'),
-    toolsFootnote: getString(
-        'customBrowserGetStartedToolsFootnote',
-        'Some built-in tools may differ from Chrome Web Store availability.'),
     finishTitle: getString(
-        'customBrowserGetStartedFinishTitle', 'Step 5. You’re ready'),
+        'customBrowserGetStartedFinishTitle', 'Step 4. You’re ready'),
     finishDescription: getString(
         'customBrowserGetStartedFinishDescription',
         'Well done. Want to go further? Explore more features next.'),
@@ -295,8 +258,6 @@ function getStrings(): GetStartedStrings {
     badgeMinimal: getString('customBrowserBadgeMinimal', 'Minimal'),
     badgeComingSoon: getString('customBrowserBadgeComingSoon', 'Coming soon'),
     badgeAutomatic: getString('customBrowserBadgeAutomatic', 'Automatic'),
-    badgeAdvanced: getString('customBrowserBadgeAdvanced', 'Advanced'),
-    badgeOptional: getString('customBrowserBadgeOptional', 'Optional'),
   };
 }
 
@@ -563,18 +524,6 @@ export class GetStartedPage extends CrLitElement {
       color: var(--cr-secondary-text-color);
     }
 
-    .badge-optional {
-      background: var(--google-grey-100);
-      border-color: var(--google-grey-300);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .badge-optional {
-        background: var(--google-grey-800);
-        border-color: var(--google-grey-700);
-      }
-    }
-
     .toggle-row {
       display: flex;
       align-items: center;
@@ -705,126 +654,6 @@ export class GetStartedPage extends CrLitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-    }
-
-    .tools-grid {
-      margin-top: 16px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-    }
-
-    .tool-card {
-      border: 1px solid var(--cr-separator-color);
-      border-radius: 12px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      background: var(--cr-card-background-color);
-    }
-
-    .tool-card-featured {
-      flex-direction: row;
-      align-items: flex-start;
-      gap: 16px;
-      padding: 20px;
-      border: 2px solid var(--cr-separator-color);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    }
-
-    .tool-icon-wrapper {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: var(--google-blue-50);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .tool-icon-wrapper.tool-icon-muted {
-      background: var(--google-grey-100);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .tool-icon-wrapper {
-        background: var(--google-blue-900);
-      }
-
-      .tool-icon-wrapper.tool-icon-muted {
-        background: var(--google-grey-800);
-      }
-    }
-
-    .tool-icon {
-      width: 24px;
-      height: 24px;
-      color: var(--google-blue-600);
-    }
-
-    .tool-icon-muted .tool-icon {
-      color: var(--cr-secondary-text-color);
-    }
-
-    .tool-content {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .tool-title-row {
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .tool-title {
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 20px;
-    }
-
-    .tool-status {
-      font-size: 12px;
-      color: var(--cr-secondary-text-color);
-    }
-
-    .tool-desc {
-      margin: 0;
-      font-size: 13px;
-      line-height: 18px;
-      color: var(--cr-secondary-text-color);
-    }
-
-    .badge-enabled {
-      background: var(--google-green-50);
-      border-color: var(--google-green-300);
-      color: var(--google-green-700);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .badge-enabled {
-        background: var(--google-green-900);
-        border-color: var(--google-green-700);
-        color: var(--google-green-300);
-      }
-    }
-
-    .tool-card cr-button {
-      align-self: flex-start;
-      margin-top: 4px;
-    }
-
-    .footnote {
-      margin: 12px 0 0;
-      font-size: 12px;
-      color: var(--cr-secondary-text-color);
     }
 
     .section-separator {
@@ -1106,51 +935,7 @@ export class GetStartedPage extends CrLitElement {
             </div>
           </section>
 
-          <!-- Step 4: Built-in power tools -->
-          <section class="section-card" aria-labelledby="toolsTitle">
-            <div class="section-header">
-              <cr-icon class="section-icon" icon="cr:extension"></cr-icon>
-              <h2 id="toolsTitle">${strings.toolsTitle}</h2>
-              <span class="badge badge-optional">${strings.badgeOptional}</span>
-            </div>
-            <p class="section-desc">${strings.toolsDescription}</p>
-            <div class="tools-grid">
-              <article class="tool-card tool-card-featured">
-                <div class="tool-icon-wrapper">
-                  <cr-icon class="tool-icon" icon="cr:extension"></cr-icon>
-                </div>
-                <div class="tool-content">
-                  <div class="tool-title-row">
-                    <div class="tool-title">${strings.toolUblockTitle}</div>
-                    <span class="badge badge-enabled">${strings.toolUblockStatus}</span>
-                  </div>
-                  <p class="tool-desc">${strings.toolUblockDescription}</p>
-                </div>
-              </article>
-
-              <article class="tool-card tool-card-featured">
-                <div class="tool-icon-wrapper tool-icon-muted">
-                  <cr-icon class="tool-icon" icon="cr:extension"></cr-icon>
-                </div>
-                <div class="tool-content">
-                  <div class="tool-title-row">
-                    <div class="tool-title">${strings.toolTamperTitle}</div>
-                    <span class="badge">${strings.badgeAdvanced}</span>
-                  </div>
-                  <div class="tool-status">${strings.toolTamperStatus}</div>
-                  <p class="tool-desc">${strings.toolTamperDescription}</p>
-                </div>
-              </article>
-            </div>
-            <p class="footnote">${strings.toolsFootnote}</p>
-            <div class="section-actions">
-              <cr-button @click=${this.onManageExtensionsClick_}>
-                ${strings.toolsManageButton}
-              </cr-button>
-            </div>
-          </section>
-
-          <!-- Step 5: Ready -->
+          <!-- Step 4: Ready -->
           <section class="section-card" aria-labelledby="finishTitle">
             <div class="section-header">
               <cr-icon class="section-icon" icon="cr:check-circle"></cr-icon>
@@ -1556,10 +1341,6 @@ export class GetStartedPage extends CrLitElement {
       return null;
     }
     return settingsUi.prefs ?? settingsUi.$?.prefs?.prefs ?? null;
-  }
-
-  private onManageExtensionsClick_() {
-    window.open('chrome://extensions', '_blank', 'noopener');
   }
 
   private onOpenNewTabClick_() {

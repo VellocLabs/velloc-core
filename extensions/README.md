@@ -51,8 +51,8 @@ Build optimization (esbuild)
 Example:
 ```
 {
-  "name": "uBlock",
-  "path": "custom_extensions/uBlock",
+  "name": "<name>",
+  "path": "custom_extensions/<name>",
   "background_page": true,
   "enabled_by_default": false,
   "esbuild": {

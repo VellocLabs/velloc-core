@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">नया टैब बिना किसी ध्यान भटकाव के रहता है</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">आपकी सर्च, आपका अंदाज़</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">अगर आप डिफ़ॉल्ट सर्च के तौर पर Google के अलावा कोई और चुनते हैं, तो Chromium नए टैब की ब्रांडिंग अपने आप बदल देता है।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">चरण 4. बिल्ट-इन दमदार टूल</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium में कुछ वैकल्पिक बिल्ट-इन एक्सटेंशन शामिल हैं। नियंत्रण आपके पास ही रहता है।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">डिफ़ॉल्ट रूप से बंद</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">तेज़ और साफ़-सुथरे वेब के लिए असरदार कॉन्टेंट ब्लॉकिंग।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">डिफ़ॉल्ट रूप से बंद</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">साइटों को गहराई से अपने हिसाब से ढालने के लिए बेहतर यूज़रस्क्रिप्ट मैनेजर।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">एक्सटेंशन प्रबंधित करें</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">कुछ बिल्ट-इन टूल, Chrome Web Store पर उपलब्ध संस्करणों से अलग हो सकते हैं।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">चरण 5. आप तैयार हैं</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">चरण 4. आप तैयार हैं</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">बढ़िया। और आगे जाना चाहते हैं? आगे और सुविधाएँ देखें।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">नया टैब खोलें</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">सेटिंग पर जाएँ</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">न्यूनतम</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">जल्द आ रहा है</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">अपने आप</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">उन्नत</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">बंद करें</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium के साथ शुरुआत करें</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium का लोगो</translation>

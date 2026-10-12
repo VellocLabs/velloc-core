@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">新标签页保持清爽无干扰</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">你的搜索，你的样子</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">如果你把默认搜索换成非 Google 的引擎，Chromium 会自动更新新标签页上的品牌标识。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">第 4 步：内置的实用工具</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium 附带了一些可选的内置扩展程序。是否使用，由你决定。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">默认关闭</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">高效拦截内容，让网页更快、更清爽。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey（旧版）</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">默认关闭</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">高级用户脚本管理器，可深度定制网站。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">管理扩展程序</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">部分内置工具可能与 Chrome 应用商店中提供的版本不同。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">第 5 步：一切就绪</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">第 4 步：一切就绪</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">干得漂亮。还想再深入一点？接着去看看更多功能吧。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">打开新标签页</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">前往设置</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">极简</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">即将推出</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">自动</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">高级</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">关闭</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">开始使用 Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium 徽标</translation>

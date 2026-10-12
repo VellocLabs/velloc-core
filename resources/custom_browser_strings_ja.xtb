@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">新しいタブは気が散らないまま</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">検索も、見た目も自分好みに</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Google 以外を既定の検索に選ぶと、Chromium は新しいタブのブランド表示を自動で切り替えます。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">ステップ 4. 組み込みの強力なツール</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium には任意で使える組み込みの拡張機能が含まれています。主導権はあなたにあります。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">デフォルトでオフ</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">効率的なコンテンツブロックで、ウェブをより速く、すっきりと。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey（レガシー）</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">デフォルトでオフ</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">サイトを深くカスタマイズできる、上級者向けのユーザースクリプト管理ツールです。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">拡張機能を管理</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">組み込みツールの一部は、Chrome ウェブストアで提供されるものと異なる場合があります。</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">ステップ 5. 準備完了</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">ステップ 4. 準備完了</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">お疲れさまでした。さらに使いこなしますか？次は他の機能を見てみましょう。</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">新しいタブを開く</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">設定に移動</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">ミニマル</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">近日公開</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">自動</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">詳細設定</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">閉じる</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium をはじめよう</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium のロゴ</translation>

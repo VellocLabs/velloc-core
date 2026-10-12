@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">La nueva pestaña se mantiene sin distracciones</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">Su búsqueda, su estilo</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Si elige un buscador predeterminado distinto de Google, Chromium actualiza automáticamente la marca de la nueva pestaña.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Paso 4. Herramientas integradas</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium incluye extensiones integradas opcionales. Usted mantiene el control.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Desactivado de forma predeterminada</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Bloqueo de contenido eficiente para una web más rápida y limpia.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Desactivado de forma predeterminada</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">Gestor avanzado de userscripts para personalizar sitios a fondo.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">Gestionar las extensiones</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">Algunas herramientas integradas pueden diferir de lo que ofrece Chrome Web Store.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Paso 5. Todo listo</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Paso 4. Todo listo</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">Bien hecho. ¿Quiere ir más allá? Explore a continuación más funciones.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">Abrir una nueva pestaña</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">Ir a la configuración</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">Minimalista</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Próximamente</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automático</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Avanzado</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">Cerrar</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Primeros pasos con Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Logotipo de Chromium</translation>

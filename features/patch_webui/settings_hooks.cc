@@ -110,35 +110,6 @@ void AddSettingsGetStartedStrings(content::WebUIDataSource* data_source) {
   data_source->AddLocalizedString(
       "customBrowserGetStartedSearchBrandingDescription",
       IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION);
-  data_source->AddLocalizedString("customBrowserGetStartedToolsTitle",
-                                  IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolsDescription",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolUblockTitle",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolUblockStatus",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolUblockDescription",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolTamperTitle",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolTamperStatus",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolTamperDescription",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolsManageButton",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON);
-  data_source->AddLocalizedString(
-      "customBrowserGetStartedToolsFootnote",
-      IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE);
   data_source->AddLocalizedString("customBrowserGetStartedFinishTitle",
                                   IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE);
   data_source->AddLocalizedString(
@@ -160,8 +131,6 @@ void AddSettingsGetStartedStrings(content::WebUIDataSource* data_source) {
                                   IDS_CUSTOM_BROWSER_BADGE_COMING_SOON);
   data_source->AddLocalizedString("customBrowserBadgeAutomatic",
                                   IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC);
-  data_source->AddLocalizedString("customBrowserBadgeAdvanced",
-                                  IDS_CUSTOM_BROWSER_BADGE_ADVANCED);
   data_source->AddLocalizedString("customBrowserGetStartedLogoAlt",
                                   IDS_CUSTOM_BROWSER_LOGO_ALT);
 }

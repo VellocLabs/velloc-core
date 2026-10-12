@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">Новая вкладка остаётся без лишних деталей</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">Ваш поиск, ваш стиль</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Если вы выберете поиск по умолчанию, отличный от Google, Chromium автоматически обновит оформление новой вкладки.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Шаг 4. Встроенные мощные инструменты</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">В Chromium есть дополнительные встроенные расширения. Управление остаётся за вами.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Выключено по умолчанию</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Эффективная блокировка контента ради более быстрого и чистого веба.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Выключено по умолчанию</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">Продвинутый менеджер пользовательских скриптов для глубокой настройки сайтов.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">Управление расширениями</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">Некоторые встроенные инструменты могут отличаться от версий в Chrome Web Store.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Шаг 5. Всё готово</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Шаг 4. Всё готово</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">Отлично. Хотите пойти дальше? Познакомьтесь с другими возможностями.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">Открыть новую вкладку</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">Перейти к настройкам</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">Минимализм</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Скоро</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Автоматически</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Для опытных</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">Закрыть</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Начало работы с Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Логотип Chromium</translation>

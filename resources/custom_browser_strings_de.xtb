@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">Neuer Tab bleibt ablenkungsfrei</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">Deine Suche, dein Look</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Wenn du eine andere Standardsuche als Google wählst, passt Chromium das Branding auf dem neuen Tab automatisch an.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">Schritt 4. Integrierte Power-Tools</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium bringt optionale integrierte Erweiterungen mit. Du behältst die Kontrolle.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">Standardmäßig aus</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">Effizientes Blockieren von Inhalten für ein schnelleres, aufgeräumteres Web.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">Standardmäßig aus</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">Fortgeschrittene Userscript-Verwaltung für tiefgreifende Anpassungen an Websites.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">Erweiterungen verwalten</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">Manche integrierten Tools können von dem abweichen, was im Chrome Web Store verfügbar ist.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Schritt 5. Du bist startklar</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">Schritt 4. Du bist startklar</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">Gut gemacht. Lust auf mehr? Entdecke als Nächstes weitere Funktionen.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">Neuen Tab öffnen</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">Zu den Einstellungen</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">Minimal</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">Demnächst</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">Automatisch</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">Erweitert</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">Schließen</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Erste Schritte mit Chromium</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium-Logo</translation>

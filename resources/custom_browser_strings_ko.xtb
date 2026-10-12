@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">새 탭이 산만하지 않게 유지됩니다</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">검색도, 모양도 내 취향대로</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">Google이 아닌 검색엔진을 기본값으로 고르면, Chromium이 새 탭의 브랜드 표시를 자동으로 바꿉니다.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">4단계. 기본 제공되는 강력한 도구</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium에는 선택해서 쓸 수 있는 기본 제공 확장 프로그램이 들어 있습니다. 결정권은 당신에게 있습니다.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">기본값은 꺼짐</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">효율적인 콘텐츠 차단으로 더 빠르고 깔끔한 웹을 만듭니다.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey(레거시)</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">기본값은 꺼짐</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">사이트를 깊이 있게 바꿀 수 있는 고급 사용자 스크립트 관리 도구입니다.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">확장 프로그램 관리</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">일부 기본 제공 도구는 Chrome 웹 스토어에서 제공되는 것과 다를 수 있습니다.</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">5단계. 준비 완료</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">4단계. 준비 완료</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">수고하셨습니다. 더 알아볼까요? 다음으로 다른 기능들을 살펴보세요.</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">새 탭 열기</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">설정으로 이동</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">최소</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">곧 제공</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">자동</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">고급</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">닫기</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium 시작하기</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium 로고</translation>

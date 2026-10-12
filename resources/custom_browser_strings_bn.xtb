@@ -43,17 +43,7 @@
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_NEW_TAB_TOGGLE_OFF">নতুন ট্যাব মনোযোগ নষ্ট না করে সাদামাটা থাকে</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_TITLE">আপনার সার্চ, আপনার সাজ</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION">ডিফল্ট সার্চ হিসেবে Google ছাড়া অন্য কিছু বেছে নিলে Chromium নতুন ট্যাবের ব্র্যান্ডিং নিজে থেকেই বদলে দেয়।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE">ধাপ ৪. বিল্ট-ইন শক্তিশালী টুল</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION">Chromium-এ কিছু ঐচ্ছিক বিল্ট-ইন এক্সটেনশন রয়েছে। নিয়ন্ত্রণ আপনার হাতেই থাকে।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE">uBlock Origin</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS">ডিফল্টভাবে বন্ধ</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION">আরও দ্রুত ও পরিচ্ছন্ন ওয়েবের জন্য কার্যকর কনটেন্ট ব্লকিং।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE">Tampermonkey (Legacy)</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS">ডিফল্টভাবে বন্ধ</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION">সাইট গভীরভাবে নিজের মতো সাজানোর জন্য উন্নত ইউজারস্ক্রিপ্ট ম্যানেজার।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON">এক্সটেনশন পরিচালনা করুন</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE">কিছু বিল্ট-ইন টুল Chrome Web Store-এ পাওয়া সংস্করণ থেকে আলাদা হতে পারে।</translation>
-  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">ধাপ ৫. আপনি তৈরি</translation>
+  <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE">ধাপ ৪. আপনি তৈরি</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION">দারুণ। আরও এগোতে চান? এবার অন্য সুবিধাগুলি দেখে নিন।</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_PRIMARY">নতুন ট্যাব খুলুন</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_SECONDARY">সেটিংসে যান</translation>
@@ -62,7 +52,6 @@
   <translation id="IDS_CUSTOM_BROWSER_BADGE_MINIMAL">সাদামাটা</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_COMING_SOON">শীঘ্রই আসছে</translation>
   <translation id="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC">স্বয়ংক্রিয়</translation>
-  <translation id="IDS_CUSTOM_BROWSER_BADGE_ADVANCED">উন্নত</translation>
   <translation id="IDS_CUSTOM_BROWSER_CLOSE">বন্ধ করুন</translation>
   <translation id="IDS_CUSTOM_BROWSER_GET_STARTED_MENU_LABEL">Chromium দিয়ে শুরু করুন</translation>
   <translation id="IDS_CUSTOM_BROWSER_LOGO_ALT">Chromium-এর লোগো</translation>

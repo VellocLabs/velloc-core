@@ -165,38 +165,8 @@ translated for each locale.
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_SEARCH_BRANDING_DESCRIPTION" desc="Description for the search branding section on the Settings Get started page" use_name_for_id="true">
         If you choose a non-Google default search, Chromium updates the New Tab branding automatically.
       </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_TITLE" desc="Title for the built-in tools section on the Settings Get started page" use_name_for_id="true">
-        Step 4. Built-in power tools
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_DESCRIPTION" desc="Description for the built-in tools section on the Settings Get started page" use_name_for_id="true">
-        Chromium includes optional built-in extensions. You stay in control.
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_TITLE" desc="Title for the uBlock Origin tool card" use_name_for_id="true">
-        uBlock Origin
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_STATUS" desc="Status text for the uBlock Origin tool card" use_name_for_id="true">
-        Off by default
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_UBLOCK_DESCRIPTION" desc="Description for the uBlock Origin tool card" use_name_for_id="true">
-        Efficient content blocking for a faster, cleaner web.
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_TITLE" desc="Title for the Tampermonkey tool card" use_name_for_id="true">
-        Tampermonkey (Legacy)
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_STATUS" desc="Status text for the Tampermonkey tool card" use_name_for_id="true">
-        Off by default
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOL_TAMPER_DESCRIPTION" desc="Description for the Tampermonkey tool card" use_name_for_id="true">
-        Advanced userscript manager for deep site customization.
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_MANAGE_BUTTON" desc="Button label for managing built-in tools in extensions" use_name_for_id="true">
-        Manage extensions
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_GET_STARTED_TOOLS_FOOTNOTE" desc="Footnote under the built-in tools section" use_name_for_id="true">
-        Some built-in tools may differ from Chrome Web Store availability.
-      </message>
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_TITLE" desc="Title for the finish section on the Settings Get started page" use_name_for_id="true">
-        Step 5. You’re ready
+        Step 4. You’re ready
       </message>
       <message name="IDS_CUSTOM_BROWSER_GET_STARTED_FINISH_DESCRIPTION" desc="Description for the finish section on the Settings Get started page" use_name_for_id="true">
         Well done. Want to go further? Explore more features next.
@@ -221,9 +191,6 @@ translated for each locale.
       </message>
       <message name="IDS_CUSTOM_BROWSER_BADGE_AUTOMATIC" desc="Badge label for automatic items" use_name_for_id="true">
         Automatic
-      </message>
-      <message name="IDS_CUSTOM_BROWSER_BADGE_ADVANCED" desc="Badge label for advanced items" use_name_for_id="true">
-        Advanced
       </message>
       <message name="IDS_CUSTOM_BROWSER_CLOSE" desc="Label for a close button or action" use_name_for_id="true">
         Close

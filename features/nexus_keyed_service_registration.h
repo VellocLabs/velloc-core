@@ -9,29 +9,10 @@
 
 namespace nexus {
 
-// Constructs every Nexus BrowserContextKeyedServiceFactory, which is what
-// registers it with the BrowserContextDependencyManager.
-//
-// The window for doing this is narrow at BOTH ends:
-//
-//  * Not before BrowserProcessImpl::Init(). A factory ctor may DependsOn a
-//    Chrome factory — NexusBackgroundPanelHostFactory declares
-//    ThemeServiceFactory — and ThemeServiceFactory reaches
-//    ChromeExtensionSystemFactory, whose ctor DCHECKs on
-//    `ExtensionsBrowserClient::Get()` ("must be initialized after
-//    BrowserProcess"). That client is installed by BrowserProcessImpl::Init(),
-//    which runs in ChromeBrowserMainParts::PreCreateThreadsImpl().
-//  * Not after ChromeBrowserMainParts::PreProfileInit(), which calls
-//    DependencyManager::DisallowKeyedServiceFactoryRegistration() — a factory
-//    first reached lazily later (e.g. NexusSessionTabTracker from the bridge
-//    adapter at GuestReady) DCHECK-fails there.
-//
-// PreCreateThreads on a ChromeBrowserMainExtraParts sits between the two, so
-// that is where NexusKeyedServiceLifecycleHook calls this. Chrome registers
-// its own factories the same way (glic among them), from
-// ChromeBrowserMainExtraPartsProfiles.
-//
-// Idempotent — the factories are NoDestructor singletons.
+// Constructs, and so registers, every Nexus BrowserContextKeyedServiceFactory.
+// Must run after BrowserProcessImpl::Init() (factory dependencies DCHECK before
+// it) and before PreProfileInit() disallows registration: at PreCreateThreads.
+// Idempotent.
 void RegisterNexusKeyedServiceFactories();
 
 // Runs RegisterNexusKeyedServiceFactories() at PreCreateThreads. Registered

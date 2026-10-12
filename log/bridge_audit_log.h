@@ -20,21 +20,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "custom_browser/log/agent_log.h"
 
-// The bridge audit log: one line per C++ <-> runtime bridge request, written
-// by NexusBridgePortService when the response goes out. It is the host's own
-// record of what the runtime asked it to do — the runtime cannot suppress it,
-// it survives a guest reload or crash, and it spans every session on the
-// profile.
-//
-// What a line carries: the request id, the route, the session key (as the
-// runtime reported it — attribution, never authorization), a digest of the
-// arguments (paths, a hash of a command, element indices — never file
-// contents, command text, secrets, headers or env), the outcome and the
-// duration. Format is the agent log's `key=value|key=value` line.
-//
-// File: <user-data-dir>/custom_browser/log/bridge_audit.log, rotated at
-// kBridgeAuditMaxBytes keeping kBridgeAuditKeepFiles older files
-// (bridge_audit.log.1 is the newest). Appends run on a MayBlock worker.
+// The bridge audit log: one `key=value|...` line per bridge request, written by
+// NexusBridgePortService on response; the runtime cannot suppress it. A line
+// holds id, route, session key (attribution, never authorization), an argument
+// digest (never file contents, command text, secrets, headers or env), outcome
+// and duration. File: <user-data-dir>/custom_browser/log/bridge_audit.log,
+// rotated at kBridgeAuditMaxBytes keeping kBridgeAuditKeepFiles older files;
+// appends run on a MayBlock worker.
 
 namespace custom_browser::log {
 

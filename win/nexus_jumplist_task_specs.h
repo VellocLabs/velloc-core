@@ -9,16 +9,8 @@
 
 namespace custom_browser {
 
-// One product taskbar Jump List task: its kind (selects the title + icon in
-// the decorator, nexus_jumplist_tasks.cc) and the relaunch command line. This
-// type is the shared vocabulary between the pure policy core
-// (BuildNexusJumpListTaskSpecs) and the decorator.
-//
-// The Nexus product currently emits NO tasks (see BuildNexusJumpListTaskSpecs):
-// there is deliberately no "New <Product> window" task (the Nexus window is a
-// per-profile singleton, already the default target of a plain taskbar-icon
-// click / cold launch), and the "New browser window" / "New Incognito Window"
-// escape-hatches were intentionally removed from the taskbar menu as well.
+// One taskbar Jump List task: its kind (selects title + icon) and relaunch
+// command line. No tasks are currently emitted (BuildNexusJumpListTaskSpecs).
 struct NexusJumpListTaskSpec {
   enum class Kind { kBrowserWindow, kIncognitoWindow };
 

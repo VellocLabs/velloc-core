@@ -7,22 +7,10 @@
 
 namespace custom_browser::installer {
 
-// Deletes the Nexus runtime data directory (`~/.velloc`: sessions,
-// settings, plugins, skills, mods, managed binaries, caches).
-//
-// setup.exe calls this from its uninstall, beside DeleteUserDataDir, when
-// the uninstall deletes the profile — the user ticked the uninstall
-// dialog's "delete all data" box, or the command line carries
-// --delete-profile. A plain uninstall keeps both.
-//
-// The directory is resolved like the browser resolves it
-// (GetNexusRuntimeDir: USERPROFILE, then HOME, then DIR_HOME). Links are
-// never followed: a junction or symlink inside `~/.velloc` (a project
-// checkout, say) is removed as a link and its target is left alone, and
-// when `~/.velloc` itself is a link only the link is removed.
-//
-// Returns true when the directory is gone afterwards, including when there
-// was none to begin with.
+// Deletes the runtime data directory (`~/.velloc`). setup.exe calls it beside
+// DeleteUserDataDir when the uninstall deletes the profile. Links are never
+// followed: a link inside, or `~/.velloc` itself as a link, is removed as a
+// link. Returns true when the directory is gone afterwards (or never existed).
 bool DeleteNexusRuntimeData();
 
 }  // namespace custom_browser::installer

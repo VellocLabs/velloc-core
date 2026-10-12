@@ -11,19 +11,10 @@
 
 namespace custom_browser {
 
-// On-disk locations for the Nexus runtime data directory (`~/.velloc`),
-// resolved in pure C++ so both the browser-process binary installer and
-// the sandboxed utility-process shell policy/resolver compute the SAME
-// paths without round-tripping through the WebUI guest.
-//
-// The runtime dir name is derived from `kCustomBrowserBrandPathComponent`
-// ("Velloc" -> ".velloc"), mirroring the guest's
-// `RUNTIME_DIR_NAME = '.' + brand.toLowerCase()` so the C++ and TS sides
-// agree on a single layout.
-//
-// Home resolution is env-first (USERPROFILE/HOME, then PathService
-// DIR_HOME), matching `NexusFsHost::UserHome` — the env-first order is
-// what makes the dirs honour test isolation overrides.
+// On-disk locations for the runtime data directory (`~/.velloc`, from
+// kCustomBrowserBrandPathComponent), computed in C++ so browser and utility
+// processes agree. Home is env-first (USERPROFILE/HOME, then DIR_HOME), which
+// honours test isolation overrides.
 
 // Absolute path of the user home directory, or an empty FilePath when it
 // can't be resolved.

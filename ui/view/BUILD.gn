@@ -2,22 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# The view sources themselves are compiled into //chrome/browser/ui via
-# browser_view_sources (see //custom_browser/ui/custom_browser_view.gni) —
-# CustomBrowserView derives from BrowserView, so it cannot live in a leaf
-# target. window_hit_test.h is the exception: header-only and dependency free,
-# precisely so its geometry can be tested without standing up a BrowserView.
-# view_visible_bounds.h is the same kind of leaf (header-only, //ui/views
-# only): the "is it on screen?" predicate behind the actor handoff-button hook
-# in //chrome/browser/actor/ui. Its test needs a real Widget, so it runs in
-# custom_browser_nexus_browser_unittests (//custom_browser/browser/nexus:
-# unit_tests), not here.
-# relaunch_command_line.h likewise: the //base-only command-line classifier
-# behind the plain-relaunch -> kNexus routing hook in
-# //chrome/browser/ui/startup, tested here with hand-built CommandLines.
-# undisplayed_contents_sizer.h likewise (header-only, //ui/gfx only): the size
-# rule CustomBrowserViewLayout applies to tabs no view has sized, tested here
-# with plain gfx::Size values.
+# The view sources compile into //chrome/browser/ui, since CustomBrowserView
+# derives from BrowserView. Header-only leaves (window_hit_test.h,
+# relaunch_command_line.h, undisplayed_contents_sizer.h) are tested here.
 
 source_set("unit_tests") {
   testonly = true

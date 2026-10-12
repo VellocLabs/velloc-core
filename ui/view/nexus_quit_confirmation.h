@@ -9,16 +9,10 @@
 
 namespace custom_browser {
 
-// Runs `quit` — synchronously when no remote-access device is connected (the
-// caller's behaviour is then exactly what it was), otherwise after the user
-// answers "Yes" to a dialog saying quitting disconnects them. "No" drops it.
-//
-// Backs the two explicit quit actions: the tray menu's "Quit" (through
-// NexusLauncherDelegate::ConfirmQuit) and the app menu's Exit (the guarded
-// hook in chrome::Exit()). Closing a window is not a quit and never asks.
-//
-// One dialog at a time: a request made while one is showing is dropped — the
-// user's answer to the open one decides.
+// Runs `quit` at once when no remote-access device is connected, else after
+// the user confirms a dialog ("No" drops it). Backs the tray "Quit" and the
+// app-menu Exit; closing a window never asks. One dialog at a time: a request
+// made while one is showing is dropped.
 void ConfirmQuitWithRemoteDevices(base::OnceClosure quit);
 
 }  // namespace custom_browser

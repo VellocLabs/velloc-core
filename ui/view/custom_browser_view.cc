@@ -105,19 +105,9 @@ CustomBrowserView::CustomBrowserView(Browser* browser)
 CustomBrowserView::~CustomBrowserView() {
   StopMouseCapture(false);
   fullscreen_observation_.Reset();
-  // Tear members down in a safe, explicit order — they hold raw references to
-  // each other / to ui_prefs_, so the implicit reverse-declaration order is
-  // NOT safe:
-  //   * native_ui_container_ was Init()'d with custom_browser_webui_view_ and
-  //     references ui_prefs_ during destruction to detach.
-  //   * custom_browser_webui_view_'s WebUI owns a UIViewHandler that holds a
-  //     raw ui_prefs_ pointer and calls ui_prefs_->RemoveObserver(this) in its
-  //     destructor (native_view_handler.cc). That raw pointer is NOT nulled
-  //     when the unique_ptr below resets, so destroying the WebUI view AFTER
-  //     ui_prefs_ is a use-after-free (libc++ hardening aborts in
-  //     ObserverList::RemoveObserver).
-  // Order: native_ui_container_ (references both) -> webui view (references
-  // ui_prefs_) -> ui_prefs_ last.
+  // Explicit teardown order: native_ui_container_ (references both) -> webui
+  // view (its handler holds a raw ui_prefs_ pointer) -> ui_prefs_ last. The
+  // reverse-declaration order would be a use-after-free.
   native_ui_container_.reset();
   custom_browser_webui_view_.reset();
   ui_prefs_.reset();
@@ -487,28 +477,9 @@ bool CustomBrowserView::ShouldDescendIntoChildForEventHandling(
   if (IsChromiumLayout()) {
     return BrowserView::ShouldDescendIntoChildForEventHandling(child, location);
   }
-  // A point in the window's resize gutter belongs to the frame, never to a
-  // web contents — and this function is the only gate that keeps it so. The
-  // gutter makes NonClientHitTest answer HTRIGHT/HTBOTTOM there, so Windows
-  // sends WM_NCMOUSEMOVE, which is still dispatched into aura flagged
-  // EF_IS_NON_CLIENT (hwnd_message_handler.cc). If aura targeting descends
-  // into the web contents' window for that event, wm::CompoundEventFilter
-  // recomputes the cursor from THAT window's GetNonClientComponent() — which
-  // is hard-coded HTCLIENT (web_contents_view_aura.cc) — mapping to the
-  // default arrow and stomping the resize cursor WM_SETCURSOR just set. The
-  // visible symptom: the size cursor flashes once at the right/bottom edge
-  // and reverts to the arrow, while dragging still resizes.
-  //
-  // With descent blocked, the event targets the widget's content window,
-  // whose GetNonClientComponent() routes back through NonClientHitTest to the
-  // same HTRIGHT/HTBOTTOM — so CompoundEventFilter sets the matching size
-  // cursor instead. aura::Window::GetEventHandlerForPoint honors this hook
-  // too (ui/aura/window.cc), which also seals the asynchronous
-  // RenderWidgetHostViewAura::UpdateCursorIfOverSelf stomp.
-  //
-  // `location` is in the widget root view's coordinate space (see
-  // BrowserView::ShouldDescendIntoChildForEventHandling, which converts from
-  // GetWidget()->GetRootView()).
+  // A point in the resize gutter belongs to the frame, never to a web contents:
+  // descending into the contents' window would reset the size cursor to an
+  // arrow. `location` is in the widget root view's coordinate space.
   if (const views::Widget* widget = GetWidget()) {
     gfx::Point point_in_this(location);
     views::View::ConvertPointToTarget(widget->GetRootView(), this,
@@ -540,15 +511,8 @@ int CustomBrowserView::NonClientHitTest(const gfx::Point& point) {
     // code is given the mouse position...
     return HTNOWHERE;
   }
-  // Claim a thin gutter along our own edges as a resize border, so the visible
-  // window edge answers a resize component instead of HTCLIENT. Without this
-  // the answer flips as the pointer crosses from our bounds into the OS frame,
-  // and since WM_SETCURSOR is driven entirely by the WM_NCHITTEST result (see
-  // window_hit_test.h), the size cursor flashes and reverts to the arrow even
-  // though a click landing outside our bounds still resizes.
-  //
-  // BrowserFrameViewWin returns the client view's component verbatim, so a
-  // resize code here reaches Windows and drives both the cursor and the drag.
+  // Claim a thin gutter along our edges as a resize border, so the visible
+  // window edge answers a resize component, not HTCLIENT (window_hit_test.h).
   if (parent()) {
     gfx::Point point_in_this(point);
     views::View::ConvertPointToTarget(parent(), this, &point_in_this);
@@ -681,18 +645,9 @@ void CustomBrowserView::OnBrowserRemoved(BrowserWindowInterface* browser) {
 }
 
 void CustomBrowserView::WillCloseAllTabs(TabStripModel* tab_strip_model) {
-  // custom-browser (149): restore the Chromium view hierarchy BEFORE any tab is
-  // detached. Browser::OnWindowClosing() -> TabStripModel::CloseAllTabs() ->
-  // CloseTabs() notifies WillCloseAllTabs() first, then drives the per-tab
-  // detach notifications. Those detaches synchronously reach
-  // BrowserView::OnTabDetached() -> ToolbarSizeChanged() ->
-  // UpdateUIForContents() -> MaybeShowBookmarkBar(), which in 149 does
-  // `top_container_->RemoveChildViewT(bookmark_bar_view_)` and DCHECKs because
-  // the custom layout reparented the bookmark bar under native_ui_container_.
-  // Restoring here (before the detaches) puts the bookmark/loading bars back
-  // under top_container_ so that removal succeeds. RestoreViewHierarchy is
-  // idempotent, so the later TabStripEmpty()/OnBrowserRemoved() restores remain
-  // harmless no-ops.
+  // Restore the Chromium view hierarchy before any tab detaches: a detach
+  // reaches MaybeShowBookmarkBar(), which DCHECKs on the bookmark bar our
+  // layout reparented. Idempotent.
   RestoreChromiumHierarchyForTeardown();
   BrowserView::WillCloseAllTabs(tab_strip_model);
 }
@@ -726,19 +681,9 @@ void CustomBrowserView::RestoreChromiumHierarchyForTeardown() {
   if (native_ui_container_) {
     native_ui_container_->RestoreChromiumHierarchy();
   }
-  // The BookmarkBarView is created lazily by BrowserView::MaybeShowBookmarkBar
-  // — AFTER NativeUIContainerView::SaveChromiumHierarchy() snapshotted the view
-  // tree at init — so RestoreChromiumHierarchy() above can never restore it.
-  // BrowserView (149) believes it owns the bar under top_container_ (its
-  // detached_bookmark_bar_view_ is null once attached) and on teardown does
-  // `top_container_->RemoveChildViewT(bookmark_bar_view_)`. Because the custom
-  // layout (CustomBrowserViewLayout::FixViewsParentForCustom) reparented the
-  // bar under native_ui_container_, that removal DCHECKs on
-  // `std::ranges::contains(top_container_->children(), bar)`. Move the bar back
-  // under top_container_ here so the upstream removal stays valid. Only act
-  // when the bar currently has a (non-top_container_) parent: a null parent
-  // means it is the detached unique_ptr, in which case the remove branch does
-  // not run. Mirrors FixViewsParentForCustom()'s AddChildViewRaw usage.
+  // The lazily created BookmarkBarView is not in the saved hierarchy: move it
+  // back under top_container_ so upstream's teardown removal stays valid. A null
+  // parent means it is detached and nothing is removed.
   if (BookmarkBarView* bar = bookmark_bar()) {
     TopContainerView* tc = top_container();
     if (tc && bar->parent() && bar->parent() != tc) {

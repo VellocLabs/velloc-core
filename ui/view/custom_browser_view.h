@@ -194,23 +194,10 @@ class CustomBrowserView : public BrowserView,
   int NonClientHitTest(const gfx::Point& point) override;
   // void Layout(PassKey) override;
 
-  // TabStripModelObserver:
-  // custom-browser (149): the custom layout reparents the BookmarkBarView (and
-  // loading bar) under native_ui_container_, but 149's
-  // BrowserView::MaybeShowBookmarkBar now dynamically removes the bookmark bar
-  // from top_container_ whenever the bar should hide — a RemoveChildViewT that
-  // DCHECKs if the bar isn't actually under top_container_. On close that hide
-  // happens while tabs are still detaching, so we must restore the saved
-  // Chromium hierarchy BEFORE any tab-detach notification fires.
-  //
-  // WillCloseAllTabs() is notified at the very start of CloseTabs(), before
-  // CloseWebContentses()/SendDetachWebContentsNotifications(), so it covers the
-  // window-close / close-all / last-tab-close paths (the reported crash, which
-  // reaches MaybeShowBookmarkBar via OnTabDetached -> ToolbarSizeChanged before
-  // TabStripEmpty() ever runs). TabStripEmpty() is kept as a second restore
-  // for the rarer "strip emptied via tab drag-out" path (no close-all). Both
-  // restores are idempotent. The RegisterBrowserDidClose() restore in
-  // OnBrowserRemoved() fires too late (only after CloseAllTabs() completes).
+  // TabStripModelObserver: both restore the saved Chromium hierarchy before tab
+  // detaches reach MaybeShowBookmarkBar(), which DCHECKs on our reparented
+  // bookmark bar: WillCloseAllTabs on close paths, TabStripEmpty on a drag-out.
+  // Both are idempotent.
   void WillCloseAllTabs(TabStripModel* tab_strip_model) override;
   void TabStripEmpty() override;
 

@@ -3,26 +3,10 @@
 
 namespace custom_browser {
 
-// A resize gutter along the inside of the client view's edges.
-//
-// On Windows the OS resize border lives *outside* the client area (WM_NCCALCSIZE
-// insets the client rect by the frame thickness on the left, right and bottom),
-// and it is mostly in the invisible margin outside the visible window edge. The
-// pixels just *inside* the visible edge therefore belong to the client view,
-// which answers HTCLIENT for them. Sweeping the pointer along the edge crosses
-// that boundary repeatedly, so the cursor flips between the size cursor
-// (WM_SETCURSOR sees HTRIGHT from DefWindowProc) and the arrow (WM_SETCURSOR
-// sees HTCLIENT) — the reported "size cursor flashes once, then reverts", while
-// a click that lands on an outside pixel still starts a resize.
-//
-// RootView deliberately does not fight over this: it skips its own
-// widget_->SetCursor() when the move carries ui::EF_IS_NON_CLIENT (see
-// RootView::HandleMouseEnteredOrMoved). So the whole cursor decision is the
-// WM_NCHITTEST answer, and making the client view claim a few pixels along its
-// own edges is what makes that answer — and the cursor — stable.
-//
-// Kept dependency free (plain ints, no gfx) so it is unit-testable without
-// standing up a BrowserView.
+// A resize gutter along the inside of the client view's edges. On Windows the
+// OS resize border lies outside the client area, so pixels just inside the
+// visible edge would answer HTCLIENT and the cursor would flip; claiming a few
+// pixels keeps the WM_NCHITTEST answer, and the cursor, stable.
 enum class ResizeEdge {
   kNone,
   kLeft,

@@ -122,26 +122,9 @@ CustomBrowserWebUIView::CustomBrowserWebUIView(
   }
   web_view_->SetWebContents(owned_contents_.get());
 
-  // NOTE: Do NOT enable `set_allow_accelerators(true)` here.
-  //
-  // This view was adapted from Chromium's WebUITabStripContainerView, which
-  // enables it because a tab-strip toolbar has no editable fields and wants
-  // browser accelerators (and arrow-key focus traversal) handled by the
-  // views FocusManager before the page.
-  //
-  // The Nexus panel is the opposite: it's a full interactive UI with text
-  // inputs. With `allow_accelerators_ = true`,
-  // WebView::SkipDefaultKeyEventProcessing only returns true for Tab, so
-  // EVERY other key — including arrow keys — is routed to the FocusManager
-  // before the web content. The FocusManager then consumes arrow keydowns
-  // for focus traversal, so they never reach the page and the text caret
-  // can't move (focus jumps to a neighboring control instead).
-  //
-  // Leaving it at the default (false) makes SkipDefaultKeyEventProcessing
-  // return IsWebContentsAlive() — the page receives keys first (caret moves
-  // normally), and any key the page does NOT consume still bubbles back and
-  // is treated as a browser accelerator. That is the standard tab-contents
-  // model and is what an interactive panel needs.
+  // Keep `set_allow_accelerators` at its default (false): when true, the
+  // FocusManager sees every key but Tab before the page and eats arrow keys.
+  // Keys the page does not consume still bubble back as accelerators.
 
   SetLayoutManager(std::make_unique<views::FillLayout>());
   InitializeWebView(reattached);
@@ -277,89 +260,6 @@ void CustomBrowserWebUIView::SetContainerTargetVisibility(bool target_visible) {
     immersive_revealed_lock_.reset();
   }
 }
-
-// void CustomBrowserWebUIView::ShowContextMenuAtPoint(
-//     gfx::Point point,
-//     std::unique_ptr<ui::MenuModel> menu_model,
-//     base::RepeatingClosure on_menu_closed_callback) {
-//   if (!web_view_->GetWebContents()) {
-//     return;
-//   }
-//   ConvertPointToScreen(this, &point);
-//   context_menu_model_ = std::move(menu_model);
-//   int menu_runner_flags =
-//       views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU;
-//   if (!base::FeatureList::IsEnabled(
-//           features::kWebUITabStripContextMenuAfterTap)) {
-//     menu_runner_flags |= views::MenuRunner::SEND_GESTURE_EVENTS_TO_OWNER;
-//   }
-//   context_menu_runner_ = std::make_unique<views::MenuRunner>(
-//       context_menu_model_.get(), menu_runner_flags, on_menu_closed_callback);
-//   context_menu_runner_->RunMenuAt(
-//       GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
-//       views::MenuAnchorPosition::kTopLeft, ui::mojom::MenuSourceType::kMouse,
-//       web_view_->GetWebContents()->GetContentNativeView());
-// }
-
-// void CustomBrowserWebUIView::CloseContextMenu() {
-//   if (!context_menu_runner_) {
-//     return;
-//   }
-//   context_menu_runner_->Cancel();
-// }
-
-// void CustomBrowserWebUIView::ShowEditDialogForGroupAtPoint(
-//     gfx::Point point,
-//     gfx::Rect rect,
-//     tab_groups::TabGroupId group) {
-//   ConvertPointToScreen(this, &point);
-//   rect.set_origin(point);
-//   editor_bubble_widget_ = TabGroupEditorBubbleView::Show(
-//       custom_browser_view_->browser(), group, nullptr, rect, this);
-//   scoped_widget_observation_.Observe(editor_bubble_widget_.get());
-// }
-
-// void CustomBrowserWebUIView::HideEditDialogForGroup() {
-//   if (editor_bubble_widget_) {
-//     editor_bubble_widget_->CloseWithReason(
-//         BrowserFrame::ClosedReason::kUnspecified);
-//   }
-// }
-
-// BrowserWebUILayout CustomBrowserWebUIView::GetLayout() {
-//   DCHECK(tab_contents_container_);
-
-//   gfx::Size tab_contents_size = tab_contents_container_->size();
-
-//   // Because some pages can display the bookmark bar even when the bookmark
-//   bar
-//   // is disabled (e.g. NTP) and some pages never display the bookmark bar
-//   (e.g.
-//   // crashed tab pages, pages in guest browser windows), we will always
-//   reserve
-//   // room for the bookmarks bar so that the size and shape of the effective
-//   // viewport doesn't change.
-//   //
-//   // This may cause the thumbnail to crop off the extreme right and left edge
-//   of
-//   // the image in some cases, but a very slight crop is preferable to
-//   constantly
-//   // changing thumbnail sizes.
-//   //
-//   // See: crbug.com/1066652 for more info
-//   const int max_bookmark_height = GetLayoutConstant(BOOKMARK_BAR_HEIGHT);
-//   const views::View* bookmarks = custom_browser_view_->bookmark_bar();
-//   const int bookmark_bar_height =
-//       (bookmarks && bookmarks->GetVisible()) ? bookmarks->height() : 0;
-//   tab_contents_size.Enlarge(0, -(max_bookmark_height - bookmark_bar_height));
-
-//   return BrowserWebUILayout::CalculateForWebViewportSize(tab_contents_size);
-// }
-
-// SkColor CustomBrowserWebUIView::GetColorProviderColor(
-//     ui::ColorId id) const {
-//   return GetColorProvider()->GetColor(id);
-// }
 
 gfx::Size CustomBrowserWebUIView::CalculatePreferredSize(
     const views::SizeBounds& available_size) const {

@@ -90,21 +90,10 @@ bool ConsumePendingExternalUrlWindow(Profile* profile);
 // (relaunch_command_line.h) for the process command line.
 bool HasExternalUrlStartupArgs();
 
-// Second-instance routing for a *plain relaunch*: the user clicked the
-// desktop / taskbar icon (bare exe, no URL args, no window-kind switch —
-// see IsPlainRelaunchCommandLine in relaunch_command_line.h) while the
-// process was already running, typically because the launcher tray keeps it
-// alive after the last window closed. Chromium's default would open a fresh
-// normal browser window (the kNexus startup default was consumed by the
-// first window), which is the wrong product surface. Instead: focus the
-// profile's kNexus window, or open one if none exists. Returns true when the
-// launch was handled here (the caller must not open anything else); false
-// when |command_line| is not a plain relaunch and Chromium's own
-// second-instance handling should proceed (URL opens, --app, --incognito,
-// ...). Null-safe: a null |profile| is never handled. Called from the
-// ENABLE_CUSTOM_BROWSER hook in StartupBrowserCreator::
-// ProcessCommandLineWithProfile (chrome/browser/ui/startup/
-// startup_browser_creator.cc).
+// Second-instance routing for a plain relaunch (IsPlainRelaunchCommandLine):
+// focuses the profile's kNexus window, or opens one. Returns true when handled
+// (the caller opens nothing else); false lets Chromium's own handling proceed.
+// A null |profile| is never handled.
 bool HandlePlainRelaunch(Profile* profile,
                          const base::CommandLine& command_line);
 

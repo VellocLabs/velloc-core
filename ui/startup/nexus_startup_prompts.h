@@ -1,20 +1,6 @@
-// Suppresses Chromium's startup prompt chain (session-crashed bubble,
-// Windows launch-on-startup infobar, session-restore infobar, bad-flags
-// prompt, default-browser / pin-to-taskbar / PDF infobars) on the kNexus
-// window, deferring the prompts to normal browser windows.
-//
-// Wiring:
-//  - chrome/browser/ui/startup/infobar_utils.cc calls
-//    MaybeSuppressStartupPrompts() from an ENABLE_CUSTOM_BROWSER hook placed
-//    after the automation/testing banners (those still show) and BEFORE the
-//    static `infobars_shown` first-profile flag flips — so a later launch
-//    that lands in a normal window re-evaluates the whole chain (natural
-//    deferral for everything but the crash bubble).
-//  - The crash bubble's HasPendingUncleanExit() gate burns the moment the
-//    startup (Nexus) window opens, so suppression stashes a transient
-//    profile marker; CustomBrowserView::InitializeCustomBrowser() consumes
-//    it via MaybeShowDeferredCrashBubble() on the next normal-type window
-//    (whether that window comes from a link open, Ctrl+N, or the tray).
+// Suppresses Chromium's startup prompt chain on the kNexus window, deferring
+// the prompts to normal browser windows. The crash bubble is stashed as a
+// profile marker and shown by the next normal-type window.
 #ifndef CUSTOM_BROWSER_UI_STARTUP_NEXUS_STARTUP_PROMPTS_H_
 #define CUSTOM_BROWSER_UI_STARTUP_NEXUS_STARTUP_PROMPTS_H_
 

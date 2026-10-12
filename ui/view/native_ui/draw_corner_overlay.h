@@ -23,23 +23,9 @@ class BrowserView;  // fwd decl
 
 namespace custom_browser::native_ui {
 
-// DrawCornerOverlay:
-//  - Adds small overlay Views to visually "round" selected corners of |target|
-//  - Overlays paint TopContainerBackground + curved separator stroke
-//  - Auto-removes itself when |target| is destroyed
-//
-// Usage:
-//   auto* overlay = DrawCornerOverlay::Create(target_view,
-//                    DrawCornerOverlay::kTopLeft |
-//                    DrawCornerOverlay::kTopRight);
-//
-// Notes:
-//   - Overlays are children of target->parent() and z-ordered after |target|.
-//   - Corners' radius uses the standard token
-//       views::ShapeContextTokens::kSidePanelPageContentRadius
-//     (change if your design uses a different token).
-//   - This ONLY covers the corners. If you also want straight-edge
-//     separators, add your own thin strip views (optional).
+// DrawCornerOverlay: small overlay views (children of target->parent(),
+// z-ordered after |target|) that round selected corners of |target|; removes
+// itself when |target| is destroyed. Corners only, no straight edges.
 class CornerView;
 
 class DrawCornerOverlay : public views::ViewObserver {

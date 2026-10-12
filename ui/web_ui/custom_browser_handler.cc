@@ -596,23 +596,7 @@ custom_browser::mojom::TabPtr CustomBrowserHandler::GetTabData(
 
 custom_browser::mojom::TabGroupVisualDataPtr
 CustomBrowserHandler::GetTabGroupData(TabGroup* group) {
-  // const tab_groups::TabGroupVisualData* visual_data = group->visual_data();
-
   auto tab_group = custom_browser::mojom::TabGroupVisualData::New();
-  //   tab_group->title = base::UTF16ToUTF8(visual_data->title());
-
-  //   // TODO the tab strip should support toggles between inactive and active
-  //   frame
-  //   // states. Currently the webui tab strip only uses active frame colors
-  //   // (https://crbug.com/1060398).
-  //   const int group_color_id =
-  //       GetThumbnailTabStripTabGroupColorId(visual_data->color(), true);
-  //   const SkColor group_color =
-  //   embedder_->GetColorProviderColor(group_color_id); tab_group->color =
-  //   color_utils::SkColorToRgbString(group_color);
-  //   // TODO(tluk): Incorporate the text color into the ColorProvider.
-  //   tab_group->text_color = color_utils::SkColorToRgbString(
-  //       color_utils::GetColorWithMaxContrast(group_color));
   return tab_group;
 }
 
@@ -963,23 +947,6 @@ void CustomBrowserHandler::ReportTabDurationHistogram(
       {"WebUITabStrip", histogram_fragment, tab_count_bucket}, ".");
   base::UmaHistogramTimes(histogram_name, duration);
 }
-
-// gfx::ImageSkia CustomBrowserHandler::ThemeFavicon(const gfx::ImageSkia&
-// source,
-//                                                  bool active_tab_icon) {
-//   if (active_tab_icon) {
-//     return favicon::ThemeFavicon(
-//         source,
-//         embedder_->GetColorProviderColor(kColorThumbnailTabForeground),
-//         embedder_->GetColorProviderColor(kColorThumbnailTabBackground),
-//         embedder_->GetColorProviderColor(kColorThumbnailTabBackground));
-//   }
-
-//   return favicon::ThemeFavicon(
-//       source, embedder_->GetColorProviderColor(kColorToolbarButtonIcon),
-//       embedder_->GetColorProviderColor(kColorTabBackgroundActiveFrameActive),
-//       embedder_->GetColorProviderColor(kColorTabBackgroundInactiveFrameActive));
-// }
 
 void CustomBrowserHandler::ActivateTab(int32_t tab_id) {
   TabStripModel* tab_strip_model = browser_->tab_strip_model();

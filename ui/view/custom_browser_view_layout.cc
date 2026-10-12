@@ -302,19 +302,9 @@ CustomBrowserViewLayout::CalculateProposedLayout(
                   params.visual_client_area, !is_chrome_layout);
 
 
-  // Upstream decorations that only the Chromium layout knows how to place.
-  // BrowserViewTabbedLayoutImpl::CalculateProposedLayout() is the only code
-  // that ever adds these to a ProposedLayout, so when we take over the layout
-  // they are never mentioned again — and a views::View that no layout pass
-  // mentions keeps the bounds and visibility it last had. Once shown (the
-  // shadow overlay follows the side panel, ShadowOverlayVisible()), they stay
-  // shown, stale, in every custom UI mode.
-  //
-  // ShadowOverlayView is the rounded rect: a ShadowFrameView box plus four
-  // opaque CornerViews. That is the rounded border users see appear around the
-  // contents area after switching to Top tabs and then persist into the
-  // sidebar modes. MainBackgroundRegionView is the same class of leftover.
-  // Both are drawn by our own layout instead, so keep them hidden here.
+  // Upstream decorations only the Chromium layout places; once shown they would
+  // stay shown, stale, in every custom mode. Our layout draws its own, so keep
+  // them hidden.
   if (!is_chrome_layout) {
     if (views().main_shadow_overlay) {
       views().main_shadow_overlay->SetVisible(false);

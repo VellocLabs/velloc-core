@@ -249,16 +249,8 @@ CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
   html_source->AddString("customBrowserNexusGuestUrl",
                          nexus::GetResolvedNexusGuestURL(profile).spec());
 
-  // Boot-welcome product logo. The unscaled product_logo_*.png resources
-  // (IDR_PRODUCT_LOGO_128 / _256) are registered in
-  // chrome/app/theme/chrome_unscaled_resources.grd as raw BINDATA — they are
-  // NOT exposed by the chrome://theme/ handler (theme_source.cc only routes
-  // entries from theme_resources.grd). To make them addressable from the
-  // browser_webui pages, expose them under stable WebUI paths via
-  // AddResourcePath. The Velloc branding override at
-  //   chromium_overrides/velloc/symlink/chrome/app/theme/velloc/product_logo_*.png
-  // is picked up at build time via the product-logo branding path
-  // substitution, so this URL resolves to the Velloc-branded PNG.
+  // Boot-welcome product logo: the unscaled product_logo_*.png resources are
+  // not served by chrome://theme/, so expose them under stable WebUI paths.
   html_source->AddResourcePath("nexus_welcome_logo.png",
                                IDR_PRODUCT_LOGO_128);
   html_source->AddResourcePath("nexus_welcome_logo@2x.png",

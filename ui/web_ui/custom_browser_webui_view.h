@@ -147,20 +147,6 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   bool ShouldParkForBackground() const;
   void ParkForBackground();
 
-  // CustomBrowserUIEmbedder:
-  //   const ui::AcceleratorProvider* GetAcceleratorProvider() const override;
-  //   void CloseContainer() override;
-  //   void ShowContextMenuAtPoint(
-  //       gfx::Point point,
-  //       std::unique_ptr<ui::MenuModel> menu_model,
-  //       base::RepeatingClosure on_menu_closed_callback) override;
-  //   void CloseContextMenu() override;
-  //   void ShowEditDialogForGroupAtPoint(gfx::Point point,
-  //                                      gfx::Rect rect,
-  //                                      tab_groups::TabGroupId group)
-  //                                      override;
-  //   void HideEditDialogForGroup() override;
-
   // content::WebContentsDelegate:
   bool CanDragEnter(content::WebContents* source,
                     const content::DropData& data,

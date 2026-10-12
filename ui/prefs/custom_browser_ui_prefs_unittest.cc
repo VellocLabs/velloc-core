@@ -89,15 +89,8 @@ TEST_F(CustomBrowserUiPrefsLayoutTest, PushedLayoutsArePersisted) {
   EXPECT_EQ(2u, restored.size());
 }
 
-// A window whose page never pushes layouts must not erase them on close.
-//
-// That window is the normal case for the background panel (P-6): the next
-// kNexus window adopts a LIVE page, and a page only re-measures when its
-// holders resize — a same-size window sends no UpsertNativeViewLayouts at all.
-// SaveCurrentUILayoutParams() persists only "touched" entries, so without the
-// load-time seed that close wrote an empty set and every stored native-view
-// layout for the mode was lost, stripping more of the window's native views
-// (the caption buttons among them) on each park/reopen cycle.
+// A window whose page never pushes layouts must not erase the stored layouts
+// on close: a parked page re-adopted by a same-size window pushes none (P-6).
 TEST_F(CustomBrowserUiPrefsLayoutTest, SilentWindowDoesNotEraseStoredLayouts) {
   RunWindow(/*page_pushes_layouts=*/true);
 

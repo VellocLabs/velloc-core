@@ -62,17 +62,6 @@ void CustomBrowserUiModePrefPaths::Initialize() {
         base::BindRepeating(&CustomBrowserUiModePrefPaths::OnTrackedPrefChanged,
                             base::Unretained(this), path));
   }
-
-  // if (tabs::IsVerticalTabsFeatureEnabled()) {
-  //   if (BrowserList* browser_list = BrowserList::GetInstance()) {
-  //     for (Browser* browser : *browser_list) {
-  //       if (auto* controller =
-  //               tabs::VerticalTabStripStateController::From(browser)) {
-  //         controller->SetVerticalTabsEnabled(true);
-  //       }
-  //     }
-  //   }
-  // }
 }
 
 void CustomBrowserUiModePrefPaths::OnTrackedPrefChanged(std::string path) {

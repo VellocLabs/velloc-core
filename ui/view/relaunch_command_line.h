@@ -37,15 +37,9 @@ inline bool HasExternalUrlArgs(const base::CommandLine& command_line) {
   return false;
 }
 
-// True when |command_line| is a *plain relaunch* of the product: the user
-// clicked the desktop / taskbar icon (or ran the exe bare) while a process
-// was already running. That is: no URL/file arguments (see above) and none
-// of |window_kind_switches| — the switches that ask for a specific kind of
-// window or carry their own action (--app, --app-id, --incognito, --guest,
-// --no-startup-window, --restore-last-session, --notification-launch-id,
-// --win-jumplist-action, --uninstall-app-id, --browser-mode). A plain
-// relaunch is routed to the kNexus window; anything else falls through to
-// Chromium's normal second-instance handling.
+// True when |command_line| is a plain relaunch: no URL/file arguments and none
+// of |window_kind_switches| (switches asking for a specific kind of window or
+// carrying their own action). A plain relaunch goes to the kNexus window.
 inline bool IsPlainRelaunchCommandLine(
     const base::CommandLine& command_line,
     base::span<const std::string_view> window_kind_switches) {

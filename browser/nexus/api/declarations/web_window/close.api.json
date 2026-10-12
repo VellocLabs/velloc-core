@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "close",
+  "description": "Close a window this connection opened. Fires onClosed { windowId, reason: 'api' }. Returns { ok: true }.",
+  "struct_name": "WebWindowClose",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened (from open)."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

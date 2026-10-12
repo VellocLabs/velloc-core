@@ -1,0 +1,70 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "open",
+  "description": "Open a single-web window: one tab showing `url`, a read-only address, back / forward / reload and the OS caption buttons. The window is pinned to the kSingleWeb UI mode, is never restored by session restore, and belongs to the connection that opened it: its events (onNavigated, onTitleChanged, onClosed) go to that connection only, and it is closed when that connection goes away. Only http, https and file URLs are accepted. Returns { windowId }.",
+  "struct_name": "WebWindowOpen",
+  "inputs": [
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "The page to show: an http, https or file URL."
+    },
+    {
+      "name": "left",
+      "type": "integer",
+      "required": false,
+      "description": "Screen x of the window's top-left corner, in DIPs."
+    },
+    {
+      "name": "top",
+      "type": "integer",
+      "required": false,
+      "description": "Screen y of the window's top-left corner, in DIPs."
+    },
+    {
+      "name": "width",
+      "type": "integer",
+      "required": false,
+      "description": "Window width in DIPs, at least 200."
+    },
+    {
+      "name": "height",
+      "type": "integer",
+      "required": false,
+      "description": "Window height in DIPs, at least 150."
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "required": false,
+      "description": "'normal' | 'maximized' | 'minimized'. Absent: 'normal'."
+    },
+    {
+      "name": "focus",
+      "type": "boolean",
+      "required": false,
+      "description": "Activate the window once shown. Absent: true."
+    }
+  ],
+  "errors": [
+    {
+      "code": "url_not_allowed",
+      "params": [
+        "url"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    },
+    {
+      "code": "window_create_failed"
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

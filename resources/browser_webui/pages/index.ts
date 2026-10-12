@@ -5,6 +5,7 @@ import './vertical/vertical_page.js';
 import './vertical_compact/vertical_compact_page.js';
 import './horizontal_compact/horizontal_compact_page.js';
 import './nexus/nexus_page.js';
+import './single_web/single_web_page.js';
 import {uiStore, type UiStoreObserver} from '../ui_store.js';
 import {UIMode} from '../ui_view_controller.mojom-webui.js';
 import { errorReporter } from '../error_reporter.js';
@@ -52,6 +53,7 @@ export class MainApp extends CrLitElement {
         this.mode === UIMode.kCompactSidebar ? html`<vertical-compact-page></vertical-compact-page>` :
         this.mode === UIMode.kCompactStandard ? html`<horizontal-compact-page></horizontal-compact-page>` :
         this.mode === UIMode.kNexus ? html`<nexus-page></nexus-page>` :
+        this.mode === UIMode.kSingleWeb ? html`<single-web-page></single-web-page>` :
         html`<div></div>`}
     `;
   }

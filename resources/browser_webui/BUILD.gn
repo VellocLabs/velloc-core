@@ -73,6 +73,7 @@ build_webui("build") {
     "pages/nexus/nexus_page.ts",
     "pages/nexus/nexus_runtime_bootstrap.ts",
     "pages/nexus/nexus_host_theme.ts",
+    "pages/single_web/single_web_page.ts",
     "controller/tabs_controller.ts",
     "components/tabs_panel/types.ts",
     "components/tabs_panel/tab_hover_preview_controller.ts",

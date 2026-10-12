@@ -218,4 +218,5 @@ Esto elimina el proveedor almacenado, el endpoint guardado y los modelos selecci
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Reintentar</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">No tienes conexión</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> necesita conexión a internet para cargarse. Lo volverá a intentar en cuanto vuelvas a estar en línea.</translation>
+  <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Dirección de la página</translation>
 </translationbundle>

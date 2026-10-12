@@ -25,6 +25,8 @@
 #include "chrome/browser/ui/views/frame/multi_contents_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "custom_browser/ui/view/mouse_event_handler.h"
+#include "chrome/browser/ui/accelerator_table.h"
+#include "custom_browser/ui/view/single_web_window_commands.h"
 #include "chrome/browser/ui/views/tab_search_bubble_host.h"
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
@@ -229,6 +231,22 @@ std::u16string CustomBrowserView::GetWindowTitle() const {
   return base::StrCat({nexus_session_title_, u" - ", product});
 }
 
+bool CustomBrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
+  if (single_web_window_) {
+    for (const AcceleratorMapping& mapping : GetAcceleratorList()) {
+      if (mapping.keycode == accelerator.key_code() &&
+          mapping.modifiers == accelerator.modifiers()) {
+        if (!custom_browser::IsCommandAllowedInSingleWebWindow(
+                mapping.command_id)) {
+          return true;
+        }
+        break;
+      }
+    }
+  }
+  return BrowserView::AcceleratorPressed(accelerator);
+}
+
 std::u16string CustomBrowserView::GetAccessibleWindowTitle() const {
   if (!IsNexusUIMode()) {
     return BrowserView::GetAccessibleWindowTitle();
@@ -292,10 +310,17 @@ void CustomBrowserView::InitializeCustomBrowser() {
     // mode and takes precedence over everything else for THIS window. A
     // concurrent pending-kNexus marker (tray click racing a link open) is
     // deliberately left in place for the next window.
+    // A single-web window (F-29) is decided by its creator, inside the same
+    // synchronous Browser::Create, and overrides every other marker.
+    single_web_window_ =
+        custom_browser::window_util::ConsumePendingSingleWebWindow(profile);
     const bool force_normal =
+        single_web_window_ ||
         custom_browser::window_util::ConsumePendingExternalUrlWindow(profile);
     bool want_nexus = false;
-    if (!force_normal) {
+    if (single_web_window_) {
+      ui_prefs_->set_initial_mode_override(UIMode::kSingleWeb);
+    } else if (!force_normal) {
       want_nexus =
           custom_browser::window_util::ConsumePendingNexusWindow(profile);
       if (!want_nexus && ConsumeStartupDefault(profile)) {
@@ -325,7 +350,7 @@ void CustomBrowserView::InitializeCustomBrowser() {
       UpdateTitleBar();
     }
 
-    if (!nexus_mode_pending_) {
+    if (!nexus_mode_pending_ && !single_web_window_) {
       // This window comes up as a normal browser window: if the kNexus
       // startup window suppressed the session-crashed bubble, surface the
       // deferred restore offer here (any normal window qualifies — link

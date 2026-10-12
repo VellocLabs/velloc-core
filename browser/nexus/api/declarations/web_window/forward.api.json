@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "forward",
+  "description": "Go forward in the tab's history. Returns { ok } — false when there is nothing to go forward to.",
+  "struct_name": "WebWindowForward",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened (from open)."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

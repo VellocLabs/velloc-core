@@ -218,4 +218,5 @@
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">重试</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">你已离线</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> 需要联网才能加载。恢复联网后会自动重试。</translation>
+  <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">页面地址</translation>
 </translationbundle>

@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setState",
+  "description": "Maximize, minimize or restore a window. Returns { ok: true }.",
+  "struct_name": "WebWindowSetState",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened (from open)."
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "required": true,
+      "description": "'normal' | 'maximized' | 'minimized'."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

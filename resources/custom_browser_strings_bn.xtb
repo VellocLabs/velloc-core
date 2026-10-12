@@ -218,4 +218,5 @@
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">আবার চেষ্টা করুন</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">আপনি অফলাইন আছেন</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> লোড হতে ইন্টারনেট সংযোগ দরকার। আবার অনলাইন হলেই এটি নিজে থেকে আবার চেষ্টা করবে।</translation>
+  <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">পৃষ্ঠার ঠিকানা</translation>
 </translationbundle>

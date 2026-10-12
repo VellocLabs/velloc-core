@@ -159,6 +159,18 @@ export const CustomBrowserNavigationBarView = defineNativeViewAlias(
   }
 );
 
+// Back, forward and reload only: the single-web window (F-29) has no home.
+export const CustomBrowserSingleWebNavigationView = defineNativeViewAlias(
+  'single-web-navigation-view',
+  { viewClass: VIEWS_CONTAINER_VIEW_NAME, height: 34, width: 102,
+    childViews: [
+      {viewId: '1001', width: 34, height: 34},
+      {viewId: '1002', width: 34, height: 34},
+      {viewId: '1003', width: 34, height: 34}
+    ]
+  }
+);
+
 export const CustomBrowserLocationExtensionBarViews = defineNativeViewAlias(
   'location-extension-bar-views',
   { viewClass: VIEWS_CONTAINER_VIEW_NAME, height: 34,

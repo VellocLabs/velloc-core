@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 13> kBridgeCapabilities = {
+constexpr std::array<const char*, 14> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -63,6 +63,12 @@ constexpr std::array<const char*, 13> kBridgeCapabilities = {
     // when advertised, so an older binary keeps the in-page timers. See
     // custom_browser/browser/nexus/api/alarms/.
     "alarms",
+    // Single-web windows (open / close / list / focus / setBounds /
+    // setState / navigate / back / forward / reload + the onNavigated /
+    // onTitleChanged / onClosed events), F-29. Additive: the runtime calls
+    // it only when advertised. See
+    // custom_browser/browser/nexus/api/web_window/.
+    "webWindow",
 };
 
 // Additive native primitives this host serves, by `<capability>.<action>`

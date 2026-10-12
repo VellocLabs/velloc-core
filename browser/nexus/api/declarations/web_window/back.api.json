@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "back",
+  "description": "Go back in the tab's history. Returns { ok } — false when there is nothing to go back to.",
+  "struct_name": "WebWindowBack",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened (from open)."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

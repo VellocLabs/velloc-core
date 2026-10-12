@@ -224,6 +224,9 @@ class CustomBrowserView : public BrowserView,
   // "Name window…" feature.
   std::u16string GetWindowTitle() const override;
   std::u16string GetAccessibleWindowTitle() const override;
+  // ui::AcceleratorTarget: a single-web window swallows the shortcuts of
+  // commands outside IsCommandAllowedInSingleWebWindow().
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
 
   // Stores the active Nexus session's display title (already sanitized by
   // NexusUiBridgeAdapter) and refreshes the title bar. Empty clears back to
@@ -237,6 +240,11 @@ class CustomBrowserView : public BrowserView,
   // suppression must use (see window_util::IsNexusBrowser); decisions made
   // during boot would otherwise misclassify this window as normal.
   bool IsNexusUIMode() const;
+
+  // True for a window created by the `webWindow` bridge capability (F-29): it
+  // is pinned to kSingleWeb for its whole life, from InitializeCustomBrowser()
+  // on, before the mode lands.
+  bool IsSingleWebWindow() const { return single_web_window_; }
 
   CustomBrowserUiPrefs* ui_prefs() const { return ui_prefs_.get(); }
   NativeUIContainerView* native_ui_container() { return native_ui_container_.get(); }
@@ -302,6 +310,9 @@ private:
   // layout params — without this flag the window's first frames would title
   // as a normal browser ("about:blank - <app>") instead of the product name.
   bool nexus_mode_pending_ = false;
+
+  // Set once in InitializeCustomBrowser() from the pending single-web marker.
+  bool single_web_window_ = false;
 
   bool custom_layout_allowed_ = false;
   bool is_custom_initialized_ = false;

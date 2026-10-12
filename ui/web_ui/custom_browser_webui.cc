@@ -237,6 +237,7 @@ CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
       {"unnamedGroupLabel", IDS_GROUP_AX_LABEL_UNNAMED_GROUP_FORMAT},
       {"namedGroupLabel", IDS_GROUP_AX_LABEL_NAMED_GROUP_FORMAT},
       {"newTabAccName", IDS_ACCNAME_NEWTAB},
+      {"singleWebAddressLabel", IDS_SINGLE_WEB_ADDRESS_LABEL},
   };
   html_source->AddLocalizedStrings(kStrings);
   AddNexusStrings(html_source);

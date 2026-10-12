@@ -9,6 +9,7 @@ browser_view_sources = [
   "//custom_browser/ui/view/mouse_event_handler.cc",
   "//custom_browser/ui/view/window_hit_test.h",
   "//custom_browser/ui/view/undisplayed_contents_sizer.h",
+  "//custom_browser/ui/view/single_web_window_commands.h",
   "//custom_browser/ui/view/custom_browser_window_util.h",
   "//custom_browser/ui/view/custom_browser_window_util.cc",
   "//custom_browser/ui/view/nexus_native_menus.h",

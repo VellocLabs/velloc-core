@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "navigate",
+  "description": "Load `url` in the window's tab. Only http, https and file URLs are accepted. Returns { ok: true } once the load has started; onNavigated reports the commit.",
+  "struct_name": "WebWindowNavigate",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened (from open)."
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "An http, https or file URL."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    },
+    {
+      "code": "url_not_allowed",
+      "params": [
+        "url"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

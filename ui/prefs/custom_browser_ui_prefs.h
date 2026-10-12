@@ -67,6 +67,9 @@ class CustomBrowserUiPrefs {
 
   static void InitMainUI(content::WebUIDataSource* source, PrefService* prefs);
   static UIMode GetUIModeFromPref(PrefService* prefs);
+  // True for the modes a single window is pinned to (kNexus, kSingleWeb):
+  // never persisted as the current mode, never following the shared pref.
+  static bool IsPerWindowMode(UIMode mode);
 
   // Forces the mode loaded by the next BuildInitUrl()/RestoreFromPrefs() call,
   // overriding pref_mode(). Used to open a window directly in kNexus without

@@ -37,6 +37,7 @@ class NexusShellBridgeAdapter;
 class NexusSqliteBridgeAdapter;
 class NexusSystemPrefsBridgeAdapter;
 class NexusUiBridgeAdapter;
+class NexusWebWindowBridgeAdapter;
 class NexusBrowserBridgeAdapter;
 class NexusExecBridgeAdapter;
 class NexusFilesBridgeAdapter;
@@ -198,6 +199,7 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // per-Profile NexusRemoteAccessService. Manifest-gated: the runtime calls
   // getStatus only when the manifest advertises "remoteAccess".
   std::unique_ptr<NexusRemoteAccessBridgeAdapter> remote_access_adapter_;
+  std::unique_ptr<NexusWebWindowBridgeAdapter> web_window_adapter_;
   // Phase 12g: dropped `process_adapter_` + `shell_service_launcher_`.
   // The bridge `process` capability had no JS-side callers (Phase 11b
   // deleted the only consumers — TS BashTool / GrepTool / GlobTool).

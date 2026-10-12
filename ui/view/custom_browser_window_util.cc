@@ -45,6 +45,14 @@ constexpr char kPendingExternalUrlWindowKey[] =
 // create a window for externally-launched URLs. Never persisted.
 class PendingExternalUrlWindowMarker : public base::SupportsUserData::Data {};
 
+constexpr char kPendingSingleWebWindowKey[] =
+    "custom_browser_pending_single_web_window";
+
+// Transient marker attached to a Profile to make the next CustomBrowserView
+// created for it a single-web window (F-29). Set and consumed within one
+// synchronous Browser::Create. Never persisted.
+class PendingSingleWebWindowMarker : public base::SupportsUserData::Data {};
+
 // Returns the first normal browser window of |profile| whose CustomBrowserView
 // is in kNexus mode (when |want_nexus|) or in a browser mode (otherwise).
 Browser* FindWindowByMode(Profile* profile, bool want_nexus) {
@@ -58,7 +66,9 @@ Browser* FindWindowByMode(Profile* profile, bool want_nexus) {
         }
         auto* view = static_cast<CustomBrowserView*>(
             BrowserView::GetBrowserViewForBrowser(browser));
-        if (view && view->ui_prefs()) {
+        // A single-web window is neither the kNexus window nor a normal
+        // window that may receive tabs or URLs.
+        if (view && view->ui_prefs() && !view->IsSingleWebWindow()) {
           // Pending-aware: a window whose kNexus decision was made in
           // InitializeCustomBrowser() but whose mode hasn't landed yet must
           // already classify as the kNexus window, or external URLs /
@@ -170,6 +180,31 @@ bool ConsumePendingNexusWindow(Profile* profile) {
   return true;
 }
 
+void SetPendingSingleWebWindow(Profile* profile) {
+  if (!profile) {
+    return;
+  }
+  profile->SetUserData(kPendingSingleWebWindowKey,
+                       std::make_unique<PendingSingleWebWindowMarker>());
+}
+
+bool ConsumePendingSingleWebWindow(Profile* profile) {
+  if (!profile || !profile->GetUserData(kPendingSingleWebWindowKey)) {
+    return false;
+  }
+  profile->RemoveUserData(kPendingSingleWebWindowKey);
+  return true;
+}
+
+bool IsSingleWebBrowser(Browser* browser) {
+  if (!browser || !browser->is_type_normal()) {
+    return false;
+  }
+  auto* view = static_cast<CustomBrowserView*>(
+      BrowserView::GetBrowserViewForBrowser(browser));
+  return view && view->IsSingleWebWindow();
+}
+
 bool IsNexusBrowser(Browser* browser) {
   if (!browser || !browser->is_type_normal()) {
     return false;
@@ -181,12 +216,14 @@ bool IsNexusBrowser(Browser* browser) {
 
 Browser* AdjustBrowserForExternalUrlOpen(Profile* profile,
                                          Browser* candidate) {
-  if (candidate && !IsNexusBrowser(candidate)) {
+  if (candidate && !IsNexusBrowser(candidate) &&
+      !IsSingleWebBrowser(candidate)) {
     // Common case: the startup code already picked a normal window.
     return candidate;
   }
   if (candidate) {
-    // The picked window is the kNexus chat window — reroute to any existing
+    // The picked window is the kNexus chat window or a single-web window —
+    // reroute to any existing
     // normal window instead (FindNormalWindow ignores workspaces; landing on
     // another workspace beats landing in the chat window).
     if (Browser* normal = FindNormalWindow(profile)) {

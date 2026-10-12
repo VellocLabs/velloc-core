@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "list",
+  "description": "The windows this connection has open: { windows: [{ windowId, url, title, state }] }.",
+  "struct_name": "WebWindowList",
+  "inputs": [],
+  "runtime": {
+    "thread": "ui"
+  }
+}

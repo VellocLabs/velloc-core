@@ -167,11 +167,16 @@ void CustomBrowserUiPrefs::EnableLayoutsSaving(bool enable) {
 
 // static
 UIMode CustomBrowserUiPrefs::GetUIModeFromPref(PrefService* prefs) {
-  // kNexus is a runtime-only, per-window mode and is never the persisted
-  // current mode. Clamp any stale/legacy kNexus value to a browser mode so
-  // browser windows and the WebUI data source never inherit it.
+  // kNexus and kSingleWeb are runtime-only, per-window modes and are never the
+  // persisted current mode. Clamp any stale value to a browser mode so browser
+  // windows and the WebUI data source never inherit one.
   UIMode mode = static_cast<UIMode>(prefs->GetInteger(kCustomUIModePrefPath));
-  return mode == UIMode::kNexus ? UIMode::kSidebar : mode;
+  return IsPerWindowMode(mode) ? UIMode::kSidebar : mode;
+}
+
+// static
+bool CustomBrowserUiPrefs::IsPerWindowMode(UIMode mode) {
+  return mode == UIMode::kNexus || mode == UIMode::kSingleWeb;
 }
 
 UIMode CustomBrowserUiPrefs::pref_mode() const {
@@ -338,9 +343,10 @@ void CustomBrowserUiPrefs::UpdateUIMode(UIMode mode) {
 }
 
 void CustomBrowserUiPrefs::OnModePrefChanged() {
-  // The nexus window is pinned to kNexus and must not follow the shared
-  // browser-mode pref that other windows broadcast through.
-  if (current_mode() == UIMode::kNexus) {
+  // A per-window mode (the nexus window, a single-web window) is pinned and
+  // must not follow the shared browser-mode pref that other windows broadcast
+  // through.
+  if (IsPerWindowMode(current_mode())) {
     return;
   }
   if (pref_mode() == current_mode()) {

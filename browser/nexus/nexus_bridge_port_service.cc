@@ -24,6 +24,7 @@
 #include "custom_browser/browser/nexus/api/network/nexus_network_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/remote_access/nexus_remote_access_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/web_window/nexus_web_window_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/search/nexus_search_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secrets_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
@@ -257,6 +258,12 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   remote_access_adapter_ =
       std::make_unique<NexusRemoteAccessBridgeAdapter>(this, profile);
   RegisterCapability("remoteAccess", remote_access_adapter_.get());
+  // Guest `webWindow` capability — single-web windows (F-29). The windows
+  // belong to this connection: its events come here only, and destroying
+  // the adapter with the port service closes them.
+  web_window_adapter_ =
+      std::make_unique<NexusWebWindowBridgeAdapter>(this, profile);
+  RegisterCapability("webWindow", web_window_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("files", files_adapter_.get());
   RegisterCapability("exec", exec_adapter_.get());

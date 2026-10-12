@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "components/prefs/testing_pref_service.h"
+#include "custom_browser/common/pref_names.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -100,6 +101,24 @@ TEST_F(CustomBrowserUiPrefsLayoutTest, SilentWindowDoesNotEraseStoredLayouts) {
         RunWindow(/*page_pushes_layouts=*/false);
     EXPECT_EQ(2u, restored.size()) << "layouts lost after cycle " << cycle;
   }
+}
+
+// The per-window modes are never read back as the shared current mode (F-29).
+TEST(CustomBrowserUiPrefsModeTest, PerWindowModesClampToABrowserMode) {
+  TestingPrefServiceSimple prefs;
+  CustomBrowserUiPrefs::RegisterProfilePrefs(prefs.registry());
+
+  EXPECT_TRUE(CustomBrowserUiPrefs::IsPerWindowMode(UIMode::kNexus));
+  EXPECT_TRUE(CustomBrowserUiPrefs::IsPerWindowMode(UIMode::kSingleWeb));
+  EXPECT_FALSE(CustomBrowserUiPrefs::IsPerWindowMode(UIMode::kSidebar));
+  EXPECT_FALSE(CustomBrowserUiPrefs::IsPerWindowMode(UIMode::kStandard));
+
+  prefs.SetInteger(kCustomUIModePrefPath, static_cast<int>(UIMode::kSingleWeb));
+  EXPECT_EQ(UIMode::kSidebar, CustomBrowserUiPrefs::GetUIModeFromPref(&prefs));
+  prefs.SetInteger(kCustomUIModePrefPath,
+                   static_cast<int>(UIMode::kCompactStandard));
+  EXPECT_EQ(UIMode::kCompactStandard,
+            CustomBrowserUiPrefs::GetUIModeFromPref(&prefs));
 }
 
 }  // namespace

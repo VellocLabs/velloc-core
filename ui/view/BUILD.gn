@@ -4,19 +4,22 @@
 
 # The view sources compile into //chrome/browser/ui, since CustomBrowserView
 # derives from BrowserView. Header-only leaves (window_hit_test.h,
-# relaunch_command_line.h, undisplayed_contents_sizer.h) are tested here.
+# relaunch_command_line.h, single_web_window_commands.h,
+# undisplayed_contents_sizer.h) are tested here.
 
 source_set("unit_tests") {
   testonly = true
 
   sources = [
     "relaunch_command_line_unittest.cc",
+    "single_web_window_commands_unittest.cc",
     "undisplayed_contents_sizer_unittest.cc",
     "window_hit_test_unittest.cc",
   ]
 
   deps = [
     "//base",
+    "//chrome/app:command_ids",
     "//testing/gtest",
     "//ui/gfx/geometry",
     # gfx::PrintTo(gfx::Size) for gtest failure messages.

@@ -210,6 +210,16 @@ action("nexus_tools_codegen") {
     "api/declarations/files/grep.api.json",
     "api/declarations/files/read.api.json",
     "api/declarations/files/write.api.json",
+    "api/declarations/web_window/back.api.json",
+    "api/declarations/web_window/close.api.json",
+    "api/declarations/web_window/focus.api.json",
+    "api/declarations/web_window/forward.api.json",
+    "api/declarations/web_window/list.api.json",
+    "api/declarations/web_window/navigate.api.json",
+    "api/declarations/web_window/open.api.json",
+    "api/declarations/web_window/reload.api.json",
+    "api/declarations/web_window/setBounds.api.json",
+    "api/declarations/web_window/setState.api.json",
   ]
 
   outputs = [
@@ -251,6 +261,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/exec/exec_api.gen.cc",
     "$target_gen_dir/api/browser/browser_api.gen.h",
     "$target_gen_dir/api/browser/browser_api.gen.cc",
+    "$target_gen_dir/api/web_window/web_window_api.gen.h",
+    "$target_gen_dir/api/web_window/web_window_api.gen.cc",
   ]
 
   args = [
@@ -582,6 +594,10 @@ source_set("bridge") {
     "api/system_prefs/nexus_system_prefs_bridge_adapter.h",
     "api/ui/nexus_ui_bridge_adapter.cc",
     "api/ui/nexus_ui_bridge_adapter.h",
+    "api/web_window/nexus_web_window_bridge_adapter.cc",
+    "api/web_window/nexus_web_window_bridge_adapter.h",
+    "api/web_window/web_window_options.cc",
+    "api/web_window/web_window_options.h",
     "bridge_response_callback.cc",
     "bridge_response_callback.h",
     "nexus_bridge_bootstrap_host.cc",
@@ -667,6 +683,7 @@ source_set("bridge") {
     "$target_gen_dir/api/sqlite/sqlite_api.gen.cc",
     "$target_gen_dir/api/system_prefs/system_prefs_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.cc",
+    "$target_gen_dir/api/web_window/web_window_api.gen.cc",
   ]
 
   public_deps = [
@@ -1146,6 +1163,7 @@ source_set("unit_tests") {
     "api/network/nexus_http_byte_stream_unittest.cc",
     "api/network/nexus_network_bridge_adapter_unittest.cc",
     "api/network/nexus_websocket_connection_unittest.cc",
+    "api/web_window/web_window_options_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
     "api/secrets/nexus_secrets_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",

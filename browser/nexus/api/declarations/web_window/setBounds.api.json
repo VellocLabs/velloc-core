@@ -1,0 +1,55 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "setBounds",
+  "description": "Move and / or resize a window; an absent field keeps its current value. A maximized or minimized window is restored first. Returns { ok: true }.",
+  "struct_name": "WebWindowSetBounds",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened (from open)."
+    },
+    {
+      "name": "left",
+      "type": "integer",
+      "required": false,
+      "description": "Screen x of the window's top-left corner, in DIPs."
+    },
+    {
+      "name": "top",
+      "type": "integer",
+      "required": false,
+      "description": "Screen y of the window's top-left corner, in DIPs."
+    },
+    {
+      "name": "width",
+      "type": "integer",
+      "required": false,
+      "description": "Window width in DIPs, at least 200."
+    },
+    {
+      "name": "height",
+      "type": "integer",
+      "required": false,
+      "description": "Window height in DIPs, at least 150."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

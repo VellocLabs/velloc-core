@@ -2,17 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// <nexus-bg-tabs-strip> — horizontal preview list of every non-active tab.
-// Cards are clickable; clicking activates that tab. Thumbnails arrive from
-// `tabsController.addTrackedPreviewId(id)` as base64 data-URI strings on the
-// per-tab `onThumbnailChanged` callback.
-//
-// Lifecycle:
-//   - On connectedCallback: subscribe to `TabsObserver` (list-level) and
-//     `TabObserver` (per-tab incl. the active tab — so we get the activation
-//     flip). Call `addTrackedPreviewId(id)` for every background tab.
-//   - On disconnectedCallback: unregister every observer + remove every
-//     tracked preview ID. Clear caches.
+// <nexus-bg-tabs-strip>: a clickable preview list of every non-active tab.
+// Thumbnails arrive as data-URIs for each `addTrackedPreviewId(id)`; observers
+// and tracked ids are registered on connect and all released on disconnect.
 
 import {Tab} from '../../browser_controller.mojom-webui.js';
 import type {TabId} from '../../components/tabs_panel/types.js';

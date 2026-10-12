@@ -55,16 +55,8 @@ build_webui("build") {
     "pages/vertical_compact/vertical_compact_page.ts",
     "pages/vertical_compact/vertical_compact_topbar.ts",
     "pages/horizontal_compact/horizontal_compact_page.ts",
-    # Phase 4: the topbar + settings UI (nexus_topbar, nexus_quick_settings,
-    # nexus_settings*, and their *_client / *_panel_client / nexus_panel_bridge
-    # / nexus_icons deps) moved into the React guest (`nexus_web/`). The panel
-    # is now a thin host: webview + session-state plumbing.
-    # The UI <-> Runtime wire, mirrored from nexus_web by
-    # nexus_web/scripts/sync_runtime_protocol_mirror.py (generated — edit the
-    # nexus_web source and re-run; its `protocol-mirror.test.ts` fails when this
-    # copy and its source disagree). Only the codec: the panel host subscribes
-    # to one topic and issues no requests, so it drives the handshake with a
-    # small client of its own rather than a copy of the guest's.
+    # The UI <-> Runtime wire codec, generated from nexus_web by
+    # sync_runtime_protocol_mirror.py: edit the nexus_web source and re-run.
     "pages/nexus/protocol/runtimeProtocol/errors.ts",
     "pages/nexus/protocol/runtimeProtocol/route.ts",
     "pages/nexus/protocol/runtimeProtocol/topics.ts",

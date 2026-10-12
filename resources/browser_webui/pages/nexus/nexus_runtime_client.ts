@@ -3,24 +3,11 @@
 // found in the LICENSE file.
 
 /**
- * The panel host as a client of the UI <-> Runtime protocol.
- *
- * This page is the window chrome around the guest: the boot welcome overlay,
- * and the `<main-contents-view>` that must sit exactly over the guest's
- * placeholder. Everything it needs to do that is published by the guest's
- * runtime on one topic — `shell/<panelId>`: the layout rect, the boot stage,
- * the build time, and the moment the overlay may go.
- *
- * It used to read those as `nexus.ui.*` push events on a bespoke bridge whose
- * envelope was re-implemented by hand here (`nexus_webui_bridge.ts`). The
- * envelope is now the real one: `protocol/` is a GENERATED copy of the guest's
- * codec, kept honest by a drift check on the guest side. What is written here
- * is only what this page does with it — a handshake, one subscription, and a
- * dispatch — because the panel issues no requests of its own.
- *
- * Connection path: the panel hands a `MessagePort` to the guest page, which
- * forwards it to the SharedWorker as `bridge.attachRuntimePort` (the guest's
- * `webUiBridgeBootstrap.ts`). The panel then speaks frames on that port.
+ * The panel host as a client of the UI <-> Runtime protocol: a handshake, one
+ * subscription (`shell/<panelId>`) and a dispatch; it issues no requests.
+ * `protocol/` is a generated copy of the guest's codec. The panel hands a
+ * `MessagePort` to the guest page, which forwards it to the SharedWorker
+ * (`bridge.attachRuntimePort`).
  */
 
 // Straight from the mirrored files, not a barrel: the mirror carries the codec

@@ -2,25 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Recovery overlay rendered inside <nexus-view> when the guest webview never
-// completes the `nexus-init` handshake (nexus_runtime_bootstrap.ts), or fails
-// to load outright.
-//
-// Why this exists: the guest URL is a profile pref (`nexus.webapp_url`) and
-// the ONLY editor for it used to live in the guest's own Settings · About
-// page — inside the very app that fails to load. A bad URL therefore bricked
-// the panel with no in-product way back: recovery meant DevTools on
-// chrome://custom.top-chrome or hand-editing the profile's Preferences JSON.
-// This overlay is the way back, and it lives in the HOST page so it is
-// unaffected by whatever the guest origin does.
-//
-// It matters most for a wrong-but-VALID URL. `IsAllowedCustomGuestUrl()`
-// (nexus_guest_config.cc) only checks scheme/host, and the binary pins its
-// compiled-in `/v<N>/` path (AppendNexusInterfaceVersionToBase), so pointing
-// at an origin that does not serve this interface version yields a plain HTTP
-// 404. A 404 is a SUCCESSFUL load — `loadabort` never fires and the webview
-// happily renders the error body — which is exactly why the trigger for this
-// overlay is the handshake never being acked, not a load error.
+// Recovery overlay in <nexus-view>, shown when the guest never acks the
+// `nexus-init` handshake or fails to load. It lives in the host page so a bad
+// `nexus.webapp_url` cannot disable it. The trigger is the missing ack, not a
+// load error: IsAllowedCustomGuestUrl() checks only scheme/host, and a wrong
+// origin's 404 is a successful load.
 
 import {
   CrLitElement,

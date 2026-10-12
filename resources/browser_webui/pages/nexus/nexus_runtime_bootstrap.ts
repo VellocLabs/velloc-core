@@ -1,27 +1,8 @@
-// Bootstrap controller for the Nexus guest <webview> hosted directly inside
-// the CustomBrowserWebUI page (chrome://custom.top-chrome).
-//
-// Replaces the chrome://glic-based intermediate page that previously owned
-// the bootstrap dance (`src/custom_browser/resources/patch_webui/glic/
-// nexus_boot.ts`). The flow is the same in shape:
-//
-//   1. Set webview.src to the resolved guest URL (loadTimeData).
-//   2. Send periodic `{type: 'nexus-init', nexus: true}` to the guest until
-//      the guest replies with `{type: 'nexus-init-ack'}`.
-//   3. Call `NexusBridgeBootstrap.getRemote().guestReady()`. The browser
-//      posts a `nexus-bridge-bootstrap` message + 2 transferred MessagePorts
-//      back into this page via MessagePortProvider::PostMessageToFrame.
-//   4. Forward the message + ports to the guest webview.
-//
-// Once the guest receives the ports, its SharedWorker connects to the
-// browser-process `NexusBridgePortService` directly — every subsequent
-// `glic.executeHostedTool` call goes through that direct port instead of
-// through this page.
-//
-// The bootstrap binding is registered by
-// `src/custom_browser/features/patch_webui/custom_browser_hooks.cc`'s
-// `BindNexusBridgeBootstrapForCustomBrowser` (which still serves both
-// chrome://glic and chrome://custom.top-chrome during the transition).
+// Bootstrap for the Nexus guest <webview> in chrome://custom.top-chrome: set
+// webview.src, send `{type: 'nexus-init', nexus: true}` until the guest acks,
+// call `guestReady()`, then forward the returned `nexus-bridge-bootstrap`
+// message and its MessagePorts to the guest, whose SharedWorker then talks to
+// `NexusBridgePortService` directly.
 
 import {NexusBridgeBootstrap} from
     '../../nexus_bridge_bootstrap.mojom-webui.js';
@@ -36,22 +17,9 @@ import {invalidateShellClient} from './nexus_shell_client.js';
 // Same page/process as the overlay, so this is a direct callback — no bridge.
 export type BootStatusReporter = (stage: LoadingStage) => void;
 
-// Reports a terminal PRE-ACK handshake failure to the host, which surfaces the
-// <nexus-guest-recovery> overlay.
-//
-// Scope is deliberately narrow, because the overlay blames the guest URL and
-// offers to reset the pref: this fires only when the document at guestUrl never
-// answered `nexus-init`. It does NOT fire once the guest has acked — a
-// post-ack bridge-bootstrap failure is host-side and says nothing about the
-// URL (see runHandshake). Nor does it fire for the aborted case (a newer guest
-// load superseded this handshake), so a normal guest reload never triggers
-// recovery.
-//
-// This exists because the failure is otherwise invisible. `runHandshake` is a
-// detached async IIFE with its own try/catch, and `bootstrapNexusGuest`
-// resolves as soon as it assigns `guest.src` — so the promise its caller
-// awaits CANNOT reject on a handshake failure, and the failure used to end its
-// life as a single debugTrace line while the panel sat blank.
+// Reports a terminal pre-ack handshake failure to the host, which shows the
+// <nexus-guest-recovery> overlay. Only when the document at guestUrl never
+// answered `nexus-init`: never after an ack, never for a superseded load.
 export type BootFailureReporter = (detail: {
   reason: string,
   message: string,
@@ -305,23 +273,8 @@ export async function bootstrapNexusGuest(
     origin: guestOrigin,
   });
 
-  // The handshake must run on EVERY guest (re)load, not just the first.
-  //
-  // A guest reload (Vite full reload on `nexus_web` update, an in-app
-  // `location.reload()`, or any re-navigation of the <webview>) destroys
-  // the guest's JS state — including the host-window reference it captured
-  // from the first `nexus-init`. The fresh guest re-enters
-  // `waitForNexusHostInit()` and sits there forever unless the host pings
-  // `nexus-init` again. The original one-shot bootstrap only ran from
-  // `<nexus-view>.firstUpdated()`, so after a reload the panel stayed
-  // blank. We now re-drive the full handshake on each guest `contentload`.
-  //
-  // The downstream layers already tolerate a repeat:
-  //   • NexusBridgeBootstrapHost::GuestReady() reuses its
-  //     NexusBridgePortService and CreatePortPair() resets + rebinds to the
-  //     new guest's port (the old, now-dead port is closed).
-  //   • SharedWorkerSessionManager.addBridgePort('direct') disposes the old
-  //     DirectPortBridgeTransport and installs the new workerPort.
+  // The handshake re-runs on every guest `contentload`: a reloaded guest waits
+  // for a fresh `nexus-init`. The host and worker sides replace the old port.
   let activeHandshake: AbortController | null = null;
 
   const runHandshake = (reason: string) => {
@@ -358,15 +311,8 @@ export async function bootstrapNexusGuest(
         return;
       }
 
-      // POST-ACK. The guest loaded and answered `nexus-init`, so the guest URL
-      // is proven good. Everything from here is host-side — the Mojo
-      // guestReady() call and the browser's port-forwarding postMessage — and
-      // a failure is the "Boot Failed / real bridge host not attached" class
-      // (see G-1), NOT a bad runtime source. Reporting it
-      // as one would show copy blaming the URL and, worse, offer a primary
-      // button that wipes a `nexus.webapp_url` the user may have pinned on
-      // purpose — while leaving the panel just as dead, because the URL was
-      // never the problem. So this path stays diagnostic-only.
+      // Post-ack: the guest URL is proven good, so a failure from here is
+      // host-side and stays diagnostic-only (no URL-reset overlay).
       try {
         // Guest acked the handshake; mint + forward the bridge ports next.
         reportStatus('linking');

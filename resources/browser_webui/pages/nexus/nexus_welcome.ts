@@ -27,34 +27,10 @@ import {getString} from './nexus_shared.js';
 // (Chrome's UI language), so the parent and guest always agree.
 type WelcomeLocale = 'en'|'zh'|'es'|'fr'|'de';
 
-// Boot stages, in order. The first four are HOST-observable, driven by
-// <nexus-view> from the `bootstrapNexusGuest` handshake
-// (nexus_runtime_bootstrap.ts) — the overlay lives in the same page, so no
-// bridge is needed. `starting` is the default before the handshake begins.
-//
-// `rendering`…`finalizing` are the boot TAIL: once the bridge ports are
-// forwarded (the `loading` stage) the host can no longer see the guest. Every
-// tail stage is tied to a REAL guest milestone (NOT a timer — debug and release
-// have completely different timings, so a fixed schedule mis-paces): the guest
-// broadcasts each one over `nexus.ui.bootProgress` as it genuinely happens, so
-// the footer reflects actual progress through the tail:
-//   rendering       — React shell built (nexusBoot, after prepareNexusBoot)
-//   sessions        — session list arrived (MultiSessionShell session.list)
-//   connectingTools — worker runtime build reached the MCP-server connect
-//                     (SharedWorker createBrowserRuntime, before ensureMCPPool
-//                     — the longest single step inside the previously-opaque
-//                     sessions→opening window when MCP servers are configured)
-//   restoring       — worker is restoring the active session's persisted
-//                     transcript (before getRecordedMessages)
-//   opening         — active session snapshot ready (worker.ready)
-//   finalizing      — transcript merged, assistant-ui painting the conversation
-// The host handshake and these broadcasts all feed one monotonic setter.
-// `connectingTools`/`restoring` come from the SharedWorker itself (see
-// SharedWorkerSessionManager.broadcastBootStage) — the page can't see inside
-// the worker's runtime build, and that build is the dominant boot phase.
-//
-// The overlay is torn down at the interactive moment, so there is no terminal
-// "ready" stage to show.
+// Boot stages, in order. `starting`..`loading` are host-observed from the
+// handshake; `rendering`..`finalizing` are real guest milestones (never
+// timers), some broadcast by the SharedWorker. All feed one monotonic setter.
+// There is no terminal "ready" stage: the overlay is torn down at that point.
 export type LoadingStage = 'starting'|'connecting'|'linking'|'loading'|
     'rendering'|'sessions'|'connectingTools'|'restoring'|'opening'|
     'finalizing';
@@ -305,15 +281,9 @@ export class NexusWelcomeElement extends CrLitElement {
     }
   `;
 
-  // ISO build-time string, set by <nexus-view> via the `.buildTime=` binding
-  // once the guest's nexus.ui.buildInfo broadcast arrives. Empty until then;
-  // while empty the footer shows only the client + version line.
-  //
-  // A plain field + manual setter (NOT a Lit `static properties` reactive
-  // prop): Lit's `.buildTime=` binding assigns the JS property, which invokes
-  // this setter and calls requestUpdate() to repaint the footer. This matches
-  // the requestUpdate() convention the other pages/nexus/ elements use and
-  // avoids the reactive-property machinery entirely.
+  // ISO build time, set via the `.buildTime=` binding once build info arrives;
+  // empty until then (the footer shows only client + version). A plain field
+  // whose setter calls requestUpdate(), not a reactive property.
   private buildTime_ = '';
 
   get buildTime(): string {

@@ -244,17 +244,6 @@ export class TabItem extends CrTabItemElementBase implements TabObserver {
   //   `;
   // }
 
-  // private renderList_() {
-  //   return html`
-  //     <div id="content">
-  //       ${this.renderIcon_()}
-  //       <span id="titleText"></span>
-  //       <!-- <tabstrip-alert-indicators id="alertIndicators"></tabstrip-alert-indicators> -->
-  //       ${this.renderCloseButton_()}
-  //     </div>
-  //   `;
-  // }
-
   /** ------------- i18n ------------- */
 
   // private i18nCloseLabel_(title: string) {
@@ -272,37 +261,6 @@ export class TabItem extends CrTabItemElementBase implements TabObserver {
     event.stopPropagation();
     tabsController.closeTab(this.tabId);
   }
-
-  // private onKeydown_(event: KeyboardEvent) {
-  //   switch (event.key) {
-  //     case "Enter":
-  //     case " ":
-  //       event.preventDefault();
-  //       this.onActivate_(event);
-  //       break;
-  //     case "Delete":
-  //     case "Backspace":
-  //       event.preventDefault();
-  //       this.onClose_(event);
-  //       break;
-  //     case "ArrowUp":
-  //       event.preventDefault();
-  //       this.dispatchNavigate_(-1);
-  //       break;
-  //     case "ArrowDown":
-  //       event.preventDefault();
-  //       this.dispatchNavigate_(1);
-  //       break;
-  //     case "Home":
-  //       event.preventDefault();
-  //       this.dispatchNavigate_(Number.MIN_SAFE_INTEGER);
-  //       break;
-  //     case "End":
-  //       event.preventDefault();
-  //       this.dispatchNavigate_(Number.MAX_SAFE_INTEGER);
-  //       break;
-  //   }
-  // }
 
   // private dispatchNavigate_(direction: number) {
   //   this.dispatchEvent(new CustomEvent(NAVIGATE_EVENT, {

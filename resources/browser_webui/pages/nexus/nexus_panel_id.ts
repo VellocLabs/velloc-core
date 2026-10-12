@@ -3,18 +3,9 @@
 // found in the LICENSE file.
 
 /**
- * This panel's id.
- *
- * One browser window is one panel: the guest it hosts and this page meet on
- * `shell/<panelId>` (the runtime's topic for window chrome — layout, boot
- * progress, build info, the reveal). Two windows share one SharedWorker, so
- * without the id a second window's layout frames would move the first
- * window's native views.
- *
- * Minted per page load and handed to the guest in the `nexus-init` payload,
- * which is also this page's identity on its own runtime connection. It does
- * not outlive the page: a reload is a new panel as far as the runtime is
- * concerned, and the topic's snapshot brings the fresh panel up to date.
+ * This panel's id. One window is one panel; the guest and this page meet on
+ * `shell/<panelId>`, so one window's layout frames cannot move another's native
+ * views. Minted per page load and sent in the `nexus-init` payload.
  */
 
 let cached: string|undefined;

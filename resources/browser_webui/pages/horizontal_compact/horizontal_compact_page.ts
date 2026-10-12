@@ -3,15 +3,9 @@ import {installHoverSwap, type HoverSwapHandle} from '../../utils/hover_swap_uti
 import '../../components/native/native_view_aliases.js';
 
 /**
- * Horizontal Compact Layout (kCompactStandard)
- *
- * Similar to normal Chrome UI but with a collapsible tab strip:
- * - Shows only the toolbar region by default
- * - Has a 10px hover area at the top that reveals the tab strip when hovered
- * - Two native UI regions: TabStripRegionView (top) and ToolbarView (toolbar)
- *
- * When entering this mode, the browser's default layout is restored first
- * (like kStandard mode does) to ensure all native views are in their correct positions.
+ * Horizontal compact layout (kCompactStandard): the toolbar only, with a 10px
+ * hover area at the top that reveals the tab strip. Entering it first restores
+ * the browser's default layout.
  */
 export class HorizontalCompactPage extends CrLitElement {
   private tabStripHoverSwapHandle_: HoverSwapHandle | null = null;

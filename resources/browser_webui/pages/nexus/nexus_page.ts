@@ -14,13 +14,9 @@ import type {NexusViewElement} from './nexus_view.js';
 // `nexusSessionsSummary` updates from the SharedWorker.
 
 /**
- * Thin panel host (Phase 4). The topbar + settings UI moved into the React
- * guest (`nexus_web/`), so this page is now just the webview host
- * (`<nexus-view>`). It keeps two host-facing responsibilities:
- *   - the `window.customBrowserOpenNexusSettings` / `?settings=` deep-link,
- *     forwarded to the guest (which renders the React settings); and
- *   - the OS caption controls + webapp-URL bootstrap, which live in
- *     `<nexus-view>` and the surrounding native shell.
+ * Thin panel host: the `<nexus-view>` webview host, plus the
+ * `window.customBrowserOpenNexusSettings` / `?settings=` deep-link forwarded to
+ * the guest.
  */
 export class NexusPage extends CrLitElement {
   static override styles: CSSResultGroup = css`

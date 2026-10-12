@@ -1,30 +1,6 @@
-// utils/hover_swap_util.ts
-// Generic "hover to reveal" helper for Chromium WebUI, using native capture.
-//
-//
-// Usage (attribute host mode):
-//   const handle = installHoverSwap({
-//     enterEl: el,
-//     attributeHost: host,
-//     hoverEnterName: (target, revealed) => {
-//       target.toggleAttribute('revealed', revealed);
-//       if (!revealed) {
-//         target.removeAttribute('revealed-completed');
-//       }
-//     },
-//     transitioned: (target, propertyName) => {
-//       if (propertyName !== 'height') {
-//         return false;
-//       }
-//       target.setAttribute('revealed-completed', '');
-//       return true;
-//     },
-//   });
-//
-// Notes:
-// - Starts a native capture against the bounds of `enterEl` when shown,
-//   so "mouse move out" is detected reliably even when leaving WebUI chrome.
-// - Falls back to DOM-only tracking if native capture is unavailable/fails.
+// Generic "hover to reveal" helper for WebUI. While shown it runs a native
+// capture against `enterEl`'s bounds, so leaving the WebUI is still detected;
+// falls back to DOM-only tracking if native capture fails.
 
 import {startElementCapture, type CaptureHandle} from './mouse_capture_util.js';
 import {BrowserApiProxyImpl} from '../browser_api_proxy.js';

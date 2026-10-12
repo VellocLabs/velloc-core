@@ -82,15 +82,8 @@ export class NativeViewHolder extends CrLitElement {
       cancelAnimationFrame(this.initialSendRaf_);
       this.initialSendRaf_ = null;
     }
-    // If this view was ever pushed to the browser, hide it on detach. The
-    // native side has no per-view removal (layouts are only cleared on a mode
-    // switch), and ViewNativeUI keeps the reparented Chromium view visible
-    // based on the last layout it received. So a view declared by a page that
-    // only briefly mounted — e.g. the kSidebar page flashing in a kNexus
-    // window before the mode resolves, which pushes the address bar / toolbar
-    // — would otherwise linger forever after the page unmounts. buildParams()
-    // reports visible:false once we're disconnected, which makes
-    // ViewNativeUI::OnLayout() call SetVisible(false) on the native view.
+    // On detach, hide a view that was ever pushed to the browser: the native
+    // side has no per-view removal and keeps it visible per the last layout.
     if (this.lastJson !== undefined) {
       BATCH.enqueue(this.buildParams());
     }
@@ -146,26 +139,6 @@ export class NativeViewHolder extends CrLitElement {
     }
     return null;
   }
-
-  // private findOutermostAnchorRoot(): Element|null {
-  //   let outermost: Element|null = null;
-  //   let node: Node|null = this;
-  //   for (let i = 0; i < 256 && node; i++) {
-  //     if (node instanceof Element) {
-  //       if (node.hasAttribute('data-anchor-layout-root')) {
-  //         outermost = node;
-  //       }
-  //       node = node.parentElement ?? node.getRootNode();
-  //     } else if (node instanceof ShadowRoot) {
-  //       node = node.host;
-  //     } else if (node instanceof Document || node instanceof DocumentFragment) {
-  //       node = (node as any).host ?? null;
-  //     } else {
-  //       break;
-  //     }
-  //   }
-  //   return outermost;
-  // }
 
   private attachRootObserver(root: Element) {
     this.detachRootObserver();

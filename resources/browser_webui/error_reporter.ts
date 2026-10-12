@@ -1,13 +1,6 @@
-// === Global Error Reporter ================================================
 /**
- * GlobalErrorReporter — capture ONLY top-level WebUI errors.
- *
- * Captures:
- *  - JS runtime errors (window.onerror via addEventListener('error'))
- *  - Resource load failures (img/script/link) using capture phase
- *  - Unhandled promise rejections (window.onunhandledrejection)
- *
- * No iframe forwarding; logs with console.log by default.
+ * GlobalErrorReporter: captures top-level WebUI JS errors, resource load
+ * failures and unhandled rejections; no iframe forwarding; logs to console.
  */
 export interface ErrorPayload {
   type: 'error' | 'resource-error' | 'unhandledrejection';
@@ -113,14 +106,3 @@ export class GlobalErrorReporter {
 
 // Singleton
 export const errorReporter = new GlobalErrorReporter();
-
-/** Example sink that POSTs to a backend (replace URL and auth as needed)
-export const fetchSink: ErrorSink = async (p) => {
-  await fetch('/_errors', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(p),
-    keepalive: true, // allow during unload
-  });
-};
-*/

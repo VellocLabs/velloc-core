@@ -3,27 +3,10 @@
 // found in the LICENSE file.
 
 /**
- * The window chrome's feed: `shell/<panelId>` on the runtime connection.
- *
- * `<nexus-view>` needs four things from the guest — where to put
- * `<main-contents-view>`, how far boot has got, what the guest bundle was
- * built from, and when the boot overlay may go. They arrived as `nexus.ui.*`
- * push events on a bespoke bridge until phase 6 of the remote-ready plan; they
- * are one topic now, and this page reads it as a `panel-host` client
- * (`nexus_runtime_client.ts`) over the real protocol codec.
- *
- * Two behaviours worth keeping in mind:
- *
- *   - The topic opens with a SNAPSHOT, so a panel that connects after the
- *     guest has already reported (a panel reload, a re-opened window) paints
- *     current geometry at once. The old client relied on the worker replaying
- *     its hand-kept caches to each new port.
- *   - Subscribing is per panel, so a second window's frames can no longer move
- *     this window's native views.
- *
- * The subscribe API is unchanged (`onDismissBootWelcome`, `onMainContentsLayout`,
- * `onBuildInfo`, `onBootProgress`), because what `<nexus-view>` does with each
- * signal did not change.
+ * The window chrome's feed: `shell/<panelId>` on the runtime connection
+ * (layout, boot progress, build info, overlay dismissal). The topic opens with
+ * a snapshot, so a late panel paints current geometry at once; subscriptions
+ * are per panel, so another window's frames cannot move this one's views.
  */
 
 import {connectPanelRuntime, type RuntimeClientHandle} from

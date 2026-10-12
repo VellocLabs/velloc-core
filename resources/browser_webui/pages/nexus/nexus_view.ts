@@ -22,23 +22,9 @@ import './nexus_guest_recovery.js';
 import {LOADING_STAGE_ORDER, type LoadingStage} from './nexus_welcome.js';
 import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 
-// Fallback in case the React guest never signals nexus.ui.dismissBootWelcome
-// (e.g. boot stalls in an error state). It bounds time SINCE THE LAST SIGN OF
-// PROGRESS, not total boot time: every progress signal re-arms it (see
-// onLoadingStage_ / onBootProgress_), so a slow-but-progressing boot keeps the
-// splash up until the guest is genuinely ready — only a true stall (no progress
-// for this long) hides it, surfacing whatever state React is in (incl. its
-// error UI). The old flat 10 s cap dismissed the splash mid-boot on slow
-// profiles: a legitimately slow guest (worker.ready at ~12-15 s cold) was
-// revealed still loading — the "guidance page → loading skeleton → conversation"
-// flash. The window need only exceed the largest gap BETWEEN progress signals:
-// the SharedWorker re-emits a keepalive every few seconds through its long,
-// stage-boundary-less runtime build (MCP connect + transcript hydration +
-// engine construction — see BrowserRuntimeWorker.runInit), so the only
-// uncovered gap is the guest's initial boot (handshake + worker warm-up + React
-// import, the `loading → rendering` span). This is sized to clear that with
-// margin. <main-contents-view> is independent — it tracks the guest's
-// `mainContentsLayout` events (see below).
+// Fallback for a guest that never dismisses the boot welcome. It bounds the
+// time since the last progress signal (each one re-arms it), not total boot
+// time, and is sized to clear the guest's initial boot with margin.
 const DISMISS_BOOT_WELCOME_FALLBACK_MS = 25_000;
 
 export class NexusViewElement extends CrLitElement {
@@ -135,18 +121,8 @@ export class NexusViewElement extends CrLitElement {
   // and passed to <nexus-welcome> for the footer's live loading-status
   // segment. Applied via requestUpdate() like the other overlay inputs.
   private loadingStage_: LoadingStage = 'starting';
-  // Latest guest-reported webview_area geometry. Null until the first
-  // event. Applied imperatively (not via render()) — splitter drags in
-  // the guest stream one event per frame and a full lit re-render per
-  // frame would be wasteful next to four inline-style writes.
-  //
-  // The pre-refactor flags this replaces (`mainContentsVisible_` latch +
-  // `transientAgentZoneShow_` + the toggleAgentZone/showAgentZoneTransient
-  // entry points + the <cr-splitter> and its width persistence via
-  // IntKey.kNexusViewWidth) are all gone: visibility is now purely
-  // automatic per session (visible ⟺ the active session owns a tab in
-  // this kNexus window) and the split lives INSIDE the guest
-  // (MultiSessionShell's webview_area splitter).
+  // Latest guest-reported webview_area geometry, null until the first event.
+  // Applied imperatively: the guest streams one event per frame during drags.
   private mainContentsLayout_: MainContentsLayoutPayload|null = null;
   private mainContentsEl_: HTMLElement|null = null;
   // Set when the guest is known not to be coming up: either the `nexus-init`
@@ -244,30 +220,10 @@ export class NexusViewElement extends CrLitElement {
     this.requestUpdate();
   }
 
-  // Clear the `nexus.webapp_url` override, then restart the client. The reset
-  // goes through the legacy `setWebappUrl` chrome.send route
-  // (NexusSettingsHandler, registered on this WebUI by custom_browser_webui.cc)
-  // — empty string means "use the built-in default" (nexus_guest_config.cc).
-  //
-  // Restart, not `location.reload()`: reloading the panel does pick up the new
-  // pref (the resolved guest URL is injected into loadTimeData when the WebUI
-  // controller is constructed, so it only takes effect on a fresh page), but a
-  // reload alone was routinely not enough — the overlay's own hint told the
-  // user to restart the client if the panel came back empty, which made the
-  // restart the second half of this one recovery step rather than a separate
-  // choice. Doing both here is why the overlay no longer offers a standalone
-  // "Restart client" button. The restart restores the open session, so the
-  // cost of taking it unconditionally is a few seconds.
-  //
-  // Restart via `chrome.send`, not `sendWithPromise`
-  // (NexusSettingsHandler::HandleRestartBrowser → nexus::RestartClient): the
-  // route deliberately never answers — the browser is on its way out — so
-  // awaiting it would hang, and there is nothing to do on this page
-  // afterwards anyway. And not the guest bridge's `appInfo.relaunch`, which
-  // the About page's "Restart now" button calls for the same job: this overlay
-  // exists precisely because the guest never completed its handshake, so that
-  // bridge is unreachable from here by construction. Both routes land on the
-  // same nexus::RestartClient.
+  // Clears the `nexus.webapp_url` override (empty = built-in default) and
+  // restarts the client, which restores the open session. The restart goes by
+  // `chrome.send`: that route never answers, and the guest bridge is
+  // unreachable from this overlay.
   private async onRecoveryReset_() {
     try {
       await sendWithPromise('setWebappUrl', '');
@@ -465,16 +421,10 @@ export class NexusViewElement extends CrLitElement {
   }
 
   protected override render() {
-    // <webview#nexusPane> stays mounted at all times and is always
-    // full-bleed — the chat/browser split now lives INSIDE the guest
-    // (MultiSessionShell's per-session webview_area + splitter), with
-    // <main-contents-view> as an absolutely positioned overlay tracking
-    // the guest's reports (see applyMainContentsLayout_).
-    //
-    // While the boot welcome is up the webview keeps its full layout size
-    // but is visually hidden via the `tiny-corner` class, so the inner
-    // React app lays out at the real conversation viewport and produces
-    // compositor frames the whole time; reveal is a pure visibility flip.
+    // <webview#nexusPane> stays mounted and full-bleed; <main-contents-view> is
+    // an overlay tracking the guest's reports. While the boot welcome is up the
+    // webview keeps its layout size but is hidden (`tiny-corner`), so reveal is
+    // a pure visibility flip.
     return html`
       <webview id="nexusPane"
                class=${this.bootWelcomeDismissed_ ? '' : 'tiny-corner'}

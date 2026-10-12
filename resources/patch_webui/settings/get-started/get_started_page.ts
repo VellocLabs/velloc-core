@@ -756,16 +756,11 @@ export class GetStartedPage extends CrLitElement {
     }
   }
 
-  // Whether the legacy getSearchEnginesList() WebUI message is safe to call.
-  // That handler is gated by `CHECK(!IsEnabled(kSearchSettingsUpdate))` in
-  // chrome/browser/ui/webui/settings/search_engines_handler.cc, so invoking it
-  // while the SearchSettingsUpdate feature is enabled (e.g. via the field-trial
-  // testing config in dev builds) crashes the browser process. The replacement
-  // getCategorizedTemplateUrls() API returns @-shortcuts rather than the default
-  // engine this page renders, so when the feature is on we skip the inline list;
-  // the engine picker falls back to chrome://settings/searchEngines.
-  // TODO(crbug.com/494551138): adopt the new API once SearchSettingsUpdate
-  // launches and the categorized data carries the default engine.
+  // Whether the legacy getSearchEnginesList() message is safe to call: its
+  // handler CHECK-crashes while SearchSettingsUpdate is enabled, so the page
+  // then skips the inline list and the picker falls back to
+  // chrome://settings/searchEngines.
+  // TODO(crbug.com/494551138): adopt the new API once the feature launches.
   private useLegacySearchEnginesList_(): boolean {
     return !(loadTimeData.valueExists('searchSettingsUpdate') &&
              loadTimeData.getBoolean('searchSettingsUpdate'));

@@ -1,29 +1,10 @@
-// Host → guest theme delivery.
-//
-// The guest (nexus_web) is an ordinary web page inside a <webview>: it cannot
-// load chrome://theme/colors.css, so on its own it can only carry a
-// hard-coded copy of Chrome's DEFAULT light and dark palettes (globals.css).
-// This page, being WebUI, has the live palette — the user's Appearance › Mode
-// AND colour theme, refreshed by ColorChangeUpdater on every change. So the
-// host resolves a small set of colour ROLES here and posts them into the
-// guest, which maps them onto its own design tokens. The guest's hard-coded
-// blocks remain the fallback when nothing arrives (older binary, or a host
-// that never sends).
-//
-// Wire shape (additive, ignore-if-absent — no interface bump, see G-3):
+// Host -> guest theme delivery: this WebUI page resolves colour roles from the
+// live palette and posts them to the guest, which keeps its built-in palette
+// when nothing arrives. Wire (additive, no interface bump, G-3):
 //   { type: 'nexus-theme', nexus: true,
 //     theme: { scheme: 'light'|'dark', colors: { <role>: 'rgb(r, g, b)' } } }
-// Sent once right after the bridge bootstrap is forwarded (the guest's
-// listener is installed at module entry, before it acks `nexus-init`), then
-// again on every colour-provider change. Every value is a browser-resolved
-// `rgb()`/`rgba()` string — the guest validates that shape and drops anything
-// else, so a typo here degrades to the fallback palette, never to broken CSS.
-//
-// The role → Chrome token table below is THE place to tune "which Chrome
-// colour does the guest use for X". The guest's role → design-token table
-// (nexus_web/src/browser/boot/hostTheme.ts) says which tokens each role
-// feeds. Measured resolutions (default theme) are noted per row so a change
-// can be judged without launching.
+// Sent after the bridge bootstrap is forwarded and on every colour change; the
+// guest drops any value that is not an `rgb()`/`rgba()` string.
 
 import {COLORS_CSS_SELECTOR} from
     'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';

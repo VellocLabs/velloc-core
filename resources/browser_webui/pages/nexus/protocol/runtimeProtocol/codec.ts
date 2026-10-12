@@ -7,33 +7,12 @@
 // its source disagree (nexus_web `protocol-mirror.test.ts`).
 
 /**
- * UI ⇄ Runtime protocol — wire codec.
+ * UI ⇄ Runtime protocol — wire codec. Blob chunks are
+ * `u32be headerLen | header (JSON, UTF-8) | chunk bytes`; frames are JSON text.
  *
- * Frames travel as JSON text; blob chunks travel as binary messages laid out
- * `u32be headerLen | header (JSON, UTF-8) | chunk bytes`. That layout is the
- * one thing every transport shares: a WebSocket sends the encoded buffer as
- * one binary message (a copy, unavoidably); a MessagePort transport posts
- * `{header, bytes}` with the `ArrayBuffer` in the transfer list instead and
- * never calls `encodeBlobChunk` at all. Either way the receiver ends up with
- * the same `{header, bytes}` pair, so nothing above the transport knows which
- * path the bytes took.
- *
- * `isFrame` is the port-level gate (the successor of the direct bridge's
- * `hostBridge: true` tag) and it validates the ENVELOPE completely: kind,
- * every required field, every enumeration (against the same `as const` lists
- * the types are derived from), and every element of a nested collection — so
- * code that trusts the `value is Frame` narrowing never dispatches on an
- * unknown `bye.code` or reads undefined out of `server.capabilities[]`.
- * Two things stay opaque on purpose: `payload` / `result` (capability
- * handlers own those schemas — the hub's own built-in payloads have guards
- * below), and unknown extra keys (additive fields must cross versions without
- * a bump). And because `JSON.stringify` drops a key whose value is
- * `undefined`, an absent `payload` / `result` is accepted and simply reads as
- * `undefined`.
- *
- * The protocol version is checked by the hub, not here: `hello` / `welcome`
- * only need `v` to be a positive integer to be frames, so a client speaking a
- * version this runtime does not serve still gets a `bye` instead of silence.
+ * Security: `isFrame` is the port-level gate and validates the ENVELOPE completely
+ * (kind, required fields, enumerations, nested elements). `payload` / `result` and
+ * unknown extra keys stay opaque; the protocol version is checked by the hub.
  */
 
 import {
@@ -156,29 +135,14 @@ export function isFrame(value: unknown): value is Frame {
 }
 
 /**
- * The RECEIVE gate: `isFrame`, except that an enumeration value this build
- * does not know is read as its documented fallback instead of dropping the
- * frame. A later version may add an error code, a scope, a bye code or an
- * event form; a receiver built before it must degrade, not go silent — a
- * dropped `res` hangs its request until the timeout, a dropped `welcome`
- * never connects, a dropped `evt` leaves a seq hole that re-subscribes into
- * the same frame. Only a STRING of the wrong value is tolerated; a missing
- * or mistyped field still fails the frame. Fallbacks (D-2 invariant
- * "receivers tolerate unknown values"):
- *
- * - `res.error.code` → `internal`; the wire's `retryable` is kept and the
- *   original code travels as `unknownCode`.
- * - `welcome.scope.mode`, `hello.scopeCeiling` → `observe` (least; the
- *   advertised capabilities are already filtered by the sender).
- * - `hello.client.kind` → `browser`.
- * - `hello.auth.mode` → a `pair` with no pairing id, which the hub refuses
- *   with `bye unauthorized` instead of leaving the client waiting.
- * - `bye.code` → `shutting_down`: the peer left for a reason we cannot name;
- *   a reconnecting client retries on its backoff, which is how it learns more.
- * - `evt.form` → an empty `deltas` batch: the seq advances, no listener fires.
- *
- * An unknown frame KIND is still dropped: the protocol adds none (invariant 1).
- * Returns a normalized copy when it had to change anything, else `value`.
+ * Contract: the RECEIVE gate: `isFrame`, except that an unknown enumeration STRING is read as
+ * its fallback instead of dropping the frame (D-2); a missing or mistyped field
+ * still fails. Fallbacks: `res.error.code` → `internal` (original in `unknownCode`);
+ * `welcome.scope.mode`, `hello.scopeCeiling` → `observe`; `hello.client.kind` →
+ * `browser`; `hello.auth.mode` → a `pair` with no pairing id (refused `bye
+ * unauthorized`); `bye.code` → `shutting_down`; `evt.form` → an empty `deltas` batch.
+ * An unknown frame KIND is still dropped. Returns a normalized copy when it changed
+ * anything, else `value`.
  */
 export function readFrame(value: unknown): Frame | null {
   if (!isDict(value) || !isFrameKind(value['kind'])) return null

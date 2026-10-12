@@ -7,41 +7,11 @@
 // its source disagree (nexus_web `protocol-mirror.test.ts`).
 
 /**
- * UI ⇄ Runtime protocol — frame types (protocol version 1).
- *
- * These are the shapes every ClientConnection speaks to the RuntimeService
- * (the SharedWorker), regardless of transport: a MessagePort for the desktop
- * guest and the panel host, a WebSocket → relay → trunk for a phone, another
- * machine's Velloc, or a CLI. One connection carries only `Frame`s (JSON text)
- * and blob chunks (binary, `codec.ts`). The design that motivates every field
- * is P-3.
- *
- * Ten kinds, in three groups:
- *   handshake  hello / challenge / auth / welcome / bye   (before the connection exists)
- *   requests   req / res / cancel
- *   push       evt;  blob flow control  ack
- * Subscribing and heartbeats are ordinary requests on the hub's built-in
- * routes (`topics.subscribe` / `topics.unsubscribe`, `sys.ping`) — a request
- * with a response does not need its own frame kind. The protocol version
- * rides only on `hello` and `welcome`: it is a property of the connection,
- * negotiated once, so no other frame carries `v`.
- *
- * Skeleton status: types plus the pure helpers a unit test can pin. No hub,
- * no transport, no capability is registered on these yet.
- *
- * Zero-dependency by rule: nothing under `src/browser/runtimeProtocol/` imports from
- * outside the directory — `src/__tests__/runtime-protocol.test.ts` fails if
- * one does. The directory has to stay liftable into a package a Lit build or
- * a relay can consume.
- *
- * Versioning: additive changes (a new cap / act / topic / optional field /
- * error code) keep `RUNTIME_PROTOCOL_VERSION`; changing a frame's layout or
- * a field's meaning bumps it. This is the UI ↔ Runtime line, independent of
- * `NEXUS_INTERFACE_VERSION` (C++ ↔ JS).
- *
- * Enumerations are declared once as `as const` arrays and the types are
- * derived from them, so `codec.ts` validates against the same list the type
- * is made of — there is no second copy to drift.
+ * UI ⇄ Runtime protocol — frame types, version 1 (P-3). Contract: nothing under
+ * `src/browser/runtimeProtocol/` imports from outside it (`runtime-protocol.test.ts`).
+ * Additive changes keep `RUNTIME_PROTOCOL_VERSION`; changing a frame's layout or a
+ * field's meaning bumps it (independent of `NEXUS_INTERFACE_VERSION`). The version
+ * rides only on `hello` / `welcome`; enumerations are `as const` arrays the types derive from.
  */
 
 import type { WireError } from './errors.js'
@@ -76,15 +46,9 @@ export type ClientDescriptor = {
   /** Bundle build stamp (`__NEXUS_BUILD_TIME__`); diagnostics only. */
   build?: string
   /**
-   * The browser's `navigator.userAgent`, sent by a client that is NOT this
-   * machine's own shell — a remote page, which the desktop's Remote access
-   * page lists by device (F-24). It is how "3 devices" becomes "Chrome on
-   * Android / Safari on macOS": the peer IP is known only to the C++
-   * listener, and the UA is the one identifying fact the client itself can
-   * state. Diagnostics only — it grants nothing and is never trusted.
-   *
-   * The desktop shell omits it: it is not a device anyone needs listed, and
-   * an absent field keeps its `remote/state` row free of a UA nobody reads.
+   * The browser's `navigator.userAgent`, sent by a remote client so the desktop can
+   * list it by device (F-24); the desktop shell omits it. Diagnostics only — it
+   * grants nothing and is never trusted.
    */
   userAgent?: string
   /** desktop-shell / panel-host: the panel this client belongs to (from the nexus-init payload). */
@@ -150,13 +114,8 @@ export type WelcomeFrame = {
     platform: string
     pathSep: '/' | '\\'
     /**
-     * Who the runtime is running as — the DESKTOP's identity, for a client
-     * that is somewhere else (F-24). A remote page shows it in the topbar's
-     * connection tooltip, so the user can tell which machine the session
-     * they are driving actually runs on. Both fields are best-effort: an
-     * older host binary reports no machine name, and a runtime whose host
-     * call failed reports neither. Absent renders as one less line, never as
-     * a blank row.
+     * The DESKTOP's machine name, for a remote client's connection tooltip (F-24).
+     * Best-effort: absent when the host binary or its call could not report it.
      */
     hostName?: string
     /** The desktop's operating system, human-readable (`Windows 11`). */
@@ -294,13 +253,9 @@ const frameKindsCoverUnion: AssertEqual<FrameKind, Frame['kind']> = true
 void frameKindsCoverUnion
 
 /**
- * Every top-level key each frame kind may carry, required and optional alike.
- * Pinned to the TS types at compile time (below) and to the conformance
- * vectors by `runtime-protocol.test.ts` (every vector key must be listed here;
- * every key listed here must appear in some vector) — so a field added to a
- * type, the key table, or the vectors without the other two fails instead of
- * drifting. The wire itself stays open to additive keys: `isFrame` does not
- * reject unknown keys, or an older runtime could not talk to a newer client.
+ * Every top-level key each frame kind may carry, pinned to the TS types below and to
+ * the conformance vectors by `runtime-protocol.test.ts`. `isFrame` does not reject
+ * unknown keys, so an older runtime can talk to a newer client.
  */
 export const FRAME_KEYS = {
   hello: ['kind', 'v', 'client', 'auth', 'scopeCeiling', 'resume'],

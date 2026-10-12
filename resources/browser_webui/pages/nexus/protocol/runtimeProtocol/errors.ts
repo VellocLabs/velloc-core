@@ -7,13 +7,8 @@
 // its source disagree (nexus_web `protocol-mirror.test.ts`).
 
 /**
- * UI ⇄ Runtime protocol — the closed error-code set.
- *
- * `WireError.code` is a closed union on purpose: UI copy is looked up by code
- * in the message catalog, never rendered from `message` (which is English,
- * for logs). `retryable` is derived from the code, not chosen per call, so
- * two handlers cannot disagree about whether the same failure is worth a
- * retry.
+ * UI ⇄ Runtime protocol — the closed error-code set. UI copy is looked up by code,
+ * never rendered from `message` (English, for logs); `retryable` derives from the code.
  */
 
 export const ERROR_CODES = [

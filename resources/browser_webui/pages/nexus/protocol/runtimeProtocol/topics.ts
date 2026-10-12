@@ -7,18 +7,9 @@
 // its source disagree (nexus_web `protocol-mirror.test.ts`).
 
 /**
- * UI ⇄ Runtime protocol — topic ids.
- *
- * A topic is a string the TopicBroker keys its `seq` line and replay ring on.
- * The builders here are the only place the shapes are spelled out; `parseTopic`
- * is what a `TopicProvider.authorize` implementation uses to decide whether a
- * connection may see a topic (e.g. `session/<id>/…` against `scope.sessions`).
- *
- * The builders and `parseTopic` are inverses, and the builders enforce it:
- * a segment that is empty or contains `/` would produce an id the parser
- * cannot read back, so it is rejected where the string is made (a developer
- * error, hence a throw) instead of surfacing later as a silent
- * `forbidden_scope` on the server.
+ * UI ⇄ Runtime protocol — topic ids. `parseTopic` is what `TopicProvider.authorize`
+ * uses to decide whether a connection may see a topic. The builders throw on an empty
+ * segment or one containing `/`, so every id parses back.
  */
 
 import type { TopicId } from './frames.js'

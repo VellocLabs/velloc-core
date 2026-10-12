@@ -7,21 +7,9 @@
 // its source disagree (nexus_web `protocol-mirror.test.ts`).
 
 /**
- * UI ⇄ Runtime protocol — route addressing.
- *
- * Every request names a `cap.act` pair. Capability names are the same ones
- * the C++ bridge uses today (`ui`, `appearance`, `session`, …) so the 41
- * direct-bridge call sites in `nexusBridgeActions.ts` migrate by swapping the
- * transport, not the names. Compared with the direct bridge's
- * `BrowserBridgeRoute` there is no `namespace` field: this protocol has one
- * namespace, and the hub decides per route whether a handler is local to the
- * runtime or a proxy to the host.
- *
- * Two forms, one meaning: in code a route is the `Route` object; on the wire
- * it is the `RouteKey` string `"cap.act"` (twenty bytes less per frame, and
- * it is what logs and registries key on anyway). `routeKey` / `parseRouteKey`
- * convert, and `parseRouteKey` is strict — exactly two identifier-shaped
- * segments — so the string cannot smuggle a third segment or a space.
+ * UI ⇄ Runtime protocol — route addressing: a `Route` object in code, the `RouteKey`
+ * string `"cap.act"` on the wire. `parseRouteKey` is strict — exactly two
+ * identifier-shaped segments — so the string cannot smuggle a third segment or a space.
  */
 
 export type Route = {

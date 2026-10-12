@@ -17,24 +17,10 @@
 
 namespace nexus {
 
-// Utility-process implementation of `nexus.mojom.NexusSearchService`.
-//
-// Owns the `TranscriptSearchEngine` — and therefore the span cache and
-// every `.sdi` read and write. Nothing about searching or sidecars runs
-// in the browser process any more; the browser sends an ordered list of
-// transcripts and receives matches.
-//
-// The engine keeps its in-memory cache across calls, so a process that
-// survives several searches re-reads nothing. When the process is
-// recycled on idle the cache dies with it, and the sidecars on disk are
-// what make the next launch cheap again.
-//
-// Searching runs on a task-runner sequence, NOT on the mojo main thread.
-// That is deliberate: it leaves this thread free to receive the next
-// query while the previous one is still scanning, which is the only way
-// the engine's generation counter can cancel it. Search on the main
-// thread would serialize a keystroke burst into one full search per
-// keystroke.
+// Utility-process `nexus.mojom.NexusSearchService`. Owns the
+// `TranscriptSearchEngine`, its cache and every `.sdi` read and write. Searches
+// run on a task-runner sequence, not the mojo thread, so a newer query can
+// arrive and cancel the running one.
 class NexusSearchServiceImpl : public mojom::NexusSearchService {
  public:
   explicit NexusSearchServiceImpl(

@@ -9,19 +9,10 @@
 
 namespace nexus {
 
-// On-disk persistence for a transcript's span index — the `.sdi` sidecar.
-//
-// The index is derived data: it can always be rebuilt by re-scanning the
-// transcript. Persisting it only removes that first scan after a restart,
-// so the format is chosen for load speed over compactness — fixed-width
-// records, no compression, read straight into vectors.
-//
-// The sidecar is NOT maintained as the transcript grows. Nothing hooks
-// the writer; a search is the only thing that ever touches it. Each
-// search validates the stamps below against the transcript and, when
-// they disagree, brings the index up to date (a tail rescan for an
-// append, a full rebuild otherwise) and rewrites the file. A stale or
-// corrupt sidecar therefore costs a rebuild, never a wrong result.
+// On-disk `.sdi` sidecar for a transcript's span index: derived data, laid out
+// for load speed. Updated only by a search, which validates the stamps below
+// and rescans or rebuilds on mismatch, so a stale sidecar never gives a wrong
+// result.
 
 /** `<dir>/transcript.jsonl` → `<dir>/transcript.sdi`. */
 base::FilePath SpanIndexFilePathFor(const base::FilePath& transcript);

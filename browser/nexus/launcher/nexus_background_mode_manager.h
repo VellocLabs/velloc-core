@@ -21,35 +21,11 @@ namespace nexus {
 
 class NexusStatusIcon;
 
-// Browser-process-global controller for the Nexus launcher's background mode.
-//
-// Mirrors the relevant slice of Chrome's glic::GlicBackgroundModeManager: it
-// observes the per-installation local_state pref
-// prefs::kBackgroundModeEnabled — the ONE System toggle ("Keep Velloc running
-// in the background", default on) — and, while that pref is true, both
-//   * holds a ScopedKeepAlive (KeepAliveOrigin::NEXUS_LAUNCHER) so the browser
-//     process survives after the last window closes, and
-//   * shows a system-tray icon (Velloc's production logo) whose click re-opens
-//     the Nexus window.
-// The same pref makes the kNexus window park its page instead of destroying
-// it on close (nexus::NexusBackgroundPanelHost), so one switch means: close
-// the window and Velloc keeps running — sessions included — in the tray.
-//
-// prefs::kBackgroundModeEnabled is Chrome's "continue running background
-// apps" pref; Chrome's own BackgroundModeManager only acts on it when a
-// background-capable extension is installed, which Velloc never has, so
-// reusing it is safe and gives the toggle a single source of truth. The
-// former nexus::prefs::kNexusLauncherEnabled is migrated into it once
-// (MigrateLegacyLauncherPref) and otherwise no longer read.
-//
-// A real quit still quits. Like Chrome's BackgroundModeManager
-// (OnAppTerminating), the manager listens for APP_TERMINATING
-// (browser_shutdown::AddAppTerminatingCallback), which fires when the last
-// browser closes during a try-to-quit exit: CDP Browser.close / end-session /
-// restart (chrome::ExitIgnoreUnloadHandlers, chrome::AttemptExit). It then drops
-// the keep-alive and the tray icon for good. A plain app-menu Exit
-// (chrome::AttemptUserExit, try_to_quit=false) does not fire it, so that one
-// still leaves Velloc in the tray, as upstream background mode does.
+// Browser-process-global background mode. While local_state
+// prefs::kBackgroundModeEnabled is true it holds a ScopedKeepAlive and shows a
+// tray icon that re-opens the Nexus window; the same pref makes a closed kNexus
+// window park its page. APP_TERMINATING (a try-to-quit exit) drops both for
+// good; a plain app-menu Exit leaves Velloc in the tray.
 class NexusBackgroundModeManager {
  public:
   // `status_tray` may be null (e.g. in unit tests / headless), in which case

@@ -50,17 +50,10 @@ struct AgentNotice {
   base::DictValue ToDict() const;
 };
 
-// Per-tab FIFO queue of pending `AgentNotice`s, attached to a
-// `content::WebContents` via `WebContentsUserData`. `BrowserTool::
-// BuildObservationDict` drains it into each observation, so a fact recorded
-// here on the browser side reaches the model even when the page swallowed the
-// corresponding JS error.
-//
-// Sticky until drained: a suppressed chooser fires asynchronously relative to
-// the tool action that caused it, so a notice may surface on a later
-// observation than the click that triggered it. Bounded (`kMaxNotices`,
-// drop-oldest) so a hostile page cannot flood the queue. Auto-cleared with the
-// WebContents.
+// Per-tab FIFO of pending `AgentNotice`s, drained into each observation by
+// BrowserTool so a browser-side fact reaches the model even when the page
+// swallowed the JS error. Sticky until drained; bounded (`kMaxNotices`,
+// drop-oldest) so a hostile page cannot flood it.
 class NexusPendingAgentNotice
     : public content::WebContentsUserData<NexusPendingAgentNotice> {
  public:

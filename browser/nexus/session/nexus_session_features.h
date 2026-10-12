@@ -9,16 +9,10 @@
 
 namespace nexus::features {
 
-// When enabled, every Nexus session owns a Chromium tab group; tabs
-// created by that session's BrowserTool are tagged with the session_key
-// (NexusSessionTabTag) and added to the group, tab-targeting actions
-// reject cross-session tab_ids, observations filter to the session's
-// own tabs, and OnSessionDeleted closes the session's tabs.
-//
-// When disabled, the legacy single-pool behavior is preserved:
-// RunCreateTabAction does not tag or group; ResolveTabIdOrReject /
-// GetActiveTabHandleId fall back to "active tab in active window";
-// BuildObservationDict does not filter.
+// When enabled, each Nexus session owns a tab group: its BrowserTool tags and
+// groups the tabs it creates, rejects cross-session tab_ids, filters
+// observations to its own tabs, and closes them on OnSessionDeleted. When
+// disabled, tools act on the active tab of the active window, unfiltered.
 BASE_DECLARE_FEATURE(kSessionScopedTabs);
 
 bool IsSessionScopedTabsEnabled();

@@ -84,15 +84,10 @@ struct TranscriptSearchResult {
   std::vector<TranscriptSearchMatch> matches;
 };
 
-// The span-index transcript searcher. All state (the per-file span
-// cache) is confined to one sequence: the adapter posts Search() to a
-// dedicated SequencedTaskRunner, so the cache needs no lock. RefCounted
-// so an in-flight search keeps the engine alive across an adapter
-// teardown (same pattern as NexusFsHost).
-//
-// Matching is span-iteration only, three prioritized passes per file:
-// user text → assistant text → tool call/result. Caps fill in that
-// order, so truncation keeps the most relevant hits.
+// The span-index transcript searcher. Its per-file span cache is confined to
+// one sequence, so it needs no lock; RefCounted so an in-flight search outlives
+// an adapter teardown. Three passes per file (user text, assistant text, tool
+// call/result) fill the caps in that order.
 class TranscriptSearchEngine
     : public base::RefCountedThreadSafe<TranscriptSearchEngine> {
  public:

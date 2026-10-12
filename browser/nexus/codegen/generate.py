@@ -91,22 +91,9 @@ class InputDecl:
         return self.wire_name or self.name
 
 
-# Map runtime.thread → suffix appended to the typed virtual's name. The
-# suffix makes the threading contract self-documenting on the call
-# site: a reader sees a `…OnThreadPool` suffix and immediately knows the
-# body runs off the UI thread; `RunNavigateOnUI` is unambiguously the
-# main-thread variant. The codegen also uses these to derive the matching
-# `Run<Name><Suffix>` / `Handle<Name><Suffix>` virtual name everywhere
-# it's emitted.
-#
-# The map is shared by both pipelines and kept total, but the pipelines
-# allow different subsets:
-#   - Tools: only "ui" / "any" (parse_declaration rejects "io" /
-#     "thread_pool"). A per-session tool category can't be safely posted
-#     off-UI via base::Unretained, so it hops blocking work inside its
-#     body instead — see file_tool and F-21.
-#   - API: "ui" / "thread_pool" (and "io" if ever needed). Its adapters'
-#     lifetime is the port service, so off-UI dispatch is permitted.
+# runtime.thread -> suffix of the typed virtual's name (`Run<Name><Suffix>` /
+# `Handle<Name><Suffix>`). Tools allow only "ui" / "any" (F-21); the API
+# pipeline also allows "thread_pool" and "io".
 THREAD_METHOD_SUFFIX_BY_VALUE: dict[str, str] = {
     "ui":          "OnUI",
     "io":          "OnIO",
@@ -115,17 +102,9 @@ THREAD_METHOD_SUFFIX_BY_VALUE: dict[str, str] = {
 }
 
 
-# =============================================================================
-# Code emission — one .gen.h per tool with three things:
-#   (1) Typed input struct
-#   (2) Abstract base class with the typed Run<Name> virtual
-#   (3) Inline schema builder Build<Name>Schema()
-#   (4) Inline extractor Extract(args, &input)
-# Plus one combined registry .gen.cc with AllSchemas().
-#
-# Single string template; the layout matches what an experienced C++
-# author would write by hand, minus the typing.
-# =============================================================================
+# Code emission: one .gen.h per tool (typed input struct, abstract base with
+# the typed Run<Name> virtual, Build<Name>Schema(), Extract(args, &input)),
+# plus one registry .gen.cc with AllSchemas().
 
 
 def cpp_string_literal(s: str) -> str:
@@ -168,21 +147,9 @@ def _doc_comment_lines(text: str, indent: str = "  ") -> list[str]:
             for line in text.split("\n")]
 
 
-# =============================================================================
-# Prose-field resolver: lets JSON manifest fields point at sibling .md
-# files instead of inlining long prose as a JSON string literal.
-#
-# Any string value whose content begins with `@file:<path>` is treated
-# as a reference: the codegen loads `<path>` relative to the JSON file's
-# parent directory, strips a single trailing newline (so the embedded
-# C++ constant matches the look of the prior inline JSON form), and
-# substitutes the contents in place. Plain strings pass through
-# unchanged — short labels like `"## Browser tools"` or `"tools_lead"`
-# stay inline where authoring a separate file would be overkill.
-#
-# The resolver is intentionally minimal: no template substitution, no
-# markdown parsing, no multi-section files. One .md per prose block.
-# =============================================================================
+# Prose-field resolver: a string value starting with `@file:<path>` is
+# replaced by that file (relative to the JSON file's directory), minus a
+# single trailing newline. Other strings pass through unchanged.
 
 
 # =============================================================================
@@ -190,35 +157,11 @@ def _doc_comment_lines(text: str, indent: str = "  ") -> list[str]:
 # =============================================================================
 
 
-# =============================================================================
-# Bridge-API codegen — *.api.json
-#
-# Each *.api.json
-# declares ONE bridge handler (a "wire action" like fs/stat or
-# llm/streamStart). Codegen emits a per-category abstract base
-# (`<Category>ApiBase`) that:
-#   (a) inherits NexusBridgeCapabilityHandler,
-#   (b) declares one typed input struct + Handle*() pure virtual per
-#       action,
-#   (c) wires every dispatcher in its ctor body. The dispatcher
-#       extracts the typed input, manufactures a BridgeResponseCallback,
-#       PostTasks to the declared thread (if not "ui"/"any"), and
-#       invokes the virtual.
-#
-# Schema (api_schema.json):
-#     name / description / inputs[] / runtime
-# `inputs[]` carries {name, type, required, description, wire_name}, plus a
-# `passthrough_payload` pseudo-type for actions whose payload is opaque and
-# not worth enumerating field-by-field.
-#
-# Concrete adapters (NexusFsBridgeAdapter, NexusLlmBridgeAdapter)
-# inherit the generated base and only override the per-action methods.
-# Their signature is uniform across all shapes:
-#
-#     void Handle<Name>On<Thread>(<Name>Input input,
-#                                 std::vector<MessagePortDescriptor> ports,
-#                                 BridgeResponseCallback done) override;
-# =============================================================================
+# Bridge-API codegen (*.api.json, one bridge handler each): emits a
+# per-category `<Category>ApiBase` that inherits NexusBridgeCapabilityHandler,
+# declares a typed input + Handle*() virtual per action, and wires each
+# dispatcher (extract input, make a BridgeResponseCallback, post to the
+# declared thread, invoke). `passthrough_payload` clones the whole payload.
 
 # Pseudo-type. The whole payload dict gets cloned into the field. Implies
 # required=true.
@@ -1077,15 +1020,8 @@ def validate_api(api_path: Path, schema_path: Path) -> None:
 # =============================================================================
 
 
-# =============================================================================
-# Skill registry emission — `nexus_skills_registry.gen.{h,cc}`.
-#
-# Reads every *.skill.json into a SkillDecl and emits an `AllSkills()`
-# accessor returning a vector<::nexus::SkillSchema>. The catalog adapter
-# (`catalog.listSkills`) consumes this and derives each skill's toolNames
-# from the tool schemas (whose `skill` field links membership). See
-# giggly-watching-pie.md Phase 4.
-# =============================================================================
+# Skill registry emission: `nexus_skills_registry.gen.{h,cc}` with an
+# `AllSkills()` accessor built from every *.skill.json.
 
     # No deferral marker — whether a skill defers is decided SOLELY by the
     # nexus_web session template's `deferredTools` (resolveDeferrableSkills).

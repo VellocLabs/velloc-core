@@ -15,19 +15,9 @@ class WebContents;
 
 namespace nexus {
 
-// Per-tab tag identifying the Nexus session that owns the tab. Attached
-// to a `content::WebContents` via `WebContentsUserData`; survives the
-// tab's full lifetime and disappears with the WebContents.
-//
-// The tag — not the Chromium tab group — is the source of truth. If the
-// user manually drags a tagged tab out of the session's group, the tag
-// remains and the tab is still session-owned. `BrowserTool` owns the
-// per-session group bookkeeping and re-groups stray tagged tabs on the
-// next `RunCreateTabAction` for that session.
-//
-// Untagged tabs (no `NexusSessionTabTag` attached) are tabs that the
-// user opened manually outside of any Nexus session; session-scoped
-// filters treat them as invisible to every session.
+// Per-tab tag naming the Nexus session that owns the tab (WebContentsUserData).
+// The tag, not the tab group, is the source of truth; untagged tabs are
+// invisible to every session's filters.
 class NexusSessionTabTag
     : public content::WebContentsUserData<NexusSessionTabTag> {
  public:

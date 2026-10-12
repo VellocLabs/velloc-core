@@ -20,23 +20,10 @@ class WebContents;
 
 namespace nexus {
 
-// Per-tab "armed upload": the local file path(s) the Nexus agent staged to
-// satisfy the NEXT `<input type=file>` chooser opened by `contents`.
-//
-// Flow: `BrowserUpload` (RunUploadOnUI) calls `Arm()` and then clicks the
-// file input via the actor; the click makes Blink ask the browser to open
-// a file chooser, which reaches the `ENABLE_CUSTOM_BROWSER`-guarded hook in
-// `Browser::RunFileChooser` (chrome/browser/ui/browser.cc). That hook calls
-// `TryAnswerChooser()`, which — if this tab has an armed upload and the
-// chooser is a file-open mode — answers the chooser directly via
-// `content::FileSelectListener::FileSelected(...)` with the staged files
-// (no native dialog) and clears the armed state. If nothing is armed, the
-// hook falls through to the normal `FileSelectHelper` (native dialog).
-//
-// CDP-free by design: this is the in-process file-chooser path the browser
-// already uses for human picks, so it carries no DevTools-detectable
-// fingerprint. One-shot: the armed set is consumed on the first matching
-// chooser and auto-cleared with the WebContents.
+// Per-tab "armed upload": the file path(s) the agent staged for the NEXT file
+// chooser `contents` opens. A guarded hook in `Browser::RunFileChooser` calls
+// `TryAnswerChooser()`, which answers a file-open chooser with them (no native
+// dialog); otherwise the normal dialog runs. One-shot; cleared with the tab.
 class NexusPendingUpload
     : public content::WebContentsUserData<NexusPendingUpload> {
  public:

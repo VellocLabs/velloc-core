@@ -2,27 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// A guard on UPSTREAM behaviour the Nexus runtime depends on. No Nexus C++ is
-// exercised here; what is pinned is a promise Chromium makes and the guest
-// relies on.
-//
-// The guest page is the runtime's client (its SharedWorker runs the agent
-// loop) and is hidden much of the time while still working: the window is
-// minimized or covered, or closed and the page parked by
-// NexusBackgroundPanelHost. performance_manager's FreezingPolicy does not
-// exempt a page for not being a tab — with Battery Saver active, a hidden page
-// whose browsing instance was CPU-intensive in the background is frozen, and a
-// SharedWorker with no active client left is frozen with it
-// (SharedWorkerHost::OnClientStateChanged). A running turn would just stop.
-//
-// The guest prevents that without any browser change: it holds a Web Lock for
-// its whole life (nexus_web: src/browser/boot/runtimeKeepAlive.ts). A frame
-// holding a Web Lock gives its page CannotFreezeReason::kHoldingWebLock, and
-// FreezingPolicy consults CannotFreezeReasonsForType() before every freeze.
-//
-// That is the contract. If a Chromium rebase ever removes kHoldingWebLock from
-// a freezing type's applicable reasons, the guest's keep-alive silently stops
-// working for that type — nothing else in the tree would fail. This does.
+// Guards upstream behaviour the guest relies on: a frame holding a Web Lock
+// gets CannotFreezeReason::kHoldingWebLock, which FreezingPolicy honours, so a
+// hidden guest page (and its SharedWorker) is never frozen mid-turn.
 
 #include "components/performance_manager/freezing/freezing_policy.h"
 

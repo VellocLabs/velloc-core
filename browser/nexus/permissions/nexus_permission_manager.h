@@ -35,19 +35,9 @@ std::optional<NexusCapability> ParseCapability(const std::string& capability);
 // Converts a capability enum to its string representation.
 std::string CapabilityToString(NexusCapability capability);
 
-// Manages per-domain permission grants for Nexus-specific capability tiers.
-//
-// Each website origin that uses the Nexus panel gets independent permission
-// grants (FR-019a) — granting file-system access to origin A does not affect
-// origin B.
-//
-// Permission state follows data-model.md PermissionGrant transitions:
-//   NOT_ASKED → GRANTED (user approves prompt)
-//   NOT_ASKED → DENIED  (user rejects prompt)
-//   GRANTED   → DENIED  (user revokes in settings)
-//   DENIED    → GRANTED (user re-grants in settings)
-//
-// Thread safety: all methods must be called on the same sequence.
+// Per-origin permission grants for Nexus capability tiers: a grant to origin A
+// does not affect origin B. States: NOT_ASKED -> GRANTED / DENIED by prompt;
+// GRANTED <-> DENIED in settings. Single sequence only.
 class NexusPermissionManager {
  public:
   using PermissionCallback = base::OnceCallback<void(bool granted)>;

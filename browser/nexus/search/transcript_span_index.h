@@ -80,34 +80,14 @@ struct TranscriptSpanIndex {
   size_t ApproxBytes() const;
 };
 
-// Scans `data` — the file's bytes from offset `index->indexed_end`
-// onward — and appends spans + line metadata for every complete line.
-// One sequential pass, no JSON allocation: a structural mini-scanner
-// tracks string/escape state, brace depth and the current key path.
-//
-// Per line it classifies (writer format is the Vercel-style transcript
-// of nexus_web/src/utils/sessionStorage.ts):
-//   - top-level `type`: `user` / `assistant` / `system` lines are
-//     indexed; `__session_meta`, `custom-title`, `ai-title`,
-//     `attachment` and unknown types are skipped (they still advance
-//     the ordinal).
-//   - a `system` line carries its text in a TOP-LEVEL `message` STRING
-//     (not `message.content`) — e.g. {"type":"system","subtype":
-//     "browser_input","message":"User has approved …"} — so that string
-//     is the whole searchable span.
-//   - top-level `isMeta: true` rows are skipped entirely — injected
-//     context, not something a user searches for.
-//   - `message.content` as a plain string → kUserText / kAssistantText
-//     by row type.
-//   - `message.content[i]` blocks, classified by the block's `type`
-//     wherever that key sits in the block (the writer emits
-//     `{"text":…,"type":"text"}` — value before type):
-//       text                    → its `text` value
-//       tool-call / tool_use    → `toolName`/`name` value + full
-//                                 `args`/`input` value range
-//       tool-result/tool_result → `result`/`content`/`output` value
-//       reasoning / thinking    → skipped
-// Malformed lines contribute no spans (ordinal still advances).
+// Scans `data` (the file's bytes from `index->indexed_end` on) and appends
+// spans + line metadata for every complete line, in one pass with no JSON
+// allocation. Indexed rows: `user` / `assistant` / `system` (a system row's
+// top-level `message` string is its span); `isMeta: true` rows and other types
+// are skipped. Spans: a string `message.content`, or content blocks by `type`:
+// text, tool-call / tool_use (name + args/input), tool-result / tool_result
+// (result/content/output); reasoning / thinking skipped. Malformed lines add
+// no spans; skipped and malformed lines still advance the ordinal.
 void IndexTranscriptChunk(std::string_view data, TranscriptSpanIndex* index);
 
 }  // namespace nexus

@@ -34,31 +34,10 @@ class PrefRegistrySyncable;
 
 namespace nexus {
 
-// Profile-scoped, UI-thread registry of "which Nexus session owns how many
-// tabs, and where" — the per-session counts behind the guest's automatic
-// webview_area visibility, plus the last-work-tab hint behind
-// `session.setActiveSession`'s tab activation.
-//
-// Why this exists when BrowserTool already keeps `session_tabs_` /
-// `last_work_tab_`: every NexusBridgePortService owns its own ToolSessionRegistry
-// (and therefore its own BrowserTool instances), so that state is invisible
-// across ports. The guest's `session.setActiveSession` arrives on the page
-// port while tools execute on the worker port. The tracker is profile-keyed
-// and fed from both directions:
-//
-//   * the TabStripModelObserver (via BrowserTabStripTracker, filtered to
-//     this profile's browsers) sees every insert / remove / move — including
-//     user closes and the ~BrowserTool mass close on session delete; and
-//   * BrowserTool pings `NotifyTabBound` right after attaching the
-//     NexusSessionTabTag (the strip-insert event fires BEFORE the tag is
-//     attached, so the observer alone would tally the new tab as untagged)
-//     and mirrors `RecordWorkTab` into `SetLastWorkTab`.
-//
-// On any relevant event the tracker recomputes the full per-session map by
-// walking the profile's browsers for tagged tabs (same walk as
-// `BrowserTool::CollectSessionTabs`), diffs against its cache, and notifies
-// observers only for changed sessions. Recompute-everything is deliberate:
-// counts are tiny and the walk is self-healing against missed events.
+// Profile-scoped, UI-thread registry of each Nexus session's tab counts and
+// last work tab, visible across bridge ports. Fed by the tab-strip observer
+// and by BrowserTool (`NotifyTabBound`, since the insert event precedes the
+// tag); recomputes the whole map on each event and notifies changed sessions.
 class NexusSessionTabTracker : public KeyedService,
                                public TabStripModelObserver,
                                public BrowserTabStripTrackerDelegate {

@@ -22,31 +22,19 @@ namespace nexus {
 bool VerifyBinarySha256(base::span<const uint8_t> bytes,
                         std::string_view expected_hex);
 
-// Extract a single member (by exact archive path, forward-slash
-// separated) from an in-memory archive of the given format. Returns the
-// member's decompressed bytes, or nullopt on any failure: bad archive,
-// member missing, or a member that exceeds `max_member_bytes`.
-//
-// Pure + synchronous + CPU-bound — call this on a `base::ThreadPool`
-// sequence, never the UI thread. zip uses `zip::ZipReader`, tar.gz uses
-// `compression::GzipUncompress` + a minimal multi-entry ustar walk
-// (Chromium's `SingleFileTarReader` only handles single-entry archives).
+// Extracts one member (exact forward-slash archive path) from an in-memory
+// archive; nullopt on a bad archive, a missing member, or one larger than
+// `max_member_bytes`. CPU-bound: call on a ThreadPool sequence, never UI.
 std::optional<std::vector<uint8_t>> ExtractArchiveMember(
     base::span<const uint8_t> archive,
     BinaryArchiveFormat format,
     std::string_view member,
     size_t max_member_bytes);
 
-// Verify `archive`'s SHA-256 against `expected_sha256`, extract `member`,
-// and atomically install it at `dest` (parent dirs created; written to a
-// temp sibling then renamed, overwriting any existing file; POSIX exec bit
-// set). Also writes a `<dest>.sha256` sidecar recording `expected_sha256`
-// so a later IsInstalledUpToDate() can detect a config/version bump.
-// Returns false — writing nothing at `dest` — on a hash mismatch,
-// extraction failure, or any filesystem error.
-//
-// Blocking + CPU-bound (hashing + decompression + file I/O): call only on
-// a base::ThreadPool MayBlock sequence, never the UI thread.
+// Verifies `archive`'s SHA-256 against `expected_sha256`, extracts `member`
+// and installs it atomically at `dest` (temp sibling + rename, exec bit set),
+// plus a `<dest>.sha256` sidecar. On any failure writes nothing at `dest` and
+// returns false. Blocking: ThreadPool MayBlock sequence only, never UI.
 bool VerifyExtractAndWrite(base::span<const uint8_t> archive,
                            std::string_view expected_sha256,
                            BinaryArchiveFormat format,

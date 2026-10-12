@@ -33,16 +33,10 @@ struct DomainSandbox {
   base::FilePath storage_path;  // Profile-relative path for domain files.
 };
 
-// Per-profile KeyedService that manages DomainSandbox instances for agent
-// webapp origins. Enforces per-domain data isolation (FR-018):
-//   - All data access is scoped to the active domain
-//   - Switching domains presents a clean state (FR-018b)
-//   - Switching back restores all data (FR-018c)
-//
-// Domain metadata is stored in LevelDB under the profile directory at
-// `AgentDomainSandboxes/`.
-//
-// Thread safety: all methods must be called on the same sequence (UI thread).
+// Per-profile KeyedService managing DomainSandbox instances: all data access
+// is scoped to the active domain; switching domains shows a clean state and
+// switching back restores it. Metadata lives in LevelDB at
+// `AgentDomainSandboxes/`. UI sequence only.
 class DomainSandboxManager : public KeyedService {
  public:
   explicit DomainSandboxManager(const base::FilePath& profile_path);

@@ -51,21 +51,10 @@ struct EnsureBinaryResult {
   }
 };
 
-// Browser-process helper that lazily downloads a pinned binary (see
-// nexus_binary_registry.h) into ~/.velloc/bin/<id>/ on first use, so the
-// shell tools (Grep -> rg) can run it without the user installing it.
-//
-// Threading: download is async (SimpleURLLoader, non-blocking on the UI
-// thread). SHA-256 verification, archive extraction, file write, and the
-// POSIX exec bit all run on a base::ThreadPool MayBlock sequence — never
-// the UI thread. All public/private bookkeeping runs on the sequence the
-// instance is used from (the UI thread, via the per-session ProcessTool).
-//
-// Process-wide singleton with per-id memoization: concurrent Grep calls
-// (or multiple sessions) share a single in-flight download, and a
-// successful result is cached so later calls return instantly. Failures
-// are NOT cached, so a transient network error is retried on the next
-// invocation.
+// Lazily downloads a pinned binary into ~/.velloc/bin/<id>/ on first use. The
+// download is async; verification, extraction and the write run on a
+// ThreadPool MayBlock sequence, never UI. Process-wide singleton: concurrent
+// calls share one in-flight download; successes are cached, failures are not.
 class NexusBinaryInstaller {
  public:
   using EnsureCallback = base::OnceCallback<void(const EnsureBinaryResult&)>;

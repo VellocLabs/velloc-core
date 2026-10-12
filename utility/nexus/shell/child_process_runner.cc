@@ -38,18 +38,9 @@ namespace {
 
 #if BUILDFLAG(IS_WIN)
 
-// Slice 5 hardening: every spawned child is placed in a Job Object that
-// (a) kills the entire process tree when the JO handle closes
-// (KILL_ON_JOB_CLOSE) and (b) lets us call TerminateJobObject to nuke
-// every descendant in one syscall on timeout. Without this, processes
-// the child re-parents (via DETACHED_PROCESS or grandchildren that have
-// already exec'd) survive the parent's death and leak into the host.
-//
-// The Job Object is created with no quota limits and only KILL_ON_JOB_CLOSE
-// + BREAKAWAY_OK disabled, so the child cannot escape via CreateProcess
-// flags. Resource caps (memory, CPU) are intentionally *not* set here —
-// the SafeCommandPolicy clamps timeout / output bytes upstream, and
-// killing on timeout is enforced via TerminateJobObject below.
+// Security: every child goes in a Job Object with KILL_ON_JOB_CLOSE and no
+// breakaway, so the whole tree dies with the handle or on TerminateJobObject.
+// No resource caps; SafeCommandPolicy clamps timeout and output upstream.
 base::win::ScopedHandle CreateKillOnCloseJobObject() {
   HANDLE raw = ::CreateJobObjectW(/*lpJobAttributes=*/nullptr,
                                   /*lpName=*/nullptr);
@@ -133,27 +124,10 @@ base::win::ScopedHandle OpenWindowsFileForChildRead(
   return base::win::ScopedHandle(raw);
 }
 
-// Launches the child with CREATE_NO_WINDOW so console programs (bash.exe,
-// pwsh.exe, powershell.exe, cmd.exe) never flash a console window on screen.
-//
-// `base::LaunchProcess` only honours `start_hidden`, which maps to
-// STARTF_USESHOWWINDOW + SW_HIDE. For a *freshly allocated* console — which
-// is exactly what happens when a windowless utility process spawns a console
-// app — SW_HIDE is unreliable: conhost still flickers a window before the
-// hide takes effect. CREATE_NO_WINDOW is the documented, reliable way to run
-// the console child with no window at all, but `base::LaunchOptions` exposes
-// no creation-flags field. Rather than patch upstream `base`, we reproduce
-// its Windows CreateProcess path here (handle-list inheritance via
-// STARTUPINFOEX, cleared+overridden Unicode environment) and add the missing
-// flag.
-//
-// `cwd`/`env` follow `clear_environment = true` semantics (only `env` is
-// visible to the child), matching the POSIX path and the original
-// `base::LaunchProcess` call this replaces. When `inherit_environment` is
-// true, `env` is ignored and the child inherits the parent's environment
-// (used by the `--version` probe). Returns an invalid Process on failure; the
-// three stdio handles remain owned by the caller's ScopedHandles (the OS
-// duplicates them into the child).
+// Launches the child with CREATE_NO_WINDOW (base::LaunchOptions has no
+// creation flags; SW_HIDE still flickers) by reproducing base's CreateProcess
+// path. `env` is the whole environment unless `inherit_environment`. Returns
+// an invalid Process on failure; the caller keeps the stdio handles.
 base::Process LaunchChildWithoutWindow(const base::CommandLine& cmdline,
                                        const base::FilePath& cwd,
                                        const base::EnvironmentMap& env,
@@ -261,18 +235,9 @@ base::ScopedFD OpenPosixFileForChildRead(const base::FilePath& path) {
 
 #endif  // BUILDFLAG(IS_WIN)
 
-// Reads the TAIL of `path` into `out`, capping at `max_bytes`. Sets
-// `*truncated` when the file is bigger than the cap. Returns false only on
-// I/O error — an empty file is success with `out->empty()`.
-//
-// Tail, not prefix: for shell output the
-// verdict lives at the END — a build/test log's result line follows megabytes
-// of progress spam. The prefix-keeping read this replaces returned the first
-// `max_bytes` and silently dropped the rest, so a capped background build
-// looked like it "stopped" right after its first pages of output and its
-// actual result was unreadable through shell.status / the final result.
-// A tail read can start mid-UTF-8 sequence; the browser-side decode
-// (`EnsureUtf8`) normalizes any leading partial code point to U+FFFD.
+// Reads the tail of `path` (shell output's verdict is at the end), capped at
+// `max_bytes`, setting `*truncated` when cut. False only on I/O error. A
+// leading partial UTF-8 sequence is normalized browser-side.
 bool ReadCapped(const base::FilePath& path,
                 uint32_t max_bytes,
                 std::vector<uint8_t>* out,

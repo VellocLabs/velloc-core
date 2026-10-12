@@ -291,29 +291,6 @@ void NexusSettingsHandler::RegisterMessages() {
       base::BindRepeating(
           &NexusSettingsHandler::HandleSetNexusLauncherEnabled,
           base::Unretained(this)));
-  // `getAgentConfig` / `setAgentConfig` were the WebUI surface for
-  // the `nexus.agent_config` Profile pref before the about-page was
-  // migrated to `~/.nexus/settings.json` (under `agent`). The pref
-  // itself still exists — `nexus_guest_config.cc`,
-  // `nexus_session_bridge_adapter`, and `llm_broker.cc` read it for
-  // boot-time guest URL flags + live runtime push + default model
-  // resolution — but no JS code calls the sendWithPromise routes
-  // anymore, so the registrations were dropped to keep the WebUI
-  // surface honest about what's actually consumed. Re-introducing
-  // these routes is the wrong fix if a future surface wants live
-  // agent-config: subscribe to the new `agent.changed` bridge event
-  // instead.
-  //
-  // `getNexusCatalog` / `getNexusSessionStatus` routes removed with the
-  // Lit `<nexus-quick-settings>` popup they served (F-18 Phase 4).
-  // `pickNexusSelection` route removed: migrated to `providers.setActive`
-  // on the panel WebUI bridge port (A5 Tier 3b). See
-  // api/providers/nexus_providers_bridge_adapter.cc::HandleSetActiveOnUI.
-  // MCP server configuration has no route here: servers persist to
-  // `~/.nexus/settings.json` (`mcp.servers`) through the runtime's
-  // `mcpSettings` capability, which also runs the connection probe
-  // (`mcpSettings.testConnect`). The native `mcp` capability and its
-  // `nexus.mcp_server_configs` pref were removed.
 }
 
 void NexusSettingsHandler::OnJavascriptAllowed() {
@@ -641,23 +618,6 @@ void NexusSettingsHandler::HandleResetProviderConfig(
   ResolveJavascriptCallback(base::Value(callback_id), std::move(result));
 }
 
-// HandleRefreshProviderModels + OnOAuthTokenForModels +
-// OnProviderModelsFetched removed — the `refreshProviderModels`
-// chrome.send route is fully migrated to the panel ↔ C++ bridge
-// (`providers.refresh`). See
-// `api/providers/nexus_providers_bridge_adapter.cc::HandleRefreshOnUI`
-// for the replacement (and its `OnOAuthTokenForRefresh` /
-// `OnRefreshModelsFetched` continuations).
-//
-// HandleSetProviderApiKey, HandleValidateProviderConnection,
-// HandleGetOllamaModels + OnOllamaModelsFetched removed earlier — all
-// four were vapor (registered + implemented but never called from
-// JS). `HandleSetProviderApiKey` was a single-field shortcut over the
-// unified `HandleUpdateProviderConfig` flow.
-// `HandleValidateProviderConnection` was a synthesized "try a tiny
-// generate" connection test, replaced by the real
-// `HandleVerifyProviderConfig` path. `HandleGetOllamaModels` was an
-// ollama-special-case shortcut over `HandleRefreshProviderModels`.
 
 void NexusSettingsHandler::OnVerifyProviderModelsFetched(
     const std::string& callback_id,
@@ -694,16 +654,6 @@ void NexusSettingsHandler::OnVerifyProviderModelsFetched(
 // callers in the WebUI; the active provider is pinned through the panel
 // bridge (`providers.setActive`) instead.
 
-// HandleBeginProviderOAuth + OnDeviceCodeStarted +
-// HandleGetProviderOAuthStatus removed — `beginProviderOAuth` and
-// `getProviderOAuthStatus` chrome.send routes are fully migrated to
-// the panel ↔ C++ bridge (`providers.beginOAuth` /
-// `providers.oauthStatus`). See
-// `api/providers/nexus_providers_bridge_adapter.cc::HandleBeginOAuthOnUI`
-// and `::HandleOauthStatusOnUI` for the replacements. Both keep the
-// same device-code vs. PKCE branching, the same OpenNexusAuthUrl
-// window-opening behaviour, and the same `{connected, connectedEmail?}`
-// status shape.
 
 void NexusSettingsHandler::HandleGetWebappUrl(const base::ListValue& args) {
   AllowJavascript();
@@ -840,19 +790,6 @@ void NexusSettingsHandler::HandleSetNexusLauncherEnabled(
   HandleSetBackgroundModeEnabled(args);
 }
 
-// HandleGetAgentConfig + HandleSetAgentConfig were the WebUI surface
-// for the `nexus.agent_config` Profile pref before the about page
-// moved to `~/.nexus/settings.json` (`agent` section, served via the
-// WebUI ↔ SharedWorker bridge). Dropped: no JS caller. The pref
-// itself stays for now — `llm_broker.cc` still writes
-// `nexus.agent_config.model` on every active-selection change and the
-// session-bridge live-push observer fans that out as a
-// `session.applyAgentConfig` event the guest model picker
-// subscribes to. (Path 1 retired the `nexus_guest_config.cc` URL flag
-// mapping in the same series; Path 2 wired the `agent.changed`
-// JS-side broadcast for log/trace/maxTurns/stepTimeoutSec. A future
-// PR can move `model` into settings.json too and finally retire the
-// C++ observer.)
 
 // HandlePickNexusSelection removed: migrated to `providers.setActive` on
 // the panel WebUI bridge port (A5 Tier 3b). See

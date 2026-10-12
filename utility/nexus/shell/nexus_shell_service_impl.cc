@@ -205,20 +205,9 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
   request.args = std::move(final_args);
 
 #if BUILDFLAG(IS_WIN)
-  // CreateProcess cannot execute batch wrappers (`npx.cmd`, `npm.cmd`,
-  // `pnpm.cmd`, …) — they are scripts, not PE images — so launching one
-  // directly fails with LAUNCH_FAILED. Re-route through `cmd.exe /C` so
-  // stdio MCP servers distributed as npm/uv wrappers start. The command +
-  // args are configured by the trusted user in settings (not the LLM), so
-  // we accept cmd.exe's own argument-parsing semantics for the forwarded
-  // args. The allowlist decision above has already passed against the
-  // wrapper's own id; this only changes HOW it's launched, not WHETHER.
-  //
-  // Note: relies on cmd.exe's /C "preserve quotes when the tail has exactly
-  // two quotes around a valid executable" rule, which holds for the common
-  // case (a possibly-spaced install path + space-free args). Args that
-  // themselves contain spaces or cmd metacharacters are not robustly
-  // quoted; that is a follow-up if it surfaces.
+  // CreateProcess cannot run `.cmd` / `.bat` wrappers, so route them through
+  // `cmd.exe /C`; the allowlist already passed. The command comes from user
+  // settings; args with spaces or cmd metacharacters are not robustly quoted.
   if (request.exe.MatchesFinalExtension(FILE_PATH_LITERAL(".cmd")) ||
       request.exe.MatchesFinalExtension(FILE_PATH_LITERAL(".bat"))) {
     base::FilePath cmd_exe = FindCmdExe(caps);

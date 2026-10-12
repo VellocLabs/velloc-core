@@ -66,23 +66,10 @@ struct RipgrepRunOptions {
   uint32_t max_output_bytes = 0;
 };
 
-// Shared orchestrator for "run the managed ripgrep and hand back its lines".
-// Encapsulates the flow ProcessTool::Grep pioneered: exec `rg` through the
-// sandboxed NexusShellService (which resolves the installer-bundled rg.exe
-// next to chrome.dll first); on BINARY_NOT_FOUND ask NexusBinaryInstaller for
-// rg and retry once against its absolute path — today that finds no
-// download pin for rg (it is bundled, not downloaded) unless an online
-// registry publishes one; parse stdout into lines. Used by both
-// ProcessTool::Grep (content search) and FileTool::Glob (`rg --files`).
-//
-// The runner does NOT own a launcher — the caller passes its own per-session
-// NexusShellServiceLauncher so a session keeps a single utility process
-// (Bash / PowerShell / Grep / Glob all share it). Own this as a member of
-// the calling tool; the tool's teardown OnStop must call Reset() so any
-// in-flight mojo / installer callback drops cleanly instead of resolving
-// into freed state. Safe for concurrent Run() calls on one instance: each
-// call's state is threaded through its own callback chain, and the shared
-// WeakPtrFactory only gates teardown.
+// Runs the managed ripgrep through NexusShellService and returns its lines,
+// asking NexusBinaryInstaller and retrying once on BINARY_NOT_FOUND. Used by
+// Grep and Glob, on the caller's launcher; the owner must call Reset() on
+// teardown OnStop. Safe for concurrent Run() calls.
 class NexusRipgrepRunner {
  public:
   using ResultCallback = base::OnceCallback<void(RipgrepRunResult)>;

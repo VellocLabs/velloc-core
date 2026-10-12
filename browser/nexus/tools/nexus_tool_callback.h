@@ -7,32 +7,11 @@
 #include "base/functional/callback.h"
 #include "base/values.h"
 
-// `ToolCallback` — the async resolver passed to every host tool method.
-//
-// The framework-generated dispatcher pre-binds the request id, the route
-// dict, and a weak pointer to the owning adapter into two `base::OnceCallback`s
-// (one for success, one for error), then packages them into a `ToolCallback`
-// instance handed to the tool body as its trailing argument:
-//
-//     void example_create_tab(std::string url,
-//                             std::optional<int> window_id,
-//                             ToolCallback done);
-//
-// The tool body is free to:
-//   - resolve immediately:  `std::move(done).Resolve(base::Value(...));`
-//   - hop sequences before resolving (PostTask, BindOnce);
-//   - chain through the actor service / network / DOM observation and
-//     resolve from a callback minutes later;
-//   - fail with `std::move(done).Reject("code", params)` — a code the
-//     action's `.api.json` declares; the runtime renders the text.
-//
-// Resolve / Reject are `&&`-qualified — single-fire by construction. If
-// the adapter weak ptr captured by the inner callback has been
-// invalidated when the callback fires (adapter destroyed), the response
-// is silently dropped — `base::OnceCallback` + `base::WeakPtr` already
-// implements that behaviour. If the callback is destroyed without ever
-// firing, its destructor runs the error callback with `tool_dropped` so
-// the guest's pending promise never leaks.
+// `ToolCallback` — the async resolver passed to every host tool method,
+// wrapping pre-bound success / error callbacks. Resolve / Reject are
+// single-fire (`&&`); a reply after the adapter died is dropped, and a
+// callback destroyed unfired rejects with `tool_dropped`. Reject codes must be
+// declared in the action's `.api.json`.
 
 namespace nexus {
 

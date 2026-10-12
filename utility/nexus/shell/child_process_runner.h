@@ -142,25 +142,10 @@ using ChildProcessOutputCallback = base::RepeatingCallback<void(
     std::vector<uint8_t> bytes,
     bool truncated)>;
 
-// Synchronous, blocking child-process invocation. Must run on a
-// `base::MayBlock()` thread; never call from the Mojo binding sequence.
-//
-// Captures stdout and stderr to platform-native temp files (one per
-// stream) so the parent never has to pump pipes concurrently. After the
-// child exits or is killed, the runner reads back up to
-// `max_output_bytes` per stream from the temp files and deletes them.
-//
-// The runner's contract:
-//   * Either fully populates `ChildProcessOutcome::launched = true` and
-//     all the result fields (exit, output, duration), OR
-//   * Sets `launched = false` with `launch_error_code` /
-//     `launch_error_message` describing why no child ever ran.
-//
-// `on_launched`, when non-null, is invoked ON THIS WORKER THREAD the instant
-// the child launches (before the blocking wait) with a kill handle for the
-// child tree. A background caller (`Spawn`) bounces that handle to its own
-// sequence so it can later terminate the still-running tree via `Kill`. Null
-// (the default) for foreground / probe callers that never kill out-of-band.
+// Synchronous child-process invocation on a MayBlock thread, never the Mojo
+// sequence. Output goes to temp files, read back up to `max_output_bytes`.
+// Either `launched = true` with all results or `launched = false` with
+// `launch_error_*`. `on_launched` (optional) gets a kill handle on this thread.
 ChildProcessOutcome RunChildProcess(
     const ChildProcessRequest& request,
     base::OnceCallback<void(ChildProcessKillHandle)> on_launched =

@@ -41,26 +41,6 @@
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "url/gurl.h"
 
-// Phase 9c-final split — this TU holds:
-//   * the 20 LLM-facing `Run<Name>OnUI` tool method bodies (was 24
-//     pre-Phase-13 — `wait` and `forward` were retired, `create_tab`
-//     was folded into `BrowserNavigate { new_tab? }`, and
-//     `media_play`/`pause`/`seek` were merged into a single
-//     `BrowserMediaControl { action, seek_time_ms? }`),
-//   * the new `RunFillFormOnUI` batch form-fill body,
-//   * the private `RunCreateTabAction` helper (called by both
-//     `RunNavigateOnUI` when new_tab=true and `RunSearch`),
-//   * the two-stage CreateTab+Navigate completion `OnCreateTabActionDone`,
-//   * the actor-bypass observation runner `RunTabObservation`,
-//   * the `read_page` / `find_text` completion handlers
-//     (`OnReadPageObservationBuilt`, `OnFindTextObservationBuilt`),
-//   * the file-local UTF-8 / walker helpers those completions need.
-//
-// Everything else (lifecycle, actor pipeline, observation builder,
-// EnsureTaskCreated, LookupNode, ctor/dtor,
-// OnStop, timeout management) stays in browser_tool.cc. Both files
-// share helpers via browser_tool_internal.{h,cc} — see the `using`
-// directive below.
 
 namespace nexus {
 
@@ -169,20 +149,8 @@ ToolCallback WrapWithScreenshotShaping(ToolCallback inner,
 // browser_tool.cc.
 // =============================================================================
 
-// Trims `s` so it ends on a UTF-8 character boundary. If a multi-byte
-// UTF-8 sequence is partially present at the tail (because we sliced
-// at a raw byte index that fell inside it), drops the partial bytes
-// so the result is well-formed.
-//
-// Why this exists: `base::Value`'s string ctors / setters CHECK that
-// the input is valid UTF-8 (see values.cc's `IsStringUTF8AllowingNoncharacters`
-// path). On a Chinese-language page each character is encoded as 3
-// UTF-8 bytes; a byte-level `resize(N)` or `append(s, 0, N)` very
-// often falls inside one of those sequences and produces invalid
-// UTF-8, which crashes the renderer/process via DCHECK on the next
-// `result.Set("page_text", page_text)` call. Walking back to the most
-// recent leading byte and dropping any incomplete trailing sequence
-// is enough to satisfy the validator.
+// Trims `s` to end on a UTF-8 boundary, dropping a partial trailing sequence:
+// base::Value CHECKs that strings are valid UTF-8.
 void EnsureUtf8TailComplete(std::string& s) {
   if (s.empty()) {
     return;
@@ -362,14 +330,8 @@ void FindTextWalk(const apc::ContentNode& node, FindTextWalker& w) {
 }  // namespace
 
 // =============================================================================
-// Private helper: RunCreateTabAction. Two callers — `RunNavigateOnUI`
-// (when input.new_tab=true) and `RunSearch` (which builds a search-engine
-// URL then opens it as a new tab via this helper). Phase 13 retired the
-// standalone `create_tab` tool: the only way to open a new tab is now via
-// `BrowserNavigate { url, new_tab: true }`, so this helper always takes
-// the new-tab path. The legacy `reuse_visible_tab` parameter is gone —
-// the active-tab-in-place case is handled by `RunNavigateOnUI` directly
-// (new_tab=false, the default) without coming through this helper.
+// Private helper: RunCreateTabAction, for `RunNavigateOnUI` (new_tab=true) and
+// `RunSearch`; always opens a new tab.
 // =============================================================================
 
 void BrowserTool::RunCreateTabAction(std::string url,
@@ -500,23 +462,9 @@ void BrowserTool::OnCreateTabActionDone(
   // feature flag is off or the session key is empty.
   BindTabToSession(*new_tab);
 
-  // Stage 2 — navigate the new tab, then settle. Reuse `RunActorAction`
-  // so the standard observation pipeline
-  // (BuildActionsResultWithObservations → element-registry refresh →
-  // SimpleObservation JSON) runs and the LLM gets a fresh, navigated-
-  // page observation back.
-  //
-  // Phase 13.1: an explicit `WaitAction` is appended after the navigate
-  // because the actor framework's observation snapshot fires when the
-  // navigate action completes (initial commit), NOT when the page has
-  // finished loading. For a freshly-created+navigated tab this means
-  // the snapshot frequently lands during the about:blank→destination
-  // transition, producing `elements: []`. Without this wait the LLM
-  // sees an empty observation, mis-reads it as "the search didn't
-  // happen" (the tool's `action` was already `create_tab` — see Bug 1)
-  // and retries, leaving an orphan empty tab behind each time. The
-  // wait targets the new tab and gives the renderer time to settle
-  // before the framework walks the APC tree.
+  // Stage 2 — navigate the new tab through `RunActorAction`, with a trailing
+  // `WaitAction`: the snapshot otherwise fires at initial commit and can catch
+  // an empty about:blank transition.
   apc::Actions nav_actions;
   apc::NavigateAction* nav = nav_actions.add_actions()->mutable_navigate();
   nav->mutable_url()->assign(url);
@@ -601,16 +549,9 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   }
 
   base::TimeTicks start_time = base::TimeTicks::Now();
-  // 149 dropped the standalone result_code / index_of_failed_action
-  // params (now folded into per-action `action_results`) and added a
-  // trailing screenshot_collection_options. This call site has no prior
-  // action results to forward (the create-tab navigate already settled),
-  // so pass an empty vector.
-  //
-  // Screenshot options only for BrowserScreenshot — the one action whose
-  // pixels reach the model (the settle-guard re-observe keeps the action
-  // name, so it asks for the same capture). Every other observation keeps
-  // upstream's cheap default capture, which is discarded anyway.
+  // Chromium 149 signature: no prior action results here, so an empty vector.
+  // Screenshot options only for BrowserScreenshot, the one action whose pixels
+  // reach the model.
   actor::BuildActionsResultWithObservations(
       *profile, start_time,
       /*action_results=*/{},
@@ -683,15 +624,8 @@ void BrowserTool::RunReadPageOnUI(::nexus::generated::BrowserReadPageInput input
 
 void BrowserTool::RunNavigateOnUI(::nexus::generated::BrowserNavigateInput input,
                                   ToolCallback done) {
-  // Phase 13: `BrowserNavigate { url, new_tab? }`. Replaces the legacy
-  // `navigate` + `create_tab` tools. new_tab=true routes through
-  // `RunCreateTabAction` (which creates a new tab and navigates it via
-  // the two-stage create+navigate flow); new_tab=false (default)
-  // navigates the active tab in place.
-  //
-  // Pass "navigate" as the action_name so the result envelope's
-  // `action` field matches the user-facing tool (it would otherwise
-  // leak the internal stage name "create_tab" to the model).
+  // new_tab=true opens via `RunCreateTabAction` with action_name "navigate";
+  // otherwise the active tab navigates in place.
   if (input.new_tab.value_or(false)) {
     RunCreateTabAction(std::move(input.url),
                        /*action_name=*/"navigate",
@@ -699,18 +633,8 @@ void BrowserTool::RunNavigateOnUI(::nexus::generated::BrowserNavigateInput input
     return;
   }
 
-  // First-tab auto-promotion. On a fresh Nexus session the session owns
-  // no tabs yet, so `ResolveTabIdOrReject` below would reject with
-  // `no_session_tab` and tell the model to "open one with
-  // navigate(new_tab=true) or search first". The model often misses
-  // that hint on its very first action (it just says "navigate to the
-  // job board" without thinking about whether a tab exists). Rather
-  // than burn a turn on a guaranteed-to-fail dispatch, transparently
-  // route the call through the new-tab path when there's no in-place
-  // tab to land on. The model's intent — "land on URL X" — is honored
-  // either way, and the rejection branch stays as a safety net for the
-  // truly-impossible case (e.g. the feature flag is on AND the session
-  // had tabs but they were all closed mid-turn).
+  // First-tab auto-promotion: with no session tab yet, route through the
+  // new-tab path instead of rejecting with `no_session_tab`.
   if (CollectSessionTabs().empty()) {
     LOG(INFO) << "[BrowserTool] navigate: session owns no tabs; "
                  "auto-promoting to new_tab=true";
@@ -982,15 +906,9 @@ std::string SerializeAndTruncateForEvaluate(const base::Value& value,
   return serialized;
 }
 
-// Builds the tool's success observation from the CDP Runtime.evaluate result
-// envelope (the contents of the JSON-RPC `result` field). Three branches:
-//   1) `exceptionDetails` present  → JS threw; surface as `{ ok:true,
-//      action:"evaluate", error:"...", exception: {...} }` so the model can
-//      see the failure mode without the tool failing.
-//   2) `result.value` present       → primitive / JSON-serializable value;
-//      JSON-stringify and cap.
-//   3) Neither (e.g. function, DOM node) → fall back to `result.description`
-//      (the human-readable preview CDP emits for non-serializable values).
+// Builds the success observation from a CDP Runtime.evaluate result:
+// `exceptionDetails` → `error` + `exception` (still ok:true); `result.value` →
+// JSON-stringified and capped; otherwise `result.description`.
 base::DictValue BuildEvaluateObservation(base::DictValue cdp_result) {
   base::DictValue out;
   out.Set("ok", true);
@@ -1338,18 +1256,8 @@ void BrowserTool::RunScrollToOnUI(::nexus::generated::BrowserScrollToInput input
 
 void BrowserTool::RunScrollOnUI(::nexus::generated::BrowserScrollInput input,
                                 ToolCallback done) {
-  // Phase 13: schema reshaped. `amount` (optional, default 1.0) is in
-  // viewport-units. Old `distance` (pixels-with-magic-wheel-notches) is
-  // gone. tab_id dropped — scroll always targets the active tab (or the
-  // index's home tab if scrolling inside an element).
-  //
-  // Conversion: amount * viewport_height_px → pixel distance for the
-  // actor's ScrollAction.set_distance(). We approximate the viewport
-  // height at 800px when we can't read it directly; this is good
-  // enough because the LLM-facing model is "1.0 = one page" and minor
-  // viewport-size variance doesn't change the per-action page-step
-  // semantic. A future enhancement could query the live WebContents
-  // viewport — left out for v1 to keep the change focused.
+  // `amount` is in viewport units (default 1.0), converted to pixels with an
+  // assumed viewport size.
   constexpr float kAssumedViewportHeightPx = 800.0f;
   constexpr float kAssumedViewportWidthPx = 1200.0f;
   const float amount = static_cast<float>(input.amount.value_or(1.0));
@@ -1456,18 +1364,8 @@ void BrowserTool::RunSearchOnUI(::nexus::generated::BrowserSearchInput input,
     // instead of failing the call.
     url = base::StrCat({"https://www.google.com/search?q=", encoded});
   }
-  // Search always opens results in a new tab — it's the canonical
-  // "I want to look something up while keeping my workspace" use.
-  // `RunCreateTabAction` is the surviving private helper; in Phase 13
-  // it lost its `reuse_visible_tab` parameter (the in-place case is
-  // now handled by `RunNavigateOnUI` directly when new_tab=false).
-  //
-  // Pass "search" as the action_name so the result envelope's `action`
-  // field matches the user-facing tool (`BrowserSearch`) rather than
-  // leaking the internal stage name "create_tab" — without this the
-  // LLM would see `action: "create_tab"` after calling `BrowserSearch`
-  // and mis-interpret it as "the search didn't run, just a tab opened"
-  // (see Phase 13.1 trace analysis).
+  // Search always opens results in a new tab; action_name "search" keeps the
+  // result's `action` the user-facing tool name.
   RunCreateTabAction(std::move(url),
                      /*action_name=*/"search",
                      std::move(done));
@@ -1735,19 +1633,10 @@ void BrowserTool::OnReadPageObservationBuilt(
     std::move(done).Resolve(std::move(result));
     return;
   }
-  // Refresh the observation. BuildObservationDict is always called — it
-  // updates node_registry_ + last_observation_* (agent_meta source) — but
-  // T0-b strips the bulky elements[] to basics-only (tab_id/url/title) by
-  // default: read_page's answer is its page_text, so the full interactive
-  // list is redundant here. The model can pass `include_observation:true`
-  // to get it back for a read-then-act flow — and then it MUST get the
-  // array, never a T0-c `{unchanged}` stub (`force_full`).
-  //
-  // T0-c baseline: the elements[] only become the baseline when they
-  // ship. Stripped to basics → discard the staged projection, so the
-  // baseline keeps pointing at the page the model last actually saw and a
-  // later same-document action is compared against THAT, not against a
-  // surface the model never received.
+  // BuildObservationDict always runs (registry + agent_meta), but elements[] are
+  // stripped to basics by default — read_page answers with page_text — unless
+  // `include_observation:true` (then always full). A stripped result discards
+  // the staged baseline.
   base::DictValue observation = BuildObservationDict(
       *result_proto, /*include_screenshot_image=*/false,
       /*force_full=*/include_observation);
@@ -1909,33 +1798,11 @@ void BrowserTool::OnFindTextObservationBuilt(
 }
 
 // =============================================================================
-// Phase 13: BrowserFillForm — batch multi-field form fill.
-//
-// The codegen treats `fields` as `array<object>` (untyped at codegen
-// level — pragmatic "Option B"), so this body manually parses each
-// `base::DictValue` into a typed `FillFormFieldOp` before building the
-// actor::Actions proto. Each entry maps to one actor action:
-//
-//   action='type'    → apc::TypeAction   (DELETE_EXISTING semantics, no Enter)
-//   action='select'  → apc::SelectAction (by <option>'s `value` attribute)
-//   action='check'   → apc::ClickAction  (toggles checkbox; client-side
-//   action='uncheck'                     guarantees we click only if state
-//                                        differs are NOT implemented in v1 —
-//                                        the actor click always fires)
-//   action='click'   → apc::ClickAction  (for radios / "I agree" toggles)
-//
-// All actions land in a single Actions proto and are dispatched as one
-// PerformActions call. The actor framework processes them in order and
-// settles between each. If `submit_index` is set, a final apc::ClickAction
-// is appended after the field actions.
-//
-// V1 result shape: the standard observation envelope produced by
-// `OnActionsResultBuilt`. Per-field results array (as designed) is a
-// planned follow-up — it requires forking RunActorAction's completion
-// chain to inject per-field outcomes into the result dict. Today the
-// LLM sees the overall ok/error + observation + (on partial failure)
-// the framework's standard error string, and can re-issue single-field
-// tools for any field it suspects failed.
+// BrowserFillForm — batch form fill. Each `fields` entry is parsed into a
+// `FillFormFieldOp` and becomes one action (type / select / check / uncheck /
+// click; check and uncheck always click), dispatched in one PerformActions,
+// plus a final click when `submit_index` is set. Returns the standard
+// observation envelope.
 // =============================================================================
 
 namespace {

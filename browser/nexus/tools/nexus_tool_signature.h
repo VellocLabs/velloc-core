@@ -10,25 +10,9 @@
 
 namespace nexus {
 
-// Agent-loop metadata produced per tool invocation. Mirrors the
-// `agent_meta` envelope consumed by the JS side at
-// `nexus_web/src/tools/glic/hostedTools.ts:extractAgentMeta`.
-//
-// Two consumers on the JS side:
-//   - `services/agent/actionLoopDetector` records `action_hashes[]` into
-//     a rolling window for soft loop detection and compares
-//     `page_fingerprint` against the previous turn's fingerprint to
-//     drive stagnation tracking.
-//   - `services/tools/toolOrchestration` reads `post_url`,
-//     `post_focus_target_id`, and `terminates_sequence` for multi-act
-//     page-change guards.
-//
-// The browser loop consumes `action_hashes[]` as the only loop-history
-// hash field. Do not emit a legacy single `action_hash`.
-//
-// Chromium-style requires explicit out-of-line ctor / copy / move /
-// dtor on structs with multiple non-trivial members (the std::string
-// fields below trip the rule).
+// Agent-loop metadata per tool invocation — the `agent_meta` envelope the
+// guest reads for loop detection (`action_hashes[]`, `page_fingerprint`) and
+// page-change guards. No legacy single `action_hash`.
 struct AgentToolMeta {
   AgentToolMeta();
   AgentToolMeta(const AgentToolMeta&);
@@ -64,23 +48,13 @@ struct AgentToolMeta {
   bool terminates_sequence = false;
 };
 
-// Canonical action signatures for `action_hashes[]`. Mirrors the rules at
-// D:/project/broswer_use/browser-use-agent-implementation-report.md
-// "Action Normalization":
-//   browser_actions       → one hash per action item in actions[]
-//   search                → "search|<engine>|<sorted-unique-tokens>"
-//   click/select/hover    → "click|<index>"
-//   input                 → "input|<index>|<trimmed-lowercase-text>"
-//   navigate/create_tab   → "navigate|<url-without-fragment>"
-//   scroll/scroll_to      → "scroll|<direction>|<index>"
-//   drag_and_drop         → "drag|<from_index>|<to_index>"
-//   wait/done/back        → empty (exempt — JS skips recording)
-//   default action        → "<type>|<stable-json-without-nulls>"
-//
-// Returns SHA-256 hex prefixes (12 chars) of the canonical signatures.
-// Exempt action items are omitted. Lower-case tokens, trimmed, sorted
-// for search queries to keep "openai pricing" and "PRICING openai"
-// hash-identical.
+// Canonical action signatures for `action_hashes[]`, one per action item:
+//   search → "search|<engine>|<sorted-unique-tokens>"; click/select/hover →
+//   "click|<index>"; input → "input|<index>|<trimmed-lowercase-text>";
+//   navigate/create_tab → "navigate|<url-without-fragment>"; scroll →
+//   "scroll|<direction>|<index>"; drag → "drag|<from_index>|<to_index>";
+//   wait/done/back exempt; else "<type>|<stable-json-without-nulls>".
+// Returns 12-char SHA-256 hex prefixes; exempt items are omitted.
 std::vector<std::string> ComputeActionHashes(std::string_view tool_name,
                                              const base::DictValue& args);
 
@@ -88,33 +62,13 @@ std::vector<std::string> ComputeActionHashes(std::string_view tool_name,
 // `terminates_sequence` used by the multi-act guard.
 bool IsSequenceTerminator(std::string_view tool_name);
 
-// Build the page fingerprint dom_hash from a normalized projection
-// of the interactive surface. Caller assembles type / text / role /
-// form-state / href in walk order and passes the joined string here.
-// Non-identity fields (tab_id, document_id) are not included so
-// re-observations of the same page hash equal even when the bookkeeping
-// triples differ. index is stable and may be included or omitted —
-// the current caller (BrowserTool::WalkContentNode) omits it because
-// it's redundant with the projection's deterministic walk order, but
-// including it would also be correct. Returns 16-char SHA-256 hex
-// prefix.
+// The page fingerprint dom_hash: a 16-char SHA-256 hex prefix of the
+// normalized interactive-surface projection, without tab/document ids.
 std::string ComputeDomHash(std::string_view normalized_projection);
 
-// Wrap a tool's observation result with agent_meta. Output shape
-// matches the JS-side `extractAgentMeta` parser:
-//   {
-//     "data": <observation>,
-//     "agent_meta": {
-//       "action_hashes": [<12-char hex>, ...],
-//       "page_fingerprint": { url, interactive_count, dom_hash },
-//       "post_url": <string>,
-//       "post_focus_target_id": <string|null>,
-//       "terminates_sequence": <bool>
-//     }
-//   }
-//
-// Empty / unset fields on `meta` are omitted from the output so older
-// JS builds that ignore agent_meta still see the regular observation.
+// Wraps an observation as `{data, agent_meta: {action_hashes,
+// page_fingerprint, post_url, post_focus_target_id, terminates_sequence}}`;
+// unset fields are omitted.
 base::Value WrapResultWithAgentMeta(base::Value observation,
                                     const AgentToolMeta& meta);
 

@@ -33,27 +33,11 @@
 
 namespace nexus {
 
-// Slice-4 long-lived streaming child process (utility-process side).
-//
-// Unlike `RunChildProcess` (one-shot, temp-file capture, blocking wait),
-// this owns a child kept ALIVE with three live pipes:
-//   * parent writes the child's stdin incrementally (WriteStdin),
-//   * parent reads the child's stdout/stderr as they stream,
-//   * parent observes exit.
-// It is the transport a stdio MCP server runs on: one process across the
-// JSON-RPC `initialize` handshake + every later `tools/call`.
-//
-// Implements `mojom::NexusStreamingProcess` (the browser-held controller)
-// and drives a `mojo::Remote<mojom::NexusStreamingProcessClient>` (the
-// browser-held observer). Lives on, and is destroyed on, the service
-// binding sequence. Reader/writer/wait loops run on dedicated
-// `base::MayBlock()` + `WithBaseSyncPrimitives()` sequences and post back
-// to the binding sequence; the controller methods and client callbacks
-// are therefore always sequence-correct without locks.
-//
-// Lifetime: owned by `NexusShellServiceImpl` in a keyed map. Self-requests
-// erase via `on_closed` when the controller pipe drops, the client pipe
-// drops, or the child exits — whichever happens first.
+// A long-lived streaming child (utility side) with live stdin/stdout/stderr
+// pipes and exit, e.g. for a stdio MCP server. Implements
+// `mojom::NexusStreamingProcess` and drives the client remote; lives on the
+// binding sequence, I/O loops post back to it. Owned by
+// `NexusShellServiceImpl`; erased via `on_closed` on pipe drop or exit.
 class StreamingChildProcess : public mojom::NexusStreamingProcess {
  public:
   // `request` is the already-policy-validated launch spec (same struct

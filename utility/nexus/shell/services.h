@@ -9,16 +9,8 @@
 
 namespace nexus {
 
-// Adds every Nexus utility-process service to `services`. Intended to be
-// called from `chrome/utility/services.cc::RegisterMainThreadServices` via
-// a small `#if BUILDFLAG(ENABLE_CUSTOM_BROWSER)` guard. The upstream hook
-// is added in a later slice; until then this helper is unreferenced and
-// purely declarative.
-//
-// Keeping the registration in the custom_browser tree means upstream's
-// services.cc only ever sees a single
-// `nexus::RegisterNexusUtilityServices(services)` call, regardless of how
-// many Nexus services land later.
+// Adds every Nexus utility-process service to `services`, for upstream
+// services.cc to call behind an ENABLE_CUSTOM_BROWSER guard.
 void RegisterNexusUtilityServices(mojo::ServiceFactory& services);
 
 }  // namespace nexus

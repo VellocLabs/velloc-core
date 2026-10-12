@@ -21,25 +21,9 @@ class Profile;
 
 namespace nexus {
 
-// Browser-side helper that lazily launches the `NexusShellService`
-// utility process via `content::ServiceProcessHost::Launch` and
-// idle-recycles the remote after a period of inactivity.
-//
-// One launcher instance per `NexusBridgePortService` is sufficient — all
-// guest sessions sharing that bridge funnel through the same remote, and
-// the utility process runs everything off the binding sequence so
-// concurrent calls do not block each other.
-//
-// IMPORTANT — UPSTREAM HOOK REQUIRED:
-//   `ServiceProcessHost::Launch<nexus::mojom::NexusShellService>` returns
-//   a non-functional remote until upstream Chromium's
-//   `chrome/utility/services.cc` (function `RegisterIOThreadServices` or
-//   equivalent for the relevant build target) registers the
-//   `nexus::RunNexusShellService` factory from
-//   `custom_browser/utility/nexus/shell/services.h`. Until that lands,
-//   `GetService()` will return a remote whose first call disconnects
-//   silently. See P-7
-//   for the exact diff.
+// Lazily launches the `NexusShellService` utility process and idle-recycles
+// the remote. Requires the upstream `chrome/utility/services.cc` hook that
+// registers the service factory; without it the remote disconnects (P-7).
 class NexusShellServiceLauncher {
  public:
   NexusShellServiceLauncher();
@@ -86,16 +70,9 @@ class NexusShellServiceLauncher {
   base::WeakPtrFactory<NexusShellServiceLauncher> weak_factory_{this};
 };
 
-// Returns the per-Profile SHARED launcher (lazily created, stored as Profile
-// user-data). `ProcessTool` (Bash / PowerShell / Grep), the guest `shell.*`
-// bridge adapter (streaming `shell.spawn`) and NexusPersistentShells all call
-// this, so they funnel through ONE utility process. UI-thread only (the
-// returned launcher is sequence-bound). The launcher lives as long as the
-// Profile; its 30s idle-recycle applies when no persistent child is retained.
-// (The background-shell registry the guest used to observe through
-// `shell.status` / `shell.kill` / `shell.onExit` is gone — removed under
-// interface 1; the runtime owns background shells over the
-// persistent-shell primitives.)
+// The per-Profile shared launcher used by ProcessTool, the `shell.*` adapter
+// and NexusPersistentShells: one utility process. UI-thread only; 30s
+// idle-recycle when no persistent child is retained.
 NexusShellServiceLauncher& GetSharedShellLauncher(Profile* profile);
 
 }  // namespace nexus

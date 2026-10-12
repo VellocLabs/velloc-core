@@ -30,20 +30,9 @@ struct SafeCommandLimits {
   // ceiling as the Bash tool's `timeout` schema (spec 2-6).
   static constexpr uint32_t kMaxTimeoutMs = 10u * 60u * 1000u;
 
-  // No-timeout-cap sentinel. When a command's requested timeout equals this,
-  // ClampTimeoutMs passes it through UNCLAMPED (rather than lowering to
-  // kMaxTimeoutMs) so the process runs with no meaningful wall-clock kill —
-  // `base::Milliseconds(kNoTimeoutCapSentinelMs)` is ~24.8 days, effectively
-  // unbounded; the child still ends on natural exit, an explicit Kill, or the
-  // output-size watchdog. Set only by the auto-background middle layer (a
-  // detached foreground command that must run to completion, matching Claude
-  // Code's backgrounded-command lifetime — `background()` clears the kill timer).
-  // Chosen as INT32_MAX: it fits the browser-side `int timeout_ms`, and an OLD
-  // browser that predates the sentinel clamps it to kMaxTimeoutMs (the prior
-  // 10-minute kill), so version skew degrades safely. No browser-side caller
-  // sends it: the hosted Bash / PowerShell tools no longer
-  // background (the runtime owns background shells over shell.spawn+persist,
-  // which has no wall-clock cap). Retained as a policy passthrough.
+  // No-timeout-cap sentinel (INT32_MAX): passed through unclamped, effectively
+  // unbounded. An older browser clamps it to kMaxTimeoutMs. No browser-side
+  // caller sends it; retained as a policy passthrough.
   static constexpr uint32_t kNoTimeoutCapSentinelMs = 2147483647u;
 
   static constexpr uint32_t kDefaultMaxOutputBytes = 1u * 1024u * 1024u;
@@ -58,15 +47,8 @@ struct EnvOverride {
   std::string value;
 };
 
-// Outcome of a pre-launch policy check. Exactly one of `error_code` and
-// `resolved_path` is non-empty: success populates `resolved_path` and
-// leaves `error_code` empty; rejection sets `error_code` (and a
-// human-readable `error_message`) and clears `resolved_path`.
-//
-// When `error_code == "BINARY_NOT_FOUND"`, `install_hint` is populated
-// with a multi-line, model-facing instruction string describing how to
-// install the missing binary on this host. For other error codes
-// `install_hint` is empty.
+// Pre-launch policy outcome: exactly one of `error_code` (+ `error_message`)
+// and `resolved_path` is set; `install_hint` only for BINARY_NOT_FOUND.
 struct PolicyDecision {
   PolicyDecision();
   ~PolicyDecision();
@@ -103,15 +85,9 @@ class SafeCommandPolicy {
   // human-readable reason.
   static bool ValidateCwd(const base::FilePath& cwd, std::string* out_reason);
 
-  // Builds the full env map that the child will see. Starts from the
-  // process-baseline whitelist (PATH, HOME / USERPROFILE, SystemRoot,
-  // etc. — see implementation for the platform-specific lists) read
-  // from the utility process's own env, then layers `extras` on top.
-  // Forbidden names (LD_PRELOAD, DYLD_*, NODE_OPTIONS, ...) are dropped
-  // from `extras` and never inherited from the baseline.
-  //
-  // The returned map is suitable for `base::LaunchOptions::environment`
-  // when paired with `clear_environment = true`.
+  // Child env: the platform baseline allowlist from this process, plus `extras`;
+  // forbidden names (LD_PRELOAD, DYLD_*, NODE_OPTIONS, …) are dropped. Use with
+  // `clear_environment = true`.
   static base::EnvironmentMap BuildSafeEnvironment(
       const std::vector<EnvOverride>& extras);
 

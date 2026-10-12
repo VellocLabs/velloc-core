@@ -15,31 +15,10 @@
 
 namespace nexus {
 
-// Captures a single browser download — either click-triggered (the model
-// can't see the URL) or URL-initiated — waits for it to finish up to a
-// wall-clock `budget`, relocates the completed file into the session's
-// workspace `downloads/` dir, and resolves the tool `done` callback.
-//
-// Why native (not CDP): every download, however it's triggered (link
-// click, JS `window.location`, `blob:`, form POST, `Content-Disposition:
-// attachment`), flows through `content::DownloadManager`. Observing it
-// in-process is the same code path a human click takes — undetectable,
-// streams to disk (no in-memory buffering of large files), and gives us
-// exact creation/progress/completion events. This is strictly better
-// than browser-use's CDP `Browser.setDownloadBehavior` +
-// `Page.downloadWillBegin` approach for our architecture (which also
-// falls back to a JS `arrayBuffer()` path that loads whole files into
-// memory — we never do that).
-//
-// Lifetime: self-managed. `ArmForClickCapture` / `BindStartedItem` take a
-// self-reference that's released (via a posted task) only after the
-// callback resolves, so the object outlives all its observer/timer
-// callbacks and deletes itself afterwards. No owner plumbing needed.
-//
-// Big files: if the download is still running when `budget` elapses, the
-// callback resolves with `status: "downloading"` + byte progress instead
-// of blocking the agent indefinitely; the browser keeps streaming in the
-// background and the model re-checks the path later.
+// Captures one browser download (click-triggered or URL-initiated) through
+// content::DownloadManager, waits up to `budget`, moves the file into the
+// session's `downloads/` dir and resolves `done`. Self-owned: deletes itself
+// after resolving. Past `budget` it resolves `status: "downloading"`.
 class DownloadCapture : public content::DownloadManager::Observer,
                         public download::DownloadItem::Observer,
                         public base::RefCounted<DownloadCapture> {

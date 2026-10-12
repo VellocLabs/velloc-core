@@ -148,15 +148,8 @@ PolicyDecision SafeCommandPolicy::ResolveCommand(
     return decision;
   }
 
-  // Build the fast lookup of allowlisted-and-available ids, plus the
-  // companion lookup of "known to the resolver, but not currently
-  // available" ids. We need both so we can distinguish:
-  //   * COMMAND_NOT_ALLOWED — the id was never in the allowlist (the
-  //     model is asking for something the host policy refuses to run).
-  //   * BINARY_NOT_FOUND — the id IS allowlisted (i.e. the host wants
-  //     to support it), but the resolver couldn't locate the binary on
-  //     PATH. This is the actionable case where we surface an
-  //     install hint.
+  // Allowed-and-available ids vs known-but-unavailable ones, to tell
+  // COMMAND_NOT_ALLOWED from BINARY_NOT_FOUND (which gets an install hint).
   std::vector<const ResolvedTool*> allowed_tools;
   allowed_tools.reserve(caps.tools.size());
   std::vector<const ResolvedTool*> known_but_unavailable;
@@ -185,15 +178,9 @@ PolicyDecision SafeCommandPolicy::ResolveCommand(
         return decision;
       }
     }
-    // A binary the Nexus installer downloaded into ~/.velloc/bin is
-    // trusted by construction: the absolute path is set by C++ (not the
-    // model), and the bytes were SHA-256-verified against a pinned hash
-    // before being written. Allow execing it even though it isn't in the
-    // cached PATH-resolved capability set — this is how a freshly
-    // downloaded `rg` runs on the FIRST Grep call without waiting for the
-    // service's capability cache (which is never invalidated) to refresh.
-    // The same holds for the copy the installer ships next to chrome.dll
-    // (signed with the product certificate at package time).
+    // Security: a binary the installer downloaded into ~/.velloc/bin (SHA-256
+    // pinned) or bundled next to chrome.dll is trusted by path, so it runs before
+    // the capability cache knows it.
     if ((custom_browser::IsUnderManagedBinDir(candidate) ||
          custom_browser::IsBundledBinaryPath(candidate)) &&
         base::PathExists(candidate)) {

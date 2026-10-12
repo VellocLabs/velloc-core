@@ -28,21 +28,10 @@
 
 namespace nexus {
 
-// Implementation of `nexus.mojom.NexusShellService`. As of slice 2 it
-// supports both capability discovery and one-shot `Exec` of allowlisted
-// host commands; streaming `Spawn` arrives in slice 4.
-//
-// Designed to live inside a sandboxed utility process launched by the
-// browser via `content::ServiceProcessHost::Launch`. Both the resolver
-// probe (PATH walk + `--version`) and the per-call child-process
-// invocation are blocking, so they run on `base::MayBlock()` thread-pool
-// tasks; the Mojo binding sequence is reserved for routing and never
-// blocks.
-//
-// `GetCapabilities` results are cached for the lifetime of the process.
-// `Exec` reuses that same cache so it never re-probes PATH per call;
-// requests that arrive before the first probe finishes are queued and
-// drained once the cache is populated.
+// Implementation of `nexus.mojom.NexusShellService` in a utility process.
+// Probes and child invocations block, so they run on MayBlock tasks; the Mojo
+// sequence only routes. `GetCapabilities` is cached for the process lifetime
+// and requests before the first probe are queued.
 class NexusShellServiceImpl : public mojom::NexusShellService {
  public:
   // For self-owned bindings (the production path used from

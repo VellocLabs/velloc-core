@@ -70,28 +70,11 @@ struct RemoteAccessStatus {
 };
 
 // The profile-level singleton behind the `remoteAccess` bridge capability
-// (F-24). UI thread.
-//
-// Owns:
-//   * the prefs (enabled / bind_address / port),
-//   * the NexusRemoteAccessListener's start/stop,
-//   * the reverse proxy's OUTBOUND fetches (SimpleURLLoader on the profile's
-//     default StoragePartition — the only upstream is the guest origin),
-//   * the Local-Network-Access grant the runtime needs to dial back: on
-//     enable, ContentSettingsType::LOOPBACK_NETWORK = ALLOW scoped to the ONE
-//     guest origin; revoked on disable (spike S1's conclusion — the grant
-//     must go through HostContentSettingsMap; seeding the raw pref does NOT
-//     work).
-//
-// The listener's IO-thread Core does the routing and WebSocket pairing and
-// never touches this Profile; it reaches back here only for the proxy's
-// outbound fetch, through a ProxyCallback the listener always runs on THIS
-// sequence (see the threading note on NexusRemoteAccessListener).
-//
-// Nothing here blocks the UI thread — this object is built during browser
-// startup, inside BrowserMainLoop's DisallowUnresponsiveTasks scope. Starting
-// the listener is therefore asynchronous: a start moves `state` to kStarting
-// and the outcome (kListening / kError) arrives as a status change.
+// (F-24). UI thread. Owns the prefs, the listener's start/stop, the reverse
+// proxy's outbound fetches (only upstream: the guest origin), and the
+// LOOPBACK_NETWORK grant scoped to the one guest origin (via
+// HostContentSettingsMap), revoked on disable. Never blocks UI: a start moves
+// `state` to kStarting and the outcome arrives as a status change.
 class NexusRemoteAccessService {
  public:
   explicit NexusRemoteAccessService(Profile* profile);

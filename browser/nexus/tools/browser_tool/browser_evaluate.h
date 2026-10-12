@@ -1,22 +1,10 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_EVALUATE_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_EVALUATE_H_
 
-// One-shot CDP `Runtime.evaluate` driver for the BrowserEvaluate tool.
-//
-// Why DevTools (vs. RenderFrameHost::ExecuteJavaScript*):
-//   - `ExecuteJavaScript`           : restricted to chrome://, devtools:// only.
-//   - `ExecuteJavaScriptInIsolated…`: works on any page but only in an
-//                                     isolated world — can't see page-side
-//                                     globals (React/Redux/window.*), no
-//                                     `awaitPromise` support.
-//   - `ExecuteJavaScriptForTests`   : header explicitly says "ONLY FOR TESTS".
-//   - DevTools `Runtime.evaluate`   : main world, awaitPromise + returnByValue
-//                                     supported, production API. Chosen here.
-//
-// Lifecycle: a `BrowserEvaluateSession` attaches itself to the active tab's
-// `DevToolsAgentHost`, sends a single `Runtime.evaluate` command, awaits the
-// response (or the agent host closing), invokes its `ResultCallback`, detaches,
-// and self-destructs via `delete this`. Callers do not own it.
+// One-shot CDP `Runtime.evaluate` driver for the BrowserEvaluate tool: main
+// world, awaitPromise + returnByValue. A `BrowserEvaluateSession` attaches to
+// the tab's `DevToolsAgentHost`, sends one command, runs its `ResultCallback`,
+// detaches and deletes itself; callers do not own it.
 
 #include <cstdint>
 #include <string>
@@ -54,15 +42,9 @@ class BrowserEvaluateSession : public content::DevToolsAgentHostClient {
  public:
   using ResultCallback = base::OnceCallback<void(EvaluateOutcome)>;
 
-  // Constructs, attaches, and immediately sends the `Runtime.evaluate` command.
-  // The session deletes itself once `done` fires. The caller may NOT delete
-  // it. On any failure (no WebContents, attach refused, host closed mid-flight)
-  // `done` is invoked with `error_code` populated.
-  //
-  // `code` is passed through as the `expression` param; the call always uses
-  // `awaitPromise: true, returnByValue: true, allowUnsafeEvalBlockedByCSP:
-  // false`. (We do NOT bypass page CSP — if a page denies eval, the model gets
-  // a CSP exception, not a silent escape.)
+  // Constructs, attaches and sends the command; the session deletes itself once
+  // `done` fires (callers may not delete it), with `error_code` on any failure.
+  // Always `awaitPromise`, `returnByValue`, and no CSP bypass.
   static void Start(content::WebContents* web_contents,
                     const std::string& code,
                     ResultCallback done);

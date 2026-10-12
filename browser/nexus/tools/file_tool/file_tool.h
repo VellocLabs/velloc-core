@@ -34,49 +34,11 @@ class NexusMediaServiceLauncher;
 class NexusShellServiceLauncher;
 class ToolSession;  // for CategoryAccessor specialization below
 
-// Per-LLM-session class hosting the local-filesystem
-// tools (`read`, `write`, `edit`, `glob`). Mirrors the role
-// `BrowserTool` plays for browser actions: one instance per session,
-// owned as a member of `ToolSession`.
-//
-// Threading: the declarations carry `runtime.thread = "ui"`, so the
-// codegen-emitted dispatcher invokes each `Run<Name>OnUI` directly on
-// the bridge port service's sequence (UI). The body then owns its own
-// thread hop, mirroring how `ProcessTool`'s UI-thread tools fire async
-// shell work:
-//   (a) on UI — validate inputs and read any session-level state
-//       (`GetSession()->cwd()` for Glob); both require the FileTool /
-//       ToolSession to be alive, which is guaranteed on the
-//       dispatcher's own sequence;
-//   (b) `base::ThreadPool::PostTaskAndReplyWithResult` hops the
-//       blocking file I/O onto a worker. The work is a *static*
-//       `<Name>Blocking` helper (no `this`), so the worker never
-//       touches FileTool state — a session torn down mid-I/O cannot be
-//       use-after-freed by the worker;
-//   (c) the reply `On<Name>Done` runs back on UI, bound through
-//       `weak_ptr_factory_.GetWeakPtr()`. If the session ended while
-//       the I/O was in flight, the WeakPtr is invalidated and the reply
-//       is dropped cleanly (the discarded `ToolCallback`'s destructor
-//       emits `tool_dropped`) instead of resolving into a freed object.
-//       Resolve/Reject must run on UI anyway because the success/error
-//       callbacks inside `done` capture a `base::WeakPtr<ToolSessionRegistry>`
-//       whose home sequence is UI.
-//
-// Why the body — not the dispatcher — owns the hop: the codegen
-// `thread_pool` routing binds `base::Unretained(category)` onto the
-// worker task, which dangles if the per-session FileTool is destroyed
-// (session deleted / panel closed) before the worker runs — a
-// use-after-free observed in the field. Keeping the tools on `ui` and
-// hopping only the static blocking helper removes that dangling-pointer
-// window entirely. See F-21.
-//
-// FileTool itself is owned by `ToolSession`, which is owned by
-// `ToolSessionRegistry::sessions_` (UI-thread).
-//
-// No `Profile`-level state is currently used — the tools operate on
-// absolute paths the LLM provides. The sandboxing decision (which
-// paths are reachable) is deferred to a future change; for now the
-// implementation enforces only the absolute-path invariant.
+// Per-LLM-session class hosting the filesystem tools, a member of
+// `ToolSession`. Each `Run<Name>OnUI` validates on UI, hops a static
+// `<Name>Blocking` helper (no `this`) to base::ThreadPool, and replies on UI
+// through a WeakPtr, so teardown mid-I/O drops the reply (F-21). Operates on
+// absolute paths only.
 class FileTool : public ToolBase {
  public:
   FileTool(ToolSession* session, Profile* profile,
@@ -113,17 +75,9 @@ class FileTool : public ToolBase {
   // removed from the model context.
   void ClearReadState();
 
-  // Splits a glob `pattern` into (baseDir, relativePattern) at its first
-  // glob metacharacter (`* ? [ {`).
-  // `.first` is the forward-slash-normalized static directory prefix
-  // (everything up to the last separator before the first glob char; "" when
-  // the pattern begins with a glob char or has no separator; "/" or "C:/" for
-  // a root). `.second` is the remaining tail.
-  //
-  // RunGlobOnUI applies this ONLY to ABSOLUTE patterns, to feed ripgrep a
-  // concrete search root + a relative `--glob` pattern (rg's `--glob` accepts
-  // relative patterns only). Static, pure, and side-effect free; declared
-  // here (not in the anonymous namespace) so it can be unit-tested.
+  // Splits a glob `pattern` at its first metacharacter into (static directory
+  // prefix, tail), to feed ripgrep a root + relative `--glob` for absolute
+  // patterns. Pure; exposed for unit tests.
   static std::pair<std::string, std::string> ExtractGlobBaseDirectory(
       const std::string& pattern);
   // Drives the Glob completion with a runner's pre-launch failure, without
@@ -168,25 +122,11 @@ class FileTool : public ToolBase {
 
  private:
   // ---------------- Worker-thread helpers ----------------
-  //
-  // Pure free-function-shaped statics that the ThreadPool worker
-  // invokes. They take all inputs by value / const ref, do blocking
-  // file I/O, and return a typed result struct that the UI-side reply
-  // lambda consumes. Keeping them static (no `this`) means workers
-  // never touch FileTool's mutable state — the WeakPtr binding only
-  // gates the reply path. UTF-8 string find/replace is byte-safe
-  // because UTF-8 is self-synchronizing (a multi-byte sequence can't
-  // be a substring of a different one).
+  // Static, blocking helpers run on the ThreadPool; they never touch FileTool
+  // state.
 
-  // Per-method result structs. Each carries either a payload dict (on
-  // success) or an error code + message (on failure); the reply
-  // lambda forwards exactly one of those into the `ToolCallback`.
-  //
-  // Each struct is move-only (base::DictValue is move-only) and must
-  // declare its special members out-of-line per chromium-style — the
-  // clang plugin flags inline-defined ctor/dtor on any class with
-  // non-trivial member types like std::string / base::Value::Dict.
-  // Definitions live in file_tool.cc as `= default;`.
+  // Per-method result structs: a payload dict or an error code + message.
+  // Move-only, special members defined out-of-line in file_tool.cc.
 
   struct WriteResult {
     WriteResult();

@@ -193,21 +193,9 @@ ResolvedCapabilities& ResolvedCapabilities::operator=(
 
 // static
 std::vector<std::string> ShellResolver::KnownToolIds() {
-  // Order matters only for the resolver's diagnostic output. Keep this
-  // alphabetised so the list is easy to scan in tests / logs (the
-  // KnownToolIdsIsAlphabetisedAndDeduped unit test enforces it).
-  //
-  // Two groups:
-  //   * Shells + dev tools the LLM-facing Bash/Grep tools dispatch to
-  //     (bash, cmd, git, powershell, pwsh, rg, sh, zsh).
-  //   * Script-runtime launchers for stdio MCP servers configured by the
-  //     user in settings (node/npm/npx, pnpm, bun/bunx, deno, uv/uvx,
-  //     python/python3, docker). stdio MCP servers are overwhelmingly
-  //     distributed as `npx <pkg>` / `uvx <pkg>` / `docker run …` commands;
-  //     without these the user's pasted config is rejected with
-  //     COMMAND_NOT_ALLOWED. This does not widen the LLM's reach — the Bash
-  //     tool already runs through an allowlisted shell that can invoke any
-  //     of these — it only unblocks the user-authored MCP launch path.
+  // Kept alphabetised (a unit test enforces it): shells + dev tools for the
+  // Bash/Grep tools, and script-runtime launchers for user-configured stdio MCP
+  // servers — no wider reach than the Bash tool already has.
   return {"bash",   "bun",  "bunx",       "cmd",  "deno",
           "docker", "git",  "node",       "npm",  "npx",
           "pnpm",   "powershell", "pwsh", "python", "python3",

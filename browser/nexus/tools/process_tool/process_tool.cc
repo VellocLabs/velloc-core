@@ -91,17 +91,9 @@ ShellInvocation BuildHookShellInvocation(const std::string& shell_id,
   return inv;
 }
 
-// The hook-exec path honors `hook_shell` ONLY for these known shell ids.
-// The JS hook runner (hookCommandRunner.ts `resolveShellPreference`) only ever
-// sends one of these; the value is also hidden from the model-facing schema
-// (`"internal": true` in bash.tool.json). This predicate is defense in depth:
-// if a stray/garbage value still reaches `hook_shell` (e.g. a model that
-// filled the host-internal field with "/bin/bash"), we IGNORE it and run the
-// command via the normal Bash path instead of launching the value as a
-// command — which the utility-process SafeCommandPolicy allowlist would reject
-// (`COMMAND_NOT_ALLOWED: tool id '/bin/bash' is not in the host capability
-// allowlist for the nexus shell service`). Keep in sync with
-// `resolveShellPreference` (POSIX_SHELLS + PWSH_SHELLS).
+// Security: `hook_shell` is honoured only for these shell ids (keep in sync
+// with the guest's `resolveShellPreference`); any other value runs through the
+// normal Bash path instead of being launched as a command.
 bool IsKnownHookShellId(const std::string& shell_id) {
   return shell_id == "bash" || shell_id == "sh" || shell_id == "zsh" ||
          shell_id == "pwsh" || shell_id == "powershell";
@@ -131,15 +123,8 @@ std::vector<mojom::ShellEnvEntryPtr> ParseHookEnv(const std::string& json) {
   return out;
 }
 
-// Ensures `text` is valid UTF-8. Returns `text` unchanged on the fast
-// path (already valid); otherwise round-trips through UTF-16 to substitute
-// invalid sequences with U+FFFD. base::Value's std::string constructor
-// DCHECKs UTF-8 (so does base::DictValue::Set), so every captured shell
-// stream must pass through here before reaching Resolve / Set — otherwise
-// the browser fatals on any tool whose stdout/stderr is in the host's
-// console code page (Windows PowerShell 5.1 on en-US emits cp1252, on
-// zh-CN cp936, …; cmd.exe behaves the same). pwsh / POSIX shells emit
-// UTF-8 by default and hit only the fast path.
+// Ensures `text` is valid UTF-8 (invalid sequences → U+FFFD): base::Value
+// DCHECKs UTF-8, and console code pages (cp1252, cp936) are not.
 std::string EnsureUtf8(std::string text) {
   if (base::IsStringUTF8AllowingNoncharacters(text)) {
     return text;
@@ -391,16 +376,9 @@ std::vector<std::string> BuildRipgrepArgs(
   return args;
 }
 
-// A Grep whose `path` names one regular file is locating, not discovering:
-// `files_with_matches` would answer with the path the model already typed,
-// and a bare matching line is followed by a targeted Read of the lines
-// around it in roughly half of such calls (Sep-2026 transcript corpus). Passing any context cuts that follow-up to ~16-29% and
-// the effect saturates at -C 4-6 — larger windows buy nothing, so 5.
-//
-// Explicit values always win: an `output_mode` the model set is kept even
-// when it is `files_with_matches`, and any -A/-B/-C/context disables the
-// default. Directories and UNC targets (existence assumed, type unknown)
-// are left alone — a repo-wide grep with context is unbounded in size.
+// A Grep on one regular file defaults to content mode with -C 5. Explicit
+// output_mode or context always wins; directories and UNC targets are left
+// alone.
 void ApplySingleFileGrepDefaults(::nexus::generated::FilesGrepInput& input,
                                  std::string& output_mode,
                                  bool target_is_file) {
@@ -550,15 +528,8 @@ ProcessTool::~ProcessTool() {
 void ProcessTool::OnStop(OnStopReason reason) {
   LOG(INFO) << "[ProcessTool] OnStop session=" << GetSessionKey()
             << " reason=" << OnStopReasonToString(reason);
-  // Gated on TEARDOWN reasons only — see the matching comment in
-  // FileTool::OnStop for the full rationale. Summary: after the typed-
-  // OnStop refactor, kCompleted / kUserStopped fire while the
-  // ToolSession stays warm; invalidating WeakPtrs and shutting down
-  // the utility process here would break every subsequent Bash call
-  // in the same session (the cached weak_ptr captured by the next
-  // mojo callback would be dead, and the launcher's utility-process
-  // Remote would be torn down). Only invalidate / shut down when the
-  // ProcessTool is actually going away.
+  // Teardown reasons only: invalidating on per-turn stops would break later Bash
+  // calls in the warm session.
   const bool teardown = reason == OnStopReason::kSessionDeleted ||
                         reason == OnStopReason::kDisconnected ||
                         reason == OnStopReason::kShutdown ||
@@ -628,21 +599,9 @@ void ProcessTool::RunBashOnUI(::nexus::generated::ExecBashInput input,
     timeout_ms = kMaxBashTimeoutMs;
   }
 
-  // Hook-exec path: the host-internal `hook_shell` field (set by the JS hook
-  // runner, never the model — it's `"internal": true` in bash.tool.json so it
-  // never reaches the model-facing schema) requests an explicit shell with
-  // hook input on stdin and env exported natively — the command-hook
-  // contract. Run the requested shell directly (use_shell =
-  // false) and return the RAW exit code + combined output so the JS executor
-  // can apply its own protocol (exit 2 = block, 0 = pass, other = non-blocking
-  // warning). This bypasses the prose/non-zero-reject shaping of the normal
-  // Bash path.
-  //
-  // Defense in depth: only take this path when `hook_shell` is a KNOWN shell
-  // id. A stray/garbage value (e.g. a model-fabricated "/bin/bash" that
-  // predates the schema hiding) is ignored and falls through to the normal
-  // Bash path, so the command still runs instead of being launched as an
-  // arbitrary command the SafeCommandPolicy allowlist would reject.
+  // Hook-exec path: the internal `hook_shell` field runs that shell directly
+  // with hook input on stdin and returns the raw exit code + output for the
+  // guest's hook protocol. Only known shell ids take it (IsKnownHookShellId).
   if (input.hook_shell.has_value() && IsKnownHookShellId(*input.hook_shell)) {
     ShellInvocation inv =
         BuildHookShellInvocation(*input.hook_shell, input.command);

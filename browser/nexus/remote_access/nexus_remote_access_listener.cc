@@ -550,15 +550,9 @@ void NexusRemoteAccessListener::Core::HandleEntryRedirect(
   }
   net::HttpServerResponseInfo response(net::HTTP_FOUND);
   response.AddHeader("Location", entry_path_);
-  // Cacheable, the way the guest origin serves each /v<N>/index.html: a
-  // remembered device (or the installed app) that opens the bare address
-  // while this desktop is off then gets the entry it last saw — immutable,
-  // already in its HTTP cache with its assets — and that page's own "keeps
-  // retrying" screen, instead of the browser's "site can't be reached". A
-  // stale redirect is corrected by the page, not by expiry: once connected it
-  // compares the runtime's build with its own and reloads onto the current
-  // one (remoteBoot.tsx, F-24 "Opening the page while the desktop is off").
-  // `private`: the target names this desktop's build, not shared content.
+  // Cacheable like the guest's /v<N>/index.html, so a remembered device opening
+  // the address while this desktop is off gets its cached entry; the page
+  // corrects a stale redirect itself (F-24). `private`: names this build.
   response.AddHeader("Cache-Control", kEntryRedirectCacheControl);
   server_->SendResponse(connection_id, response, kListenerTraffic);
 }

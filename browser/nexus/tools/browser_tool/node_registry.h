@@ -7,51 +7,11 @@
 
 namespace nexus {
 
-// Per-session map: APC `content_node_id` (the LLM-facing index) →
-// `(document_identifier.serialized_token, tab_id)` plus a small amount
-// of diagnostic prose, so the LLM can refer to the same DOM element by
-// the same index across turns.
-//
-// Why content_node_id directly? Because (a) it's stable for a
-// document's lifetime in the renderer, (b) the actor proto already
-// requires it, and (c) the previous indirection (synthetic element_id
-// → triple) invalidated every turn when the registry got Clear()'d
-// per observation. With the index model, the LLM can carry intent
-// across turns ("click the search box at 18372 again") and a stale
-// index surfaces as a clean "element not found / stale" error from
-// the actor framework rather than a misdirected click.
-//
-// Populated by observation actions (screenshot / read_page /
-// find_text / and the implicit observation that follows every action
-// result) which parse the
-// `ActionsResult` proto's `tab_observations[].interactable_elements[]`
-// and call `Set(...)` for each one.
-//
-// Looked up by index-based action helpers (click / input / select /
-// scroll_to / scroll / read_element). The action's proto target
-// is built from the registry entry:
-//
-//   click->mutable_target()->set_content_node_id(node_id);
-//   click->mutable_target()
-//        ->mutable_document_identifier()
-//        ->set_serialized_token(entry.document_id);
-//   click->set_tab_id(entry.tab_id);
-//
-// Multi-tab disambiguation: NodeRegistry is keyed by `(index,
-// tab_id)` because content_node_id is unique per-document, not
-// per-session. The lookup convenience `Find(index)` returns the
-// most-recently-registered tab's entry — sufficient for
-// single-active-tab flows. Actions that take an explicit `tab_id` use
-// `FindIn(index, tab_id)` for unambiguous resolution.
-//
-// Lifecycle: a member of `BrowserTool` (per-session). Cleared by
-// `BrowserTool::OnStop` along with the actor task — indexes from
-// stopped sessions are never used for new actions. The per-tab map
-// is otherwise ACCUMULATIVE across observations of the same tab —
-// new entries with the same key overwrite (typical re-observation
-// case); old entries stick around until the tab closes or the
-// session stops, so cross-turn references work even if the latest
-// observation didn't surface the element again.
+// Per-session map: APC `content_node_id` (the model-facing index) →
+// `(document token, tab_id)`, so an index stays valid across turns; a stale
+// one fails cleanly. Keyed by `(index, tab_id)`: `Find(index)` returns the
+// latest tab's entry, `FindIn` is explicit. Filled from observations;
+// accumulative per tab and cleared by `BrowserTool::OnStop`.
 class NodeRegistry {
  public:
   // One entry's worth of state. The fields beyond `document_id` /

@@ -67,15 +67,6 @@ namespace {
 
 namespace apc = optimization_guide::proto;
 
-// All cross-cutting helpers (ActionParams, ToActorStoppedReason,
-// GetActiveBrowserForProfile, GetActiveWindowSessionId,
-// GetActiveTabHandleId, ResolveTabIdOrReject, MaybePrependActivateTab,
-// GetPolicyChecker, ContentAttributeTypeName, ExtractNodeText,
-// IsActionable, TruncateUtf8Snippet) plus the PausableTimeout +
-// PausableToolCallbackHolder classes have been moved out to
-// browser_tool_internal.{h,cc}. The `using namespace
-// browser_tool_internal;` directive at the top of this TU lets us
-// continue calling them unqualified from BrowserTool method bodies.
 
 // Deterministic color picker for the session's tab group. Hashing the
 // session_key onto one of eight non-grey palette entries gives every
@@ -470,39 +461,15 @@ void BrowserTool::OnActorTaskStateChanged(actor::ActorTask& task) {
     return;
   }
 
-  // Diagnostic: log EVERY state transition for our task, including
-  // ones not handled by the pause / resume / terminal predicates.
-  // Used to correlate task state changes with `tool_dropped` errors
-  // — if the state never transitions to a terminal value between two
-  // calls that the actor service dropped, the bug is somewhere other
-  // than terminal-state-staleness.
-  //
-  // VLOG(1): opt-in via --vmodule=browser_tool=1+. State transitions
-  // fire on every actor turn — too chatty for the default floor.
+  // Diagnostic: every state transition for our task, to correlate with
+  // `tool_dropped` errors. VLOG(1): opt-in via --vmodule=browser_tool=1+.
   VLOG(1) << "[BrowserTool] OnActorTaskStateChanged task_id="
           << task_id.value() << " state=" << static_cast<int>(state)
           << " session=" << GetSessionKey();
 
-  // Terminal-state handling — aligned to upstream glic
-  // (chrome/browser/glic/actor/glic_actor_task_manager.cc:655-669,
-  // GlicActorTaskManager::NotifyActorTaskStateChanged).
-  //
-  // Once the actor task enters kFinished / kCancelled / kFailed it
-  // never leaves (see chrome/browser/actor/actor_task.h:99-100). The
-  // cached `task_id_` is forever stale at that point: a stale id
-  // handed back from `EnsureTaskCreated` would steer the next
-  // `PerformActions` into the actor service against a dead task, the
-  // bound BindOnce gets silently dropped, and the inner
-  // `ToolCallback`'s destructor emits the synthetic
-  // `tool_dropped: tool dropped without resolving` error to the JS
-  // guest — opaque to the model and unrecoverable without restart.
-  //
-  // Trigger we hit in production: a `BrowserClick` navigating a tab
-  // cross-origin causes Chromium's actor framework to terminate the
-  // task with `StoppedReason::kTabDetached`, transitioning the state
-  // to `kCancelled`/`kFailed`. Without this branch the runtime kept
-  // the stale id and every subsequent browser tool call returned
-  // `tool_dropped`. Same lifecycle handling as the glic actor host.
+  // Terminal states (kFinished / kCancelled / kFailed) are sticky, so drop the
+  // cached `task_id_` here: a stale id would make the next `PerformActions`
+  // silently drop its callback and surface `tool_dropped`.
   if (actor::ActorTask::IsCompletedState(state)) {
     // VLOG(1) — visible with --vmodule=browser_tool=1+. The state
     // transition to terminal is an important diagnostic but happens
@@ -610,20 +577,9 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
       policy_checker, std::move(options),
       /*delegate=*/base::WeakPtr<actor::ActorTaskDelegate>());
 
-  // Post-create validation. Turn-end `OnStop("completed")` calls
-  // `service->StopTask(...)` on the previous task; the actor
-  // service's async cleanup of that task can still be in flight
-  // when the next conversation turn calls `CreateTaskWithOptions`
-  // on a fresh `BrowserTool`. If the cleanup hasn't settled, the
-  // new task can be returned with a null id, or returned as a
-  // pointer that's not yet in the expected `kCreated` initial
-  // state — in which case the very next `PerformActions` silently
-  // drops its `BindOnce` and the inner ToolCallback fires
-  // `tool_dropped` from its destructor.
-  //
-  // Convert that silent drop into a typed `task_create_*` reject
-  // here so the model receives a recoverable error (and we get a
-  // `LOG(WARNING)` for telemetry).
+  // Post-create validation: the previous task's async cleanup can leave the new
+  // task null or not yet kCreated, which would silently drop the next callback;
+  // reject with a typed `task_create_*` error instead.
   if (task_id_->is_null()) {
     LOG(WARNING) << "[BrowserTool] EnsureTaskCreated session="
                  << GetSessionKey()
@@ -716,15 +672,8 @@ void BrowserTool::RunActorAction(apc::Actions actions,
   base::TimeTicks start_time = base::TimeTicks::Now();
   actor::ActorTaskMetadata task_metadata;
 
-  // Diagnostic: log the dispatch so we can correlate with whether
-  // OnActorPerformActionsDone fires (or gets dropped). Pairs with the
-  // entry log in OnActorPerformActionsDone and the
-  // `[NexusToolCallback] Callback destroyed without resolving` warning
-  // in nexus_tool_callback.cc — three together pinpoint where the
-  // callback goes missing when `tool_dropped` reaches the JS guest.
-  //
-  // VLOG(1): opt-in via --vmodule=browser_tool=1+. Routine per-tool-
-  // call line — would be too chatty at the default INFO floor.
+  // Diagnostic: log the dispatch to locate where a callback goes missing when
+  // `tool_dropped` reaches the guest. VLOG(1): --vmodule=browser_tool=1+.
   VLOG(1) << "[BrowserTool] PerformActions dispatch action="
           << action_name << " task_id=" << task_id->value()
           << " task_state="
@@ -847,27 +796,10 @@ void BrowserTool::OnActorPerformActionsDone(
     std::move(done).Reject("task_missing", ActionParams(action_name, "actor"));
     return;
   }
-  // Auto-recover from a wedged execution engine.
-  //
-  // `kExecutionEngineExistingAction` (code 37) means the actor's
-  // ExecutionEngine refused to take a new action because the prior
-  // one is still "in flight" — typically after a JS-side
-  // bridge_timeout (60s) or a renderer crash (STATUS_BREAKPOINT) left
-  // a phantom in-flight `Actions` request that never produced a
-  // result. Without intervention, EVERY subsequent tool call in this
-  // session keeps hitting 37 until the C++-side action_timeout (180s
-  // default) finally fires — a 60-180s dead window during which the
-  // model can do nothing. Even `BrowserCloseTab` re-hits 37 because
-  // it dispatches through the same actor task; the runtime's
-  // "close-and-reopen-the-tab-to-recover" advice for code 37 is
-  // therefore unreachable from inside the model.
-  //
-  // The recovery is the same one the model is being asked to do
-  // manually: stop the wedged task, reset cached id + subscription,
-  // and surface a typed error that tells the model the host fixed
-  // itself and the next call will mint a fresh task. The next tool
-  // call's `EnsureTaskCreated` re-arms a healthy task; the model
-  // loses ONE turn instead of being permanently stuck.
+  // Auto-recover from a wedged execution engine: code 37 means a phantom prior
+  // action blocks every later call until action_timeout. Stop the task, reset
+  // the cached id + subscription and return a typed error; the next call's
+  // `EnsureTaskCreated` mints a fresh task.
   if (result_code ==
       actor::mojom::ActionResultCode::kExecutionEngineExistingAction) {
     LOG(WARNING) << "[BrowserTool] " << action_name
@@ -886,28 +818,9 @@ void BrowserTool::OnActorPerformActionsDone(
     std::move(done).Reject("actor_engine_wedged", ActionParams(action_name));
     return;
   }
-  // Defense-in-depth — aligned to upstream glic
-  // (chrome/browser/glic/actor/glic_actor_task_manager.cc:161-167,
-  // GlicActorTaskManager::PerformActionsFinished which synthesizes a
-  // `kTaskWentAway` error when `!task` covers the in-state-map-but-
-  // dead case our `!task` guard above misses).
-  //
-  // The actor service's task map keeps terminal-state tasks around
-  // (see chrome/browser/actor/actor_task.h:99-100 — terminal states
-  // are sticky; tasks aren't immediately evicted). So `GetTask`
-  // returns a valid pointer to a dead task and the guard above
-  // passes. Without this second check, `BuildActionsResultWithObservations`
-  // walks a corpse, the actor framework silently drops the bound
-  // BindOnce, and the inner ToolCallback's destructor emits the
-  // synthetic `tool_dropped` error to the model — opaque and
-  // unrecoverable. Reject with a typed `task_went_away` instead, and
-  // proactively clear the cached id so the NEXT tool call goes
-  // through `EnsureTaskCreated` and gets a fresh task.
-  //
-  // The Layer-1 fix in `OnActorTaskStateChanged` already clears
-  // `task_id_` synchronously on state transitions; this branch
-  // guards the race where this callback fires before the state-
-  // change broadcast lands. Belt-and-suspenders, exactly like glic.
+  // The task map keeps terminal-state tasks, so `GetTask` can return a dead one:
+  // reject with a typed `task_went_away` and clear the cached id rather than let
+  // the callback drop. Covers the race before the state-change broadcast.
   if (task->IsCompleted()) {
     LOG(WARNING) << "[BrowserTool] " << action_name
                  << ": actor task already in terminal state "
@@ -922,20 +835,8 @@ void BrowserTool::OnActorPerformActionsDone(
     }
     return;
   }
-  // Defensive: don't kick off the observation pipeline when the task has
-  // no tabs. Upstream `actor::BuildActionsResultWithObservations` →
-  // `ActorKeyedService::RequestTabObservation` walks the task's tabs and
-  // calls `ActorTabData::DidObserveContent(content)` on each, which
-  // unconditionally `emplace()`s onto an `optional<AnnotatedPageContent>`.
-  // The `emplace` `reset()`s the prior value first — and we have observed
-  // upstream crashes when the prior value's protobuf arena memory was
-  // freed before this turn (chrome/browser/actor/actor_tab_data.cc:28,
-  // `optional<AnnotatedPageContent>::reset()` faulting in the proto's
-  // destructor). Skipping the pipeline when there are no tabs means we
-  // don't even enter that code path. Other safety: callers like `done`
-  // reach this path with `task->GetTabs()` populated only when the
-  // session has at least one live tab, so this is a tight guard for the
-  // genuinely-empty edge case (e.g. last tab closed mid-batch).
+  // Skip the observation pipeline when the task has no tabs (e.g. last tab
+  // closed mid-batch); upstream crashes have been observed in that path.
   if (task->GetTabs().empty()) {
     std::move(done).Reject("no_tabs", ActionParams(action_name));
     return;
@@ -1030,23 +931,9 @@ void BrowserTool::OnActionsResultBuilt(
   result.Set("ok", true);
 
   // ── Late-navigation settle guard ──────────────────────────────────────
-  // The upstream ObservationDelayController restarts its wait when a
-  // navigation STARTS during it (kPageNavigated) — but "page settled" and a
-  // renderer-initiated BeginNavigation travel on independent mojo pipes with
-  // no cross-pipe ordering, so under CPU load the browser can process
-  // "settled" while the click's navigation is still in transit. The APC
-  // fetch then snapshots the OLD document and the model is told its click
-  // did nothing (observed live: the e2e browser-tool sweep's click step
-  // reporting the pre-navigation URL under a 6-worker parallel run).
-  //
-  // By the time the observation RESULT is built we have had a full renderer
-  // roundtrip of wall time, so the raced navigation is browser-visible by
-  // now in practice: either still in flight (IsLoading / a pending entry)
-  // or already committed (live URL != the URL the observation captured).
-  // On either signal, wait out the navigation (bounded) and re-observe
-  // ONCE so the model sees the page its action actually produced. The
-  // healthy path — observation matches the committed URL, nothing in
-  // flight — pays nothing.
+  // "Page settled" and a renderer-initiated navigation travel on unordered
+  // pipes, so the observation can snapshot the old document. If a navigation is
+  // in flight or the URL moved, wait it out (bounded) and re-observe once.
   if (!was_settle_retry && result_proto && result_proto->tabs_size() > 0) {
     const std::optional<tabs::TabHandle> work = LastWorkTab();
     tabs::TabInterface* work_tab = work.has_value() ? work->Get() : nullptr;
@@ -1065,19 +952,9 @@ void BrowserTool::OnActionsResultBuilt(
                   << " committed_url=" << committed.spec()
                   << ") — waiting for quiescence, then re-observing once";
         nav_settle_observation_retried_ = true;
-        // 300 × 150ms = a 45s bound, well inside the 180s per-action
-        // budget. Generous on purpose: this path only runs when the
-        // observation is ALREADY known-stale, and under the machine load
-        // that creates this race a local navigation has been measured
-        // needing 17s+ from click to first server request (e2e sweep,
-        // 6-worker run). Real navigations rarely wait the full bound —
-        // the poll exits at COMMIT (URL change), not full load-stop.
-        // Better a late observation than a wrong one; a genuinely wedged
-        // load still re-observes at exhaustion and resolves.
-        // T0-c: the observation just built is NOT committed here — it is
-        // only sent if the work tab dies mid-wait (the fallback path in
-        // `WaitForWorkTabQuiescenceThenReobserve` commits it then);
-        // otherwise the re-observe builds and commits its own.
+        // 300 × 150ms = a 45s bound, inside the 180s per-action budget; the poll exits
+        // at commit. The observation built here is only sent if the work tab dies
+        // mid-wait; otherwise the re-observe commits its own.
         WaitForWorkTabQuiescenceThenReobserve(
             std::move(done), std::move(action_name), std::move(result),
             /*entry_committed_url=*/committed.spec(),
@@ -1295,16 +1172,8 @@ const char* FormControlTypeName(apc::FormControlType t) {
       return "select-multiple";
     case apc::FORM_CONTROL_TYPE_TEXT_AREA:
       return "textarea";
-    // <input type="button|submit|reset"> AND <button type="button|submit|
-    // reset|popover">. The model previously saw no `input_type` AND
-    // role:"textbox" for these, hiding submit/CTA buttons inside busy
-    // forms behind the same shape as text fields. Empirically reproduced
-    // on AKC's RETRIEVE EVENTS button (`<input type="button"
-    // value="RETRIEVE EVENTS" class="retrieve-events">`): the model
-    // surfaced the index but dismissed it as "not the button" because
-    // role read "textbox". Mapping to the HTML type string here +
-    // returning "button" from ExtractRole below makes the entry
-    // unambiguous on the wire.
+    // <input type="button|submit|reset"> and <button …>: report the HTML type and
+    // role "button" so buttons in forms do not read as text fields.
     case apc::FORM_CONTROL_TYPE_INPUT_BUTTON:
     case apc::FORM_CONTROL_TYPE_BUTTON_BUTTON:
       return "button";
@@ -1378,30 +1247,15 @@ std::string ExtractRole(const apc::ContentAttributes& attrs) {
       attrs.interaction_info().is_clickable()) {
     return "button";
   }
-  // Clickable images. Empirically `<input type="image">` reaches this
-  // function as `CONTENT_ATTRIBUTE_IMAGE` (NOT `FORM_CONTROL` — APC
-  // emits the input as an image node, the form-control sibling node
-  // either isn't produced or is filtered out before elements[]) and
-  // typically without `interaction_info.is_clickable()` set on the
-  // image node itself, so neither of the branches above fires and the
-  // element would otherwise emit as a bare `{index, type:"image"}` —
-  // hard to distinguish from a decorative <img>. IsActionable already
-  // accepted it (via `is_focusable` or `aria_role`), so it IS an
-  // actuator — surface it to the model as a button. Also catches
-  // `<img onclick>` / `<svg role="img" onclick>` icon-button patterns.
+  // Clickable images (`<input type="image">`, `<img onclick>`, …) arrive as
+  // CONTENT_ATTRIBUTE_IMAGE without is_clickable; IsActionable accepted them, so
+  // surface them as buttons.
   if (attrs.attribute_type() == apc::CONTENT_ATTRIBUTE_IMAGE) {
     return "button";
   }
-  // ARIA-only interactive widgets: the node is neither ANCHOR nor
-  // FORM_CONTROL and Blink didn't flag it as is_clickable (typically
-  // because the React/Vue framework delegates the click on the parent
-  // listbox and the child <li> has tabindex=-1 / cursor:auto). Surface
-  // the ARIA role string so the model sees `role: "option"` instead of
-  // a bare `{index, type:"list_item"}` it can't distinguish from a
-  // generic <li>. The allowlist + emitted role-string is the same
-  // shared `RoleStringFromAXRole` table that `IsActionable` checks —
-  // single source of truth, so adding a new role there automatically
-  // emits the matching role string here too.
+  // ARIA-only interactive widgets (not anchor / form control, not flagged
+  // clickable): emit the ARIA role from `RoleStringFromAXRole`, the same table
+  // `IsActionable` checks.
   if (attrs.has_aria_role()) {
     if (const char* role = RoleStringFromAXRole(attrs.aria_role())) {
       return role;
@@ -1440,15 +1294,8 @@ std::optional<base::Value> ExtractBoundingBox(
 }  // namespace
 
 void BrowserTool::CollectLabelTargets(const apc::ContentNode& node) {
-  // Record, for every `<label for=X>` node with a non-empty visible rect,
-  // the mapping `X (the labelled input's dom_node_id) → {label's own
-  // node_id, label box}`. APC sets `label_for_dom_node_id` on the label
-  // node and guarantees it equals the input's `common_ancestor_dom_node_id`
-  // (see common_quality_data.proto). This lets `WalkContentNode` retarget
-  // a hidden checkbox/radio (custom "sr-only" input behind a styled label,
-  // e.g. Uniqlo's size/colour filters) to its visible, clickable label.
-  // First label with a visible box wins (labels are 1:1 with inputs in
-  // practice).
+  // Map each visible `<label for=X>` to X's dom_node_id so `WalkContentNode` can
+  // retarget a hidden checkbox/radio to its visible label; first visible wins.
   if (node.has_content_attributes()) {
     const apc::ContentAttributes& attrs = node.content_attributes();
     if (attrs.has_label_for_dom_node_id() &&
@@ -1529,22 +1376,9 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
       entry.text = text;
       node_registry_.Set(node_id, entry);
 
-      // Build the rich element payload. Required: index + type.
-      // Everything else is opportunistic — only emit a key when the
-      // proto carries a non-empty value, so the serialized observation
-      // stays small on element-heavy pages (Baidu's homepage is ~80
-      // form controls) while still giving the LLM enough signal to
-      // tell a search box ("role=searchbox, placeholder=百度一下")
-      // apart from a generic submit button.
-      //
-      // `type` and `role` are intentionally separate fields: `type` is
-      // the proto-level structural kind (link / form_control / element
-      // / image), `role` is the ARIA-derived interaction role
-      // (searchbox / textbox / checkbox / combobox / button / link).
-      // For anchors they coincide (both "link"); for form controls
-      // they diverge ("form_control" vs "textbox") and the role plus
-      // the optional input_type / placeholder give the LLM the shape
-      // it needs to disambiguate inputs.
+      // Rich element payload: index + type required, other keys only when non-empty.
+      // `type` is the proto's structural kind, `role` the ARIA-derived interaction
+      // role; for form controls they diverge.
       base::DictValue elem;
       elem.Set("index", node_id);
       elem.Set("type", type_name);
@@ -1587,16 +1421,9 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
             elem.Set("is_checked", fc.is_checked());
           }
         }
-        // Native <select> options. APC carries the full option list (value +
-        // text) in `select_options`; without surfacing it the model sees only
-        // the currently-selected label (`value` above) and can neither
-        // DISCOVER that other options exist nor BrowserSelectOption one — that
-        // tool needs the exact `value` attribute, which clicking a native
-        // <select> can't reveal (the popup is OS-rendered, not DOM). Emit
-        // `options: [{value, text, selected?, disabled?}]` so the model can
-        // match a visible label to its value and select it. Capped so a huge
-        // <select> (country picker ~250) can't bloat the observation;
-        // `options_truncated: true` flags when the list was cut.
+        // Native <select> options: emit `options: [{value, text, selected?,
+        // disabled?}]` so the model can select by value (the popup is OS-rendered);
+        // capped, with `options_truncated: true` when cut.
         if (fc.select_options_size() > 0) {
           constexpr int kMaxSelectOptions = 200;
           const int total = fc.select_options_size();
@@ -1652,16 +1479,9 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
         box = ExtractDescendantBoundingBox(node);
       }
 
-      // Hidden-control retarget. A checkbox/radio whose own rect is empty
-      // is a CSS-hidden ("sr-only") custom control behind a styled
-      // `<label for=...>`. The actor can't click the input (empty rect →
-      // kElementOffscreen) and scroll_to can't help. If the pre-pass found
-      // the associated label and it HAS a visible box, retarget this
-      // element to the label's node_id + box: clicking the label toggles
-      // the input via native HTML, so the LLM gets a working, box-bearing
-      // control instead of an un-clickable offscreen one. We keep the
-      // input's role / input_type / name / is_checked (set above) so the
-      // model still sees it as a checkbox/radio and its current state.
+      // Hidden-control retarget: an empty-rect checkbox/radio with a visible
+      // `<label for>` is retargeted to the label's node_id + box (clicking it
+      // toggles the input), keeping the input's role, type, name and checked state.
       if (!box && attrs.has_form_control_data()) {
         const apc::FormControlType fct =
             attrs.form_control_data().form_control_type();
@@ -1777,26 +1597,10 @@ base::DictValue BrowserTool::BuildObservationDict(
   // the settle guard dropped that observation) is dead — this walk stages
   // its own, and only the caller resolving THIS result commits.
   observation_baseline_.Discard();
-  // The "working tab" is the session's stored `last_work_tab_` — set
-  // by `RecordWorkTab` at the top of `RunActorAction` /
-  // `RunTabObservation`, so by the time we're building the
-  // post-action observation it points at the tab the just-dispatched
-  // action ran against. Stateful by design: any future tab-less tool
-  // call also reads it via `GetSessionScopedActiveTabHandleId`, so
-  // the LLM's "current focus" lives in one place and the observation
-  // mirrors it.
-  //
-  // Only the working tab gets the full APC walk, `elements[]`
-  // payload, screenshot flag, `last_observation_*` snapshot, and
-  // `node_registry_` updates. Every other session-owned tab in the
-  // observation gets basics only — `tab_id` / `url` / `title`. The
-  // LLM must `BrowserActivateTab(id)` to bring a background tab into
-  // focus and see its interactive elements.
-  //
-  // `LastWorkTab()` returns nullopt when no tool action has dispatched
-  // yet OR the recorded tab has died (e.g. just-closed by `close_tab`).
-  // In that case every entry is basics-only and the
-  // `last_observation_*` snapshot stays cleared.
+  // Only the working tab (`LastWorkTab()`, recorded by `RecordWorkTab`) gets the
+  // full APC walk, `elements[]`, screenshot, `last_observation_*` and registry
+  // updates; other session tabs get `tab_id` / `url` / `title`. With no working
+  // tab every entry is basics-only.
   const std::optional<tabs::TabHandle> working_handle = LastWorkTab();
   const std::optional<int32_t> working_tab_id =
       working_handle.has_value()
@@ -1840,16 +1644,8 @@ base::DictValue BrowserTool::BuildObservationDict(
     base::DictValue tab_dict;
     tab_dict.Set("tab_id", tab_obs.id());
 
-    // Surface observation-fetch failures LOUDLY instead of silently
-    // emitting an empty tab. Upstream's FetchCallback
-    // (chrome/browser/actor/actor_proto_conversion.cc) sets
-    // `result = TAB_OBSERVATION_FETCH_ERROR` and returns WITHOUT
-    // attaching `annotated_page_content` when the APC fetch or a
-    // required screenshot capture fails — so without this field the
-    // model (and every e2e assertion) sees `elements: []` +
-    // `page_text: ""` with `ok: true` and misreads a broken
-    // observation as an empty page. The sub-result codes say which
-    // leg failed (APC vs screenshot).
+    // Surface observation-fetch failures: upstream returns no page content on an
+    // APC or screenshot failure, which would otherwise read as an empty page.
     if (tab_obs.result() != apc::TabObservation::TAB_OBSERVATION_OK) {
       tab_dict.Set(
           "observation_error",
@@ -1888,16 +1684,9 @@ base::DictValue BrowserTool::BuildObservationDict(
     }
 
     // ── Working tab: full payload ─────────────────────────────────
-    // Deliver the actual pixels ONLY for BrowserScreenshot. Every other action
-    // omits the image entirely: the structured observation already lists every
-    // actionable element, and shipping a base64 image on every action would
-    // bloat each result with pixels the model didn't ask for. We intentionally
-    // emit NO availability flag — the model can call BrowserScreenshot whenever
-    // it needs pixels regardless of any marker, and a bare `has_screenshot`
-    // flag read as if the image were attached (it wasn't), so it was removed.
-    // The presence of the `screenshot` key is the unambiguous "image included"
-    // signal. (`tab_obs.has_screenshot()` below is the APC proto getter, not a
-    // result field.)
+    // Pixels only for BrowserScreenshot, with no availability flag: the
+    // `screenshot` key's presence is the signal. (`tab_obs.has_screenshot()` is
+    // the proto getter.)
     if (include_screenshot_image && tab_obs.has_screenshot() &&
         !tab_obs.screenshot().empty()) {
       // The bridge browser-result transport is JSON-only, and the model API
@@ -2058,19 +1847,10 @@ const NodeRegistry::Entry* BrowserTool::LookupNode(
 }
 
 // =============================================================================
-// Tool bodies
+// Tool bodies: action tools dispatch one `apc::Actions` via `RunActorAction`;
+// observation actions use `RunTabObservation`; `read_element` reads the
+// element registry synchronously.
 // =============================================================================
-//
-// Action tools build a single-action `apc::Actions` proto and dispatch
-// through `RunActorAction`. Tools that take an optional `tab_id` resolve
-// to the active tab via `ResolveTabIdOrReject` when the LLM omits it.
-//
-// Observation actions (`screenshot` / `read_page` / `find_text`) skip
-// the PerformActions path: they call
-// `RunTabObservation`, which marks the target tab via
-// `ActorTask::ObserveTabOnce` and then runs
-// `BuildActionsResultWithObservations` directly. `read_element`
-// is fully synchronous — it just reads the per-session element registry.
 
 }  // namespace nexus
 

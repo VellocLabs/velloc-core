@@ -539,22 +539,10 @@ FileTool::ReadResult ReadImageFile(const base::FilePath& path,
                                 last_modified);
 }
 
-// Build the "1\tline\n2\tline\n…" line-numbered projection Read returns
-// (spec 2-1-7). Edit's `old_string` is copied from this view, so the
-// line-number prefix shape is part of the Read contract.
-//
-// `start_line_number` is the 1-indexed number to print on the FIRST
-// emitted line (typically `offset` if specified, else 1). When
-// `max_lines` has a value, the function stops after that many lines
-// (the caller-supplied `limit`); when it is nullopt the whole file from
-// `start` is emitted. Spec 2-1-9 / 2-1-10: there is NO default line cap
-// (the 2000-line figure is guidance in the tool description only) and NO
-// byte cap;
-// overflow is enforced by the post-read token guard, which THROWS rather
-// than silently truncating.
-//
-// `content` is the same selected text without line-number prefixes, used for
-// the output token check.
+// Read's line-numbered projection ("1\tline\n…"), part of the Read contract
+// since Edit copies from it. Starts at `start_line_number`; `max_lines` caps
+// lines, with no default or byte cap (the token guard throws). `content` is
+// the unprefixed text for the token check.
 struct ProjectionResult {
   std::string projection;
   std::string content;
@@ -745,15 +733,9 @@ std::string DecodeToUTF8(const std::string& raw, bool* is_utf16le) {
   return raw;
 }
 
-// Fold curly quotes to straight ones, the key for quote-tolerant matching
-// (spec 2-2-6).
-// UTF-8: U+2018 '=E2 80 98, U+2019 '=E2 80 99,
-//        U+201C "=E2 80 9C, U+201D "=E2 80 9D.
-// When `orig_offsets` is non-null, records for each normalized byte the byte
-// offset of the original character it came from, plus one end sentinel
-// (str.size()). Needed because in UTF-8 this normalization is NOT
-// length-preserving (a 3-byte curly quote becomes 1 ASCII byte), so a
-// normalized index cannot be reused against the original directly.
+// Fold curly quotes (U+2018/2019/201C/201D) to straight ones for
+// quote-tolerant matching. `orig_offsets` maps each normalized byte to its
+// original offset (plus an end sentinel), since the fold changes lengths.
 std::string NormalizeQuotes(const std::string& str,
                             std::vector<size_t>* orig_offsets = nullptr) {
   std::string result;
@@ -1034,18 +1016,7 @@ bool IsBlockedDevicePathForTesting(const std::string& path) {
 }
 
 // =============================================================================
-// Out-of-line ctors/dtors for the per-method result structs.
-//
-// Required by chromium-style: any class/struct with non-trivial member
-// types (std::string, base::Value::Dict) must declare AND define its
-// special members out-of-line. Defining them here as `= default` keeps
-// them trivial in spirit while satisfying the clang plugin and giving
-// the compiler a single, predictable instantiation point.
-//
-// All three structs are move-only: base::Value::Dict is move-only, and
-// allowing copies would silently regress that. `noexcept` on the move
-// ops matters for std::vector / std::optional / base::BindOnce
-// performance — they pick the move path only when it can't throw.
+// Out-of-line, move-only special members for the result structs.
 // =============================================================================
 
 FileTool::ReadResult::ReadResult() = default;
@@ -1095,23 +1066,8 @@ FileTool::~FileTool() {
 void FileTool::OnStop(OnStopReason reason) {
   LOG(INFO) << "[FileTool] OnStop session=" << GetSessionKey()
             << " reason=" << OnStopReasonToString(reason);
-  // InvalidateWeakPtrs is gated on TEARDOWN reasons only — the ones
-  // that mean this FileTool is actually going away.
-  //
-  // Each Run<Name>OnUI binds its PostTaskAndReplyWithResult reply
-  // through `weak_ptr_factory_.GetWeakPtr()`. On a genuine teardown
-  // (session deleted / panel closed / shutdown / dtor) we invalidate so
-  // any reply whose blocking I/O is still in flight on the thread pool
-  // drops cleanly — the discarded ToolCallback emits `tool_dropped`
-  // rather than resolving into a half-destroyed FileTool.
-  //
-  // Per-turn cleanup reasons (kCompleted, kUserStopped) fire OnStop
-  // while the ToolSession stays warm in the adapter map (typed-OnStop
-  // refactor — see tool_session_registry.cc). The agent loop blocks on tool
-  // results before declaring a turn complete, so there is no in-flight
-  // file I/O to cancel at those points; invalidating would be pure
-  // churn (and `GetWeakPtr()` simply re-vends a fresh, valid WeakPtr on
-  // the next turn's call anyway). Skip it.
+  // Invalidate WeakPtrs only on teardown reasons, so in-flight replies drop;
+  // per-turn reasons have no in-flight I/O.
   const bool teardown = reason == OnStopReason::kSessionDeleted ||
                         reason == OnStopReason::kDisconnected ||
                         reason == OnStopReason::kShutdown ||
@@ -1135,32 +1091,10 @@ void FileTool::ClearReadState() {
 }
 
 // =============================================================================
-// Run<Name>OnUI overrides — invoked directly on UI by the codegen
-// dispatcher (the JSON declarations carry `runtime.thread = "ui"`).
-//
-// Each body runs on UI, so:
-//   - it may read FileTool / ToolSession state safely (`GetSession()`,
-//     `weak_ptr_factory_.GetWeakPtr()`) — the object is guaranteed
-//     alive on the dispatcher's own sequence;
-//   - it validates cheaply, then hands the BLOCKING file I/O to a
-//     base::ThreadPool worker via PostTaskAndReplyWithResult. The work
-//     is a *static* `<Name>Blocking` helper (no `this`), so a session
-//     torn down while the I/O is in flight can never be dereferenced by
-//     the worker;
-//   - the reply `On<Name>Done` is bound through GetWeakPtr() and runs
-//     back on UI. If the session ended meanwhile, the WeakPtr is
-//     invalidated and the reply drops; otherwise it does the single
-//     `done.Resolve` / `done.Reject`. Resolve/Reject must run on UI
-//     because the callbacks inside `done` hold a UI-resident
-//     `WeakPtr<ToolSessionRegistry>`.
-//
-// Validation failures reject `done` inline — we're already on UI, so
-// there's no need to round-trip through the reply trampoline.
-//
-// The hop traits are {MayBlock(), USER_VISIBLE}: disk I/O may block,
-// and the user is waiting on the LLM's tool result (not background
-// bookkeeping). Inlined at each call site to match BrowserTool's
-// download path and ProcessTool.
+// Run<Name>OnUI overrides (runtime.thread = "ui"): validate on UI (rejecting
+// inline), hop the static `<Name>Blocking` helper to base::ThreadPool
+// {MayBlock, USER_VISIBLE}, and reply on UI through GetWeakPtr(), so a torn
+// down session is never touched.
 // =============================================================================
 
 void FileTool::RunReadOnUI(::nexus::generated::FilesReadInput input,
@@ -1536,15 +1470,8 @@ FileTool::ReadResult FileTool::ReadFileBlocking(
   ProjectionResult projection =
       BuildLineNumberedProjection(projection_source, start_line, max_lines);
 
-  // Spec 2-1-6: when the selected range yields no content the model must
-  // receive a system-reminder warning *in place of* file content — never
-  // an empty result. Without this, an empty file (or an offset past EOF)
-  // produced an empty `message`/`payload`, and OnReadDone resolved with an
-  // empty dict: the model saw `{}` instead of the documented warning, and
-  // the read state was never recorded (so a follow-up Write to a freshly
-  // read empty file was wrongly rejected as "not read yet"). Two warnings,
-  // distinguishing a genuinely empty file from an
-  // offset past the end of file.
+  // Empty selection: return a warning in place of content, never an empty
+  // result, distinguishing an empty file from an offset past EOF.
   if (projection.lines_emitted == 0) {
     result.ok = true;
     result.file_path = std::move(path);

@@ -13,25 +13,10 @@
 
 namespace nexus::browser_tool_internal {
 
-// BrowserScreenshot image shaping — the step between the upstream capture and
-// the model.
-//
-// Why this exists. A vision model bills an image by its PIXEL COUNT, not its
-// byte size, so the two levers that actually move cost and legibility are:
-//   * fewer pixels — cap the long edge, or crop to the one element the model
-//     asked about;
-//   * clean glyph edges — screenshots are mostly text, and a lossy JPEG
-//     (upstream's default is quality 40) smears exactly the high-frequency
-//     strokes a model needs to tell `l`/`1`/`I` apart.
-// So the capture is requested as PNG at native resolution and shaped here:
-// decode → optional crop → downscale to `kScreenshotMaxEdge` → PNG.
-//
-// Coordinate space. APC element boxes (`elements[].box`) are in Blink space,
-// i.e. device pixels, and a native-resolution viewport capture is in the same
-// device pixels — so a box maps onto the captured image 1:1 with no DPR
-// arithmetic. That is why the capture must NOT be pre-scaled upstream
-// (`max_width`/`max_height` stay unset): the crop has to happen before the
-// downscale.
+// BrowserScreenshot image shaping: capture PNG at native resolution, then
+// decode → optional crop → downscale to `kScreenshotMaxEdge` → PNG (models bill
+// pixels; JPEG smears text). APC boxes and the capture share device pixels, so
+// the capture must not be pre-scaled.
 
 // Long-edge cap for the delivered image. Matches the guest's
 // `TOOL_RESULT_IMAGE_MAX_EDGE` (nexus_web `utils/imagePaste.ts`), so the
@@ -53,24 +38,11 @@ std::optional<gfx::Rect> ComputeScreenshotCropRect(const gfx::Rect& element_box,
                                                    const gfx::Size& image_size,
                                                    int padding);
 
-// Shapes the screenshot carried by a BrowserScreenshot tool result
-// (`observation.tabs[].screenshot = {mime, data_base64}`), in place of the
-// returned copy. CPU-bound (decode/resize/encode) — run it off the UI thread.
-//
-// With `crop_index`, the image is cropped to that element's `box` from the
-// SAME tab's `elements[]` (the fresh walk taken with this capture, so the box
-// and the pixels agree). Every outcome is explicit in the screenshot dict:
-//   * `mime` "image/png", `data_base64`, `width` / `height` (delivered pixels);
-//   * `scale` — delivered pixels per observation pixel, present only when the
-//     image was downscaled (map an image point back: box_px = crop.x + px /
-//     scale);
-//   * `crop: {index, box:[x,y,w,h]}` — the region actually delivered, in
-//     observation coordinates;
-//   * `crop_error` — the index had no usable box; the FULL viewport was
-//     delivered instead (never a silent fallback);
-//   * `shaping_error` — the capture could not be decoded/encoded; the original
-//     bytes are passed through untouched.
-// A result without a screenshot is returned unchanged.
+// Contract: shapes `observation.tabs[].screenshot` in a BrowserScreenshot
+// result; CPU-bound, off UI. `crop_index` crops to that element's box from the
+// same tab. Output: `mime`, `data_base64`, `width` / `height`; `scale` when
+// downscaled; `crop: {index, box}`; `crop_error` (full viewport delivered);
+// `shaping_error` (original bytes kept). No screenshot → unchanged.
 base::DictValue ShapeScreenshotResult(base::DictValue result,
                                       std::optional<int> crop_index,
                                       int max_edge);

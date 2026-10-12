@@ -66,27 +66,10 @@ struct ListenerConfig {
   std::vector<std::string> local_addresses;
 };
 
-// The embedded relay.
-//
-// THREADING — two objects, one per sequence, and nothing shared between them:
-//
-//   NexusRemoteAccessListener   the handle. Lives on its owner's sequence (the
-//                               service's UI thread). Every public method and
-//                               every callback it delivers runs there.
-//   NexusRemoteAccessListener::Core
-//                               the relay itself: the net::HttpServer, its
-//                               Delegate, and all routing / pairing state.
-//                               Constructed, used and destroyed ONLY on a
-//                               dedicated `MessagePumpType::IO` thread (model:
-//                               content/browser/devtools/devtools_http_handler).
-//
-// The two talk only by posting tasks (base::SequenceBound one way,
-// base::BindPostTask the other). Consequences callers can rely on:
-//   * Nothing here ever blocks: Start is asynchronous, Stop and the destructor
-//     return immediately (the IO thread is joined on the thread pool).
-//   * `ProxyCallback` is ALWAYS run on the owner's sequence — the handle does
-//     the hop, so a callback bound to an owner-sequence WeakPtr is safe.
-//   * The Core has NO Profile and never touches one.
+// The embedded relay. Threading: the handle lives on the owner's (UI)
+// sequence; its Core (net::HttpServer, routing, pairing state) lives only on a
+// dedicated IO thread, and the two only post tasks. Nothing blocks;
+// `ProxyCallback` always runs on the owner's sequence; the Core has no Profile.
 class NexusRemoteAccessListener {
  public:
   // proxy_callback(url_path, if_none_match, if_modified_since, done) asks the

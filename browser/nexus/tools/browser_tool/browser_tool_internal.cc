@@ -304,27 +304,8 @@ std::optional<int32_t> GetSessionScopedActiveTabHandleId(
                                               : nullptr);
   }
 
-  // Three-level resolution, in priority order:
-  //
-  //   1. Chrome's actually-active tab IF it carries this session's tag.
-  //      Aligns with the system-prompt language "Most tools act on the
-  //      currently-active tab" — whatever the LLM (or the user) brought
-  //      to the foreground wins.
-  //
-  //   2. `BrowserTool::LastWorkTab()` — the most recent tab a tool
-  //      actually dispatched against, validated still-alive and still
-  //      session-tagged. Answers "the LLM was working on X; now it's
-  //      calling a tab-less tool, default to X" when the user's
-  //      foreground tab is outside the session. Set only by
-  //      `RunActorAction` / `RunTabObservation`, NOT by tab
-  //      creation/activation — so it tracks real work, not focus
-  //      cycles. Renamed from the earlier `last_active_tab_` to make
-  //      the semantic precise.
-  //
-  //   3. First session-owned tab from `CollectSessionTabs()` in
-  //      browser-window-activation order. Deterministic fallback when
-  //      neither (1) nor (2) applies (e.g. first tool call of a fresh
-  //      session before any work has dispatched).
+  // Resolution order: Chrome's active tab if session-tagged; then
+  // `LastWorkTab()`; then the first session tab from `CollectSessionTabs()`.
   Profile* profile = browser_tool->GetProfile();
   if (std::optional<int32_t> active = GetActiveTabHandleId(profile);
       active.has_value()) {
@@ -454,27 +435,10 @@ std::string ExtractNodeText(const apc::ContentAttributes& attrs) {
   return std::string();
 }
 
-// Single source of truth for the APC AXRole → ARIA role-string mapping.
-// See the header comment in browser_tool_internal.h for the policy.
-//
-// Two batches:
-//   1. Pre-existing (option / menuitem / tab / treeitem family). The
-//      "list-style picker" widgets that surface as ARIA-only nodes —
-//      Healthgrades' insurance autocomplete and similar React widgets.
-//   2. Direct-control widget roles (button / link / checkbox / radio /
-//      switch). The W3C ARIA "widget roles" subset that imply a single
-//      click-to-activate interaction with no required value-entry /
-//      arrow-key / popup semantics. Catches modern React surfaces
-//      (Radix, Headless UI, Material) that render their primitives as
-//      `<div role="button">` etc. without native HTML interactivity.
-//      AX_ROLE_TOGGLEBUTTON returns "button" too — the model already
-//      knows how to click a button, and the toggle-state semantics
-//      (`aria-pressed`) are a separate exposure follow-up.
-//
-// Intentionally NOT included (would mislead the model — needs richer
-// metadata than just a role string): SLIDER, SPINBUTTON, COMBOBOX*,
-// SEARCHBOX, DISCLOSURETRIANGLE (expanded-state), MENUBUTTON / POPUPBUTTON
-// (popup management). Those are tracked as a separate follow-up.
+// Single source of truth for the APC AXRole → ARIA role-string mapping:
+// list-style picker roles and direct-control widget roles (TOGGLEBUTTON →
+// "button"). Roles needing more than a role string (slider, spinbutton,
+// combobox, searchbox, disclosure, menu/popup buttons) are excluded.
 const char* RoleStringFromAXRole(apc::AXRole role) {
   switch (role) {
     // Batch 1 — list-style picker family (shipped earlier; found on a
@@ -484,17 +448,8 @@ const char* RoleStringFromAXRole(apc::AXRole role) {
       return "option";
     case apc::AX_ROLE_MENUITEM:
       return "menuitem";
-    // NOTE: `MENUITEMCHECKBOX` and `MENUITEMRADIO` are kept here as
-    // defensive forward-compat, but empirically Blink normalizes
-    // `<div role="menuitemcheckbox" aria-checked="…">` (and the radio
-    // variant) to a synthesized FORM_CONTROL with
-    // `input_type:"checkbox"` / `"radio"`, and APC's `aria_role` field
-    // collapses to `CHECKBOX` / `RADIOBUTTON` — same shape as
-    // `AX_ROLE_SWITCH` below. The model sees role:"checkbox" plus the
-    // visible label text, which is sufficient to actuate the control.
-    // These cases fire only if Blink ever preserves the distinguishing
-    // role (e.g. without `aria-checked`, though that's semantically
-    // invalid per W3C ARIA).
+    // Kept for forward-compat: Blink normally normalizes these to checkbox /
+    // radio form controls.
     case apc::AX_ROLE_MENUITEMCHECKBOX:
       return "menuitemcheckbox";
     case apc::AX_ROLE_MENUITEMRADIO:
@@ -513,15 +468,7 @@ const char* RoleStringFromAXRole(apc::AXRole role) {
       return "checkbox";
     case apc::AX_ROLE_RADIOBUTTON:
       return "radio";
-    // NOTE: `AX_ROLE_SWITCH` is intentionally NOT mapped here. Blink
-    // normalizes `<div role="switch">` (and `<input type="checkbox"
-    // switch>`) to `AX_ROLE_CHECKBOX` in the proto's `aria_role`
-    // field — the SWITCH enum value never appears for switches we
-    // actually need to recognize. APC additionally synthesizes a
-    // FORM_CONTROL representation with `input_type:"checkbox"` for
-    // these elements, so the model already sees a usable signal
-    // (role:"checkbox" + text label). Adding a SWITCH case here
-    // would be dead code that misleads readers.
+    // AX_ROLE_SWITCH is not mapped: Blink reports switches as AX_ROLE_CHECKBOX.
     default:
       return nullptr;
   }
@@ -538,15 +485,8 @@ bool IsActionable(const apc::ContentAttributes& attrs) {
       return true;
     }
   }
-  // ARIA-only interactive roles. React/Vue autocompletes routinely render
-  // suggestions as <li role="option"> (and menus as <li role="menuitem">,
-  // tab strips as <div role="tab">, etc.) with no native click handler and
-  // no FORM_CONTROL/ANCHOR attribute_type, so they fall through the two
-  // checks above and never reach elements[]. APC's `aria_role` (proto field
-  // 26 on ContentAttributes, populated in ACTIONABLE_ELEMENTS mode) carries
-  // the resolved AXRole — defer to the shared `RoleStringFromAXRole`
-  // allowlist so this gate and the role-string emission in ExtractRole
-  // can't drift apart.
+  // ARIA-only interactive roles (options, menu items, tabs) without native click
+  // handlers: gated by the shared `RoleStringFromAXRole` allowlist.
   if (attrs.has_aria_role() &&
       RoleStringFromAXRole(attrs.aria_role()) != nullptr) {
     return true;

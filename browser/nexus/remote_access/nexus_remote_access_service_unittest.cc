@@ -84,16 +84,8 @@ class NexusRemoteAccessServiceTest : public testing::Test {
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 };
 
-// Regression test for the cold-boot DCHECK crash (FATAL thread_restrictions.cc
-// !tls_blocking_disallowed): the bridge adapter constructs this service on the
-// UI thread inside BrowserMainLoop's DisallowUnresponsiveTasks scope, and the
-// OLD GetStatus() called net::GetNetworkList() (a ScopedBlockingCall)
-// synchronously -> DCHECK. The fix caches the list and refreshes it on a
-// MayBlock worker, so GetStatus() must NEVER synchronously populate addresses.
-//
-// This pins the cache contract: a getStatus dispatched before the async
-// refresh has run returns the (initially empty) cache — proving the call did
-// not block computing it on the spot.
+// GetStatus must never populate addresses synchronously (it runs where
+// blocking is disallowed): before the async refresh it returns the empty cache.
 TEST_F(NexusRemoteAccessServiceTest, GetStatusReturnsCacheWithoutBlocking) {
   std::unique_ptr<TestingProfile> profile = CreateProfile();
   NexusRemoteAccessService& service = GetRemoteAccessService(profile.get());
@@ -258,21 +250,9 @@ TEST_F(NexusRemoteAccessServiceTest, AddressTheMachineLacksIsNoAddress) {
   EXPECT_EQ(v6.error.value_or(""), "no_address");
 }
 
-// A REAL proxy-routed HTTP request, end to end through the service: listener
-// IO thread -> UI-thread HandleProxyRequest -> SimpleURLLoader -> back out on
-// the wire. Start/Stop tests reach none of this, and it hid two FATALs in a
-// row: the UI-bound WeakPtr run on the IO thread, and then DownloadToString's
-// DCHECK on a body cap above kMaxBoundedStringDownloadSize.
-//
-// What the answer IS depends on the environment: in a Debug build the relaxed
-// proxy dials the guest origin at http://localhost:5173 over the real network
-// stack (nexus_webui_config.cc), so with no dev server listening the upstream
-// load fails and the proxy answers its own 502 no-store — but with a vite dev
-// server UP, that server answers (its SPA history-fallback returns index.html:
-// 200 + a forwardable Content-Type). Either proves the request traversed the
-// whole proxy path without a FATAL, which is the regression this guards. The
-// assertion therefore accepts both — it must NOT depend on whether a dev
-// server happens to be running on the machine running the test.
+// A real proxy-routed HTTP request, end to end through the service. The
+// upstream answer depends on whether a dev server is running, so either a 502
+// or a forwarded response passes; the guard is that nothing crashes.
 TEST_F(NexusRemoteAccessServiceTest, ProxyRequestIsAnsweredNotCrashed) {
   std::unique_ptr<TestingProfile> profile = CreateProfile();
   NexusRemoteAccessService& service = GetRemoteAccessService(profile.get());
@@ -325,16 +305,9 @@ TEST_F(NexusRemoteAccessServiceTest, ProxyRequestIsAnsweredNotCrashed) {
     response.append(read_buffer->data(), static_cast<size_t>(read));
   }
   EXPECT_NE(response.find("HTTP/1.1 "), std::string::npos) << response;
-  // The proxy answered through the full path. Two valid outcomes:
-  //   * no upstream listening  -> the proxy's own "502" + "no-store";
-  //   * a dev server up (Debug relaxed proxy -> localhost:5173) -> the
-  //     upstream's response, which always carries a Content-Type header
-  //     (the proxy sets the body's Content-Type via SetBody, emitted as
-  //     "Content-Type:"; forwarded revalidation headers are lowercased).
-  // Either way a recognisable proxy header proves HandleProxyRequest ->
-  // SimpleURLLoader -> OnProxyComplete ran and replied, not crashed. Match
-  // case-insensitively: AddHeader emits forwarded names lowercased, SetBody
-  // emits "Content-Type:" capitalised.
+  // Two valid outcomes: the proxy's own "502" + "no-store", or a dev server's
+  // response with a Content-Type. Match case-insensitively (forwarded names are
+  // lowercased, SetBody's "Content-Type:" is not).
   const std::string lower = base::ToLowerASCII(response);
   const bool proxy_502 = lower.find("no-store") != std::string::npos;
   const bool proxied_upstream =

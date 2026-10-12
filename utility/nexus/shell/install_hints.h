@@ -10,17 +10,9 @@
 
 namespace nexus {
 
-// Returns a multi-line, model-facing instruction string describing how the
-// user can install `tool_id` on `platform` ("windows" | "macos" | "linux").
-// Returns the empty string when no hint is recorded for that combination —
-// callers should still surface a generic "binary not found" message in that
-// case so the model is not silently misled into thinking the tool exists.
-//
-// The returned text is intentionally terse and command-oriented (one
-// shell-line per package manager) so the model can copy/paste it into the
-// Bash tool without further reformatting. Hints are deliberately ordered
-// from "most likely to be present" to "least likely" — the model picks the
-// first one whose package manager exists on PATH.
+// A terse, model-facing install instruction for `tool_id` on `platform`, one
+// line per package manager, most likely first; empty when none is recorded
+// (callers still report "binary not found").
 std::string InstallHintFor(std::string_view tool_id,
                            std::string_view platform);
 

@@ -366,15 +366,9 @@ void NexusRemoteAccessService::StartListener(const std::string& bind_address,
   config.port = static_cast<uint16_t>(port);
   config.interface_version = kNexusInterfaceVersion;
   config.control_token = control_token_;
-  // A wildcard (0.0.0.0) bind answers clients on every NIC: hand the Core the
-  // machine's current IPv4 literals so its Host gate can recognise a request
-  // that arrived on any of them (pushed, never pulled — the Core never calls
-  // net::GetNetworkList, a blocking call, on its IO thread). The cache may be
-  // empty this early; the listener still binds, the Host gate just matches
-  // loopback-only until PushLocalAddresses hands it the full set — from
-  // OnListenerStarted if the refresh landed during kStarting, else from
-  // OnAddressesRefreshed. Loopback is always present (the runtime dials
-  // 127.0.0.1).
+  // Wildcard (0.0.0.0) bind: push the machine's IPv4 literals to the Core's Host
+  // gate (it never calls the blocking net::GetNetworkList). Until pushed it
+  // matches loopback only; loopback is always present.
   net::IPAddress bind_ip;
   if (bind_ip.AssignFromIPLiteral(bind_address) && bind_ip.IsZero()) {
     config.bind_is_wildcard = true;

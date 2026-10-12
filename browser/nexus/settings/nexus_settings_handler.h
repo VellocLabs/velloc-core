@@ -27,32 +27,10 @@ class LlmProvider;
 
 namespace settings {
 
-// WebUI message handler for the chrome://settings/nexus subpage.
-//
-// Follows the SettingsPageUIHandler pattern: receives messages from the
-// Polymer settings UI and delegates to the Nexus LlmBroker KeyedService.
-//
-// Handler methods exposed via chrome.send (chrome://custom.top-chrome):
-//   - getAgentProviders / updateProviderConfig / verifyProviderConfig /
-//     resetProviderConfig — provider CRUD still on chrome.send because the
-//     e2e harness uses these routes directly (`harness/settingsRoundtrip.ts`
-//     etc.); production WebUI calls them through the panel bridge.
-//   - getWebappUrl / setWebappUrl — launch-time C++ read; stays.
-//   - restartBrowser — guest-recovery overlay's "Restart client" button.
-//   - reloadPanel — guest-recovery overlay's "Try again" (and its offline
-//     auto-retry).
-//   - getBackgroundModeEnabled / setBackgroundModeEnabled — local_state pref.
-//   - getNexusLauncherEnabled / setNexusLauncherEnabled — local_state pref.
-//
-// Routes RETIRED in A5 (now exclusive to the panel ↔ C++ bridge — see
-// api/providers/nexus_providers_bridge_adapter.cc; the MCP probe moved to
-// the runtime's mcpSettings.testConnect): refreshProviderModels,
-// beginProviderOAuth, getProviderOAuthStatus, pickNexusSelection,
-// testMcpServer. Also vapor-retired: setProviderApiKey,
-// validateProviderConnection, getOllamaModels, setActiveProvider,
-// getNexusViewState — none had a JS caller. getNexusCatalog /
-// getNexusSessionStatus died with the Lit `<nexus-quick-settings>` popup
-// (F-18 Phase 4; the guest's React model picker replaced it).
+// WebUI message handler for the chrome://settings/nexus subpage, delegating to
+// the LlmBroker KeyedService. chrome.send routes: provider CRUD (used directly
+// by the e2e harness), get/setWebappUrl, restartBrowser, reloadPanel, and the
+// background-mode / launcher local_state prefs.
 class NexusSettingsHandler : public SettingsPageUIHandler {
  public:
   NexusSettingsHandler();
@@ -97,16 +75,6 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // JS: cr.sendWithPromise('resetProviderConfig', providerId)
   void HandleResetProviderConfig(const base::ListValue& args);
 
-  // HandleRefreshProviderModels / HandleBeginProviderOAuth /
-  // HandleGetProviderOAuthStatus declarations removed — all three
-  // chrome.send routes are fully migrated to the panel ↔ C++ bridge
-  // (`providers.refresh` / `providers.beginOAuth` /
-  // `providers.oauthStatus`). The matching `OnOAuthTokenForModels`,
-  // `OnProviderModelsFetched`, `OnDeviceCodeStarted` continuations were
-  // removed alongside their callers. See
-  // `api/providers/nexus_providers_bridge_adapter.cc` for the
-  // replacements and `settings/nexus_settings_handler.cc` for the
-  // per-method retirement rationale.
 
   // HandleSetProviderApiKey, HandleValidateProviderConnection,
   // HandleGetOllamaModels, HandleSetActiveProvider, HandleGetNexusViewState
@@ -115,14 +83,8 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // per-method removal rationale.
 
   // --- Custom Nexus web app URL ---
-  //
-  // chrome.settingsPrivate is not exposed to the chrome://custom.top-chrome
-  // host that serves the Nexus settings page, so the webapp-URL override is
-  // read/written through this handler (the same channel the rest of the page
-  // uses) instead of the settingsPrivate API.
-  //
-  // Returns the persisted custom web app URL (empty string = built-in
-  // default).
+  // Read/written here because chrome.settingsPrivate is not exposed to
+  // chrome://custom.top-chrome. Returns the persisted URL (empty = default).
   // JS: cr.sendWithPromise('getWebappUrl')
   void HandleGetWebappUrl(const base::ListValue& args);
 
@@ -163,15 +125,9 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // nexus_browser_tools_config.h.
 
   // --- System: background mode ---
-  //
-  // Mirrors chrome://settings/system's "Continue running background apps"
-  // toggle. Backed by the browser-wide local_state pref
-  // prefs::kBackgroundModeEnabled (default true); BackgroundModeManager
-  // observes that pref directly, so writing it here reproduces the exact
-  // behavior of the upstream setting. When ENABLE_BACKGROUND_MODE is off the
-  // pref is unregistered, so the getter reports false and the setter rejects.
-  //
-  // Returns whether background apps keep running after the last window closes.
+  // prefs::kBackgroundModeEnabled (local_state, default true), observed by
+  // BackgroundModeManager. Without ENABLE_BACKGROUND_MODE the getter reports
+  // false and the setter rejects.
   // JS: cr.sendWithPromise('getBackgroundModeEnabled')
   void HandleGetBackgroundModeEnabled(const base::ListValue& args);
 
@@ -180,16 +136,8 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   void HandleSetBackgroundModeEnabled(const base::ListValue& args);
 
   // --- System: Nexus launcher (tray icon + keep-alive) ---
-  //
-  // Backed by the browser-wide local_state pref
-  // ALIASES of the background-mode pair above since the two System toggles
-  // were merged: both forward to prefs::kBackgroundModeEnabled.
-  // Historically backed by nexus::prefs::kNexusLauncherEnabled, which
-  // NexusBackgroundModeManager observes to acquire/release the keep-alive and
-  // the system-tray icon. Distinct from the background-mode toggle above (which
-  // gates extension background apps).
-  //
-  // Returns whether the Nexus launcher (tray icon) is enabled.
+  // Aliases of the background-mode pair: both forward to
+  // prefs::kBackgroundModeEnabled.
   // JS: cr.sendWithPromise('getNexusLauncherEnabled')
   void HandleGetNexusLauncherEnabled(const base::ListValue& args);
 
@@ -197,17 +145,6 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // JS: cr.sendWithPromise('setNexusLauncherEnabled', enabled)
   void HandleSetNexusLauncherEnabled(const base::ListValue& args);
 
-  // HandleGetAgentConfig / HandleSetAgentConfig were the WebUI surface for
-  // the `nexus.agent_config` Profile pref before the about page moved to
-  // `~/.nexus/settings.json` (`agent` section, served via the WebUI ↔
-  // SharedWorker bridge). Dropped: no JS caller. The pref + the session
-  // adapter's live-push observer remain — they're still used by
-  // `nexus_guest_config.cc`, `llm_broker.cc`, and the in-runtime config
-  // push path.
-  //
-  // HandlePickNexusSelection removed: migrated to `providers.setActive`
-  // on the panel WebUI bridge port (A5 Tier 3b). See
-  // api/providers/nexus_providers_bridge_adapter.h::HandleSetActiveOnUI.
 
   // OnOllamaModelsFetched removed alongside HandleGetOllamaModels.
   // OnProviderModelsFetched / OnOAuthTokenForModels removed alongside

@@ -17,18 +17,9 @@ namespace nexus::remote_access {
 
 namespace {
 
-// The fixed files a remote page needs beyond the entry and assets, each at
-// the one path the deploy serves it from — exact matches, never a prefix.
-//
-// Versioned: nexus_web's public/ files are staged under /v<N>/ only, and the
-// page names them there (index.html's favicon is `/product_logo_128.png`
-// until vite's `base` rewrites it to `/v<N>/product_logo_128.png`). Their
-// root forms 404 upstream, so they are not rows.
-//
-// The web app manifest and its two icons make a remote page installable as an
-// app (F-24 "Installing the remote page as an app"). The remote boot links the
-// manifest at runtime — the desktop guest never does — and the manifest names
-// its icons relative to itself, so all three resolve under /v<N>/.
+// The fixed files a remote page needs beyond the entry and assets, exact
+// matches under /v<N>/ (their root forms 404 upstream). The manifest and its
+// two icons make the remote page installable (F-24).
 constexpr const char* kFixedVersionedFiles[] = {
     "product_logo_128.png",
     "velloc.icon",
@@ -446,15 +437,9 @@ RouteDecision Route(const RouteRequest& request, const RouteContext& context) {
       decision.status = RejectStatus::kNotFound;
       return decision;
     }
-    // The client's Origin must be the listener's own http origin — a
-    // cross-origin page on the LAN may not drive the runtime. Under a
-    // wildcard bind the Origin names the NIC the client dialed, so gate it
-    // through the same Host rule. The http:// scheme is REQUIRED, not
-    // optional: under the single-literal bind the Origin must be exactly
-    // "http://" + expected_host, under the wildcard "http://" + a local NIC
-    // IP + the bound port. A scheme-less Origin equal to the host — or one
-    // bearing a different scheme — is not a browser WebSocket origin for
-    // this listener and is refused.
+    // Security: the Origin must be the listener's own http origin (under a
+    // wildcard bind, gated by the same Host rule); a scheme-less or non-http
+    // Origin is refused, so a cross-origin LAN page cannot drive the runtime.
     constexpr std::string_view kHttpScheme = "http://";
     if (!base::StartsWith(request.origin_header, kHttpScheme,
                           base::CompareCase::SENSITIVE)) {

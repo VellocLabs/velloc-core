@@ -21,23 +21,10 @@ namespace nexus {
 
 class NexusBridgeCapabilityHandler;
 
-// The per-connection table of host tool sessions, shared by every bridge
-// adapter that runs a host tool (`files`, `exec`, `browser`) and by the
-// `session` adapter that stops or configures one.
-//
-// A session is keyed by the runtime's session id — read from the frame's
-// `context.sessionId`, else the legacy `payload.executionContext.sessionId`
-// (see NexusBridgeCapabilityHandler::RequestSessionKey). It owns the
-// per-session state the tool classes keep (tab bindings, observation
-// baseline, read-before-edit ledger, the session's blocking sequence) and
-// stays warm across turns; it is erased only when the runtime deletes the
-// session.
-//
-// `Run` is the one code path that turns a host tool call into a bridge
-// response: it resolves the session, installs the progress sink (progress
-// goes out as an event on the call's own route, tagged with the request id),
-// wraps the tool's result in the agent-meta envelope the runtime expects, and
-// answers through the BridgeResponseCallback.
+// The per-connection table of host tool sessions, keyed by the runtime's
+// session id and erased only when the runtime deletes the session. `Run` is
+// the one path from a host tool call to a bridge response: resolve the
+// session, install the progress sink, wrap in agent-meta, answer.
 class ToolSessionRegistry {
  public:
   // Invoked once the session is resolved; runs the tool and answers through

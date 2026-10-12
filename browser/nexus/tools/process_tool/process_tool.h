@@ -26,23 +26,10 @@ namespace nexus {
 class NexusShellServiceLauncher;
 class ToolSession;  // for CategoryAccessor specialization below
 
-// Per-LLM-session class hosting tools that shell out to the host
-// machine via the sandboxed `NexusShellService` utility process.
-// Today it owns two tools: `Bash` (arbitrary shell command) and
-// `Grep` (content search via ripgrep). Both fire async mojo calls
-// from UI and resolve from the mojo callback. Future shell-bound
-// tools (streaming `Spawn`, native `which`, …) land here.
-//
-// Threading: the codegen-emitted dispatcher invokes `RunBashOnUI`
-// directly on the calling sequence (UI today — the bridge port
-// service runs there) because `bash.tool.json` declares
-// `runtime.thread = "ui"`. The body fires the async mojo
-// `Exec(options, callback)` on the UI thread and resolves `done` from
-// the mojo callback (also UI). No worker-thread hopping required.
-//
-// `OnStop` invalidates the WeakPtrFactory so any pending mojo callbacks
-// drop cleanly. The per-profile shared launcher is not shut down here;
-// it self-recycles when idle.
+// Per-LLM-session class hosting tools that run through the `NexusShellService`
+// utility process (Bash, Grep). Handlers run on UI and resolve from the mojo
+// callback; `OnStop` invalidates the WeakPtrFactory. The shared launcher
+// self-recycles.
 class ProcessTool : public ToolBase {
  public:
   ProcessTool(ToolSession* session, Profile* profile,
@@ -101,16 +88,9 @@ class ProcessTool : public ToolBase {
                          ToolCallback done);
 
  private:
-  // Mojo callback for `NexusShellService::Exec` from `RunBashOnUI`.
-  // Resolves `done` with the shaped Bash output dict, including the
-  // command-semantic interpretation for commands like `grep` / `diff`
-  // / `test` whose exit-1 means "no match" rather than "error".
-  //
-  // `tool_label` names the calling tool ("bash", "powershell", …) and is
-  // used to build the rejection error code ("<label>_failed" /
-  // "<label>_timeout"). It exists because `OnPowerShellExecDone` reuses
-  // this prose shaper: without it a PowerShell failure would surface the
-  // misleading `bash_failed` code.
+  // Exec reply for `RunBashOnUI`: shapes the output, treating exit 1 of commands
+  // like `grep` / `diff` / `test` as "no match". `tool_label` builds the
+  // `<label>_failed` / `<label>_timeout` code (PowerShell reuses this).
   void OnBashExecDone(ToolCallback done,
                       std::string original_command,
                       base::TimeTicks start_time,

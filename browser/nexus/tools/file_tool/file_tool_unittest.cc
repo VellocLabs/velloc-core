@@ -1113,20 +1113,8 @@ TEST(FileToolTest, WriteRejectsFileModifiedSinceRead) {
   EXPECT_EQ("file_modified_since_read", write_result.error_code);
 }
 
-// `chrome.dll!nexus::FileTool::Run...OnThreadPool` (access violation reading
-// 0xefefefef…, the freed-memory poison, during an atomic refcount bump).
-//
-// Root cause: a per-session FileTool method was posted to base::ThreadPool
-// bound with base::Unretained(category). If the session was torn down (sidebar
-// delete / panel close) before the worker ran, the worker dereferenced the
-// freed FileTool.
-//
-// The fix runs orchestration on UI and hops only the *static* `<Name>Blocking`
-// helper (no `this`) to the pool, binding the reply through
-// weak_ptr_factory_.GetWeakPtr(). Read still uses that thread-pool path (Glob
-// moved to the ripgrep shell service), so it exercises the fix: destroying the
-// session mid-I/O must NOT crash, and the discarded ToolCallback must surface
-// `tool_dropped` rather than resolving into freed memory.
+// Destroying the session mid-read must not use-after-free the FileTool, and
+// the dropped ToolCallback must surface `tool_dropped`.
 TEST(FileToolTest, DestroyingSessionMidReadDropsReplyWithoutUseAfterFree) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

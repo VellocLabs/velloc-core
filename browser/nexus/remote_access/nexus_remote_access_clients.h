@@ -26,18 +26,10 @@ class ConnectedClientsObserver : public base::CheckedObserver {
   virtual void OnConnectedClientsChanged(const ConnectedClients& summary) = 0;
 };
 
-// The process-wide registry behind the tray tooltip and the quit confirmation.
-//
-// It exists because the parties sit on opposite sides of a dependency wall:
-// the service is per-Profile (//chrome/browser territory) while the launcher's
-// tray icon and quit path are browser-process globals that must not depend on
-// it. Both depend on THIS leaf (//base only) instead. Data is pushed by the
-// services; the launcher and the UI layer read or observe it.
-//
-// UI thread only, like everything that calls it.
-//
-// `source` identifies the reporting service; a report replaces that source's
-// previous one, and `Forget` drops it (a service being destroyed).
+// The process-wide registry behind the tray tooltip and the quit confirmation:
+// a //base-only leaf, so browser-process globals need not depend on the
+// per-Profile service. UI thread only. A report replaces its `source`'s
+// previous one; `Forget` drops it.
 void ReportConnectedClients(const void* source, ConnectedClients clients);
 void ForgetConnectedClients(const void* source);
 

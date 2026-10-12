@@ -14,34 +14,11 @@ namespace nexus {
 
 class ToolSession;
 
-// Typed reason for the OnStop cascade. Replaces the pre-refactor
-// stringly-typed `const std::string& reason` parameter so the C++
-// side is exhaustive over reasons and a typo can't silently fall
-// through to a default.
-//
-// JS-facing reason strings are parsed at the bridge boundary
-// (`NexusSessionBridgeAdapter::HandleOnStopOnUI`) by
-// `ParseOnStopReason`. Internal callers (destructors, port-service
-// teardown) pass enum values directly.
-//
-// Semantics:
-//   - kCompleted       — conversation finished naturally (one per turn,
-//                          fired by `query/deps.ts::handleStopHooks`).
-//                          Stops the actor task; leaves ToolSession in
-//                          the adapter map so the next turn reuses it.
-//   - kUserStopped     — user pressed Stop. Same lifetime as kCompleted.
-//   - kSessionDeleted  — user deleted the session from the sidebar.
-//                          ToolSessionRegistry erases the ToolSession on this
-//                          reason ONLY; ~BrowserTool then closes the
-//                          session's tabs.
-//   - kDisconnected    — bridge port service teardown (panel close /
-//                          webview reload). `~ToolSessionRegistry` cascades
-//                          this before the sessions map clears, which
-//                          triggers ~BrowserTool → tab close.
-//   - kShutdown        — profile / process teardown. Same behavior as
-//                          kDisconnected.
-//   - kDestructor      — defensive call from a destructor when no
-//                          explicit OnStop ran first. Idempotent guard.
+// Typed reason for the OnStop cascade, parsed from guest strings by
+// `ParseOnStopReason`. kCompleted / kUserStopped keep the ToolSession warm;
+// kSessionDeleted alone erases it (~BrowserTool closes its tabs);
+// kDisconnected / kShutdown are port-service / profile teardown; kDestructor
+// is the idempotent fallback.
 enum class OnStopReason {
   kCompleted,
   kUserStopped,
@@ -62,31 +39,10 @@ OnStopReason ParseOnStopReason(std::string_view reason,
 // strings so existing greps over `[NexusTrace]` logs still match.
 std::string_view OnStopReasonToString(OnStopReason reason);
 
-// `ToolBase` — common base for every per-LLM-session tool category
-// (BrowserTool, future SkillTool, etc.). Holds the shared (ToolSession*,
-// Profile*, session_key) trio every category needs and exposes the
-// OnStop() notification hook the framework cascades when a session is
-// being torn down.
-//
-// Subclasses override OnStop to clean up category-specific state
-// (BrowserTool stops its actor::TaskId; future categories do their
-// own teardown). The default OnStop is empty — categories that don't
-// need cleanup don't have to override.
-//
-// Lifetime contract: a ToolBase subclass is a member of a ToolSession,
-// which is owned by ToolSessionRegistry::sessions_. When the session ends —
-// either via an explicit endSession RPC, a port-service tear-down, or
-// profile shutdown — the framework calls OnStop(reason) before the
-// member's destructor runs. OnStop must be idempotent because
-// destructor-time cleanup is also a defensive fallback path
-// (~ToolSession invokes OnStop("destructor") on every member if no
-// explicit OnStop happened first).
-//
-// The `session` raw_ptr lets a category read session-level state
-// (cwd, action_timeout, …) without category-specific plumbing.
-// `GetSession()` is non-null for the lifetime of the tool category
-// instance because ToolSession owns the category by value (members
-// outlive the session no longer than `*this` does).
+// `ToolBase` — common base for every per-session tool category, holding
+// (ToolSession*, Profile*, session_key) and the OnStop hook (default empty).
+// OnStop must be idempotent: ~ToolSession calls it again if none ran first.
+// `GetSession()` is non-null for the category's lifetime.
 class ToolBase {
  public:
   ToolBase(ToolSession* session, Profile* profile,

@@ -453,17 +453,9 @@ TEST_F(NexusRemoteAccessListenerTest, TellsTheOwnerWhenAClientJoinsAndLeaves) {
   EXPECT_EQ(counts, (std::vector<size_t>{1, 0}));
 }
 
-// Which close code a connected /rt client is given when the listener goes
-// down, and why the distinction is the whole bug (field report: "I
-// quit Velloc and the remote page went dead").
-//
-// 4003 (`listener_disabled`) is FINAL on the client — createWebSocketTransport
-// marks it the one non-retryable close, so the page stops reconnecting for
-// good and parks on the "Remote access is turned off" screen until someone
-// mints a new link on a desktop the user has just walked away from. Every
-// teardown used to send it, quitting the browser included. Only a deliberate
-// OFF may; a quit, a rebind, a bind error say going-away (1001) so the page
-// keeps trying and heals by itself.
+// Only a deliberate OFF sends 4003 (`listener_disabled`), which the client
+// treats as final; a quit, rebind or bind error sends 1001 so the page keeps
+// retrying.
 TEST_F(NexusRemoteAccessListenerTest, ClientCloseCodeSaysWhyTheListenerWent) {
   for (const auto& [reason, expected_code] :
        std::vector<std::pair<NexusRemoteAccessListener::StopReason, uint16_t>>{

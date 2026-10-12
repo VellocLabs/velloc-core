@@ -103,21 +103,11 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kGlicGuestUrlPresetProd, "");
   registry->RegisterStringPref(
       prefs::kGlicWebContinuityOriginatingHostUrlPreset, "");
-  // custom-browser (149 upgrade): `kGlicMultiInstanceEnabledBySubscriptionTier`
-  // ("glic.multi_instance_enabled_by_tier") was DEPRECATED upstream in 149 and
-  // is now registered by `RegisterLocalStatePrefsForMigration`
-  // (chrome/browser/prefs/browser_prefs.cc, "Deprecated 03/2026" block) in the
-  // SAME local-state registry. Registering it here too tripped the
-  // pref_registry.cc DCHECK ("previously registered pref") and crashed startup.
-  // The migration registration keeps the key valid for the GetBoolean/SetBoolean
-  // calls still present in glic_enabling.cc, so dropping our duplicate is safe;
-  // the only behavior change is that the deprecation-cleanup may clear the value
-  // across runs (acceptable for this custom build of the Google subscription-tier
-  // feature).
-  // TODO(velloc-glic): if the multi-instance-by-tier feature is intentionally
-  // retired for Velloc, remove the dead GetAndUpdateEligibility* /
-  // IsEligibleForGlicMultiInstanceTieredRolloutThisRun helpers from
-  // glic_enabling.cc as well.
+  // custom-browser: `kGlicMultiInstanceEnabledBySubscriptionTier` is not
+  // registered here: upstream's migration registration already registers it in
+  // the same local-state registry, and a duplicate DCHECK-crashes startup.
+  // TODO(velloc-glic): if multi-instance-by-tier is retired, remove its dead
+  // helpers from glic_enabling.cc.
 }
 
 }  // namespace glic::prefs

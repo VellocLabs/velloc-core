@@ -72,24 +72,6 @@ namespace glic {
 
 namespace {
 
-// bool HasGoogleInternalProfile() {
-//   ProfileManager* profile_manager = g_browser_process->profile_manager();
-//   if (!profile_manager) {
-//     return false;
-//   }
-//   std::vector<Profile*> profiles = profile_manager->GetLoadedProfiles();
-//   for (Profile* profile : profiles) {
-//     auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
-//     if (!identity_manager) {
-//       continue;
-//     }
-//     if (IsPrimaryAccountGoogleInternal(*identity_manager)) {
-//       return true;
-//     }
-//   }
-//   return false;
-// }
-
 }  // namespace
 
 GlicEnabling::ProfileEnablement GlicEnabling::EnablementForProfile(
@@ -369,19 +351,6 @@ mojom::ProfileReadyState GlicEnabling::GetProfileReadyState(Profile* profile) {
     return mojom::ProfileReadyState::kReady;
   }
 
-  // signin::IdentityManager* identity_manager =
-  //     IdentityManagerFactory::GetForProfile(profile);
-
-  // // Check that profile is not currently paused.
-  // CoreAccountInfo core_account_info =
-  //     identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin);
-  // if (core_account_info.IsEmpty()) {
-  //   return mojom::ProfileReadyState::kUnknownError;
-  // }
-  // if (identity_manager->HasAccountWithRefreshTokenInPersistentErrorState(
-  //         core_account_info.account_id)) {
-  //   return mojom::ProfileReadyState::kSignInRequired;
-  // }
   return mojom::ProfileReadyState::kReady;
 }
 
@@ -425,60 +394,6 @@ bool GlicEnabling::IsMultiInstanceEnabledByFlags() {
 
 bool GlicEnabling::IsShareImageEnabledForProfile(Profile* profile) {
      return true;
-  // if (!IsEnabledForProfile(profile) ||
-  //     !base::FeatureList::IsEnabled(features::kGlicShareImage)) {
-  //   return false;
-  // }
-
-  // if (base::FeatureList::IsEnabled(features::kGlicShareImageEnterprise)) {
-  //   return true;
-  // }
-
-  // auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
-  // if (!identity_manager) {
-  //   return false;
-  // }
-  // if (base::CommandLine::ForCurrentProcess()->HasSwitch(::switches::kGlicDev) &&
-  //     HasGoogleInternalProfile()) {
-  //   return true;
-  // }
-
-  // auto* browser_management_service =
-  //     policy::ManagementServiceFactory::GetForProfile(profile);
-  // const bool is_managed =
-  //     browser_management_service && browser_management_service->IsManaged();
-  // if (is_managed) {
-  //   return false;
-  // }
-
-  // // LINT.IfChange(GlicCachedUserStatusScope)
-
-  // // See GlicUserStatusFetcher for details on when we update the cached value
-  // // and when we skip updating.
-  // if (base::FeatureList::IsEnabled(features::kGlicUserStatusCheck) &&
-  //     GlicUserStatusFetcher::GetCachedUserStatus(profile).has_value()) {
-  //   return false;
-  // }
-
-  // // LINT.ThenChange(//chrome/browser/glic/glic_user_status_fetcher.cc:GlicCachedUserStatusScope)
-
-  // auto account_managed_status_finder = signin::AccountManagedStatusFinder(
-  //     identity_manager,
-  //     identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin),
-  //     base::DoNothing());
-
-  // switch (account_managed_status_finder.GetOutcome()) {
-  //   case signin::AccountManagedStatusFinderOutcome::kConsumerGmail:
-  //   case signin::AccountManagedStatusFinderOutcome::kConsumerWellKnown:
-  //   case signin::AccountManagedStatusFinderOutcome::kConsumerNotWellKnown:
-  //     return true;
-  //   case signin::AccountManagedStatusFinderOutcome::kPending:
-  //   case signin::AccountManagedStatusFinderOutcome::kEnterpriseGoogleDotCom:
-  //   case signin::AccountManagedStatusFinderOutcome::kEnterprise:
-  //   case signin::AccountManagedStatusFinderOutcome::kError:
-  //   case signin::AccountManagedStatusFinderOutcome::kTimeout:
-  //     return false;
-  // }
 }
 
 bool GlicEnabling::IsMultiInstanceEnabled() {

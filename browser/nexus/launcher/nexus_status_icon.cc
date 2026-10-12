@@ -28,7 +28,6 @@ namespace {
 // Context-menu command ids (arbitrary, local to this menu).
 enum NexusTrayCommand {
   kOpenNexusWindow = 1,
-  kOpenBrowserWindow,
   kQuit,
 };
 
@@ -50,7 +49,6 @@ NexusStatusIcon::NexusStatusIcon(StatusTray* status_tray,
 
   auto menu = std::make_unique<StatusIconMenuModel>(this);
   menu->AddItem(NexusTrayCommand::kOpenNexusWindow, u"Show App");
-  menu->AddItem(NexusTrayCommand::kOpenBrowserWindow, u"Show Browser");
   menu->AddSeparator(ui::NORMAL_SEPARATOR);
   menu->AddItem(NexusTrayCommand::kQuit, u"Quit");
   status_icon_->SetContextMenu(std::move(menu));
@@ -73,11 +71,6 @@ void NexusStatusIcon::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
     case NexusTrayCommand::kOpenNexusWindow:
       OpenNexusWindow();
-      break;
-    case NexusTrayCommand::kOpenBrowserWindow:
-      if (NexusLauncherDelegate* delegate = GetNexusLauncherDelegate()) {
-        delegate->OpenOrFocusNormalWindow();
-      }
       break;
     case NexusTrayCommand::kQuit:
       if (quit_callback_) {

@@ -21,10 +21,10 @@ class StatusTray;
 namespace nexus {
 
 // System-tray icon for the Nexus launcher. Shows Velloc's production logo
-// (IDR_PRODUCT_LOGO_*) with a context menu: "Open Nexus Window", "Open Browser
-// Window", and "Quit". The window actions route through the registered
-// NexusLauncherDelegate; "Quit" runs the supplied callback (the manager releases
-// its keep-alive and asks the delegate to close all browsers). A left-click
+// (IDR_PRODUCT_LOGO_*) with a context menu: "Show App" and "Quit". "Show App"
+// routes through the registered NexusLauncherDelegate; "Quit" runs the
+// supplied callback (the manager releases its keep-alive and asks the
+// delegate to close all browsers). A left-click
 // opens the Nexus window. Owned by NexusBackgroundModeManager and only alive
 // while the launcher is enabled.
 class NexusStatusIcon : public StatusIconObserver,

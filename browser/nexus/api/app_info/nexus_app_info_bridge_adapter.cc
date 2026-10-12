@@ -37,19 +37,9 @@ void NexusAppInfoBridgeAdapter::HandleGetVersionInfoOnUI(
              std::string(custom_browser::kCustomBrowserProductVersion));
   result.Set("chromiumVersion", std::string(version_info::GetVersionNumber()));
 
-  // F-24: who this machine is, for a REMOTE page's topbar tooltip. The
-  // runtime reads them once when the bridge connects and puts them in
-  // `welcome.bootstrap` — nothing on the About page shows them, and the
-  // guest cannot learn either on its own (a SharedWorker has no host name,
-  // and `navigator` in it describes the browser, not the machine).
-  //
-  // Both are omitted rather than sent empty when the platform has no answer:
-  // the tooltip drops a line it has no value for, and an empty string would
-  // render as a blank row.
-  //
-  // `net::GetHostName` is `gethostname(2)` — a local syscall against the
-  // configured name, with no name-service lookup — so it is safe on the UI
-  // thread. `base::SysInfo`'s two reads are cached after first use.
+  // F-24: who this machine is, for a remote page's topbar tooltip. Each value is
+  // omitted, not sent empty, when the platform has no answer. `net::GetHostName`
+  // is a local syscall with no name-service lookup, so it is safe on UI.
   const std::string host_name = net::GetHostName();
   if (!host_name.empty()) {
     result.Set("hostName", host_name);

@@ -98,17 +98,8 @@ TEST(NexusFsBridgeAdapterTest, CwdResolvesAfterPoolHop) {
   EXPECT_TRUE(delegate.last_success.is_string());
 }
 
-// Regression test for the fs-API teardown use-after-free (same class as the
-// chrome.dll!nexus::FileTool::RunGlobOnThreadPool crash). The fs handlers
-// used to be posted to base::ThreadPool via base::Unretained(adapter), so a
-// port-service teardown (panel close / webview reload / shutdown) racing an
-// in-flight fs op dereferenced the freed adapter (`this->fs_host_`) on the
-// worker.
-//
-// The fix hops the work bound to a scoped_refptr<NexusFsHost> (NOT the
-// adapter) and replies weak-guarded. Destroying the adapter while the op is
-// still queued on the pool must therefore NOT crash, and the response must
-// drop cleanly.
+// Destroying the adapter while an fs op is still queued on the pool must not
+// use-after-free it, and the response must drop cleanly.
 TEST(NexusFsBridgeAdapterTest,
      DestroyingAdapterMidOpDropsReplyWithoutUseAfterFree) {
   content::BrowserTaskEnvironment task_environment;

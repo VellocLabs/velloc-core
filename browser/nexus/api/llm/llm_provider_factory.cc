@@ -119,16 +119,9 @@ std::unique_ptr<LlmProvider> LlmProviderFactory::CreateProvider(
   if (provider_id == "ollama")
     return std::make_unique<OllamaProvider>(url_loader_factory);
 
-  // User-configurable custom endpoints. No default base URL (the user supplies
-  // it in Settings → Provider connection) and no required API key — many
-  // compatible endpoints run keyless (e.g. cursor-api-proxy, LM Studio, local
-  // gateways). The wire dialect is chosen by which class we instantiate:
-  // custom-openai speaks OpenAI /chat/completions, custom-anthropic speaks the
-  // Anthropic /v1/messages API.
-  //
-  // These two are the only custom endpoints with a compiled-in id. A provider
-  // the user CREATES gets its own instance through CreateCustomProvider(),
-  // built the same way with the user's id and name.
+  // User-configurable custom endpoints: no default base URL and no required API
+  // key. The class chosen sets the wire dialect (OpenAI /chat/completions or
+  // Anthropic /v1/messages); user-created ones go through CreateCustomProvider().
   if (provider_id == "custom-openai") {
     return CreateCustomProvider(provider_id, "Custom (OpenAI-compatible)",
                                 "openai", url_loader_factory);

@@ -107,19 +107,8 @@ TEST(NexusFsHostTest, WriteFileAtomicReplacesTargetAndLeavesNoTempFile) {
   EXPECT_EQ("{\"new\":2}", content);
 }
 
-// Regression: an `atomic` write must reach as deep as a plain one.
-//
-// base::ImportantFileWriter names its temp file with a 36-char GUID + ".tmp",
-// so it needs 41 characters of headroom past the target's DIRECTORY and fails
-// ~32 characters before the target path itself hits MAX_PATH. A background
-// sub-agent's `meta.json` lives at
-//   projects/<sanitized-project-root>/<parentSessionId>/subagents/<subId>/
-// which crossed that line on a normally-nested profile: the atomic write
-// failed, and because it is the sub-agent's first write the whole sub-agent
-// aborted with "Failed to write file" — while a plain write to the same path
-// would have succeeded. Pinned by building a directory in exactly that band:
-// short enough that the target is writable, deep enough that a GUID temp name
-// beside it would not be.
+// An `atomic` write must reach as deep as a plain one: the directory is built
+// so the target is writable but a GUID temp name beside it would not be.
 TEST(NexusFsHostTest, WriteFileAtomicSucceedsOnDeeplyNestedTarget) {
   base::test::TaskEnvironment task_environment;
   base::ScopedTempDir temp_dir;

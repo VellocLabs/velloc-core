@@ -24,27 +24,12 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `RemoteAccessApiBase` virtuals
-// — the guest-facing status + configure surface for the desktop's embedded
-// relay (F-24).
-//
-//   remoteAccess.getStatus  → NexusRemoteAccessService::GetStatus
-//   remoteAccess.configure  → NexusRemoteAccessService::Configure
-//
-// A pure forwarder onto the per-Profile shared NexusRemoteAccessService
-// (GetRemoteAccessService), so every bridge port drives ONE listener. Both
-// actions run on UI (the *.api.json declare runtime.thread = "ui"); the
-// service is sequence-bound to UI and synchronous, so no thread hop.
-//
-// The adapter ALSO subscribes to the service's status changes for its
-// lifetime and pushes `remoteAccess.onStatusChanged` (payload = getStatus's
-// result MINUS the control token) so the runtime dials / disconnects
-// its relay dialer reactively instead of polling.
-//
-// Only the runtime calls this (P-3: host calls originate from the runtime,
-// never a client); the page port could technically reach it too (C++ cannot
-// tell the two kGuest ports apart), which is acceptable — the page is the
-// local trusted desktop guest.
+// Concrete adapter implementing the generated `RemoteAccessApiBase` virtuals —
+// status + configure for the desktop's embedded relay (F-24), forwarding to
+// the per-Profile NexusRemoteAccessService on UI. Pushes
+// `remoteAccess.onStatusChanged` (getStatus minus the control token).
+// Security: only the runtime calls it; the page port can reach it too, which
+// is acceptable as the local trusted desktop guest. (P-3)
 class NexusRemoteAccessBridgeAdapter
     : public ::nexus::generated::RemoteAccessApiBase {
  public:

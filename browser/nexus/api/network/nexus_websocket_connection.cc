@@ -140,17 +140,10 @@ void NexusWebSocketConnection::Connect() {
   handshake_receiver_.set_disconnect_handler(base::BindOnce(
       &NexusWebSocketConnection::OnPipeDisconnected, base::Unretained(this)));
   const url::Origin origin = url::Origin::Create(url_);
-  // Pre-send egress enforcement, as for http (network_egress_policy.h): the
-  // network service refuses a socket whose peer is loopback or private when
-  // it connects, before the opening handshake (and any expanded
-  // `{{secret:NAME}}` header) is written; the open fails with
-  // ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS (OnFailure). There is no
-  // WebSocket option for it: services/network/websocket.cc hands these
-  // options to LocalNetworkAccessChecker as URL-load options, so the URL-load
-  // bit is the switch. Through a proxy the peer is the proxy and the check
-  // passes (an unknown address space counts as public), as for http.
-  // OnConnectionEstablished still judges the peer for the ranges Chromium
-  // counts as public.
+  // Security: pre-send egress enforcement as for http — the network service
+  // refuses a loopback / private peer before the handshake is written. The
+  // URL-load bit is the switch (no WebSocket option exists); through a proxy the
+  // check passes, and OnConnectionEstablished still judges the peer.
   static_assert((network::mojom::kURLLoadOptionBlockLocalRequest &
                  (network::mojom::kWebSocketOptionBlockAllCookies |
                   network::mojom::kWebSocketOptionBlockThirdPartyCookies)) ==

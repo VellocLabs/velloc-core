@@ -21,17 +21,10 @@ struct ResourceRequest;
 namespace nexus {
 
 // One `model.rawStreamOpen` request: a credentialed HTTP request to a
-// provider's domain whose response body is queued as opaque bytes for the
-// guest to pull with `model.rawStreamRead`.
-//
-// The byte transport itself is NexusHttpByteStream (api/network/), which
-// `network.streamOpen` shares. What stays provider-specific lives in the LLM
-// adapter (NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI): it substitutes
-// the provider's secrets, anchors the target and every redirect to the
-// provider's domain (the `redirect_check` that drops `secret_headers` on a
-// hop that leaves it), and may buffer a token response through a
-// `body_transform` that captures secrets. This class only fixes the traffic
-// annotation the provider request is sent under.
+// provider's domain whose body is queued as opaque bytes for
+// `model.rawStreamRead`. Secret substitution and domain anchoring live in
+// NexusLlmBridgeAdapter::HandleRawStreamOpenOnUI; this class fixes only the
+// traffic annotation.
 class NexusLlmRawStream : public NexusHttpByteStream {
  public:
   NexusLlmRawStream(

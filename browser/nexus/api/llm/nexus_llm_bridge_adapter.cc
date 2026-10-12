@@ -167,16 +167,9 @@ void NexusLlmBridgeAdapter::HandleEncryptSecretOnUI(
     ::nexus::generated::EncryptSecretInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  // The plaintext crosses the bridge exactly once — here, on save. The
-  // guest stores the sealed value in settings.json and republishes it to
-  // `publishProviderConfigs`, where `LlmProvider::Configure` decrypts it
-  // natively through the memoized NexusSecretCrypt cache. Nothing on this
-  // route ever returns plaintext to the guest.
-  //
-  // The encryptor is primed by `NexusBridgePortService`'s ctor (long before
-  // any bridge request can arrive), so `WhenReady` resolves immediately in
-  // practice; it is used rather than `Encrypt`'s not-ready fallback because
-  // that fallback returns the PLAINTEXT, and this route must never do that.
+  // Security: the plaintext crosses the bridge once, here; nothing on this route
+  // returns plaintext. WhenReady, not Encrypt, because Encrypt's not-ready
+  // fallback returns the plaintext.
   NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
   crypt->WhenReady(base::BindOnce(
       [](std::string plaintext, ::nexus::BridgeResponseCallback done) {

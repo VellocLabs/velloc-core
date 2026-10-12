@@ -38,38 +38,13 @@ class URLResponseHead;
 
 namespace nexus {
 
-// ONE HTTP request whose response body is queued as opaque bytes for the
-// guest to pull — the shared core of two bridge surfaces:
-//
-//   - `model.rawStream*` (NexusLlmRawStream, api/llm/): provider-scoped. The
-//     LLM adapter substitutes the provider's secrets into the request,
-//     anchors every hop to the provider's domain (`redirect_check` +
-//     `secret_headers`) and may buffer a token response through a
-//     `body_transform` that captures secrets.
-//   - `network.stream*` (api/network/): general streaming HTTP under the
-//     network egress policy (EnableEgressPolicy) with no 5 MB cap.
-//
-// The host never interprets the body — framing and decoding (SSE,
-// Connect/protobuf, NDJSON, …) are the guest's.
-//
-// Half-duplex by construction: the request body is sent whole, the response
-// streams back.
-//
-// Redirects are followed, but a hop that |redirect_check| reports as leaving
-// the allowed scope drops |secret_headers| (the headers a secret was
-// substituted into), the way Fetch drops Authorization on a cross-origin
-// redirect.
-//
-// Buffered mode (a non-null |body_transform|): the body is NOT streamed. It
-// is held whole and handed to the transform at the end; only the transform's
-// output reaches the guest.
-//
-// Lifecycle: Start() → `open` fires once, with the response head or an
-// error → Read() drains the queue until it reports `done` → the owner
-// deletes the stream. Deleting it at any point cancels the network request;
-// deleting it before the head answers a still-pending `open` (and a held
-// read) with `CANCELLED`.
-// All methods run on the UI thread.
+// One HTTP request whose response body is queued as opaque bytes for the guest
+// to pull — the core of `model.rawStream*` and `network.stream*`. Half-duplex;
+// the host never interprets the body. A redirect hop that |redirect_check|
+// rejects drops |secret_headers|. A non-null |body_transform| buffers the body
+// and only its output reaches the guest. Lifecycle: Start() → `open` once →
+// Read() until `done`; deleting the stream cancels it (a pending `open` or
+// read gets `CANCELLED`). UI thread.
 class NexusHttpByteStream : public network::SimpleURLLoaderStreamConsumer {
  public:
   struct OpenResult {

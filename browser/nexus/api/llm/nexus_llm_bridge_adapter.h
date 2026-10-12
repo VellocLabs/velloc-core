@@ -22,20 +22,9 @@ namespace nexus {
 class NexusBridgeResponseDelegate;
 class NexusLlmHost;
 
-// Concrete adapter implementing the generated `LlmApiBase` virtuals.
-//
-// Phase 10f architecture (see fs adapter for the full description):
-//   - Per *.api.json declares its inputs in tools-style `inputs[]`.
-//   - LLM actions all use `runtime.thread = "ui"`. The guest speaks every
-//     provider's wire format itself (model.call / streamStart / streamRead /
-//     streamCancel and the C++ request translation behind them were removed
-//     under interface 1); the host serves the catalog, the
-//     provider configs and the `rawStream*` byte transport.
-//   - Each Handle*OnUI runs on the bridge's home thread (UI). It reads
-//     fields off `input.payload`, invokes the relevant llm_host_ async
-//     method, and forwards the result through `done`. The
-//     BridgeResponseCallback handles UI-thread marshaling internally
-//     so the implementation never PostTasks for the response hop.
+// Concrete adapter implementing the generated `LlmApiBase` virtuals. All
+// actions run on UI: the host serves the catalog, the provider configs and
+// the `rawStream*` byte transport; replies go through `done`.
 class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
  public:
   NexusLlmBridgeAdapter(NexusBridgeResponseDelegate* delegate,

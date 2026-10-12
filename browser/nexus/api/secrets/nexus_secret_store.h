@@ -90,15 +90,9 @@ bool HasSecretPlaceholder(std::string_view text);
 
 // ---- The store -------------------------------------------------------------
 
-// The `secrets` capability's storage: `prefs::kNexusSecrets`, values sealed
-// with NexusSecretCrypt (the OS keystore — the same at-rest encryption the
-// provider api keys use). UI thread (PrefService). Stateless apart from the
-// prefs it is handed.
-//
-// There is deliberately no Get: a secret's plaintext only ever goes into a
-// request to its bound origin (Lookup, used by the network adapter) or, when
-// it was stored with processEnv, into a child's environment
-// (LookupForProcessEnv, used by shell.spawn) — never back to the guest.
+// The `secrets` capability's storage: `prefs::kNexusSecrets`, sealed with
+// NexusSecretCrypt. UI thread. Security: no Get — plaintext only goes into a
+// request to its bound origin (Lookup) or a child's env (LookupForProcessEnv).
 class NexusSecretStore {
  public:
   struct Entry {

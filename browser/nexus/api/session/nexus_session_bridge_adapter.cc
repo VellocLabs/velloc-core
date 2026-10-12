@@ -89,18 +89,8 @@ void NexusSessionBridgeAdapter::HandleOnStopOnUI(
   // The frame context (`context.sessionId`), else the legacy payload fields.
   const std::string session_key = RequestSessionKey();
 
-  // Recognized reason values are enumerated in
-  // `custom_browser/browser/nexus/tools/tool_base.h::OnStopReason`.
-  // `ParseOnStopReason` falls back to kUserStopped for empty /
-  // unrecognized strings (the JS guest historically allowed missing
-  // reason; the safe default preserves that contract).
-  //
-  // `kSessionDeleted` is the only reason that erases the ToolSession
-  // from `ToolSessionRegistry::sessions_` and (consequently) destroys the
-  // BrowserTool, which closes the session's tagged tabs. The JS guest
-  // must pass that exact string when wiring sidebar delete; every
-  // other reason leaves the ToolSession warm so the next turn reuses
-  // it.
+  // Unknown or empty reasons parse to kUserStopped. Only `kSessionDeleted`
+  // erases the ToolSession (closing its tagged tabs); others keep it warm.
   const std::string_view reason_view =
       input.reason.has_value() ? std::string_view(*input.reason)
                                 : std::string_view();

@@ -25,22 +25,8 @@ struct ModelInfo;
 class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `ProvidersApiBase` virtuals.
-//
-// Approach 5 (A5): this capability is exposed ONLY on the panel WebUI port
-// (`PortServiceMode::kPanel`), not on the guest-facing page/worker ports.
-// Settings-page RPCs that used to ride chrome.send (`getAgentProviders`,
-// `updateProviderConfig`, `verifyProviderConfig`, `refreshProviderModels`,
-// `beginProviderOAuth`) migrate here one action at a time. P2 lands the
-// first action: `list` (replaces `getAgentProviders`).
-//
-// Threading: all actions run on UI — they touch `LlmBroker` /
-// `PrefService` which are UI-thread-bound. The bridge's home thread is
-// already UI so the codegen-emitted dispatcher posts these to UI without
-// an extra hop.
-//
-// Lifetime: owned by `NexusBridgePortService` in `kPanel` mode. The
-// adapter holds no per-call state — every Handle*OnUI synthesizes a fresh
-// response and fires `done` synchronously (no async work in this phase).
+// Exposed only on the panel WebUI port (`PortServiceMode::kPanel`). All
+// actions run on UI; owned by `NexusBridgePortService`, no per-call state.
 class NexusProvidersBridgeAdapter
     : public ::nexus::generated::ProvidersApiBase {
  public:

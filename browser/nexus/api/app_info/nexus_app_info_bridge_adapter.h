@@ -17,17 +17,9 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `AppInfoApiBase` virtuals.
-//
-// Application metadata and lifetime for the React Settings · About page:
-// version strings, the optional custom webapp URL (`nexus.webapp_url` profile
-// pref), and the restart that applies it. C++-served on the guest direct
-// bridge. The webapp-URL bootstrap *read* (which decides where the React app
-// loads from) stays panel-side; this route only powers the About editor (writes
-// apply after restart, which `relaunch` performs).
-//
-// Threading: all actions run on UI (PrefService and browser lifetime are both
-// UI-thread-bound).
+// Concrete adapter implementing the generated `AppInfoApiBase` virtuals:
+// version strings, the custom webapp URL (`nexus.webapp_url` profile pref) and
+// the `relaunch` that applies it. All actions run on UI.
 class NexusAppInfoBridgeAdapter
     : public ::nexus::generated::AppInfoApiBase {
  public:

@@ -242,26 +242,10 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
     const bool oauth_connected =
         IsOAuthProvider(info.id) && broker->oauth_manager() &&
         broker->oauth_manager()->IsConnected(info.id);
-    // SET UP is the whole gate: a saved connection is enough to be pickable,
-    // and nothing has to prove it reachable first. This used to be
-    // `configured && verified`, where "verified" meant a `providerAuth.verify`
-    // probe had once succeeded and stamped `last_verification`
-    // (IsProviderVerified). That let a REACHABILITY test decide picker
-    // MEMBERSHIP — a provider whose endpoint was down when it was saved, whose
-    // credentials were configured outside the settings form, or which sits
-    // behind a gateway that serves generation but not `/models`, silently
-    // vanished from the quick model picker with nothing in the UI saying why.
-    // Settings still runs that probe and still stamps its result (it drives
-    // the "Connected" card and `providers.list`'s `isVerified`); it just no
-    // longer decides what the user may select. An endpoint that is genuinely
-    // unreachable now fails at send time, where the error card can explain it,
-    // instead of removing the model from the picker beforehand.
-    //
-    // The other half of the old gate still has to be replaced, though:
-    // `IsConfigured()` means "usable", not "the user set this up", so it is
-    // true out of the box for Ollama and for any keyless provider carrying its
-    // default base URL. `HasUserProviderSetup` is what keeps those out of a
-    // picker on a profile that never configured them.
+    // Setup is the whole gate: a saved connection is pickable without a
+    // reachability probe (that only drives the "Connected" card / `isVerified`).
+    // `IsConfigured()` alone is true out of the box for keyless providers, so
+    // `HasUserProviderSetup` keeps unconfigured ones out of the picker.
     const bool provider_configured =
         (provider && provider->IsConfigured()) || oauth_connected;
     const bool provider_set_up =
@@ -297,15 +281,9 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
       models.push_back(std::move(model_ptr));
     }
 
-    // Always splice in TS-curated models — the guest's picker offers
-    // them, so the worker's `isSelectionEnabled` gate must accept every
-    // curated id. Previously this graft only ran when
-    // `info.models` was empty, which silently dropped curated entries
-    // for any provider whose `/v1/models` returned a non-empty list
-    // that didn't already contain the curated ids (e.g. an OpenAI
-    // endpoint that doesn't yet list gpt-5.5, or a Gemini endpoint that
-    // names models with a `models/` prefix). DeriveTsModelId flattens
-    // each curated pattern to the literal id the worker accepts.
+    // Always splice in TS-curated models: the worker's `isSelectionEnabled` gate
+    // must accept every curated id the picker offers, even when `/v1/models`
+    // lists others. DeriveTsModelId flattens each pattern to the literal id.
     auto it = ts_by_provider.find(info.id);
     if (it != ts_by_provider.end() && it->second) {
       if (const base::ListValue* ts_models =
@@ -349,17 +327,8 @@ mojom::NexusLlmCatalogPtr BuildCatalog(Profile* profile) {
       default_model_id = provider->GetDefaultModelId();
     }
 
-    // Ensure the configured default_model is always selectable. Two cases:
-    // 1. Cold boot with no online fetch and no curated graft → the catalog
-    //    has zero models; synthesize the default so the provider isn't
-    //    empty (the original cold-boot fallback).
-    // 2. Cold boot with curated models but no online fetch → the catalog
-    //    has curated models (e.g. claude-fable-5) but NOT the user's
-    //    configured default_model (e.g. claude-sonnet-4-6 from the fake
-    //    server's /v1/models). Without this, setModelSelection to the
-    //    configured default fails with worker_invalid_model_selection.
-    // Skip if the id is already present (from online fetch or curated
-    // graft) to avoid duplicates.
+    // Keep the configured default_model selectable on a cold boot with no online
+    // fetch (empty or curated-only catalog); skip it when already present.
     if (provider_set_up && !default_model_id.empty() &&
         seen_ids.find(default_model_id) == seen_ids.end()) {
       auto model_ptr = mojom::NexusLlmModel::New();

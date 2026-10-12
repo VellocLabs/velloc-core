@@ -14,48 +14,17 @@
 #include "mojo/public/cpp/base/big_buffer.h"
 
 // Atomic (temp-file + replace) writes for `fs.writeFile({atomic: true})`.
-//
-// DISABLED while we investigate a Microsoft Defender false positive on the
-// released installer. Defender's cloud ML flagged the NSIS package
-// (Trojan:Script/Sabsik.FL.A!ml, later Trojan:Win32/Wacatac.B!ml); a build with
-// this path compiled out scanned clean side-by-side with one that had it, so it
-// is switched off until the installer is code-signed. Signing is the real fix:
-// these are unsigned-binary reputation verdicts, and every inner file
-// (chrome.dll, mini_installer.exe) scans clean on its own.
-//
-// Re-enable by flipping this to 1 — that restores
-// `base::ImportantFileWriter::WriteFileAtomically` plus the short-temp-name
-// fallback, and nothing outside this pair of files has to change (the guest
-// keeps sending `atomic` either way; a 0 build accepts and ignores it).
-//
-// What is given up while it is 0: a crash midway through rewriting a session's
-// `meta.json` can tear the file. The guest rebuilds titles/counts/preview from
-// `transcript.jsonl`, but the unlogged fields — model selection, permission
-// mode, composer draft, counters, terminal state — live only in that file.
+// Off (0) over an antivirus false positive on the unsigned installer; a 0
+// build accepts and ignores `atomic`, so a crash mid-write can tear a
+// session's `meta.json`.
 #define NEXUS_FS_ATOMIC_WRITE 0
 
 namespace nexus {
 
-// Synchronous filesystem helper used by NexusFsBridgeAdapter. Each
-// method performs blocking I/O on the calling thread and returns a
-// typed result struct — there are no callbacks and no internal
-// PostTasks. The caller is responsible for being on a thread that
-// allows blocking; NexusFsBridgeAdapter satisfies that by hopping each
-// call to base::ThreadPool (MayBlock) via PostTaskAndReplyWithResult.
-//
-// RefCountedThreadSafe because that worker task holds a scoped_refptr to
-// the host: a torn-down adapter (port-service teardown racing an
-// in-flight fs op) must not free the host out from under the worker.
-// The host is immutable after construction (just `cwd_`), so sharing it
-// across threads read-only is safe; the last ref may be dropped on any
-// thread, which the trivial destructor allows.
-//
-// The one exception to "no internal PostTasks" is the constructor: it
-// posts a single `CreateDirectory(cwd)` task to thread_pool so the
-// working directory exists before any per-call work runs. Doing it
-// synchronously in the ctor would block the UI thread (where NexusFsHost
-// is constructed); leaving the cwd un-created until first use would race
-// with concurrent calls.
+// Synchronous filesystem helper for NexusFsBridgeAdapter: blocking I/O on the
+// calling thread (base::ThreadPool, MayBlock), typed results, no callbacks.
+// Refcounted so an in-flight worker outlives a torn-down adapter; immutable
+// after construction. The ctor posts one CreateDirectory(cwd) task.
 class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
  public:
   // ---- Result structs ----------------------------------------------------
@@ -361,23 +330,11 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   SimpleResult Rm(const std::string& path, bool recursive, bool force) const;
   SimpleResult Unlink(const std::string& path) const;
   ExistsResult Exists(const std::string& path) const;
-  // Resolve `path` to its canonical absolute form (follows symlinks on
-  // POSIX, normalizes `..` segments and drive case on Windows). Used by
-  // the JS guest's skill-dedup pipeline so two SKILL.md files surfaced
-  // through different sources collapse when they ultimately point at the
-  // same on-disk file.
-  //
-  // `resolve_links` asks for the path with links resolved on every platform:
-  // on Windows that follows junctions, symlinks and mapped / subst drives
-  // (GetFinalPathNameByHandle), which the default form does not. It is for
-  // containment checks — the untrusted read boundary and the fsx root rule —
-  // where a link inside a root that points out of it is the escape to catch.
-  // A path that does not exist yet resolves the links of its deepest existing
-  // ancestor and keeps the rest. When the link-resolved form cannot be had
-  // (a path over MAX_PATH, a target that cannot be opened) the default form is
-  // returned. The default is kept for everything else on purpose: it feeds
-  // the session cwd and the session-storage identity, which must not move for
-  // a project opened through a junction.
+  // Resolve `path` to its canonical absolute form. `resolve_links` also follows
+  // junctions, symlinks and mapped / subst drives on Windows, for containment
+  // checks; a missing path resolves its deepest existing ancestor, and on
+  // failure the default form is returned. The default feeds the session cwd and
+  // storage identity, which must not move for a project opened via a junction.
   RealpathResult Realpath(const std::string& path, bool resolve_links) const;
 
   // Snapshot host-process platform info — `base::SysInfo` reads on the
@@ -395,17 +352,9 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
   base::FilePath cwd_;
 };
 
-// Map a base::File::Error to the discriminated, Node-style wire message —
-// THE single producer of the fs error-string taxonomy (a wire contract: the
-// guest's `isFsNotFoundError` keys on the leading code; see
-// nexus_web utils/fsTransportFailure.ts). Every discriminating method calls
-// this so a new code is added in exactly one place. Exposed at namespace
-// scope so the unit test can pin each mapping without staging
-// platform-specific failures.
-//
-// Unmapped errors deliberately emit the raw enum VALUE, not
-// base::File::ErrorToString — those tokens are chromium-versioned and must
-// never ride a wire string the guest pattern-matches.
+// Map a base::File::Error to the discriminated, Node-style wire message — the
+// single producer of that taxonomy (the guest keys on the leading code).
+// Unmapped errors emit the raw enum value, never chromium-versioned tokens.
 std::string FsFailureMessage(base::File::Error error);
 
 }  // namespace nexus

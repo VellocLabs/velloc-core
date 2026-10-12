@@ -43,21 +43,10 @@ struct SearchResult {
   array<SearchMatch> matches;
 };
 
-// Span-index search over session transcripts, and the owner of their
-// `.sdi` sidecars.
-//
-// This runs in a utility process for two reasons. The obvious one is that
-// scanning and matching megabytes of transcript is CPU work that has no
-// business on the browser's UI thread or in its process at all. The
-// subtler one is ownership: the sidecar cache is read, validated and
-// rewritten entirely here, so nothing had to be added to the transcript
-// WRITE path in the browser. A search is the only thing that ever touches
-// a sidecar, and the process that does it is the only one that knows the
-// format.
-//
-// kNoSandbox: the service reads transcripts and writes sidecars under the
-// user's `~/.velloc/projects`, which the utility sandbox forbids. It runs
-// no untrusted input beyond the transcript bytes themselves, and holds no
+// Span-index search over session transcripts, and owner of their `.sdi`
+// sidecars; only this process reads or writes them.
+// Security: kNoSandbox because it reads transcripts and writes sidecars under
+// `~/.velloc/projects`; no untrusted input beyond the transcript bytes, and no
 // browser or network state.
 [ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
 interface NexusSearchService {

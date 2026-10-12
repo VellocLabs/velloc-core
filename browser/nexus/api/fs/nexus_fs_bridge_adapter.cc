@@ -75,14 +75,9 @@ int32_t ClampTreeBound(std::optional<int32_t> requested,
 }
 
 // ---------------------------------------------------------------------------
-// Reply shapers — run on UI after the thread-pool work completes.
-//
-// Each takes the typed result by value (PostTaskAndReplyWithResult appends
-// it as the trailing arg) and forwards it through the BridgeResponseCallback.
-// They are free functions (not adapter members) and touch only `done` +
-// `result`, never the adapter — so they're safe to run even if the adapter
-// was destroyed while the work was in flight. `done` itself weak-guards the
-// owning handler, so the response is dropped cleanly in that case.
+// Reply shapers — run on UI after the thread-pool work completes. Free
+// functions touching only `done` + `result`, so they are safe after the
+// adapter is destroyed; `done` weak-guards the owning handler.
 // ---------------------------------------------------------------------------
 
 void RespondString(BridgeResponseCallback done, std::string value) {
@@ -296,19 +291,10 @@ NexusFsBridgeAdapter::NexusFsBridgeAdapter(
 NexusFsBridgeAdapter::~NexusFsBridgeAdapter() = default;
 
 // ===========================================================================
-// Per-action entry points (runtime.thread = "ui")
-//
-// The codegen dispatcher invokes each on UI with a fully-populated typed
-// input (inline-vs-port resolution for `bytes` already done). Each body hops
-// the blocking fs work to base::ThreadPool via PostTaskAndReplyWithResult,
-// binding the work to a `scoped_refptr<NexusFsHost>` — so the worker holds
-// the host alive and NEVER touches this adapter. The reply shaper runs back
-// on UI and delivers via `done` (weak-guarded). A port-service teardown that
-// destroys this adapter mid-op therefore can't use-after-free it: the worker
-// finishes against the still-refcounted host, and the reply drops cleanly.
-// See F-21.
-//
-// Traits: {MayBlock(), USER_VISIBLE} — the guest is waiting on the result.
+// Per-action entry points (runtime.thread = "ui"). Each hops blocking fs work
+// to base::ThreadPool {MayBlock, USER_VISIBLE} bound to a
+// scoped_refptr<NexusFsHost>, never the adapter, so a teardown mid-op cannot
+// use-after-free it; the reply drops via the weak-guarded `done`. (F-21)
 // ===========================================================================
 
 void NexusFsBridgeAdapter::HandleCwdOnUI(

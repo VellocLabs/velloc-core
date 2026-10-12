@@ -33,25 +33,11 @@ class SequencedTaskRunner;
 
 namespace nexus {
 
-// The children `shell.spawn({persist: {logPath}})` starts: streaming children
-// of the shell utility (NexusShellService::StreamSpawn) whose life is NOT the
-// bridge connection's. They keep running when the guest goes away; their
-// stdout and stderr are appended to `logPath`; `shell.persistentList` finds
-// them again and `shell.persistentKill` stops them. The exit is recorded
-// here, so a guest that comes back later learns how a child ended.
-//
-// Per Profile (GetPersistentShells), like the shared launcher whose utility
-// process runs the children: they live as long as the browser process — the
-// utility's job object takes them down with it — not past it. While any is
-// running, the launcher is kept from idle-recycling the utility (which would
-// kill them) through the same retain tokens background shells use.
-//
-// This is the primitive the worker's own background-task registry is meant
-// to build on (P-3: the C++ background-shell registry behind
-// shell.status / shell.kill is business logic slated to move).
-//
-// UI thread only. Log writes hop to one sequenced MayBlock runner, so the
-// bytes of a child land in the order they arrived.
+// Children started by `shell.spawn({persist: {logPath}})`: they outlive the
+// bridge connection (not the browser), append stdout/stderr to `logPath`, and
+// are found / stopped via `shell.persistentList` / `persistentKill`; exits are
+// recorded. Per Profile; keeps the utility from idle-recycling while any run.
+// UI thread only; log writes are ordered on one sequenced MayBlock runner.
 class NexusPersistentShells {
  public:
   using SpawnReply = base::OnceCallback<void(

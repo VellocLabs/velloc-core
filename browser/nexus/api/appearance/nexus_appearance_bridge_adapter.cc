@@ -27,17 +27,10 @@ namespace nexus {
 
 namespace {
 
-// The locales Velloc ships on BOTH surfaces — the browser chrome
-// (custom_browser_strings_<lang>.pak) AND the guest web app
-// (nexus_web .../i18n/messages/<locale>.ts). The browser chrome alone also
-// carries bn / hi / pt / ru, but selecting one of those would switch the menus
-// and leave the web app in English, so they are deliberately not offered.
-//
-// This list is the ENFORCEMENT point. The guest builds the same dropdown, but
-// the guest is web content and cannot be trusted to constrain a privileged
-// pref write. Widening the product's language support means editing this array
-// and the guest's list together.
-// See G-1.
+// The locales shipped on both the browser chrome and the guest web app.
+// Security: this list is the enforcement point for the privileged pref write;
+// the guest's dropdown is web content and cannot be trusted. Widening support
+// means editing this array and the guest's list together. (G-1)
 constexpr std::string_view kSupportedUiLocales[] = {
     "en", "zh-CN", "es", "fr", "de", "ja", "ko",
 };
@@ -277,18 +270,8 @@ void NexusAppearanceBridgeAdapter::HandleGetAppearanceOnUI(
     ::nexus::BridgeResponseCallback done) {
   base::DictValue result;
 
-  // The PRIMARY field — the PROSPECTIVE locale: what the next launch will
-  // use, which is what the dropdown must show after a change and before the
-  // restart.
-  //
-  // It lives in LOCAL STATE, not the profile. `intl.app_locale` is registered
-  // on the local-state registry (browser_process_impl.cc), and outside
-  // ChromeOS it is registered NOWHERE on a profile's registry — so reading it
-  // from `profile_->GetPrefs()` is not a wrong value but a CHECK failure in
-  // PrefService ("Trying to access an unregistered pref"), which takes the
-  // browser process down. Chrome's own languages_handler.cc reads the profile
-  // only under BUILDFLAG(IS_CHROMEOS) and falls back to local state; this is
-  // the desktop half of that.
+  // The prospective locale (what the next launch uses). `intl.app_locale` is a
+  // local-state pref outside ChromeOS: reading it from the profile CHECK-fails.
   PrefService* local_state =
       g_browser_process ? g_browser_process->local_state() : nullptr;
   result.Set("locale",
@@ -357,17 +340,10 @@ void NexusAppearanceBridgeAdapter::HandleResolveThemeOnUI(
     variant = parsed;
   }
 
-  // Resolve through the SAME pipeline that feeds chrome://theme/colors.css,
-  // keyed by the request — NO profile pref is read for the three request
-  // fields, NONE is written, and nothing is broadcast. The result goes back
-  // only as this request's reply.
-  //
-  // ColorProviderManager caches one provider per distinct key and never
-  // evicts, and this route is reachable at observe scope by a remote client
-  // that picks the key. Bound what a client can make it hold: once this
-  // adapter has resolved kMaxDistinctResolvedThemes distinct keys, drop the
-  // manager's cache (the browser's own providers are rebuilt lazily) and
-  // start counting again.
+  // Resolve through the chrome://theme/colors.css pipeline keyed by the request;
+  // no profile pref is read or written and nothing is broadcast.
+  // Security: a remote client at observe scope picks the key and the manager
+  // never evicts, so its cache is dropped after kMaxDistinctResolvedThemes keys.
   const std::string resolve_key = base::StringPrintf(
       "%d|%s|%s", static_cast<int>(color_mode),
       seed.has_value() ? base::NumberToString(*seed).c_str() : "",

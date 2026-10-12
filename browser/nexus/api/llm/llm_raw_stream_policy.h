@@ -67,15 +67,9 @@ std::optional<std::string> ExpandSecretTemplates(std::string_view text,
                                                  std::string* out);
 
 // ---- OAuth templates -------------------------------------------------------
-//
-// For the OAuth-backed providers (chatgpt-pro, github-copilot, qwen-code) the
-// credential is not a stored secret but a token the host refreshes or
-// exchanges right before use (NexusOAuthManager::EnsureFreshToken). A header
-// or query value may carry `{{oauth:access_token}}` (the backend-ready bearer:
-// the refreshed ChatGPT / Qwen token, or the short-lived Copilot token minted
-// from the GitHub one) and `{{oauth:account_id}}` (chatgpt-pro's
-// `ChatGPT-Account-Id`). The host resolves them only after running that step,
-// and they never come back to the guest.
+// `{{oauth:access_token}}` / `{{oauth:account_id}}` in a header or query value
+// resolve to a token the host refreshes or exchanges right before use
+// (NexusOAuthManager::EnsureFreshToken); they never come back to the guest.
 
 struct OAuthValues {
   std::string access_token;

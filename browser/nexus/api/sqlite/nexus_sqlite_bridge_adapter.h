@@ -22,24 +22,10 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `SqliteApiBase` virtuals — the
-// `sqlite` bridge capability. Reads/writes host SQLite files from the guest.
-//
-// Threading: each Handle*OnUI runs on the UI thread. SQLite work runs on a
-// PER-FILE base::SequencedTaskRunner (a `sqlite3` handle is not safe across
-// threads, and `sql::Database` blocks). A lease-counted registry
-// (`files_`, UI-thread-only, so no lock) hands the same runner to every
-// operation on the same normalized path — serializing them — while unrelated
-// files run in parallel. Connections live on those sequences via
-// base::SequenceBound; the registry maps and lease counts are only ever touched
-// on UI.
-//
-// Two connection kinds:
-//   - one-shot (`path`): a transient connection in `one_shots_`, opened →
-//     used → removed in the reply.
-//   - handle (`open`/`close`): a persistent connection in `handles_`, held
-//     until close.
-// See P-3.
+// Concrete adapter implementing the generated `SqliteApiBase` virtuals.
+// Handlers run on UI; SQLite work runs on one sequenced runner per normalized
+// path (lease-counted `files_`, UI-only), serializing same-file operations.
+// One-shot (`path`) and handle (`open`/`close`) connections. (P-3)
 class NexusSqliteBridgeAdapter : public ::nexus::generated::SqliteApiBase {
  public:
   explicit NexusSqliteBridgeAdapter(NexusBridgeResponseDelegate* delegate);

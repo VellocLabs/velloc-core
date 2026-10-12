@@ -77,16 +77,9 @@ struct FsWatchEvent {
   bool overflow = false;
 };
 
-// Every watch one bridge connection holds. Lives on ONE sequenced
-// MayBlock task runner (NexusFsBridgeAdapter owns it through
-// base::SequenceBound) because base::FilePathWatcher must be created, run and
-// destroyed on one sequence and the poll walks the disk. Destroying it
-// cancels every watch.
-//
-// Changes are debounced per watch: the first change of a burst arms a
-// kDebounce timer, every change until it fires joins the same pending set,
-// and the timer emits ONE event. That is what keeps an `npm install` from
-// turning into ten thousand bridge events.
+// Every watch one bridge connection holds, on one sequenced MayBlock runner
+// (base::FilePathWatcher is sequence-bound). Destroying it cancels every
+// watch. Changes are debounced per watch into one event per kDebounce burst.
 class NexusFsWatchCore {
  public:
   using EventCallback = base::RepeatingCallback<void(FsWatchEvent)>;

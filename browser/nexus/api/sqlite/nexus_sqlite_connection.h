@@ -71,16 +71,10 @@ struct SqliteBatchStatement {
   base::ListValue params;
 };
 
-// A single SQLite connection. SEQUENCE-AFFINE: every method (including the
-// constructor and destructor) must run on one base::SequencedTaskRunner — the
-// adapter owns it via base::SequenceBound and one runner per file. `sql::Database`
-// blocks and its handle is not safe across threads, so this class is never
-// touched from the UI thread.
-//
-// The constructor opens the database; failures are recorded and surfaced by
-// OpenStatus() and by each operation (which returns the open error rather than
-// running). A non-DCHECKing error callback is installed so a corrupt / hostile
-// foreign database cannot crash the debug build.
+// A single SQLite connection, sequence-affine: every method runs on its
+// file's runner, never UI. Open failures are surfaced by OpenStatus() and each
+// operation; a non-DCHECKing error callback keeps a hostile database from
+// crashing debug builds.
 class NexusSqliteConnection {
  public:
   NexusSqliteConnection(base::FilePath path, SqliteOpenOptions options);

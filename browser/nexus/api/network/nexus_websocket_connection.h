@@ -35,28 +35,12 @@ class NetworkContext;
 
 namespace nexus {
 
-// One `network.wsOpen` WebSocket, driven from the browser process through the
-// network service's WebSocket API (NetworkContext::CreateWebSocket — the same
-// path components/private_ai uses for its browser-side socket). Cookies are
-// never sent.
-//
-// Egress policy (unless opted out): an IP-literal host in a refused range is
-// refused by the adapter before this class exists; the network service
-// refuses a loopback / private peer when the socket connects, before the
-// handshake is written (`kURLLoadOptionBlockLocalRequest`, see Connect); and
-// the peer the handshake connected to
-// (`WebSocketHandshakeResponse::remote_endpoint`) is judged again — unless
-// the connection went through a proxy, which a proxy lookup for the URL
-// decides first (through a proxy the peer is the proxy).
-//
-// Messages: a text or binary message is reassembled from its frames and
-// delivered whole (at most kMaxMessageBytes, else the socket is closed with
-// 1009). Sends are queued and written to the socket's data pipe as it drains.
-//
-// Lifecycle: Start() → `open` fires once (protocol, or an error) → messages
-// → `closed` fires once (the server closed, the connection dropped, Close()
-// completed, or the open failed after the head). Deleting the object drops
-// the socket. UI thread.
+// One `network.wsOpen` WebSocket via NetworkContext::CreateWebSocket; cookies
+// are never sent. Egress policy (unless opted out): IP literals refused by the
+// adapter, loopback / private peers refused at connect, the handshake peer
+// judged again unless proxied. Messages are delivered whole (at most
+// kMaxMessageBytes, else close 1009). Lifecycle: Start() → `open` once →
+// messages → `closed` once; deleting it drops the socket. UI thread.
 class NexusWebSocketConnection : public network::mojom::ProxyLookupClient,
                                  public network::mojom::WebSocketHandshakeClient,
                                  public network::mojom::WebSocketClient {

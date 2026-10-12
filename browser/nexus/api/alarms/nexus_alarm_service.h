@@ -37,27 +37,11 @@ class BrowserContext;
 
 namespace nexus {
 
-// The `alarms` capability's clock (P-3): named wall-clock
-// alarms that survive a closed page and a browser restart, so scheduled work
-// (routines) no longer needs a live runtime to keep time.
-//
-// Per Profile, created with the profile (so missed alarms are noticed at
-// startup, before any window opens). The set lives in the `nexus.alarms`
-// pref and is the source of truth; this service only times it:
-//
-//   - On creation every alarm already due fires ONCE (CollectDueAlarms), a
-//     periodic one then resumes on its grid — "missed alarms fire once".
-//   - A fire goes to every connected bridge (`alarms.onAlarm`, one sink per
-//     alarms adapter). With no sink connected — no runtime is alive — it is
-//     queued (`TakePending`, drained by the guest's next `alarms.list`) and
-//     the runtime is woken the existing way: the launcher delegate opens (or
-//     focuses) the Nexus window, which boots the guest and its SharedWorker.
-//     A parked background panel counts as connected: its port is live.
-//   - The timer is re-armed at most an hour ahead, so a clock change or a
-//     machine that slept is corrected within the hour (the fire itself
-//     always compares against the wall clock).
-//
-// UI thread only.
+// The `alarms` capability's clock (P-3): named wall-clock alarms that survive
+// a closed page and a browser restart. Per Profile; the `nexus.alarms` pref is
+// the source of truth. Alarms already due at creation fire once; a fire with
+// no connected sink is queued (`TakePending`) and the Nexus window is opened.
+// The timer is re-armed at most an hour ahead. UI thread only.
 class NexusAlarmService : public KeyedService {
  public:
   using Sink = base::RepeatingCallback<void(const AlarmFire&)>;

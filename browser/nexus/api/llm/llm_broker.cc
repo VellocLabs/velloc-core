@@ -200,25 +200,9 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   if (const base::ListValue* models = settings.FindList("enabledModels")) {
     out.Set("enabled_models", models->Clone());
   }
-  // Carry the verification stamp through to the pref so the settings surfaces
-  // that REPORT it stay right across a settings-side (React `providers.upsert`
-  // → `publishProviderConfigs`) save: `providers.list`'s `isVerified` and the
-  // "Connected" status card. It is reporting only — `BuildCatalog` gates the
-  // picker on `provider_set_up` (configured + a user-supplied stored config),
-  // so losing the stamp no longer empties the quick model picker. The inner keys stay camelCase (providerId
-  // / verifiedAtMs): IsProviderVerified reads them as-is; only the outer key is
-  // snake_case to match the legacy pref shape.
-  //
-  // Drop a stale stamp ONLY when the api_key actually changed — mirroring
-  // mergeProviderConfigForSave (providerConfigMerge.ts), which clears
-  // lastVerification when `form.apiKey !== saved.apiKey`. An unconditional
-  // `Remove` would wipe the pref's existing stamp whenever the incoming
-  // settings config omits `lastVerification` — including the boot-time
-  // `publishProviderConfigsAtBoot` push, which carries only stream-guard
-  // overrides for providers whose apiKey lives in the pref — and report a
-  // working, previously-verified provider as unverified. When the key is
-  // unchanged (or the settings config carries no key at all), keep the
-  // existing stamp.
+  // Carry the verification stamp (reporting only) into the pref; the inner keys
+  // stay camelCase. Drop it only when the api_key changed — boot-time publishes
+  // omit `lastVerification` and must not unverify a provider.
   if (const base::DictValue* last_verification =
           settings.FindDict("lastVerification")) {
     out.Set("last_verification", last_verification->Clone());
@@ -236,16 +220,9 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
 void LlmBroker::SetProviderConfigs(base::DictValue configs,
                                    const std::string& active_provider_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // settings.json is the source of truth for the user-editable fields; merge
-  // them onto the existing pref per provider so C++-owned secrets (OAuth
-  // tokens) survive, configure the live provider, then write the pref back as
-  // the cold-boot cache `LoadProviderConfigs` reads.
-  //
-  // If the OS encryptor is not acquired yet, `SealApiKeyForPref` cannot seal
-  // and `StoredApiKeysDiffer` cannot compare secrets. Apply now anyway (the
-  // providers must work immediately) and re-apply this exact publish once
-  // the encryptor arrives, which re-seals any plaintext that landed in the
-  // pref and re-judges the verification stamp on the real secrets.
+  // settings.json owns the user-editable fields; merge onto the pref so C++-owned
+  // secrets survive. Without the OS encryptor, apply now and re-apply this
+  // publish once it arrives, to re-seal plaintext and re-judge the stamp.
   NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
   if (!crypt->ready()) {
     crypt->WhenReady(base::BindOnce(&LlmBroker::SetProviderConfigs,
@@ -537,16 +514,8 @@ void LlmBroker::FetchModelsWithPersist(const std::string& provider_id,
     return;
   }
 
-  // Wrap the caller's callback so that every successful fetch — regardless of
-  // which code path triggered it — persists the raw JSON blob to the prefs
-  // cache. Without this wrap there is a race: `NexusLlmHost::Catalog()` and
-  // `RefreshCatalogForProvider()` both call into `FetchAvailableModels`, which
-  // shares a single `SimpleURLLoader` member on the provider. Whichever fetch
-  // starts second cancels the first (its callback never runs), so if the
-  // persist-on-completion hook lives only on one caller's branch, the pref
-  // stays empty whenever the other caller wins the race. Persisting here —
-  // at the single point where every `RefreshModels` path converges — makes
-  // that race harmless: whichever callback actually fires persists.
+  // Persist every successful fetch here: concurrent fetches share one loader
+  // and the second cancels the first, so only this converging point always runs.
   provider->FetchAvailableModels(base::BindOnce(
       [](base::WeakPtr<LlmBroker> self, const std::string& provider_id,
          FetchModelsCallback user_callback, std::vector<ModelInfo> models) {

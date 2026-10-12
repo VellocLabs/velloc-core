@@ -28,20 +28,9 @@ struct HostShellAvailability {
 // Windows locations. Stats files: MUST run on a MayBlock sequence.
 HostShellAvailability ResolveHostShellAvailability();
 
-// The interpreter name the prompt's `Shell:` line should carry, path and
-// `.exe` stripped ("bash", "zsh", "pwsh"). Empty means unknown; the guest then
-// drops the line.
-//
-// Windows: the shell the model's shell tool actually runs — `bash` whenever
-// the Bash tool is offered, else the PowerShell the PowerShell tool launches,
-// else `%COMSPEC%` as a last resort. `$SHELL` / `%COMSPEC%` alone are not
-// used while a tool shell exists: an app started from Explorer has no
-// `$SHELL`, and reporting `cmd` there told the model to write cmd syntax
-// (`set VAR=value && …`) into commands Git Bash runs.
-//
-// POSIX: `$SHELL`, the interpreter the user chose.
-//
-// Pure; the env values are passed in so it is testable.
+// The interpreter name for the prompt's `Shell:` line ("bash", "zsh", "pwsh");
+// empty = unknown. Windows: the shell the shell tool runs (bash, else
+// PowerShell, else `%COMSPEC%`); POSIX: `$SHELL`. Pure.
 std::string ChooseReportedShellName(const HostShellAvailability& shells,
                                     std::optional<std::string> shell_env,
                                     std::optional<std::string> comspec_env);

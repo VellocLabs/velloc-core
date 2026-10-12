@@ -17,18 +17,9 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `SearchApiBase` virtual.
-//
-// The adapter is a forwarder and nothing else. Searching a transcript —
-// mmap, span indexing, matching — and the `.sdi` sidecar reads and writes
-// that go with it all happen in a utility process; the browser process
-// sends an ordered list of transcript paths and receives matches. Keeping
-// it out of process is what lets the sidecar be maintained lazily on
-// search without adding a single line to the transcript write path, and
-// it means a malformed transcript can at worst kill a child process.
-//
-// The remote is shared per profile (`GetSharedSearchLauncher`), so every
-// bridge port searches through one process with one warm span cache.
+// Concrete adapter implementing the generated `SearchApiBase` virtual: a pure
+// forwarder to the per-profile search utility process, which owns transcript
+// matching and the `.sdi` sidecars.
 class NexusSearchBridgeAdapter : public ::nexus::generated::SearchApiBase {
  public:
   NexusSearchBridgeAdapter(NexusBridgeResponseDelegate* delegate,

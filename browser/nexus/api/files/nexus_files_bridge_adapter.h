@@ -14,14 +14,9 @@ class NexusBridgeResponseDelegate;
 class ToolSessionRegistry;
 
 // `files` capability — the host actions behind the file tools (read, write,
-// edit, glob, grep). Each action is a thin forward into the session's
-// FileTool / ProcessTool; the model-facing tool (name, description, schema)
-// lives in the runtime. Declarations: api/declarations/files/*.api.json.
-//
-// Threading: the handler entry runs on UI and only resolves the session; the
-// tool classes post their blocking bodies to the session's sequenced runner
-// (ToolSession::blocking_runner), so calls within one session complete in
-// arrival order and never block UI.
+// edit, glob, grep), each a thin forward into the session's FileTool /
+// ProcessTool. The handler runs on UI and only resolves the session; tool
+// bodies run in arrival order on ToolSession::blocking_runner.
 class NexusFilesBridgeAdapter : public ::nexus::generated::FilesApiBase {
  public:
   NexusFilesBridgeAdapter(NexusBridgeResponseDelegate* delegate,

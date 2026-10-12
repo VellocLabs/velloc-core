@@ -30,27 +30,10 @@ namespace nexus {
 class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `ShellApiBase` virtuals — the
-// guest's child-process primitive (P-3). The
-// STREAMING surface over `NexusShellService::StreamSpawn`, the live-pipe path
-// the utility service already has:
-//
-//   shell.spawn(shell, command, …) → StreamSpawn; { streamId }
-//   shell.writeStdin / closeStdin / streamKill(streamId) → the controller
-//   events shell.onStreamOutput { streamId, stream, dataBase64 } and
-//          shell.onStreamExit { streamId, exitCode, … }
-//
-// A streaming child's life is the adapter's: torn down with it. A `spawn` with
-// `persist` is handed to the profile-wide NexusPersistentShells instead and
-// outlives the connection (`persistentList` / `persistentKill`).
-//
-// The C++ background-shell registry this adapter used to expose
-// (`shell.status` / `shell.kill` + the `shell.onExit` event, for the Bash
-// tool's `run_in_background`) was removed under interface 1:
-// the runtime owns background shells over the persistent-shell primitives.
-//
-// Every action runs on UI (the *.api.json declare runtime.thread = "ui") and
-// funnels through the per-Profile shared `NexusShellServiceLauncher`
-// (`GetSharedShellLauncher`).
+// guest's streaming child-process primitive over StreamSpawn (P-3). A child
+// dies with the adapter unless spawned with `persist`, which hands it to
+// NexusPersistentShells. All actions run on UI via the per-Profile
+// `NexusShellServiceLauncher`.
 class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
  public:
   NexusShellBridgeAdapter(NexusBridgeResponseDelegate* delegate,

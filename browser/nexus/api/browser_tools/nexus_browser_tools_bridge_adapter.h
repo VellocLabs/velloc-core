@@ -17,22 +17,9 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `BrowserToolsApiBase`
-// virtuals.
-//
-// Approach 5 (A5): exposed ONLY on the panel WebUI port
-// (`PortServiceMode::kPanel`). Replaces the chrome.send
-// `getBrowserToolsSeparateWindow` / `setBrowserToolsSeparateWindow`
-// routes that backed the Settings · Tools toggle (and the topbar's
-// one-shot read).
-//
-// Schema scope: `separateWindow` is the only field today. The schema
-// is built as a single-field `snapshot` / `setField` pattern (mirrors
-// the existing `agent` and `features` capabilities) so adding a future
-// toggle is purely a matter of extending the dict — no protocol churn.
-// `allowEvaluate` was removed entirely (see
-// nexus_browser_tools_config.h); BrowserEvaluate is now always
-// available — a first-class browser tool with no opt-in gate.
+// Concrete adapter implementing the generated `BrowserToolsApiBase` virtuals.
+// Exposed only on the panel WebUI port (`PortServiceMode::kPanel`);
+// `separateWindow` is the only field of its `snapshot` / `setField` schema.
 class NexusBrowserToolsBridgeAdapter
     : public ::nexus::generated::BrowserToolsApiBase {
  public:

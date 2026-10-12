@@ -85,27 +85,9 @@ base::FilePath ResolveLinks(const base::FilePath& absolute) {
 }
 
 #if NEXUS_FS_ATOMIC_WRITE
-// Atomic write with a SHORT temp name, for targets too deep for the upstream
-// writer. Same shape as `base::ImportantFileWriter` — sibling temp, flush,
-// replace — but named `<target>.tmp`.
-//
-// Why it has to exist: upstream names its temp file with a random 36-char
-// GUID plus ".tmp" (`CreateAndOpenTemporaryFileInDir`,
-// base/files/file_util_win.cc), so an atomic write needs 41 characters of
-// headroom past the target's DIRECTORY, regardless of how short the target's
-// own name is. On Windows that fails once `dir + 41 > MAX_PATH` — roughly 32
-// characters BEFORE the target path itself would be too long, so a plain write
-// to the very same path still succeeds. A background sub-agent's `meta.json`
-// sits deep enough to cross that line,
-//   projects/<sanitized-project-root>/<parentSessionId>/subagents/<subId>/
-// and the failure is not cosmetic: the write is the sub-agent's first, so it
-// aborted the whole sub-agent with "Failed to write file".
-//
-// `<target>.tmp` costs 4 characters instead of 41, which keeps the atomic
-// path's reach within a few characters of the plain one. The fixed name is
-// safe here where a shared temp name would not be: the guest serializes writes
-// per path (`BridgeFsSessionStorage`'s per-session queue), and the temp is
-// derived from the target rather than shared across targets.
+// Atomic write with a short `<target>.tmp` temp name: upstream's 41-char GUID
+// temp fails for deep targets under MAX_PATH where a plain write succeeds.
+// The fixed name is safe because the guest serializes writes per path.
 bool WriteFileAtomicallyShortTemp(const base::FilePath& target,
                                   base::span<const uint8_t> bytes) {
   const base::FilePath tmp = target.AddExtension(FILE_PATH_LITERAL("tmp"));
@@ -131,17 +113,9 @@ bool WriteFileAtomicallyShortTemp(const base::FilePath& target,
 }
 #endif  // NEXUS_FS_ATOMIC_WRITE
 
-// The stat payload the guest sees, as a dict. Shared by `Stat` (which
-// JSON-writes it) and `StatBatch` (which nests it in a row) so the two can
-// never drift into reporting different fields for the same file.
-// nullopt = the path could not be stat'd; when the caller supplies
-// `out_error`, the OS failure kind (base::File::GetLastFileError — the
-// thread's errno/GetLastError, read before any other filesystem call runs)
-// is written there so `Stat` can discriminate its wire message. NOTE:
-// GetFileInfo is a free base:: helper, so a ScopedBlockingCall teardown runs
-// between the failing syscall and this read — that teardown is
-// last-error-safe by construction (~UncheckedScopedBlockingCall holds
-// base::ScopedClearLastError), which is what makes this capture sound.
+// The stat payload the guest sees, shared by `Stat` and `StatBatch`. nullopt =
+// not stat'd; `out_error` gets base::File::GetLastFileError, which is sound
+// because ~UncheckedScopedBlockingCall preserves the last error.
 std::optional<base::DictValue> BuildStatDict(const base::FilePath& resolved,
                                              base::File::Error* out_error) {
   base::File::Info info;
@@ -295,20 +269,9 @@ std::string NexusFsHost::Cwd() const {
 }
 
 std::string NexusFsHost::UserHome() const {
-  // Resolve via env vars first — matches the convention nexus_web uses
-  // (`runtimeConfig.getEnv('HOME') ?? runtimeConfig.getEnv('USERPROFILE')`)
-  // and, critically, respects overrides set by the e2e test harness
-  // (the test browser process is spawned with HOME/USERPROFILE
-  // pointing at the per-test isolation root so feature toggles don't
-  // pollute the developer's real home dir).
-  //
-  // On Windows, `base::PathService::Get(base::DIR_HOME)` resolves via
-  // `SHGetKnownFolderPath(FOLDERID_Profile)` which IGNORES env vars —
-  // so we couldn't use it for the test-isolation case. Reading env
-  // directly fixes that.
-  //
-  // PathService stays as the last-ditch fallback for the (rare)
-  // service-account configs where neither env var is set.
+  // Env vars first (HOME / USERPROFILE) so the e2e harness's isolation root is
+  // honoured: on Windows base::DIR_HOME ignores env vars. PathService is the
+  // fallback when neither is set.
   auto env = base::Environment::Create();
 #if BUILDFLAG(IS_WIN)
   std::optional<std::string> profile = env->GetVar("USERPROFILE");
@@ -421,24 +384,9 @@ NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
   base::File::Error stat_error = base::File::FILE_OK;
   std::optional<base::DictValue> dict = BuildStatDict(resolved, &stat_error);
   if (!dict.has_value()) {
-    // Discriminated, Node-style wording — a WIRE CONTRACT like ReadFile's
-    // ENOENT line and Rename's strings: the guest keys on the leading code
-    // to tell "genuinely absent" (safe to treat as no file) from transient
-    // failures (permission, lock, I/O) that must NOT read as absent —
-    // SuperEdit's commit conflict check is the first consumer (see
-    // nexus_web utils/fsTransportFailure.ts + the internal repo's
-    // F-21). The old single wording ("File not found
-    // or permission denied") is retired; an older guest treats any of these
-    // as absent, which is exactly its previous behavior — degradable, no
-    // interface bump.
-    //
-    // Deliberately NO existence-probe fallback for unmapped errors: a
-    // base::PathExists on a path whose stat just failed with EIO / a
-    // network blip fails for the SAME underlying reason and would answer
-    // "absent" — re-opening the transient-reads-as-absent hole this
-    // taxonomy closes. An unmapped failure stays
-    // EUNKNOWN (transient), at the cost of a rare over-report on a
-    // malformed path.
+    // Discriminated, Node-style wording — a wire contract: the guest keys on the
+    // leading code to tell "absent" from transient failures. No existence-probe
+    // fallback: it would fail for the same reason and answer "absent". (F-21)
     result.error = FsFailureMessage(stat_error);
     return result;
   }
@@ -667,20 +615,9 @@ NexusFsHost::ReadResult NexusFsHost::ReadFile(const std::string& path) const {
 
   std::optional<std::vector<uint8_t>> bytes = base::ReadFileToBytes(resolved);
   if (!bytes.has_value()) {
-    // Distinguish "file absent" from "present but unreadable".
-    // base::ReadFileToBytes collapses both into nullopt, but JS callers
-    // (settings / plugins loaders) treat a missing file as the benign
-    // first-run case and only warn on real read errors. Emit ENOENT-style
-    // wording for the absent case so the guest's isMissingFileError()
-    // detector (regex on ENOENT / "no such file") recognizes it — same as
-    // Node, since guest code checks err.code === 'ENOENT'.
-    // Same taxonomy as Stat, from the same last-error capture. The captured
-    // NOT_FOUND leads unconditionally — a PathExists probe can race a
-    // concurrent re-create and would then bury the ENOENT inside the
-    // parenthetical, where the guest's ANCHORED not-found matcher never
-    // looks. Present-but-unreadable carries the discriminated code as a
-    // parenthetical DETAIL so existing "Failed to read file" matchers keep
-    // working while the guest gains the cause.
+    // Absent vs present-but-unreadable: ENOENT-style wording leads for NOT_FOUND
+    // (the guest's matcher is anchored); other failures keep "Failed to read file"
+    // with the discriminated code as a parenthetical detail.
     const base::File::Error read_error = base::File::GetLastFileError();
     if (read_error == base::File::FILE_ERROR_NOT_FOUND ||
         !base::PathExists(resolved)) {

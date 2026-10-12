@@ -42,32 +42,11 @@ class NexusBridgeResponseDelegate;
 class NexusNetworkHost;
 struct NexusHttpRequestSpec;
 
-// Concrete adapter implementing the generated `NetworkApiBase`
-// virtuals. Adds a general-purpose HTTP surface (`httpGet`, and
-// `httpRequest` for any method) to the bridge so
-// TS-side tools (WebFetch in V1; future MCP-server pinging /
-// webhook-callback / registry-lookup tools) can issue requests
-// through the Chromium net stack — NOT subject to renderer CORS,
-// same egress path the LLM providers use.
-//
-// Threading model — mirrors `NexusFsBridgeAdapter`:
-//   - Per *.api.json declares its inputs in tools-style `inputs[]`.
-//   - The codegen-emitted dispatcher handles typed input extraction
-//     and PostTasks the entry hop to the declared thread (UI for
-//     this category, since `SimpleURLLoader` and the
-//     `SharedURLLoaderFactory` are UI-thread objects).
-//   - Each Handle*OnUi runs on UI, sees a fully-populated typed
-//     input, kicks off a `NexusNetworkHost` request that owns its
-//     own `SimpleURLLoader`, and fires `done` from
-//     `OnDownloadComplete` once the body lands. The
-//     `BridgeResponseCallback` marshals the actual response payload
-//     back to the JS guest.
-//
-// Lifetime: `NexusNetworkBridgeAdapter` owns each in-flight
-// `NexusNetworkHost` via a per-request `unique_ptr` that
-// self-erases on completion. Cancelling the adapter (or shutting
-// down the parent service) drops every host, which destroys its
-// loader, which cancels the in-flight request at the network layer.
+// Concrete adapter implementing the generated `NetworkApiBase` virtuals:
+// `httpGet` / `httpRequest` through the Chromium net stack, not subject to
+// renderer CORS. Handlers run on UI; each request is a self-erasing
+// `NexusNetworkHost` owning its loader, so destroying the adapter cancels
+// every in-flight request.
 class NexusNetworkBridgeAdapter
     : public ::nexus::generated::NetworkApiBase {
  public:

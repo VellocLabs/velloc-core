@@ -61,27 +61,9 @@ message_center::Notification BuildNexusToastNotification(
 void WriteNexusClipboardText(const std::string& text,
                              base::OnceCallback<void(bool)> done);
 
-// Concrete adapter implementing the generated `UiApiBase` virtuals.
-//
-// Phase 11h architecture (mirrors api/llm — UI thread + typed inputs +
-// BridgeResponseCallback):
-//   - 11 actions declared under api/declarations/ui/*.api.json. All run
-//     on the bridge's home thread (UI) — they touch BrowserView / WebUI
-//     directly which is UI-bound.
-//   - The codegen-emitted dispatcher extracts a typed input struct
-//     and constructs `BridgeResponseCallback done`. The implementation
-//     does its UI work and fires `done.Success/Error/InvalidArgs`.
-//   - The two `broadcast*` actions use `passthrough_payload` because
-//     the payload shape is opaque — they re-broadcast it verbatim as
-//     a WebUI listener event.
-//
-// The `nexus_ui_broadcast.{h,cc}` helper that lived under
-// `nexus/ui/` was deleted after the WebUI bridge migration retired
-// its sole callers (currentSessionState / summaryChanged /
-// dismissBootWelcome / showMainContents) — those events now ride
-// direct worker → port broadcasts instead of profile-wide C++
-// re-fanning. No remaining caller of
-// `BroadcastWebUiListenerEventToProfile` exists.
+// Concrete adapter implementing the generated `UiApiBase` virtuals. All
+// actions run on UI. The two `broadcast*` actions re-broadcast their opaque
+// `passthrough_payload` verbatim as a WebUI listener event.
 class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
                              public ui::SelectFileDialog::Listener {
  public:
@@ -102,16 +84,6 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
       ::nexus::generated::GetProviderMissingPromptInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
-  // HandleDismissBootWelcomeOnUI + HandleShowMainContentsOnUI were
-  // pure C++ pass-through relays — they received guest direct-bridge
-  // calls and re-fired `nexusDismissBootWelcome` /
-  // `nexusShowMainContents` via BroadcastWebUiListenerEventToProfile.
-  // Retired alongside the `nexusCurrentSessionState` /
-  // `nexusSessionsSummary` migration: the SharedWorker now fans the
-  // same events directly to attached WebUI bridge ports via
-  // `broadcastWebUiBridgeEvent`. Guest triggers via a new
-  // `ui.broadcastEvent` SharedWorker port message; panel pages
-  // subscribe via `nexus_ui_event_client.ts`.
   void HandleOpenUrlOnUI(
       ::nexus::generated::OpenUrlInput input,
       std::vector<blink::MessagePortDescriptor> ports,

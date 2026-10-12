@@ -14,15 +14,9 @@ class PrefService;
 
 namespace nexus {
 
-// Returns a pointer to the stored Dict for |provider_id| inside
-// prefs::kNexusProviderConfigs, or nullptr if no entry exists or |prefs| is
-// null. The returned pointer is owned by the PrefService and remains valid
-// for the lifetime of the underlying stored dict; callers that need an
-// independent copy should call ``Clone()``.
-//
-// Previously duplicated between nexus_llm_host.cc and
-// nexus_settings_handler.cc; consolidated here so both read the same
-// provider-config shape from prefs.
+// Returns the stored Dict for |provider_id| in prefs::kNexusProviderConfigs,
+// or nullptr if absent or |prefs| is null. Owned by the PrefService; call
+// ``Clone()`` for an independent copy.
 const base::DictValue* GetStoredProviderConfig(PrefService* prefs,
                                                const std::string& provider_id);
 
@@ -31,17 +25,11 @@ const base::DictValue* GetStoredProviderConfig(PrefService* prefs,
 // Returns an empty string if neither is present.
 std::string GetStoredDefaultModelId(const base::DictValue& config);
 
-// Seals a settings.json `apiKey` for the `nexus.provider_configs` pref cache.
-// A plaintext key becomes `"NEXUSENC1:" + base64(ciphertext)`; a value that is
-// already sealed (the guest persists ciphertext after `model.encryptSecret`)
-// or empty is returned unchanged, so the pref never holds a plaintext key even
-// when an older guest still publishes one. If the OS encryptor is not ready
-// yet this returns the input UNCHANGED (plaintext stays plaintext); the
-// caller (`LlmBroker::SetProviderConfigs`) closes that window by re-applying
-// the same configs from `NexusSecretCrypt::WhenReady`, which re-seals them.
-// If the encryptor IS ready and the OS encrypt still fails, nothing re-tries,
-// so this returns "" (logged) rather than letting the plaintext reach the
-// pref; settings.json keeps the key and republishes it on the next boot.
+// Seals a settings.json `apiKey` for the pref cache as `"NEXUSENC1:" +
+// base64(ciphertext)`; sealed or empty values pass through. If the encryptor
+// is not ready the input is returned unchanged (the caller re-applies from
+// `NexusSecretCrypt::WhenReady`); if encryption fails it returns "" so no
+// plaintext reaches the pref.
 std::string SealApiKeyForPref(const std::string& api_key);
 
 // Whether two STORED api_key values name different secrets. Compares the
@@ -73,25 +61,11 @@ void MergeStoredSecrets(const base::DictValue* settings_secrets,
 // User-Agent on the wire.
 void SetStoredUserAgent(const std::string* user_agent, base::DictValue& config);
 
-// True when the STORED provider config carries something the user supplied:
-// a credential, an endpoint, a model choice, or the custom-provider marker —
-// the "did the user set this provider up" half of the picker gate.
-//
-// `LlmProvider::IsConfigured()` cannot answer it alone — that reports whether
-// the provider is USABLE, a much weaker claim: every keyless provider (Ollama)
-// is usable the moment it has a default base URL. Gating on IsConfigured()
-// alone puts Ollama in every user's picker on a profile that has never heard
-// of it, hands it the catalog's default selection, and suppresses the
-// first-run provider-missing dialog (all three caught by the e2e suite).
-//
-// `base_url` counts when PRESENT, even empty: '' is what a save that left the
-// field on the default stores (the default itself is guest-owned and never
-// written into the pref), so for a keyless provider it can be the only
-// evidence of setup. Stream-guard overrides are deliberately NOT evidence:
-// `stream_idle_timeout_s` / `max_concurrent_streams` are pushed for every
-// curated provider by the guest's boot-time `publishProviderConfigsAtBoot`,
-// so a provider the user never touched still ends up with a
-// (stream-guard-only) pref entry.
+// True when the stored config carries something the user supplied (a
+// credential, endpoint, model choice or custom-provider marker) — unlike
+// IsConfigured(), which keyless providers satisfy by default. `base_url`
+// counts when present, even empty; stream-guard overrides do not, since the
+// guest pushes them for every curated provider.
 bool HasUserProviderSetup(const base::DictValue& config);
 
 // Each provider's default base URL, read from the guest-published model

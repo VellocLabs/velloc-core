@@ -16,15 +16,9 @@ namespace nexus {
 
 class LlmProvider;
 
-// Creates LlmProvider instances by provider ID.
-//
-// Adding a new provider:
-//   1. Create files in providers/{name}/ — or, for an endpoint that speaks the
-//      OpenAI or Anthropic wire format, reuse OpenAiProvider / AnthropicProvider
-//      via their parameterized (id, display_name, default_base_url) ctor.
-//   2. Register the ID in CreateProvider() and add it to kProviderIds.
-//   3. An API-key vendor's default base URL is guest-owned: set
-//      `defaultBaseUrl` on its nexus_web provider config, not here.
+// Creates LlmProvider instances by provider ID. A new provider is registered
+// in CreateProvider() and kProviderIds; an API-key vendor's default base URL
+// is set on its nexus_web provider config, not here.
 class LlmProviderFactory {
  public:
   LlmProviderFactory() = delete;
@@ -35,17 +29,10 @@ class LlmProviderFactory {
       const std::string& provider_id,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
 
-  // Creates a provider for a USER-CREATED custom endpoint — one the user
-  // added in Settings -> Provider connection, which by definition has no
-  // compiled-in ID. |provider_id| is the settings-generated `custom-<slug>`,
-  // |display_name| the user's name for it, and |api_compatibility| the wire
-  // dialect it speaks ("openai" or "anthropic"). Like the two built-in custom
-  // endpoints, the instance ships with NO default base URL (the user supplies
-  // one via Configure()) and does not require an API key — many compatible
-  // gateways run keyless.
-  //
-  // Returns nullptr for an unrecognised dialect. The broker calls this from
-  // the published provider configs; see LlmBroker::EnsureCustomProvider.
+  // Creates a provider for a user-created custom endpoint: |provider_id| is
+  // `custom-<slug>`, |display_name| the user's name, |api_compatibility| the
+  // dialect ("openai" or "anthropic"). No default base URL and no required API
+  // key. Returns nullptr for an unrecognised dialect.
   static std::unique_ptr<LlmProvider> CreateCustomProvider(
       const std::string& provider_id,
       const std::string& display_name,

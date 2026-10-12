@@ -14,33 +14,12 @@ class GURL;
 
 namespace nexus {
 
-// The egress policy every `network.*` request runs under: a request may
-// reach the public internet and nothing else. Loopback, the private ranges
-// (RFC 1918, RFC 4193), link-local (169.254/16, fe80::/10 — the cloud
-// metadata endpoints live there), carrier-grade NAT (100.64/10), the
-// unspecified and multicast ranges, and IPv4-mapped IPv6 forms of all of
-// them are refused.
-//
-// Why the policy lives here and not in the JS guest: DNS resolves in the
-// browser process; the guest never sees an IP, so a hostname check there is
-// defeated by a name that resolves to 127.0.0.1 or rebinds between the
-// check and the connect. The checks below run on the IP the socket actually
-// connected to (`URLResponseHead::remote_endpoint`), at the first response
-// and again at every redirect hop, plus a cheap pre-dial check on URLs whose
-// host is an IP literal.
-//
-// Pre-send enforcement: a hostname is not resolved here, so the checks
-// above alone would see a private address only once the server answers,
-// after the request (a POST's side effect included) was already delivered.
-// The host therefore also loads with
-// `network::mojom::kURLLoadOptionBlockLocalRequest`, which makes the network
-// service refuse the connection when the socket's peer is loopback or
-// private, before any byte of the request is written. The load then fails
-// with `net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, which
-// `EgressRefusalForNetError` turns into the policy's refusal.
-//
-// Pure functions — no I/O, no threading requirements — so the unit test
-// covers them without a network service.
+// Security: every `network.*` request may reach the public internet only.
+// Loopback, private (RFC 1918 / 4193), link-local, carrier-grade NAT,
+// unspecified and multicast ranges, and their IPv4-mapped IPv6 forms, are
+// refused. Checked here because DNS resolves in the browser: on the IP
+// actually connected to (first response and every redirect), pre-dial for IP
+// literals, and before send via `kURLLoadOptionBlockLocalRequest`. Pure.
 
 // True when `address` may be dialed under the public-only policy.
 bool IsPublicEgressAddress(const net::IPAddress& address);

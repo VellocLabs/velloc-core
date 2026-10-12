@@ -49,21 +49,11 @@ inline constexpr char kNexusInspectMenuEnabled[] =
 // the `session.applyAgentConfig` bridge event; consumers ignore unknown keys.
 inline constexpr char kNexusAgentConfig[] = "nexus.agent_config";
 
-// Serialized per-provider configuration dictionary. Each key is a provider ID
-// mapping to a dict with api_key, base_url, model, default_model,
-// enabled_models, last_verification, etc. This is the SINGLE source of truth
-// for provider credentials and settings; the Settings UI reads and writes
-// this dict exclusively through the NexusSettings handler
-// (`updateProviderConfig`, `resetProviderConfig`). Do not shadow it with
-// per-provider flat prefs — one home for each piece of data.
-//
-// OAuth-backed providers (e.g. "chatgpt-pro") additionally store, in the same
-// per-provider dict, the fields written by OAuthTokenStore:
-//   oauth_access_token, oauth_refresh_token, oauth_expires_at (unix ms),
-//   oauth_account_id, oauth_email
-// plus a mirrored `api_key` (= access token) so the existing provider
-// Configure()/IsConfigured() path works unchanged. Tokens are plaintext,
-// matching how API keys are stored.
+// Per-provider configuration dict keyed by provider ID (api_key, base_url,
+// model, default_model, enabled_models, last_verification, …) — the single
+// source of truth for provider credentials and settings. OAuth providers add
+// the OAuthTokenStore fields (oauth_*) plus a mirrored `api_key`; tokens are
+// plaintext, matching how API keys are stored.
 inline constexpr char kNexusProviderConfigs[] = "nexus.provider_configs";
 
 // Cached raw model-catalogue JSON from each provider's /v1/models (or
@@ -112,30 +102,13 @@ inline constexpr char kNexusRemoteAccessBindAddress[] =
 // minted link would die).
 inline constexpr char kNexusRemoteAccessPort[] = "nexus.remote_access.port";
 
-// The persisted remote-access PAIRINGS, as a list of dicts — one per minted
-// access link the runtime's pairingTable holds. Persisting them (with the
-// listener's own prefs) is what lets a minted link keep working across a
-// desktop restart: the runtime reloads this list into its in-memory table on
-// boot instead of starting empty. Each entry:
-//   pairId     (string)  — the link's public id (base64url, 16 bytes)
-//   secret     (string)  — base64url, 32 bytes. The pairSecret, stored
-//                          plaintext ON DISK by user-accepted trade-off: it
-//                          never crosses the wire (the handshake is an HMAC
-//                          proof), but anyone who reads the profile dir can
-//                          impersonate the link until it expires or is
-//                          revoked. Same exposure class as the stored LLM
-//                          API keys in kNexusProviderConfigs.
-//   scope      (dict)    — { mode: "observe"|"control", sessions: "all"|[ids] }
-//   label      (string)
-//   createdAt  (double)  — unix ms
-//   expiresAt  (double)  — unix ms
-//   revoked    (bool)
-//   lastSeenAt (double, optional) — unix ms
-// The runtime is the ONLY writer/reader (through the remoteAccess capability's
-// getPairings/setPairings); C++ stores the list verbatim and never interprets
-// it — the listener's gates do not consult pairings. Shape versioning is by
-// key, not a number: readers ignore unknown keys and a missing/extra key reads
-// as "no pairings", so no migration is needed until a key's MEANING changes.
+// Contract: the persisted remote-access pairings, one dict per minted link,
+// reloaded by the runtime on boot: pairId (base64url, 16 bytes), secret
+// (base64url, 32 bytes), scope { mode, sessions }, label, createdAt and
+// expiresAt (unix ms), revoked (bool), lastSeenAt (optional, unix ms).
+// Security: `secret` is stored plaintext on disk and never crosses the wire,
+// the same exposure class as the stored API keys. The runtime is the only
+// reader and writer; C++ stores the list verbatim. Readers ignore unknown keys.
 inline constexpr char kNexusRemoteAccessPairings[] =
     "nexus.remote_access.pairings";
 

@@ -14,18 +14,11 @@ class HttpRequestHeaders;
 
 namespace nexus {
 
-// Abstract base class for all LLM providers: a provider's identity, stored
-// configuration (API key, base URL, user agent) and model discovery. The
-// runtime speaks every provider's wire format itself over `model.rawStream*`;
-// the C++ inference half (DoGenerate / DoStream behind model.call /
-// streamStart) was removed under interface 1. The instances
-// remain for model listing, key verification (`providerAuth.verify` fetches
-// the model list) and as the rawStream base-URL / credential anchor.
-//
-// Lifecycle:
-//   1. Constructed by LlmProviderFactory with a SharedURLLoaderFactory.
-//   2. Configure() is called with API key / base URL from prefs.
-//   3. FetchAvailableModels() is called to populate the dynamic model list.
+// Abstract base class for all LLM providers: identity, stored configuration
+// (API key, base URL, user agent) and model discovery. Instances serve model
+// listing, key verification and the rawStream base-URL / credential anchor.
+// Lifecycle: constructed by LlmProviderFactory, Configure()d from prefs, then
+// FetchAvailableModels().
 class LlmProvider {
  public:
   virtual ~LlmProvider() = default;

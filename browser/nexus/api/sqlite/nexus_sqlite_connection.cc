@@ -240,15 +240,9 @@ NexusSqliteConnection::NexusSqliteConnection(base::FilePath path,
       open_message_ = "failed to copy database before open";
       return;
     }
-    // Best-effort: copy the WAL sidecar so recently committed (not-yet-
-    // checkpointed) rows are visible in the copy. Deliberately NOT the -shm
-    // (wal-index): it is transient and a stale one — inconsistent with the
-    // separately-copied -wal — can make SQLite misread WAL frames; SQLite
-    // reconstructs the wal-index from the -wal when opening the copy. Note
-    // this snapshot is not transactionally atomic (the main file and -wal are
-    // read by separate copies while a foreign writer may be active), so a
-    // concurrent checkpoint can still drop the most recent rows; it cannot
-    // corrupt the read because the copy is opened read-only.
+    // Best-effort WAL copy so recent rows are visible; never the -shm, whose
+    // stale copy can make SQLite misread WAL frames. Not atomic, but the copy is
+    // opened read-only.
     base::FilePath wal = WithSuffix(open_path, FILE_PATH_LITERAL("-wal"));
     if (base::PathExists(wal)) {
       base::CopyFile(wal, WithSuffix(dest, FILE_PATH_LITERAL("-wal")));

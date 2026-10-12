@@ -16,16 +16,9 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `SystemPrefsApiBase` virtuals.
-//
-// Browser-global system prefs for the React Settings · System page. These live
-// in `g_browser_process->local_state()` (NOT the profile, NOT settings.json),
-// so the guest reaches them through this privileged direct-bridge route.
-// Replaces the chrome.send `get/setBackgroundModeEnabled` +
-// `get/setNexusLauncherEnabled` routes the Lit panel used.
-//
-// Threading: all actions run on UI (PrefService is UI-thread-bound). Holds no
-// per-call state. local_state is global, so the adapter keeps no profile.
+// Concrete adapter implementing the generated `SystemPrefsApiBase` virtuals:
+// browser-global prefs in `local_state()` for the Settings · System page.
+// All actions run on UI; no per-call state and no profile.
 class NexusSystemPrefsBridgeAdapter
     : public ::nexus::generated::SystemPrefsApiBase {
  public:

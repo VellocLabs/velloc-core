@@ -24,29 +24,10 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// Concrete adapter implementing the generated `FsApiBase` virtuals.
-//
-// Phase 10g architecture — the adapter is now a pure business-logic
-// layer:
-//   - Per *.api.json declares its inputs in tools-style `inputs[]`,
-//     including a `bytes` type that supports DUAL TRANSPORT (inline
-//     array<integer> in the payload OR a transferred MessagePort
-//     delivering an ArrayBuffer).
-//   - The codegen-emitted dispatcher handles all of:
-//       (a) typed input extraction
-//       (b) inline-vs-port resolution for `bytes` inputs (calls the
-//           framework's NexusBridgeCapabilityHandler::AwaitBinaryFromPort
-//           when bytes need to come from a port)
-//       (c) invoking the Handle*OnUI entry point synchronously on UI
-//       (d) constructing the BridgeResponseCallback for the response
-//   - Each Handle*OnUI runs on UI, sees a fully-populated typed input,
-//     and hops the blocking fs work to base::ThreadPool via
-//     PostTaskAndReplyWithResult. The worker task holds a
-//     scoped_refptr<NexusFsHost> (NOT `this`), so a port-service
-//     teardown racing an in-flight op cannot use-after-free the adapter;
-//     the reply delivers via std::move(done).Success/Error/Binary back
-//     on UI (weak-guarded by the BridgeResponseCallback). See
-//     F-21.
+// Concrete adapter implementing the generated `FsApiBase` virtuals. The
+// codegen dispatcher extracts typed inputs (resolving inline-vs-port `bytes`)
+// and calls each Handle*OnUI on UI, which hops blocking work to
+// base::ThreadPool holding a scoped_refptr<NexusFsHost>, not `this`. (F-21)
 class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
  public:
   NexusFsBridgeAdapter(NexusBridgeResponseDelegate* delegate,

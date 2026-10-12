@@ -21,51 +21,13 @@ namespace nexus {
 class NexusBridgeResponseDelegate;
 class ToolSessionRegistry;
 
-// Concrete adapter implementing the generated `SessionApiBase` virtuals.
-//
-// Phase 12f architecture: the `session` capability consolidates what used
-// to be a pair of manual handlers in `ToolSessionRegistry`
-// (`browser.endSession`, `browser.setAgentLoopSettings`) under one
-// capability served by a dedicated codegen base class. (`publishStatus`,
-// a write-only SessionStatus cache in LlmBroker with no host reader, was
-// removed under interface 1.)
-//
-//   - `onStop` — renamed from the manual `browser.endSession` handler.
-//     Cascades through `ToolSessionRegistry::OnSessionStopped` →
-//     `ToolSession::OnStop(reason)` → each per-category OnStop. The
-//     JS-side stop hook in nexus_web fires this with
-//     `reason: 'completed'` on conversation completion; the Stop
-//     button fires with `reason: 'user_stopped'`. Idempotent.
-//
-//   - `setAgentLoopSettings` — moved from the manual
-//     `browser.setAgentLoopSettings` handler. Pushes per-session
-//     wall-clock budgets (`actionTimeoutMs`, `stepTimeoutMs`) and
-//     default cwd onto the matching `ToolSession`. Lazily creates
-//     the session if absent so JS can push settings before the first
-//     tool call.
-//
-//   - `setActiveSession` — guest reports the active chat session on boot
-//     and on every switch. Activates one of the session's kNexus-window
-//     tabs (via the profile-keyed `NexusSessionTabTracker` — NOT this
-//     port's ToolSessionRegistry, whose BrowserTool state belongs to a
-//     different port) and resolves with the session's tab counts.
-//
-// All actions run on UI (the bridge's home thread) — they touch
-// browser-process state (ToolSessionRegistry's per-session map, the
-// profile-keyed tab tracker) which is UI-bound.
-//
-// The adapter holds a back-reference to `ToolSessionRegistry` because two
-// of its actions need to reach into the session map. The lifetime
-// invariant is set by `NexusBridgePortService`: both adapters are
-// owned by the same port service and destroyed together, so the raw
-// pointer is safe for the adapter's lifetime.
-//
-// The adapter also observes `NexusSessionTabTracker` and forwards every
-// per-session count change to the guest as a `browser.sessionTabsChanged`
-// event — the live feed behind the guest's automatic webview_area
-// visibility. Every port's adapter observes (page + worker), so the event
-// goes out on both ports; only the page port has a guest-side subscriber,
-// the duplicate is inert (same shape as `session.applyAgentConfig`).
+// Concrete adapter implementing the generated `SessionApiBase` virtuals:
+// `onStop` (idempotent, cascades to each per-category OnStop),
+// `setAgentLoopSettings` (per-session budgets and cwd; creates the session)
+// and `setActiveSession` (activates a session tab via the profile-keyed
+// `NexusSessionTabTracker`, returns tab counts). UI thread. The raw
+// `ToolSessionRegistry` pointer is safe: `NexusBridgePortService` owns both.
+// Tracker count changes go out as `browser.sessionTabsChanged`.
 class NexusSessionBridgeAdapter
     : public ::nexus::generated::SessionApiBase,
       public NexusSessionTabTracker::Observer {
@@ -100,19 +62,8 @@ class NexusSessionBridgeAdapter
   void OnSessionTabCountsChanged(const std::string& session_key,
                                  const SessionTabCounts& counts) override;
 
-  // Pushes the unified agent runtime config to the guest as a
-  // `session.applyAgentConfig` event. Invoked whenever the
-  // `nexus.agent_config` pref changes. Post-Path-2 the ONLY remaining
-  // writer of this pref is `LlmBroker::SetDefaultSelection` — when the
-  // user picks a model in the chromium topbar, the broker mirrors the
-  // selection into `agent_config.model` so this observer fires and
-  // delivers the new model to the JS guest's `MultiSessionShell.tsx`
-  // subscriber. Loop limits (maxTurns / stepTimeoutSec) and tracer
-  // flags (log / trace) NO LONGER ride this channel — they live in
-  // `~/.nexus/settings.json` `agent` and broadcast via the JS-owned
-  // `agent.changed` WebUI bridge event. The boot snapshot for either
-  // surface is delivered separately via the bootstrap manifest +
-  // session-boot overlay respectively.
+  // Pushes `nexus.agent_config` to the guest as `session.applyAgentConfig`
+  // whenever the pref changes; its only writer is LlmBroker::SetDefaultSelection.
   void PushAgentConfig();
 
   raw_ptr<Profile> profile_;

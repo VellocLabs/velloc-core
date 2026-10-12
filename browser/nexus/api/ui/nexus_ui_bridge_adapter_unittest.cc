@@ -21,19 +21,9 @@
 namespace nexus {
 namespace {
 
-// Regression guard for the turn-end OS-notification HEADER icon.
-//
-// HandleShowNotificationOnUI sets the notification's small_image (the icon next
-// to the product name in the toast header) to the branded Nexus logo. Without it,
-// message_center falls back to its default kProductIcon — the unbranded
-// Chromium spiral. The main icon() (the large right-side image) is left empty
-// on purpose. This asserts GetNexusNotificationHeaderIcon() resolves
-// IDR_PRODUCT_LOGO_64 to a real, non-empty image, so a regression back to an
-// empty/default header icon fails here.
-//
-// Lives in the heavier custom_browser_nexus_browser_unittests binary (not the
-// lite one) because GetImageNamed needs the chrome resource bundle, which
-// ChromeUnitTestSuite (//chrome/test:test_support_unit) loads for this binary.
+// The notification header icon (small_image) must resolve IDR_PRODUCT_LOGO_64
+// to a non-empty image, not message_center's default. Needs the chrome
+// resource bundle, hence the browser unittests binary.
 TEST(NexusNotificationIconTest, HeaderIconResolvesToNonEmptyBrandedLogo) {
   const gfx::Image icon = GetNexusNotificationHeaderIcon();
   EXPECT_FALSE(icon.IsEmpty());

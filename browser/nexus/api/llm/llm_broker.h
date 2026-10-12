@@ -25,17 +25,10 @@ namespace nexus {
 class LlmProvider;
 class NexusOAuthManager;
 
-// Per-profile service that owns all LlmProvider instances: their configs,
-// model listings, OAuth tokens and the active provider pick. It no longer
-// routes inference — the runtime speaks every provider's wire format over
-// `model.rawStream*` (model.call / streamStart were removed under interface
-// 1); the provider instances stay for model discovery, key
-// verification (`providerAuth`) and the rawStream base-URL / credential
-// anchor.
-//
-// On construction it reads the persisted provider ID from prefs, instantiates
-// all registered providers, and configures them with stored credentials. The
-// active provider can be switched at any time via SetActiveProvider().
+// Per-profile service owning all LlmProvider instances: configs, model
+// listings, OAuth tokens and the active provider pick. It does not route
+// inference; providers serve model discovery, key verification and the
+// rawStream base-URL / credential anchor.
 class LlmBroker : public KeyedService {
  public:
   LlmBroker(
@@ -60,14 +53,10 @@ class LlmBroker : public KeyedService {
   void SetTsModelCatalog(base::DictValue catalog);
   const base::DictValue& GetTsModelCatalog() const;
 
-  // Configure providers from the effective settings.json provider configs the
-  // guest worker pushes via `model.publishProviderConfigs` (at boot + on every
-  // providers write). Relaxed-credential path: settings.json is now the source
-  // of truth for the user-editable fields (api key / base url / default model
-  // / enabled models). MERGES onto the existing `nexus.provider_configs` pref
-  // per provider — preserving C++-owned secrets the settings.json shape does
-  // not carry (notably OAuth access/refresh tokens) — then refreshes the pref
-  // so the next cold boot (`LoadProviderConfigs`) reproduces the same state.
+  // Configure providers from the settings.json provider configs the guest
+  // pushes via `model.publishProviderConfigs`. Merges onto the
+  // `nexus.provider_configs` pref per provider, preserving C++-owned secrets
+  // (OAuth tokens), then refreshes the pref for the next cold boot.
   // `active_provider_id` (empty = leave unchanged) mirrors
   // `nexus.active_provider_id`.
   void SetProviderConfigs(base::DictValue configs,
@@ -195,24 +184,10 @@ class LlmBroker : public KeyedService {
   // legacy compiled-in default (see ClearBakedDefaultBaseUrls).
   void MigrateBakedDefaultBaseUrls();
 
-  // Materialise the provider a USER-CREATED custom endpoint needs.
-  //
-  // The factory can only build compiled-in ids, so a provider the user added
-  // in Settings would be unroutable (`GetProvider` → nullptr → the request
-  // dies). Its config carries everything needed to build one — the dialect
-  // (`api_compatibility`) and the user's name — so we instantiate it on
-  // demand, from BOTH config paths: the guest's `publishProviderConfigs`
-  // (SetProviderConfigs) and the cold-boot pref replay (LoadProviderConfigs).
-  //
-  // No-op (returns false) when `config` is not a custom provider, so passing
-  // every config through this is safe. Idempotent for an unchanged provider;
-  // a config whose DIALECT changed replaces the instance, because the wire
-  // format is bound at construction — without that, flipping a saved provider
-  // from OpenAI to Anthropic would keep speaking the old format.
-  //
-  // Removal needs nothing here: deleting a provider clears its
-  // `kNexusProviderConfigs` entry and calls ReloadProvidersFromPrefs(), which
-  // rebuilds this map from what survived.
+  // Materialise the provider a user-created custom endpoint needs, from its
+  // config's dialect (`api_compatibility`) and name. Returns false when
+  // `config` is not a custom provider. Idempotent; a changed dialect replaces
+  // the instance, since the wire format is bound at construction.
   bool EnsureCustomProvider(const std::string& provider_id,
                             const base::DictValue& config);
 

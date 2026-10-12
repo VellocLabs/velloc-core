@@ -7,15 +7,9 @@
 
 namespace nexus {
 
-// Builds the bootstrap manifest dict the C++ side ships to the guest.
-//
-// Carries `{hostKind, capabilities, agentConfig}`. `agentConfig` is the
-// boot snapshot of the unified agent runtime config (see GetAgentConfig);
-// the guest applies it once after building the runtime, and subsequent
-// changes arrive live via the `session.applyAgentConfig` event.
-//
-// The manifest carries no tool definitions: the runtime defines the host
-// tools itself and offers them by the advertised capabilities.
+// Builds the bootstrap manifest `{hostKind, capabilities, agentConfig}` shipped
+// to the guest. `agentConfig` is a boot snapshot; later changes arrive via the
+// `session.applyAgentConfig` event. It carries no tool definitions.
 base::DictValue BuildNexusHostManifest(base::DictValue agent_config);
 
 // Convenience wrapper that serializes the bootstrap message envelope

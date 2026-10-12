@@ -9,22 +9,9 @@
 
 namespace nexus::test {
 
-// Disables Glic's eager BrowserContextKeyedService for a TestingProfile.
-//
-// custom_browser hardcodes GlicEnabling::IsEnabledByFlags() to true (Nexus is
-// built on Glic), so every regular profile is glic-eligible. GlicKeyedService
-// is "created with browser context" (eager), so GlicKeyedServiceFactory builds
-// it during TestingProfile init — and its constructor dereferences
-// g_browser_process->profile_manager(), which is null in unit-test binaries
-// that don't stand up a TestingProfileManager. That faults (access violation)
-// and crashes the whole profile build. Overriding the factory to build no
-// service skips it.
-//
-// Any test that builds a regular TestingProfile but doesn't exercise Glic
-// should apply one of these:
-//   - AddGlicDisablingFactory(builder) before TestingProfile::Builder::Build().
-//   - return GlicDisablingTestingFactories() from a
-//     ChromeRenderViewHostTestHarness::GetTestingFactories() override.
+// Disables Glic's eager KeyedService for a TestingProfile: its constructor
+// dereferences g_browser_process->profile_manager(), null in unit-test binaries.
+// Apply via AddGlicDisablingFactory(builder) or GlicDisablingTestingFactories().
 void AddGlicDisablingFactory(TestingProfile::Builder& builder);
 TestingProfile::TestingFactories GlicDisablingTestingFactories();
 

@@ -101,26 +101,9 @@ class NexusBridgeCapabilityHandler {
     return weak_factory_.GetWeakPtr();
   }
 
-  // Receive a binary buffer from a transferred message port, then
-  // invoke `on_done` with the result. Used by codegen-emitted
-  // dispatchers when an action's input declares a `bytes` type and
-  // the inline-payload variant wasn't sent (i.e. the guest chose to
-  // transfer the bytes via a MessagePort instead of encoding them as
-  // an array<integer> in the JSON payload).
-  //
-  // The callback fires exactly once on UI:
-  //   - With `ok=true` and `bytes` populated when the port delivers a
-  //     binary `MessageEvent` (an ArrayBuffer).
-  //   - With `ok=false` and `error` populated if the port disconnects
-  //     before delivering, or delivers a non-binary message.
-  //
-  // The endpoint and the callback are owned by this handler until the
-  // callback fires; if THIS handler is destroyed first, the callback
-  // is silently dropped (the pending entry destructs along with the
-  // adapter).
-  //
-  // Thread: must be called on this object's home sequence (UI). The
-  // callback also fires on UI.
+  // Receives a binary buffer on a transferred port, for a `bytes` input sent
+  // without its inline variant. UI thread; `on_done` fires once on UI (ok=false
+  // on disconnect or a non-binary message), or never if this handler dies first.
   void AwaitBinaryFromPort(
       blink::MessagePortDescriptor port,
       base::OnceCallback<void(BinaryReceiveResult)> on_done);

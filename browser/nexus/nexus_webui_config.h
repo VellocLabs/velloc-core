@@ -11,20 +11,6 @@ class WebUIController;
 
 namespace nexus {
 
-// Registers `chrome://nexus` as a WebUI host that maps to the `chrome://glic`
-// resource bundle. This allows the Nexus panel to share the same host page
-// architecture (tools, controller, webview lifecycle) as the GLIC panel while
-// serving a configurable guest URL via profile prefs.
-//
-// Both panels share the same glic resource bundle, tools layer, and WebUI
-// controller. The key difference is the guest URL: GLIC loads Google's AI
-// service URL, while Nexus loads the configured agent webapp URL.
-//
-// Must be called during browser startup to register the WebUI controller
-// factory. All code is gated behind BUILDFLAG(ENABLE_CUSTOM_BROWSER).
-//
-// See research.md R-001 for architecture rationale.
-
 // Registers the chrome://nexus WebUI host with the WebUI controller factory
 // system. Should be called once at browser startup (typically from
 // hooks_registration.cc via the Chromium Hooks system).

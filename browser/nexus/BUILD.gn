@@ -19,20 +19,9 @@ declare_args() {
   skip_nexus_interface_version_check = false
 }
 
-# =============================================================================
-# Bridge interface version
-#
-# The single source of truth is the NEXUS_INTERFACE_VERSION key in
-# //custom_browser/VERSION (see G-3);
-# `nexus_interface_version.h` wraps the generated
-# nexus_interface_version.inc. Release pairing is URL-pinned
-# (GetResolvedNexusGuestURL appends /v<N>/); the dev flow (localhost,
-# unversioned path) is covered by this ninja-time gate instead: any build
-# fails if the sibling nexus_web checkout's committed, GENERATED
-# interfaceVersion.gen.ts (regenerate with `check_interface_version.py
-# --sync`) declares a different number. The guest-side file is reported
-# through a depfile, so editing either side re-runs the check.
-# =============================================================================
+# Bridge interface version gate (G-3): fails the build when nexus_web's
+# generated interfaceVersion.gen.ts declares a different number than
+# NEXUS_INTERFACE_VERSION in //custom_browser/VERSION.
 action("check_interface_version") {
   script = "scripts/check_interface_version.py"
 
@@ -360,27 +349,9 @@ source_set("transcript_search") {
   deps = [ "//third_party/re2" ]
 }
 
-# Remote access (F-24): the desktop's in-process
-# relay. A default-OFF listener (net::HttpServer on a dedicated IO thread)
-# that reverse-proxies the guest origin's immutable build entry and exposes
-# `/rt`, so a remote browser on the LAN/VPN can join this desktop's runtime
-# with scope <= control. Wire protocol is byte-identical to
-# `nexus_web/scripts/dev_remote_relay.mjs`.
-#
-# Layout, deliberately split for testability:
-#   remote_access_router.{h,cc}   pure functions — path classification,
-#     Host/Origin/token gates, header filtering. No sockets, no threads, no
-#     Profile, so the whole routing table runs in `unit_tests_lite`.
-#   NexusRemoteAccessListener     owns net::HttpServer on a dedicated
-#     MessagePumpType::IO thread (threading model copied from
-#     content/browser/devtools/devtools_http_handler.cc). Pure routing +
-#     WebSocket pairing; never touches Profile.
-#   NexusRemoteAccessService      profile-level singleton on the UI thread —
-#     prefs, start/stop, and the reverse-proxy's outbound URLLoaders.
-#
-# There is NO `//net/server:http_server` target — `src/net/server/` has no
-# BUILD.gn and the sources are compiled straight into `//net` under
-# `enable_websockets`, so depending on `//net` is the whole cost.
+# Remote access (F-24): a default-OFF in-process relay that reverse-proxies the
+# guest origin's build entry and exposes `/rt`, so a remote browser can join
+# this desktop's runtime with scope <= control.
 source_set("remote_access") {
   sources = [
     "remote_access/nexus_remote_access_listener.cc",
@@ -975,17 +946,8 @@ source_set("domain") {
   ]
 }
 
-# Per-session tab-group management. Each Nexus session owns a Chromium
-# tab group: BrowserTool tags the new WebContents with the session_key
-# (NexusSessionTabTag) and adds it to the group on creation;
-# ResolveTabIdOrReject + BuildObservationDict filter by the tag;
-# ~BrowserTool closes the session's tabs. The pre-refactor profile-wide
-# `NexusSessionTabGroupRegistry` KeyedService was inlined into
-# BrowserTool (per-session group_id_, session_tabs_, last_work_tab_
-# members) once `ToolsAdapter::OnSessionStopped` stopped erasing the
-# ToolSession on per-turn `kCompleted` / `kUserStopped` reasons — the
-# registry only existed to bridge BrowserTool lifetimes across that
-# erase/recreate cycle.
+# Per-session tab groups: BrowserTool tags new WebContents with the session_key
+# (NexusSessionTabTag), filters by that tag, and closes the session's tabs.
 source_set("session_tab_management") {
   sources = [
     "session/nexus_session_features.cc",

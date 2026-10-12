@@ -25,26 +25,13 @@ class OSCryptAsync;
 
 namespace nexus {
 
-// Process-wide at-rest encryption for Nexus secrets (LLM provider api_keys
-// + OAuth tokens, MCP server `env` / `Authorization` values). Wraps the
-// async `os_crypt_async::Encryptor` (DPAPI on Windows, Keychain on macOS,
-// libsecret/kwallet on Linux) behind a synchronous encrypt/decrypt facade.
-//
-// Acquisition is asynchronous; `EnsureAcquired` kicks it off (idempotent)
-// and the `Encryptor` is cached on arrival. Callers that read secrets at a
-// point where the encryptor might not be ready yet (e.g. the LLM broker at
-// construction) should register `WhenReady` to re-read once it is. In
-// practice writes + most reads are user-initiated long after startup, when
-// the encryptor is already cached.
-//
-// Storage format: an encrypted value is `"NEXUSENC1:" + base64(ciphertext)`.
-// `Decrypt` returns any value WITHOUT that marker unchanged, giving
-// seamless backward-compat with existing plaintext prefs and a transparent
-// migration (re-saving a config encrypts it).
-//
-// Browser-process only (uses `g_browser_process->os_crypt_async()` via the
-// caller-supplied service pointer). The MCP utility process never sees
-// ciphertext — the browser-side adapter decrypts before spawning.
+// Process-wide at-rest encryption for Nexus secrets (provider api_keys, OAuth
+// tokens, MCP `env` / `Authorization` values) over the OS-backed
+// `os_crypt_async::Encryptor`, behind a synchronous facade. Acquisition is
+// async: `EnsureAcquired` starts it; register `WhenReady` to re-read once ready.
+// Encrypted values are `"NEXUSENC1:" + base64(ciphertext)`; `Decrypt` returns
+// unmarked (plaintext) values unchanged. Browser process only; the MCP utility
+// process never sees ciphertext.
 class NexusSecretCrypt {
  public:
   static NexusSecretCrypt* GetInstance();

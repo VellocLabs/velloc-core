@@ -301,20 +301,6 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   appearance_adapter_ =
       std::make_unique<NexusAppearanceBridgeAdapter>(this, profile);
   RegisterCapability("appearance", appearance_adapter_.get());
-
-  // Phase 12g: the `process` bridge capability has been retired.
-  // History: `NexusProcessBridgeAdapter` + a separate
-  // `NexusShellServiceLauncher` instance lived here to serve the
-  // pre-Phase-11b TS BashTool / GrepTool / GlobTool implementations.
-  // Phase 11b deleted those TS tools (their C++ FileTool /
-  // ProcessTool counterparts under `tools/{file_tool,process_tool}/`
-  // are the LLM-callable tools today). The bridge surface kept
-  // running behind a `PrereleaseNexusProcessCapability` flag with no
-  // remaining JS callers; Phase 12g deleted the adapter, the flag,
-  // and the (separate) launcher instance owned here. The C++
-  // `ProcessTool` still talks to `NexusShellService` via its own
-  // `NexusShellServiceLauncher` (now living next to it under
-  // `tools/process_tool/`); that path is unchanged.
 }
 
 NexusBridgePortService::~NexusBridgePortService() {

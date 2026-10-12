@@ -14,16 +14,9 @@ namespace nexus {
 // requests the web build matching its own contract.
 GURL GetResolvedNexusGuestURL(Profile* profile);
 
-// Appends the compiled-in bridge interface version segment ("v<N>/",
-// nexus_interface_version.h) to an https base URL:
-//   https://app.velloc.app/        -> https://app.velloc.app/v1/
-//   https://mirror.example/nexus   -> https://mirror.example/nexus/v1/
-// Pass-through cases:
-//   - http bases (localhost dev server: unversioned path, the guest skips
-//     its URL version check; drift is caught by the ninja build gate),
-//   - bases already ending in a /v<digits>/ segment (a hand-pasted
-//     version-pinned URL; the guest still validates the pinned number).
-// Exposed for the custom_browser_nexus_browser_unittests regression tests.
+// Appends the compiled-in interface version segment "v<N>/" to an https base
+// URL (https://app.velloc.app/ -> https://app.velloc.app/v1/). http bases and
+// bases already ending in a /v<digits>/ segment pass through unchanged.
 GURL AppendNexusInterfaceVersionToBase(const GURL& base);
 
 }  // namespace nexus

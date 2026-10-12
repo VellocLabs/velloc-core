@@ -100,15 +100,8 @@ TEST_F(NexusGuestConfigTest, GetResolvedNexusGuestURLFallsBackWithoutProfile) {
             GetResolvedNexusGuestURL(nullptr));
 }
 
-// Pins the SHIPPED origin literally, in every build config.
-//
-// This is deliberately not gated on NDEBUG. Everything else about the release
-// default is only observable in a release build — but developers build Debug,
-// so an NDEBUG-only assertion is compiled out of every run they ever see. The
-// production origin is the one string that, if wrong, leaves every release
-// binary with no resolvable guest at all: the old origin was retired the
-// moment this value changed, so there is no fallback to degrade to. That
-// deserves a check the daily build actually executes.
+// Pins the shipped origin in every build config, not only NDEBUG: a wrong value
+// leaves every release binary with no resolvable guest.
 TEST_F(NexusGuestConfigTest, ReleaseGuestOriginLiteral) {
   EXPECT_EQ("https://app.velloc.app/", std::string(kReleaseNexusGuestURL));
 }

@@ -11,29 +11,9 @@ namespace nexus {
 
 class NexusBridgeCapabilityHandler;
 
-// Move-only response handle handed to every bridge action implementation.
-// Methods are safe to call from ANY thread — internally the callback
-// PostTasks to UI before invoking the matching Send*Response on the
-// owning NexusBridgeCapabilityHandler. Implementations therefore never
-// have to PostTask manually for the response hop.
-//
-// Modeled after `ToolCallback` for tools (see nexus_tool_callback.h)
-// but with the four bridge-specific terminal methods:
-//
-//     std::move(done).Success(base::Value(...));
-//     std::move(done).Error("FS_ERROR", "stat failed");
-//     std::move(done).InvalidArgs("missing field 'path'");
-//     std::move(done).Binary(envelope, std::move(data), "$result");
-//
-// All four are `&&`-qualified — single-fire by construction. If the
-// owning handler's WeakPtr has been invalidated when the reply runs
-// (the bridge port closed during in-flight work), the response is
-// silently dropped — guest's pending promise gets dropped at the JS
-// layer rather than being resolved to garbage.
-//
-// The callback is move-only (matches OnceCallback's idiom) but
-// MOVABLE — implementations can store it (e.g. into a binary-port
-// pending map) and fire it later when async data arrives.
+// Move-only, single-fire response handle given to every bridge action. Safe to
+// call from any thread: the reply hops to UI, and is dropped if the owning
+// handler is gone by then. Storable, to fire later when async data arrives.
 class BridgeResponseCallback {
  public:
   // Default-constructed inert callback. Used only as a `std::move`

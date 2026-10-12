@@ -67,19 +67,6 @@ bool EndsWithInterfaceVersionSegment(std::string_view path) {
   return true;
 }
 
-// The `log` / `trace` URL-param mapping off the `nexus.agent_config`
-// pref used to live here — layering `?log=1` / `?trace=1` onto the
-// guest URL at panel load time. It's been removed: the nexus_web
-// page-thread now reads those flags directly from
-// `~/.nexus/settings.json` (under `agent.log` / `agent.trace`) via
-// `loadAgentTracerFlags()` and merges them with any URL-param
-// override via `combineTracerSignals()`. The URL params still work
-// when explicitly set (dev / e2e), so the chrome harness's
-// `?log=1` injection is unchanged — but the prod path is now
-// "About toggle writes settings.json → next session boot's tracer
-// install reads it" rather than "About toggle writes the C++ pref
-// → C++ writes the URL → JS parses the URL."
-
 }  // namespace
 
 GURL AppendNexusInterfaceVersionToBase(const GURL& base) {

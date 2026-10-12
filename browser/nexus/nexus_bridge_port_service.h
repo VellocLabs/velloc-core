@@ -42,43 +42,22 @@ class NexusExecBridgeAdapter;
 class NexusFilesBridgeAdapter;
 class ToolSessionRegistry;
 
-// Approach 5 (A5): which "audience" this port service exposes capabilities
-// to. Determines the capability registration set.
-//
-//   kGuest — full set (fs, model, network, mcp, session, ui, browser,
-//            catalog). For the nexus_web webview's page thread and
-//            SharedWorker. Same registration list as before A5.
-//
-//   kPanel — minimal set scoped to settings UI calls (initially: providers
-//            only; will grow as more settings pages migrate off chrome.send).
-//            For the WebUI panel (chrome://custom.top-chrome) itself, which
-//            should NOT have access to filesystem, LLM streaming, browser
-//            tools, etc. The settings panel is privileged but its threat
-//            model is different — keep its capability surface tight.
-//
-// The dispatcher is otherwise identical. A request for an unregistered
-// capability on a port returns NOT_IMPLEMENTED — same error envelope as a
-// genuinely-missing capability — so a misrouted call surfaces a clear
-// error instead of silently misbehaving.
+// Which audience this port service exposes capabilities to: kGuest gets the
+// full set; kPanel (the WebUI panel) a minimal settings-only set, with no
+// filesystem, LLM streaming or browser tools. A request for an unregistered
+// capability returns NOT_IMPLEMENTED.
 enum class PortServiceMode {
   kGuest,
   kPanel,
 };
 
-// A browser-side service that creates a MessagePort pair, keeps one end for
-// handling BrowserBridgeRequest/BrowserBridgeResponse JSON directly from the
-// guest SharedWorker, and dispatches to capability handlers (fs, model, etc.).
-//
-// Lifetime: Owned by the `NexusBridgeBootstrapHost` bound to the active
-// `chrome://custom.top-chrome` render frame. Each bootstrap creates fresh
-// page/worker/panel bridge services and fresh entangled port pairs.
-//
-// The browser end receives JSON messages of the form:
-//   { hostBridge: true, direction: "request",
-//     id, route: { namespace, capability, action }, payload }
-// and responds with:
-//   { hostBridge: true, direction: "response",
-//     id, route, ok, result/error }
+// Creates a MessagePort pair, keeps one end, and dispatches the guest's bridge
+// JSON to capability handlers. Owned by the `NexusBridgeBootstrapHost` of the
+// active top-chrome frame; each bootstrap creates fresh services and ports.
+//   request:  { hostBridge: true, direction: "request", id,
+//               route: { namespace, capability, action }, payload }
+//   response: { hostBridge: true, direction: "response", id, route, ok,
+//               result/error }
 class NexusBridgePortService : public NexusBridgeResponseDelegate {
  public:
   // Default constructor — `kGuest` mode (full capability set). Existing
@@ -184,12 +163,6 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // api/network/nexus_network_bridge_adapter.h for the contract and
   // api/declarations/network/httpGet.api.json for the wire schema.
   std::unique_ptr<NexusNetworkBridgeAdapter> network_adapter_;
-  // Owns the per-LLM-session sessions map (`ToolSession` per sessionId);
-  // the `files` / `exec` / `browser` adapters resolve a call's session here
-  // before invoking the tool class. The legacy `NexusGlicBridgeAdapter` and
-  // the `glic` capability it served have been retired — every host tool
-  // call arrives on its family's action and lifecycle cleanup arrives via
-  // `session.onStop` (Phase 12f, formerly `browser.endSession`).
   // The per-connection host tool sessions (one ToolSession per runtime
   // session id), shared by the three tool adapters below and the `session`
   // adapter. Declared before them so it outlives them.

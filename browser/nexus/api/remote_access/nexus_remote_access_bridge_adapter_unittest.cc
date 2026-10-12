@@ -19,7 +19,7 @@ namespace {
 
 // Records bridge responses so a test can assert how a dispatched action
 // settled, and — unlike the sqlite fixture — ALSO records SendEvent so the
-// onStatusChanged push is observable (plan §8.6).
+// onStatusChanged push is observable.
 class RecordingDelegate : public NexusBridgeResponseDelegate {
  public:
   int success_count = 0;
@@ -74,7 +74,7 @@ class NexusRemoteAccessBridgeAdapterTest : public testing::Test {
 // must answer the REMOTE_ACCESS_UNAVAILABLE error, and no onStatusChanged may
 // be pushed. This pins the !profile_ branch and the dispatch/response shaping
 // without needing a full browser (the service behind a real Profile is
-// covered by the listener + router unit tests and the §8.6 e2e).
+// covered by the listener + router unit tests and the e2e suite).
 TEST_F(NexusRemoteAccessBridgeAdapterTest,
        DispatchedActionsWithNoProfileError) {
   NexusRemoteAccessBridgeAdapter adapter(&delegate_, /*profile=*/nullptr);

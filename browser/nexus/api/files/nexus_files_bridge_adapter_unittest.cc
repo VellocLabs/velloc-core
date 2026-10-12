@@ -174,8 +174,8 @@ TEST_F(NexusFilesBridgeAdapterTest, SecondReadInASessionAnswersFromTheLedger) {
 }
 
 TEST_F(NexusFilesBridgeAdapterTest, TheHostServesNoToolNamedRoutes) {
-  // W16 step 3: the pre-W16 `browser.<ToolName>` routes are gone; a tool
-  // name is not an action on any family.
+  // No `browser.<ToolName>` route: a tool name is not an action on any
+  // family.
   NexusBrowserBridgeAdapter browser(&delegate_, &registry_);
   base::DictValue legacy;
   legacy.Set("file_path", file_.AsUTF8Unsafe());

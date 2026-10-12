@@ -21,7 +21,7 @@ namespace nexus {
 
 class NexusBridgeResponseDelegate;
 
-// The `secrets` capability (native-primitives.md): set / has / delete /
+// The `secrets` capability (P-3): set / has / delete /
 // listNames over NexusSecretStore — namespaced, origin-bound secrets sealed
 // with the OS keystore. There is no get: a secret's plaintext is only ever
 // substituted host-side into a request to its bound origin (the network

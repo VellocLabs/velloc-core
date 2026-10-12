@@ -52,7 +52,7 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kNexusBakedDefaultBaseUrlsCleared,
                                 false);
 
-  // Remote access (plan §8.3): default OFF, no bind address, the well-known
+  // Remote access: default OFF, no bind address, the well-known
   // default port. See the pref-name comments in llm_pref_names.h.
   registry->RegisterBooleanPref(prefs::kNexusRemoteAccessEnabled, false);
   registry->RegisterStringPref(prefs::kNexusRemoteAccessBindAddress,

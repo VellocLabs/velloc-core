@@ -1945,7 +1945,7 @@ TEST(FileToolTest, WriteCreatesMissingParentDirectory) {
 }
 
 // =============================================================================
-// Read regression tests (spec 2-1) — added 2026-07-21
+// Read regression tests (spec 2-1)
 // =============================================================================
 
 // Spec 2-1-6.1: exact line-numbered content for "a\nb\nc".

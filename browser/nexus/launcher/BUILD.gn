@@ -4,7 +4,7 @@
 
 # Nexus launcher: keeps the browser process alive and shows a system-tray icon
 # (Velloc's production logo) so the Nexus window stays reachable when the
-# browser is minimized/closed. See docs/agents/chromium-hooks.md.
+# browser is minimized/closed. See P-5.
 
 # Minimal local_state pref registration. Kept deliberately tiny (only
 # //components/prefs) so chrome/browser/prefs:impl can depend on it without

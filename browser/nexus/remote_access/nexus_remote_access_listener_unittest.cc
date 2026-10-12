@@ -181,8 +181,8 @@ class NexusRemoteAccessListenerTest : public testing::Test {
     return socket;
   }
 
-  // One text frame from the CLIENT side, so it is masked (RFC 6455 §5.1: a
-  // client always masks, a server never does).
+  // One text frame from the CLIENT side, so it is masked (RFC 6455 section
+  // 5.1: a client always masks, a server never does).
   void SendText(net::TCPClientSocket& socket, const std::string& text) {
     std::string frame;
     net::WebSocketEncoder::CreateClient(std::string())
@@ -250,7 +250,7 @@ TEST_F(NexusRemoteAccessListenerTest, StartOnAnOccupiedPortIsPortInUse) {
   ASSERT_EQ(first_result, StartResult::kOk);
 
   // A second listener on the SAME port must fail with port_in_use — never
-  // silently switch ports (the minted link would die; plan §8.3).
+  // silently switch ports (the minted link would die).
   NexusRemoteAccessListener second(owner.Callback());
   const auto [result, port] = StartAndWait(second, LoopbackConfig(first_port));
   EXPECT_EQ(result, StartResult::kPortInUse);
@@ -421,9 +421,9 @@ TEST_F(NexusRemoteAccessListenerTest, EntryRedirectIsCacheableAndThe503IsNot) {
       << response;
 }
 
-// The owner hears every change in the number of connected /rt clients. Until
-// 2026-09-22 the handle stored the count and told nobody, so the settings
-// page and every other surface showed 0 with devices connected.
+// The owner hears every change in the number of connected /rt clients. A
+// handle that stores the count and tells nobody leaves the settings page and
+// every other surface at 0 with devices connected.
 TEST_F(NexusRemoteAccessListenerTest, TellsTheOwnerWhenAClientJoinsAndLeaves) {
   FakeOwner owner;
   std::vector<size_t> counts;
@@ -454,7 +454,7 @@ TEST_F(NexusRemoteAccessListenerTest, TellsTheOwnerWhenAClientJoinsAndLeaves) {
 }
 
 // Which close code a connected /rt client is given when the listener goes
-// down, and why the distinction is the whole bug (2026-09-23 field report: "I
+// down, and why the distinction is the whole bug (field report: "I
 // quit Velloc and the remote page went dead").
 //
 // 4003 (`listener_disabled`) is FINAL on the client — createWebSocketTransport
@@ -486,7 +486,7 @@ TEST_F(NexusRemoteAccessListenerTest, ClientCloseCodeSaysWhyTheListenerWent) {
     listener.Stop(reason);
 
     // The server's close frame: unmasked, opcode 0x8, then a 2-byte
-    // big-endian status code (RFC 6455 §5.5.1).
+    // big-endian status code (RFC 6455 section 5.5.1).
     const std::string bytes = ReadUntilClosed(*client);
     ASSERT_GE(bytes.size(), 4u) << "no close frame arrived";
     EXPECT_EQ(static_cast<uint8_t>(bytes[0]) & 0x0f, 0x8) << "not a close frame";

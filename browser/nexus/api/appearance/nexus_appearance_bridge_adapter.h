@@ -21,7 +21,7 @@ class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `AppearanceApiBase` virtuals.
 //
-// Per-client appearance (2026-09-20). The guest no longer reads the desktop's
+// Per-client appearance. The guest no longer reads the desktop's
 // live palette: `resolveTheme` resolves a full colour theme for ONE client,
 // parameterised by the request's (scheme, seed, variant), so a remote client
 // on a different device OS / colour preference gets a palette independent of

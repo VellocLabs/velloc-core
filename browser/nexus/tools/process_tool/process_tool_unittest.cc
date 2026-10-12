@@ -4,7 +4,7 @@
 
 // Unit tests for the Grep tool's pure helpers (arg construction, glob
 // splitting, head-limit slicing). Pins spec 2-4-5 (arg build) and
-// 2-4-5.12 (pagination) from docs/tool-specs/2-4-grep-test.md.
+// 2-4-5.12 (pagination) from F-21.
 //
 // The helpers live in process_tool.cc's anonymous namespace; they are
 // exposed via ProcessTool::*ForTesting static methods.

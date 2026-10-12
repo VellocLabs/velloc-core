@@ -20,9 +20,8 @@ namespace custom_browser::window_util {
 // True when |command_line| carries URL/file arguments, i.e. the launch exists
 // to open something (an OS default-browser open, a link click while the
 // process is running). The bare `about:blank` placeholder is exempt: the e2e
-// harness appends it to every launch to keep the NTP from spawning (see
-// internal/e2e/harness/launchBrowser.ts) and it must not count as an
-// external open.
+// harness appends it to every launch to keep the NTP from spawning, and it
+// must not count as an external open.
 inline bool HasExternalUrlArgs(const base::CommandLine& command_line) {
   constexpr base::CommandLine::StringViewType kAboutBlankPlaceholder =
 #if BUILDFLAG(IS_WIN)

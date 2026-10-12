@@ -148,7 +148,7 @@ TEST_F(NexusRemoteAccessServiceTest, ConstructAndTeardownWhenOff) {
 // UI thread never waits on the IO thread), so Configure answers 'starting' and
 // the outcome arrives as a status change: 'listening' with the ACTUAL bound
 // port echoed back (non-zero), while the configured pref stays 0. This is the
-// e2e specs' enableListener path (@P-3-E005/6/7), which polls
+// e2e specs' enableListener path, which polls
 // remote.setAccess{enabled:true, bindAddress:'127.0.0.1', port:0} until it
 // reads 'listening'.
 TEST_F(NexusRemoteAccessServiceTest, ConfigurePortZeroBindsEphemeralAndEchoesIt) {
@@ -207,7 +207,7 @@ TEST_F(NexusRemoteAccessServiceTest, ReconfiguringTheSameConfigIsANoOp) {
 }
 
 // A fixed (non-zero) port someone ELSE holds must STILL error port_in_use and
-// never silently switch — the §8.3 rule the ephemeral case must not weaken.
+// never silently switch — the rule the ephemeral case must not weaken.
 TEST_F(NexusRemoteAccessServiceTest, FixedPortInUseStillErrorsPortInUse) {
   // Someone else: an independent listener squatting on an ephemeral port.
   NexusRemoteAccessListener squatter(base::DoNothing());
@@ -500,7 +500,7 @@ TEST_F(NexusRemoteAccessServiceTest, ListenerStaysOffOnBootWhenDisabled) {
 
 // ---- wildcard (0.0.0.0) bind -------------------------------------------------
 
-// Since 2026-09-20 the wildcard 0.0.0.0 is a bindable literal (the JS layer's
+// The wildcard 0.0.0.0 is a bindable literal (the JS layer's
 // default; C++ is a pure executor and merely accepts it). The service must NOT
 // reject it as no_address, must bind, and — because 0.0.0.0 is not dialable —
 // must hand the runtime a control URL on 127.0.0.1 (which always passes the
@@ -590,8 +590,7 @@ TEST_F(NexusRemoteAccessServiceTest, LiteralBindPushesNoAddresses) {
 
 // A device connecting is a status change: a status event carries the new
 // count, and the process-wide summary the tray and the quit confirmation read
-// follows it. Both were stuck at 0 until 2026-09-22 — the listener stored the
-// count and told nobody. Real sockets end to end: the runtime's control
+// follows it. Real sockets end to end: the runtime's control
 // socket, then a browser client's /rt.
 TEST_F(NexusRemoteAccessServiceTest, AConnectedDeviceReachesStatusAndTheTray) {
   ResetConnectedClientsForTesting();

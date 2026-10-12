@@ -122,7 +122,7 @@ TEST(RemoteAccessRouterTest, RejectsOtherPathsAndWrongVersion) {
   RouteContext ctx = MakeContext();
   // Wrong interface version is not this binary's contract.
   EXPECT_EQ(Route(MakeGet("/v2/assets/x.js"), ctx).kind, RouteKind::kReject);
-  // Arbitrary paths are not proxied (plan §8.8).
+  // Arbitrary paths are not proxied.
   EXPECT_EQ(Route(MakeGet("/etc/passwd"), ctx).kind, RouteKind::kReject);
   EXPECT_EQ(Route(MakeGet("/v1/build-info.json"), ctx).kind,
             RouteKind::kReject);
@@ -418,7 +418,7 @@ TEST(RemoteAccessRouterTest, ProxyDropsTheQuery) {
   RouteContext ctx = MakeContext();
   RouteDecision d = Route(MakeGet("/v1/assets/x.js?v=123"), ctx);
   ASSERT_EQ(d.kind, RouteKind::kProxy);
-  // The query never reaches the upstream (plan §8.8).
+  // The query never reaches the upstream.
   EXPECT_EQ(d.upstream_path, "/v1/assets/x.js");
 }
 

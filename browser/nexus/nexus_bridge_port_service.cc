@@ -240,7 +240,7 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   RegisterCapability("shell", shell_adapter_.get());
   RegisterCapability("sqlite", sqlite_adapter_.get());
   // Guest `secrets` capability — namespaced, origin-bound secrets sealed in
-  // the profile prefs; no get (native-primitives.md). The network adapter
+  // the profile prefs; no get (P-3). The network adapter
   // reads the same store to substitute `{{secret:NAME}}`.
   secrets_adapter_ = std::make_unique<NexusSecretsBridgeAdapter>(
       this, profile ? profile->GetPrefs() : nullptr);

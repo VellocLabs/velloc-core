@@ -8,7 +8,7 @@ namespace nexus {
 
 // The `model.catalog` result in its bridge (camelCase) shape. The request /
 // stream conversions that used to live here went with `model.call` /
-// `streamStart` / `streamRead` (removed under interface 1 on 2026-10-04).
+// `streamStart` / `streamRead` (removed under interface 1).
 base::DictValue CatalogToBridge(const mojom::NexusLlmCatalog& catalog);
 
 }  // namespace nexus

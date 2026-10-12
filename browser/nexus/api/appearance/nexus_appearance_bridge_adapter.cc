@@ -37,7 +37,7 @@ namespace {
 // the guest is web content and cannot be trusted to constrain a privileged
 // pref write. Widening the product's language support means editing this array
 // and the guest's list together.
-// See internal/docs/G-guide/G-1-workflow/translation.md § Supported languages.
+// See G-1.
 constexpr std::string_view kSupportedUiLocales[] = {
     "en", "zh-CN", "es", "fr", "de", "ja", "ko",
 };

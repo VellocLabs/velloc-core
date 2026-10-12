@@ -85,9 +85,8 @@ bool ConsumePendingExternalUrlWindow(Profile* profile);
 // True when the current process command line carries URL/file arguments,
 // i.e. this launch exists to open something (an OS default-browser open).
 // The bare `about:blank` placeholder is exempt: the e2e harness appends it
-// to every launch to keep the NTP from spawning (see
-// internal/e2e/harness/launchBrowser.ts) and it must not demote the first
-// window from kNexus. Thin wrapper over HasExternalUrlArgs()
+// to every launch to keep the NTP from spawning, and it must not demote the
+// first window from kNexus. Thin wrapper over HasExternalUrlArgs()
 // (relaunch_command_line.h) for the process command line.
 bool HasExternalUrlStartupArgs();
 

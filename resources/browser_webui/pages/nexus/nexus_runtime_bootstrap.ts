@@ -362,7 +362,7 @@ export async function bootstrapNexusGuest(
       // is proven good. Everything from here is host-side — the Mojo
       // guestReady() call and the browser's port-forwarding postMessage — and
       // a failure is the "Boot Failed / real bridge host not attached" class
-      // (see docs/workflow/run-e2e.md), NOT a bad runtime source. Reporting it
+      // (see G-1), NOT a bad runtime source. Reporting it
       // as one would show copy blaming the URL and, worse, offer a primary
       // button that wipes a `nexus.webapp_url` the user may have pinned on
       // purpose — while leaving the panel just as dead, because the URL was

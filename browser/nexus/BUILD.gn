@@ -23,7 +23,7 @@ declare_args() {
 # Bridge interface version
 #
 # The single source of truth is the NEXUS_INTERFACE_VERSION key in
-# //custom_browser/VERSION (see docs/agents/nexus-interface-versioning.md);
+# //custom_browser/VERSION (see G-3);
 # `nexus_interface_version.h` wraps the generated
 # nexus_interface_version.inc. Release pairing is URL-pinned
 # (GetResolvedNexusGuestURL appends /v<N>/); the dev flow (localhost,
@@ -360,12 +360,12 @@ source_set("transcript_search") {
   deps = [ "//third_party/re2" ]
 }
 
-# Remote access (remote-browser-client plan §8): the desktop's in-process
+# Remote access (F-24): the desktop's in-process
 # relay. A default-OFF listener (net::HttpServer on a dedicated IO thread)
 # that reverse-proxies the guest origin's immutable build entry and exposes
 # `/rt`, so a remote browser on the LAN/VPN can join this desktop's runtime
 # with scope <= control. Wire protocol is byte-identical to
-# `nexus_web/scripts/dev_remote_relay.mjs` (plan §6.4).
+# `nexus_web/scripts/dev_remote_relay.mjs`.
 #
 # Layout, deliberately split for testability:
 #   remote_access_router.{h,cc}   pure functions — path classification,
@@ -417,8 +417,8 @@ source_set("remote_access_clients") {
   deps = [ "//base" ]
 }
 
-# The profile-level singleton behind the remoteAccess bridge capability
-# (plan §8.3). UI thread: prefs, listener start/stop, the reverse proxy's
+# The profile-level singleton behind the remoteAccess bridge capability.
+# UI thread: prefs, listener start/stop, the reverse proxy's
 # OUTBOUND SimpleURLLoaders, and the Local-Network-Access grant for the guest
 # origin. Kept OUT of the `remote_access` set above because it needs Profile
 # + HostContentSettingsMap + the guest config — //chrome/browser territory the
@@ -537,7 +537,7 @@ source_set("secret_store") {
 # so `:bridge` can depend on it without forming a cycle through
 # //chrome/browser/ui -> :nexus_settings_handler -> :bridge. (It used to share
 # the `mcp_host` target with the native MCP client, removed under interface 1
-# on 2026-10-04 — the runtime runs MCP over shell.spawn + network.streamOpen.)
+# the runtime runs MCP over shell.spawn + network.streamOpen.)
 source_set("shell_launcher") {
   sources = [
     "tools/process_tool/nexus_shell_service_launcher.cc",
@@ -1170,7 +1170,7 @@ source_set("unit_tests_lite") {
 # ResourceBundle, TestingBrowserProcess, BrowserTaskEnvironment) — too heavy for
 # the lite binary. Consumed by the standalone `custom_browser_nexus_browser_unittests`
 # binary below (a Nexus-owned binary; these are deliberately NOT linked into
-# Chromium's //chrome/test:unit_tests). See docs/agents/nexus-test.md §3.
+# Chromium's //chrome/test:unit_tests). See G-2.
 source_set("unit_tests") {
   testonly = true
 

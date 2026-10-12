@@ -204,7 +204,7 @@ interface NexusStreamingProcessClient {
 };
 
 // Sandboxed-utility-process service exposing host-shell capabilities to
-// nexus_web. See `web-ui/test/docs/agents/nexus-process.md` for the full
+// nexus_web. See P-7 for the full
 // design.
 //
 // Slice 1 added `GetCapabilities`; slice 2 added `Exec`; slice 4 (this

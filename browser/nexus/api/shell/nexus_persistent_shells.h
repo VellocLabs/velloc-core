@@ -47,7 +47,7 @@ namespace nexus {
 // kill them) through the same retain tokens background shells use.
 //
 // This is the primitive the worker's own background-task registry is meant
-// to build on (native-primitives.md: the C++ background-shell registry behind
+// to build on (P-3: the C++ background-shell registry behind
 // shell.status / shell.kill is business logic slated to move).
 //
 // UI thread only. Log writes hop to one sequenced MayBlock runner, so the

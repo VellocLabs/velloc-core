@@ -26,7 +26,7 @@ class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `RemoteAccessApiBase` virtuals
 // — the guest-facing status + configure surface for the desktop's embedded
-// relay (remote-browser-client plan §8.4).
+// relay (F-24).
 //
 //   remoteAccess.getStatus  → NexusRemoteAccessService::GetStatus
 //   remoteAccess.configure  → NexusRemoteAccessService::Configure
@@ -38,7 +38,7 @@ class NexusBridgeResponseDelegate;
 //
 // The adapter ALSO subscribes to the service's status changes for its
 // lifetime and pushes `remoteAccess.onStatusChanged` (payload = getStatus's
-// result MINUS the control token — §8.8) so the runtime dials / disconnects
+// result MINUS the control token) so the runtime dials / disconnects
 // its relay dialer reactively instead of polling.
 //
 // Only the runtime calls this (P-3: host calls originate from the runtime,

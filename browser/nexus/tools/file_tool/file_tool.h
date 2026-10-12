@@ -68,7 +68,7 @@ class ToolSession;  // for CategoryAccessor specialization below
 // (session deleted / panel closed) before the worker runs — a
 // use-after-free observed in the field. Keeping the tools on `ui` and
 // hopping only the static blocking helper removes that dangling-pointer
-// window entirely. See docs/agents/nexus-tools-api.md §6.
+// window entirely. See F-21.
 //
 // FileTool itself is owned by `ToolSession`, which is owned by
 // `ToolSessionRegistry::sessions_` (UI-thread).

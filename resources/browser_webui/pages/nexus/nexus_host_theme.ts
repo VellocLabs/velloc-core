@@ -10,7 +10,7 @@
 // blocks remain the fallback when nothing arrives (older binary, or a host
 // that never sends).
 //
-// Wire shape (additive, ignore-if-absent — no interface bump, see G-3 §3):
+// Wire shape (additive, ignore-if-absent — no interface bump, see G-3):
 //   { type: 'nexus-theme', nexus: true,
 //     theme: { scheme: 'light'|'dark', colors: { <role>: 'rgb(r, g, b)' } } }
 // Sent once right after the bridge bootstrap is forwarded (the guest's
@@ -45,7 +45,7 @@ export const HOST_THEME_ROLES: ReadonlyArray<readonly [role: string, cssVar: str
   // Recessed/containers (muted, secondary, accent hover). surface3: #eff3fa / #333438.
   ['surfaceContainer', '--color-sys-surface3'],
   // The session sidebar, the composer box and the running-status bar all sit
-  // on the page surface (user direction 2026-09-07): one flat ground, the
+  // on the page surface: one flat ground, the
   // panels told apart by their dividers, not by tint.
   ['sidebar', '--color-sys-surface'],
   ['base', '--color-sys-surface'],

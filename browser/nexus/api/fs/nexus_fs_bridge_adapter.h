@@ -46,7 +46,7 @@ class NexusBridgeResponseDelegate;
 //     teardown racing an in-flight op cannot use-after-free the adapter;
 //     the reply delivers via std::move(done).Success/Error/Binary back
 //     on UI (weak-guarded by the BridgeResponseCallback). See
-//     docs/agents/nexus-tools-api.md §6.
+//     F-21.
 class NexusFsBridgeAdapter : public ::nexus::generated::FsApiBase {
  public:
   NexusFsBridgeAdapter(NexusBridgeResponseDelegate* delegate,

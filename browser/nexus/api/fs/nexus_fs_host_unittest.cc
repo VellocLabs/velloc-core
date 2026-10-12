@@ -200,7 +200,7 @@ TEST(NexusFsHostTest, ReadFileMissingReportsEnoent) {
   EXPECT_NE(std::string::npos, result.error.find("ENOENT")) << result.error;
 }
 
-// Regression (fs error taxonomy, 2026-09-01): a missing path's Stat must
+// Regression (fs error taxonomy): a missing path's Stat must
 // report the discriminated ENOENT wording, not the retired ambiguous
 // "File not found or permission denied". The JS guest keys "genuinely
 // absent" off the leading code so SuperEdit's commit conflict check can

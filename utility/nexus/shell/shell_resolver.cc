@@ -150,7 +150,7 @@ std::vector<base::FilePath> GitBashCandidatePathsForWindows() {
 
 // Returns the priority-ordered list of candidate ids for the host
 // platform's "default shell". Matches the design in
-// docs/agents/nexus-process.md: prefer the most modern shell that is
+// P-7: prefer the most modern shell that is
 // actually installed.
 std::vector<std::string> DefaultShellPreference() {
 #if BUILDFLAG(IS_WIN)

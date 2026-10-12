@@ -29,7 +29,7 @@ void NexusSystemPrefsBridgeAdapter::HandleGetOnUI(
       local_state && local_state->GetBoolean(::prefs::kBackgroundModeEnabled);
 #endif
   // `launcherEnabled` is a wire-compatibility alias of the same pref since the
-  // two System toggles were merged (2026-09-10); the legacy
+  // two System toggles were merged; the legacy
   // nexus.launcher_enabled pref is migrated once by NexusBackgroundModeManager
   // and no longer read.
   base::DictValue result;

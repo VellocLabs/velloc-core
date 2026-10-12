@@ -99,7 +99,7 @@ TEST_F(NexusBackgroundModeManagerTest, LegacyLauncherPrefIsNotRead) {
 // A try-to-quit exit (CDP Browser.close, restart, end-session) fires
 // APP_TERMINATING once the last browser closes. The manager must drop its
 // keep-alive then, or the process outlives every window with only the parked
-// Nexus page left (2026-09-24). Once terminating, re-enabling the pref must
+// Nexus page left. Once terminating, re-enabling the pref must
 // not take a new keep-alive either.
 //
 // The ONLY test that calls NotifyAppTerminating(): it fires at most once per
@@ -118,7 +118,7 @@ TEST_F(NexusBackgroundModeManagerTest, ReleasesKeepAliveOnAppTerminating) {
   EXPECT_FALSE(NexusOriginRegistered());
 }
 
-// --- Tray "Quit" asks first (remote-access devices, 2026-09-22) -------------
+// --- Tray "Quit" asks first (remote-access devices) -------------
 
 // Stands in for the UI layer: records what the manager asks for, and lets the
 // test answer the confirmation.

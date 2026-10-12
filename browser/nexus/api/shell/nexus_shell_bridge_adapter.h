@@ -30,7 +30,7 @@ namespace nexus {
 class NexusBridgeResponseDelegate;
 
 // Concrete adapter implementing the generated `ShellApiBase` virtuals — the
-// guest's child-process primitive (native-primitives.md § shell). The
+// guest's child-process primitive (P-3). The
 // STREAMING surface over `NexusShellService::StreamSpawn`, the live-pipe path
 // the utility service already has:
 //
@@ -45,7 +45,7 @@ class NexusBridgeResponseDelegate;
 //
 // The C++ background-shell registry this adapter used to expose
 // (`shell.status` / `shell.kill` + the `shell.onExit` event, for the Bash
-// tool's `run_in_background`) was removed under interface 1 on 2026-10-04:
+// tool's `run_in_background`) was removed under interface 1:
 // the runtime owns background shells over the persistent-shell primitives.
 //
 // Every action runs on UI (the *.api.json declare runtime.thread = "ui") and

@@ -17,9 +17,8 @@ namespace nexus::remote_access {
 
 namespace {
 
-// The fixed files a remote page needs beyond the entry and assets (plan §8.3's
-// routing table), each at the one path the deploy serves it from — exact
-// matches, never a prefix.
+// The fixed files a remote page needs beyond the entry and assets, each at
+// the one path the deploy serves it from — exact matches, never a prefix.
 //
 // Versioned: nexus_web's public/ files are staged under /v<N>/ only, and the
 // page names them there (index.html's favicon is `/product_logo_128.png`
@@ -85,7 +84,7 @@ bool IsHex32(std::string_view s) {
 }
 
 // A build key is the immutable `nexus-build-time` rendered as digits + 'T' +
-// 'Z' (plan §4.2). Enforcing the alphabet here keeps the route from proxying
+// 'Z'. Enforcing the alphabet here keeps the route from proxying
 // a made-up key.
 bool IsBuildKey(std::string_view s) {
   if (s.empty()) {
@@ -485,7 +484,7 @@ RouteDecision Route(const RouteRequest& request, const RouteContext& context) {
     // The query crosses too, in THIS mode only: a dev server's module graph is
     // addressed by it (`?import`, `?v=<hash>`, `?t=<stamp>` select a different
     // response for the same path), so stripping it breaks the page. Release
-    // never reaches here and never forwards a query (plan §8.8).
+    // never reaches here and never forwards a query.
     decision.kind = RouteKind::kProxy;
     decision.upstream_path = path;
     const size_t q = request.raw_path.find('?');

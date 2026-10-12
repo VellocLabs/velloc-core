@@ -194,9 +194,8 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // session id), shared by the three tool adapters below and the `session`
   // adapter. Declared before them so it outlives them.
   std::unique_ptr<ToolSessionRegistry> tool_sessions_;
-  // W16: the host actions behind the hosted tools, one capability per
-  // family. `browser` also serves the legacy `browser.<ToolName>` routes
-  // until W16 step 3.
+  // The host actions behind the hosted tools, one capability per
+  // family.
   std::unique_ptr<NexusFilesBridgeAdapter> files_adapter_;
   std::unique_ptr<NexusExecBridgeAdapter> exec_adapter_;
   std::unique_ptr<NexusBrowserBridgeAdapter> browser_adapter_;
@@ -222,7 +221,7 @@ class NexusBridgePortService : public NexusBridgeResponseDelegate {
   // Guest `alarms` capability (create / clear / list + alarms.onAlarm).
   std::unique_ptr<NexusAlarmsBridgeAdapter> alarms_adapter_;
   // Guest `remoteAccess` capability — status + configure for the desktop's
-  // embedded relay (remote-browser-client plan §8). Forwards onto the
+  // embedded relay (F-24). Forwards onto the
   // per-Profile NexusRemoteAccessService. Manifest-gated: the runtime calls
   // getStatus only when the manifest advertises "remoteAccess".
   std::unique_ptr<NexusRemoteAccessBridgeAdapter> remote_access_adapter_;

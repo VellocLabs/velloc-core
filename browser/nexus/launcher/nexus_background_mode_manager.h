@@ -61,7 +61,7 @@ class NexusBackgroundModeManager {
   NexusBackgroundModeManager& operator=(const NexusBackgroundModeManager&) =
       delete;
 
-  // One-time migration of the pre-2026-09-10 local_state pref
+  // One-time migration of the legacy local_state pref
   // nexus::prefs::kNexusLauncherEnabled (the old "Show in the system tray"
   // toggle, default false) into prefs::kBackgroundModeEnabled: a user-set
   // legacy value is copied over unless the user has since set the new pref

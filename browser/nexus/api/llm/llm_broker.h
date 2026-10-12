@@ -29,7 +29,7 @@ class NexusOAuthManager;
 // model listings, OAuth tokens and the active provider pick. It no longer
 // routes inference — the runtime speaks every provider's wire format over
 // `model.rawStream*` (model.call / streamStart were removed under interface
-// 1 on 2026-10-04); the provider instances stay for model discovery, key
+// 1); the provider instances stay for model discovery, key
 // verification (`providerAuth`) and the rawStream base-URL / credential
 // anchor.
 //

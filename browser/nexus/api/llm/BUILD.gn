@@ -178,7 +178,7 @@ source_set("webui_host") {
 }
 
 # Individual provider implementations: the model-discovery / key-verification
-# half of each provider (inference moved to the runtime on 2026-10-04).
+# half of each provider (inference moved to the runtime).
 source_set("openai_provider") {
   sources = [
     "providers/openai/openai_provider.cc",

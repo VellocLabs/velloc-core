@@ -14,8 +14,7 @@
  * guest and the panel host, a WebSocket → relay → trunk for a phone, another
  * machine's Velloc, or a CLI. One connection carries only `Frame`s (JSON text)
  * and blob chunks (binary, `codec.ts`). The design that motivates every field
- * is `internal/docs/investigations/2026/2026-09-08-runtime-client-protocol-plan.md`
- * (§4 frames, §5 capabilities and topics, §6 scope, §10 versioning).
+ * is P-3.
  *
  * Ten kinds, in three groups:
  *   handshake  hello / challenge / auth / welcome / bye   (before the connection exists)
@@ -28,7 +27,7 @@
  * negotiated once, so no other frame carries `v`.
  *
  * Skeleton status: types plus the pure helpers a unit test can pin. No hub,
- * no transport, no capability is registered on these yet (plan §11 phase 0).
+ * no transport, no capability is registered on these yet.
  *
  * Zero-dependency by rule: nothing under `src/browser/runtimeProtocol/` imports from
  * outside the directory — `src/__tests__/runtime-protocol.test.ts` fails if

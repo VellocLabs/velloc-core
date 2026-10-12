@@ -22,7 +22,7 @@ class Thread;
 
 namespace nexus::remote_access {
 
-// The WebSocket close codes the wire protocol defines (plan §6.4 — the SAME
+// The WebSocket close codes the wire protocol defines (the SAME
 // table the dev relay and the client's retry logic read). net::HttpServer
 // exposes no close-with-code API, so the listener writes the close frame
 // itself (CloseSocketWithCode) before tearing the connection down.
@@ -36,8 +36,8 @@ inline constexpr int kCloseLegTimeout = 4002;
 inline constexpr int kCloseListenerDisabled = 4003;
 inline constexpr int kCloseTooManyClients = 4004;
 
-// What a start attempt produced. `kPortInUse` is a FIRST-CLASS state (plan
-// §8.3: never silently switch ports — the minted link would die), and
+// What a start attempt produced. `kPortInUse` is a FIRST-CLASS state (never
+// silently switch ports — the minted link would die), and
 // `kAddressUnavailable` is how "this machine no longer has that address" is
 // learned: the OS refuses the bind, so nobody has to enumerate interfaces (a
 // blocking call) on the UI thread to pre-validate it.

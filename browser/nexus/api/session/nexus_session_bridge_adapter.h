@@ -28,7 +28,7 @@ class ToolSessionRegistry;
 // (`browser.endSession`, `browser.setAgentLoopSettings`) under one
 // capability served by a dedicated codegen base class. (`publishStatus`,
 // a write-only SessionStatus cache in LlmBroker with no host reader, was
-// removed under interface 1 on 2026-10-04.)
+// removed under interface 1.)
 //
 //   - `onStop` — renamed from the manual `browser.endSession` handler.
 //     Cascades through `ToolSessionRegistry::OnSessionStopped` →

@@ -313,7 +313,7 @@ void NexusSettingsHandler::RegisterMessages() {
   // `~/.nexus/settings.json` (`mcp.servers`) through the runtime's
   // `mcpSettings` capability, which also runs the connection probe
   // (`mcpSettings.testConnect`). The native `mcp` capability and its
-  // `nexus.mcp_server_configs` pref were removed on 2026-10-04.
+  // `nexus.mcp_server_configs` pref were removed.
 }
 
 void NexusSettingsHandler::OnJavascriptAllowed() {
@@ -829,7 +829,7 @@ void NexusSettingsHandler::HandleSetBackgroundModeEnabled(
 void NexusSettingsHandler::HandleGetNexusLauncherEnabled(
     const base::ListValue& args) {
   // Alias of getBackgroundModeEnabled since the two System toggles were merged
-  // (2026-09-10): prefs::kBackgroundModeEnabled drives the keep-alive + tray
+  // prefs::kBackgroundModeEnabled drives the keep-alive + tray
   // icon (NexusBackgroundModeManager) and the background panel.
   HandleGetBackgroundModeEnabled(args);
 }

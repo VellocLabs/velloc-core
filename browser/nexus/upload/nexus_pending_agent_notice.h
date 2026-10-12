@@ -44,7 +44,7 @@ struct AgentNotice {
   // when there is nothing for the model to redo (informational notice).
   std::string recommended_tool;
   // Model-facing English sentence. Not rendered in the transcript UI, so it
-  // needs no i18n catalog key (see the plan doc §10).
+  // needs no i18n catalog key.
   std::string message;
 
   base::DictValue ToDict() const;

@@ -183,7 +183,7 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   //
   // Backed by the browser-wide local_state pref
   // ALIASES of the background-mode pair above since the two System toggles
-  // were merged (2026-09-10): both forward to prefs::kBackgroundModeEnabled.
+  // were merged: both forward to prefs::kBackgroundModeEnabled.
   // Historically backed by nexus::prefs::kNexusLauncherEnabled, which
   // NexusBackgroundModeManager observes to acquire/release the keep-alive and
   // the system-tray icon. Distinct from the background-mode toggle above (which

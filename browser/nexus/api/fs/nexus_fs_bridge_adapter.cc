@@ -306,7 +306,7 @@ NexusFsBridgeAdapter::~NexusFsBridgeAdapter() = default;
 // on UI and delivers via `done` (weak-guarded). A port-service teardown that
 // destroys this adapter mid-op therefore can't use-after-free it: the worker
 // finishes against the still-refcounted host, and the reply drops cleanly.
-// See docs/agents/nexus-tools-api.md §6.
+// See F-21.
 //
 // Traits: {MayBlock(), USER_VISIBLE} — the guest is waiting on the result.
 // ===========================================================================

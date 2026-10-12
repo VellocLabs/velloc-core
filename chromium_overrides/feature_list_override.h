@@ -97,7 +97,7 @@ inline void AppendFeatureListOverrides(
   // covers the reachable cases). It is enabled by default upstream; we pin it
   // so a future default flip or field-trial config can't silently reintroduce
   // a blocking native dialog. This keeps the fix in our layer with no upstream
-  // edit. See internal/docs/investigations/2026/2026-08-23-agent-tab-native-dialog-suppression.md
+  // edit.
   // (Point B).
   overrides->emplace_back(
       std::cref(actor::kGlicBlockFileSystemAccessApiFilePicker),

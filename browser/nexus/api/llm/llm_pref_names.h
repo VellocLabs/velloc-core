@@ -93,7 +93,7 @@ inline constexpr char kNexusTsModelCatalogCache[] =
 inline constexpr char kNexusBakedDefaultBaseUrlsCleared[] =
     "nexus.baked_default_base_urls_cleared";
 
-// --- Remote access (remote-browser-client plan §8.3) ---
+// --- Remote access (F-24) ---
 // The desktop's embedded relay: a default-OFF net::HttpServer that reverse-
 // proxies the guest origin's immutable build entry and exposes /rt so a
 // remote browser on the LAN/VPN can join this desktop's runtime. Owned
@@ -104,7 +104,7 @@ inline constexpr char kNexusBakedDefaultBaseUrlsCleared[] =
 inline constexpr char kNexusRemoteAccessEnabled[] = "nexus.remote_access.enabled";
 // The single IPv4 literal the listener binds. Must currently appear in
 // net::GetNetworkList(); empty or absent-from-list → not listening. NEVER
-// "0.0.0.0" / "::" (plan §8.8). "127.0.0.1" is accepted for local debugging.
+// "0.0.0.0" / "::". "127.0.0.1" is accepted for local debugging.
 inline constexpr char kNexusRemoteAccessBindAddress[] =
     "nexus.remote_access.bind_address";
 // The listener port, 1024–65535. A port already in use surfaces as the

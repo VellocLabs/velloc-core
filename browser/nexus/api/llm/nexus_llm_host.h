@@ -21,7 +21,7 @@ namespace nexus {
 // The inference half (`model.call` / `streamStart` / `streamRead` /
 // `streamCancel`, which translated the bridge request into a provider call
 // and queued its stream events for held reads) was removed under interface 1
-// on 2026-10-04: the runtime speaks every provider's wire format over
+// the runtime speaks every provider's wire format over
 // `model.rawStream*` / `network.stream*`.
 class NexusLlmHost {
  public:

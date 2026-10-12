@@ -10,7 +10,7 @@ namespace custom_browser {
 // (e.g. "1.149.1.0") from custom_browser/VERSION, chrome/VERSION, and
 // browser/nexus/nexus_interface_version.h — so the app version always names
 // the nexus_web /v<N>/ contract this binary speaks. See
-// common/scripts/gen_product_version.py and docs/agents/versioning-installer.md.
+// common/scripts/gen_product_version.py and G-3.
 inline constexpr char kCustomBrowserProductVersion[] =
     CUSTOM_BROWSER_PRODUCT_VERSION;
 

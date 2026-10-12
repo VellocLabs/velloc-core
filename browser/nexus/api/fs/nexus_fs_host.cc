@@ -427,7 +427,7 @@ NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
     // failures (permission, lock, I/O) that must NOT read as absent —
     // SuperEdit's commit conflict check is the first consumer (see
     // nexus_web utils/fsTransportFailure.ts + the internal repo's
-    // docs/tools/nexus-run-js.md). The old single wording ("File not found
+    // F-21). The old single wording ("File not found
     // or permission denied") is retired; an older guest treats any of these
     // as absent, which is exactly its previous behavior — degradable, no
     // interface bump.
@@ -436,7 +436,7 @@ NexusFsHost::StatResult NexusFsHost::Stat(const std::string& path) const {
     // base::PathExists on a path whose stat just failed with EIO / a
     // network blip fails for the SAME underlying reason and would answer
     // "absent" — re-opening the transient-reads-as-absent hole this
-    // taxonomy closes (review 2026-09-01 §2). An unmapped failure stays
+    // taxonomy closes. An unmapped failure stays
     // EUNKNOWN (transient), at the cost of a rare over-report on a
     // malformed path.
     result.error = FsFailureMessage(stat_error);

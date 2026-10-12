@@ -6,7 +6,7 @@
 # shows it (System > "Continue running background apps when main window is
 # closed"). Deliberately a small leaf — no //chrome/browser/ui — so the UI
 # layer (CustomBrowserWebUIView, compiled into //chrome/browser/ui) can depend
-# on it without a cycle. Docs: docs/P-platform/P-6-browser-ui/custom-browser-ui.md
+# on it without a cycle. Docs: P-6
 # ("Background panel").
 source_set("background_panel_host") {
   sources = [

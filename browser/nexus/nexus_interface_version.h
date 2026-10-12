@@ -19,7 +19,7 @@
 //     (check) mode is the ninja gate that fails any binary build whose
 //     sibling nexus_web checkout drifted,
 //   - the third field of the product version itself
-//     (docs/agents/versioning-installer.md).
+//     (G-3).
 //
 // Bump it (then run --sync and commit both repos, web side first)
 // whenever the host<->guest contract changes: the *.api.json /
@@ -34,7 +34,7 @@
 // segment against its compiled-in constant and hard-blocks on mismatch.
 // Dev (http://localhost) bases pass through unversioned — dev drift is
 // caught by the build gate instead. See
-// docs/agents/nexus-interface-versioning.md.
+// G-3.
 
 #include "custom_browser/common/generated/nexus_interface_version.inc"
 

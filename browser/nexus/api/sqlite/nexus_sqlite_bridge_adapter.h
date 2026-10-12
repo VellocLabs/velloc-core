@@ -39,7 +39,7 @@ class NexusBridgeResponseDelegate;
 //     used → removed in the reply.
 //   - handle (`open`/`close`): a persistent connection in `handles_`, held
 //     until close.
-// See internal/docs/P-platform/P-3-bridge/nexus-sqlite-capability.md.
+// See P-3.
 class NexusSqliteBridgeAdapter : public ::nexus::generated::SqliteApiBase {
  public:
   explicit NexusSqliteBridgeAdapter(NexusBridgeResponseDelegate* delegate);

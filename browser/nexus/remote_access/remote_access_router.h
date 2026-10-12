@@ -15,7 +15,7 @@ namespace nexus::remote_access {
 // How one inbound request is to be answered. Pure classification: the
 // router decides WHAT a request is, the listener decides what to do about
 // it. No sockets, no threads, no Profile — which is why the whole routing
-// table is unit-testable (plan §8.6).
+// table is unit-testable.
 enum class RouteKind {
   // Reverse-proxy this path to the guest origin. `upstream_path` carries
   // the (normalized, query-less) path to request.
@@ -36,7 +36,7 @@ enum class RouteKind {
 // 403 for a Host/Origin mismatch (an attacker's page or a DNS rebind),
 // 404 for everything else INCLUDING an unauthenticated /host/* — the
 // existence of those routes is not for unauthenticated callers to learn
-// (plan §8.3, mirrored from the dev relay's own comment).
+// (mirrored from the dev relay's own comment).
 enum class RejectStatus {
   kNotFound,     // 404
   kForbidden,    // 403
@@ -53,7 +53,7 @@ struct RouteDecision {
   RouteKind kind = RouteKind::kReject;
   RejectStatus status = RejectStatus::kNotFound;
   // kProxy: the path to fetch from the guest origin. Never carries a
-  // query (plan §8.8: the proxy forwards no query).
+  // query (the proxy forwards no query).
   std::string upstream_path;
   // kHostLeg: the 32-hex leg id.
   std::string leg_id;
@@ -106,10 +106,10 @@ struct RouteContext {
   // True when a runtime control socket is attached.
   bool has_control_socket = false;
   // Debug builds relax the proxy to all GETs so an unbundled vite dev
-  // server works as the upstream (plan §8.3's last routing row).
+  // server works as the upstream.
   bool relaxed_proxy = false;
   // True when the listener bound the wildcard 0.0.0.0 (the JS layer's default
-  // since 2026-09-20 — C++ is a pure executor and merely accepts the literal).
+  // C++ is a pure executor and merely accepts the literal).
   // A wildcard listener must answer clients that arrive on ANY of the
   // machine's NICs, so the Host gate matches the request's Host against
   // local_addresses + the bound port instead of the single literal.
@@ -122,7 +122,7 @@ struct RouteContext {
   std::vector<std::string> local_addresses;
 };
 
-// Classify one request. The whole routing table of plan §8.3.
+// Classify one request: the whole routing table (F-24).
 RouteDecision Route(const RouteRequest& request, const RouteContext& context);
 
 // The Host/Origin gate shared by Route's two checks. With a single-literal
@@ -151,7 +151,7 @@ std::string QueryParam(std::string_view raw_path, std::string_view name);
 bool ConstantTimeEquals(std::string_view a, std::string_view b);
 
 // True when `path` is one of the three proxyable shapes for this interface
-// version (plan §8.3): the immutable build entry and its two files, a
+// version: the immutable build entry and its two files, a
 // versioned asset, or one of the fixed files — each matched exactly, under
 // /v<N>/ or at the root depending on where the deploy serves it.
 bool IsProxyablePath(std::string_view path, int interface_version);
@@ -166,7 +166,7 @@ bool IsProxyablePath(std::string_view path, int interface_version);
 bool IsBuildEntryPath(std::string_view path, int interface_version);
 
 // The runtime's first control-socket message — `{"hello":1,"entryPath":…}`
-// (F-24 § WebSocket pairing) — reduced to the one thing the listener keeps
+// (F-24) — reduced to the one thing the listener keeps
 // from it: the immutable build entry a remote's `GET /` is redirected to.
 // nullopt means "nothing usable here", and the listener keeps whatever it had:
 // a non-JSON frame, a frame with no `hello` key, an absent or null `entryPath`

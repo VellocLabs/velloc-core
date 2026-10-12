@@ -12,7 +12,7 @@ namespace nexus {
 // Provider identity and model-discovery types. The request / result / stream
 // types of the C++ inference path (CallOptions, GenerateResult, StreamPart,
 // the generate/stream callbacks, FinishReason) were removed with model.call /
-// streamStart under interface 1 on 2026-10-04.
+// streamStart under interface 1.
 
 // Provider classification.
 enum class LlmProviderType {

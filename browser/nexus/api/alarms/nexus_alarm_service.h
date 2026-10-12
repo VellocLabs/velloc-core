@@ -37,7 +37,7 @@ class BrowserContext;
 
 namespace nexus {
 
-// The `alarms` capability's clock (native-primitives.md): named wall-clock
+// The `alarms` capability's clock (P-3): named wall-clock
 // alarms that survive a closed page and a browser restart, so scheduled work
 // (routines) no longer needs a live runtime to keep time.
 //

@@ -38,7 +38,7 @@ namespace nexus {
 //   `nexus::RunNexusShellService` factory from
 //   `custom_browser/utility/nexus/shell/services.h`. Until that lands,
 //   `GetService()` will return a remote whose first call disconnects
-//   silently. See `docs/agents/nexus-process.md` §"Upstream-hook report"
+//   silently. See P-7
 //   for the exact diff.
 class NexusShellServiceLauncher {
  public:
@@ -94,7 +94,7 @@ class NexusShellServiceLauncher {
 // Profile; its 30s idle-recycle applies when no persistent child is retained.
 // (The background-shell registry the guest used to observe through
 // `shell.status` / `shell.kill` / `shell.onExit` is gone — removed under
-// interface 1 on 2026-10-04; the runtime owns background shells over the
+// interface 1; the runtime owns background shells over the
 // persistent-shell primitives.)
 NexusShellServiceLauncher& GetSharedShellLauncher(Profile* profile);
 

@@ -39,9 +39,9 @@ constexpr int kMaxOutputBytes = 30000;
 constexpr char kProcessUnavailableCode[] = "process_unavailable";
 // `run_in_background` is served by the runtime, which starts the command as a
 // persistent host child (`shell.spawn` + `persist`) and owns the task. The host
-// keeps no background-shell registry any more (removed under interface 1 on
-// 2026-10-04), so an explicit background request that still reaches the hosted
-// tool is refused loudly instead of silently blocking in the foreground.
+// keeps no background-shell registry any more (removed under interface 1),
+// so an explicit background request that still reaches the hosted tool is
+// refused loudly instead of silently blocking in the foreground.
 constexpr char kBackgroundUnsupportedCode[] = "background_unsupported";
 
 // Per-platform shell invocation. Mirrors `buildShellInvocation` in the

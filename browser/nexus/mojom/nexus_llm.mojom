@@ -2,7 +2,7 @@ module nexus.mojom;
 
 // The `model.catalog` result (NexusLlmHost -> CatalogToBridge). The request,
 // content-part and stream-event types of model.call / streamStart /
-// streamRead were removed with those actions (interface 1, 2026-10-04): the
+// streamRead were removed with those actions (interface 1): the
 // runtime speaks every provider's wire format itself.
 
 struct NexusLlmSelection {

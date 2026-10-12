@@ -29,7 +29,7 @@ class NexusLlmHost;
 //   - LLM actions all use `runtime.thread = "ui"`. The guest speaks every
 //     provider's wire format itself (model.call / streamStart / streamRead /
 //     streamCancel and the C++ request translation behind them were removed
-//     under interface 1 on 2026-10-04); the host serves the catalog, the
+//     under interface 1); the host serves the catalog, the
 //     provider configs and the `rawStream*` byte transport.
 //   - Each Handle*OnUI runs on the bridge's home thread (UI). It reads
 //     fields off `input.payload`, invokes the relevant llm_host_ async

@@ -10,8 +10,8 @@ class PrefRegistrySimple;
 namespace nexus {
 namespace prefs {
 
-// LEGACY local_state pref (per-installation, browser-wide), superseded on
-// 2026-09-10 by prefs::kBackgroundModeEnabled — the single System toggle that
+// LEGACY local_state pref (per-installation, browser-wide), superseded
+// by prefs::kBackgroundModeEnabled — the single System toggle that
 // now drives the tray keep-alive AND the background panel. Still registered
 // (default false) only so NexusBackgroundModeManager::MigrateLegacyLauncherPref
 // can read a user's old "Show in the system tray" choice once and clear it.

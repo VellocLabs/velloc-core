@@ -47,7 +47,7 @@ struct BindAddressInfo {
 };
 
 // The full status snapshot returned by `remoteAccess.getStatus` (and pushed
-// by `remoteAccess.onStatusChanged` minus the token). See plan §8.4.
+// by `remoteAccess.onStatusChanged` minus the token).
 struct RemoteAccessStatus {
   RemoteAccessStatus();
   ~RemoteAccessStatus();
@@ -70,7 +70,7 @@ struct RemoteAccessStatus {
 };
 
 // The profile-level singleton behind the `remoteAccess` bridge capability
-// (remote-browser-client plan §8.3). UI thread.
+// (F-24). UI thread.
 //
 // Owns:
 //   * the prefs (enabled / bind_address / port),
@@ -150,7 +150,7 @@ class NexusRemoteAccessService {
 
   // Subscribe to status changes (the adapter pushes remoteAccess.onStatusChanged
   // for each): every state transition, and a changed address list. The
-  // payload omits the control token (§8.8).
+  // payload omits the control token.
   // Returns a subscription id for RemoveStatusSink. UI thread.
   using StatusSink = base::RepeatingCallback<void(const RemoteAccessStatus&)>;
   uint64_t AddStatusSink(StatusSink sink);
@@ -158,7 +158,7 @@ class NexusRemoteAccessService {
 
  private:
   // One in-flight reverse-proxy fetch. Concurrent requests for the same path
-  // coalesce onto one upstream load (plan §8.3).
+  // coalesce onto one upstream load.
   struct ProxyFetch {
     ProxyFetch();
     ~ProxyFetch();

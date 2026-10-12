@@ -23,7 +23,7 @@ class NexusAlarmService;
 class NexusBridgeResponseDelegate;
 struct AlarmFire;
 
-// The `alarms` capability (native-primitives.md): create / clear / list over
+// The `alarms` capability (P-3): create / clear / list over
 // the per-Profile NexusAlarmService, and the `alarms.onAlarm` event. While
 // its port is connected this adapter is one of the service's sinks — "a
 // runtime is connected" — so fires come here as events instead of being

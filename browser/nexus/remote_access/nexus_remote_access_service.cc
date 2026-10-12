@@ -43,14 +43,14 @@ namespace nexus::remote_access {
 
 namespace {
 
-// Port bounds enforced by the pref table (plan §8.3). Port 0 is a valid
+// Port bounds enforced by the pref table. Port 0 is a valid
 // special case: an explicit request for an OS-assigned ephemeral port (the
 // bound port is echoed back in the status snapshot). It is NOT a conflicted
 // fixed port — a fixed port that is already in use still errors port_in_use
-// and is never silently switched (§8.3).
+// and is never silently switched.
 constexpr int kMinPort = 1024;
 constexpr int kMaxPort = 65535;
-// Reverse-proxy body cap. Plan §8.3 asked for 32 MiB, but DownloadToString
+// Reverse-proxy body cap. DownloadToString
 // DCHECKs above SimpleURLLoader's own bound (5 MiB) — so that bound IS the cap.
 // A larger upstream body fails the load and is answered 502; the bundle's
 // chunks are far below it.
@@ -106,7 +106,7 @@ class RemoteAccessServiceUserData : public base::SupportsUserData::Data {
 };
 
 // True when `address` is an IPv4 literal the listener may be asked to bind.
-// Loopback is allowed (local debugging) and — since 2026-09-20 — so is the
+// Loopback is allowed (local debugging) and — so is the
 // wildcard 0.0.0.0 (the JS layer's default bind; C++ is a pure executor with
 // no default concept and merely accepts the literal it is handed). :: is not
 // accepted. Pure on purpose: whether the machine still HAS a specific address
@@ -224,7 +224,7 @@ RemoteAccessStatus NexusRemoteAccessService::GetStatus() {
 
 RemoteAccessStatus NexusRemoteAccessService::GetStatusForEvent() {
   RemoteAccessStatus status = BuildStatus();
-  // The control token never leaves the full-trust getStatus surface (§8.8).
+  // The control token never leaves the full-trust getStatus surface.
   status.control_token.reset();
   return status;
 }
@@ -386,7 +386,7 @@ void NexusRemoteAccessService::StartListener(const std::string& bind_address,
     }
   }
   // Debug builds relax the proxy to all GETs so an unbundled vite dev server
-  // works as the upstream (plan §8.3's last routing row). Release builds only
+  // works as the upstream. Release builds only
   // ever serve the immutable entry / versioned assets / fixed root files.
 #if !defined(NDEBUG)
   config.relaxed_proxy = true;
@@ -480,7 +480,7 @@ void NexusRemoteAccessService::HandleProxyRequest(
     return;
   }
 
-  // The ONLY upstream is the guest origin (§8.8). `url_path` is already
+  // The ONLY upstream is the guest origin. `url_path` is already
   // normalized + query-stripped by the router.
   const GURL upstream = GetResolvedNexusGuestURL(profile_).Resolve(url_path);
 
@@ -488,7 +488,7 @@ void NexusRemoteAccessService::HandleProxyRequest(
   resource_request->url = upstream;
   resource_request->method = "GET";
   resource_request->credentials_mode =
-      network::mojom::CredentialsMode::kOmit;  // no cookies (§8.8)
+      network::mojom::CredentialsMode::kOmit;  // no cookies
   // Forward only the revalidation headers.
   if (!if_none_match.empty()) {
     resource_request->headers.SetHeader(net::HttpRequestHeaders::kIfNoneMatch,

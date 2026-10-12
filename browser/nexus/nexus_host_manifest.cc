@@ -24,7 +24,7 @@ constexpr std::array<const char*, 13> kBridgeCapabilities = {
     // used to be advertised here. Session lifecycle (`onStop`,
     // `setAgentLoopSettings`) lives on the dedicated `session` capability.
     "browser",
-    // W16: the host actions behind the file and shell tools. The runtime
+    // The host actions behind the file and shell tools. The runtime
     // defines the tools themselves and offers them only when these are
     // advertised.
     "files",
@@ -46,7 +46,7 @@ constexpr std::array<const char*, 13> kBridgeCapabilities = {
     // custom_browser/browser/nexus/api/sqlite/.
     "sqlite",
     // The `remoteAccess` capability: status + configure for the desktop's
-    // embedded relay (remote-browser-client plan §8). The runtime gates its
+    // embedded relay (F-24). The runtime gates its
     // `remoteAccess.getStatus` call on this advertisement — an older binary
     // without it simply exposes no remote-access surface and the runtime
     // makes ZERO calls, which is exactly why adding it needs no
@@ -67,7 +67,7 @@ constexpr std::array<const char*, 13> kBridgeCapabilities = {
 
 // Additive native primitives this host serves, by `<capability>.<action>`
 // (or a named variant: `fs.writeFile.ifMatch`). Each one shipped on interface
-// 1 without a bump (internal/docs/P-platform/P-3-bridge/native-primitives.md):
+// 1 without a bump (P-3):
 // the guest's wrappers check this list before calling, so on an older host
 // — which lacks both the list and the actions — they report "not supported"
 // instead of sending a request that host would mishandle. A variant whose
@@ -135,7 +135,7 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   // a tool result. The guest inlines an @-mentioned PDF only when this is
   // set. The host no longer serializes requests (the runtime's provider
   // drivers do, since model.call / streamStart were removed under interface
-  // 1 on 2026-10-04), so this is now always true; it is kept because the
+  // 1), so this is now always true; it is kept because the
   // guest still reads it.
   manifest.Set("llmDocumentParts", true);
 

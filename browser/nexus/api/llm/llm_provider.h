@@ -18,7 +18,7 @@ namespace nexus {
 // configuration (API key, base URL, user agent) and model discovery. The
 // runtime speaks every provider's wire format itself over `model.rawStream*`;
 // the C++ inference half (DoGenerate / DoStream behind model.call /
-// streamStart) was removed under interface 1 on 2026-10-04. The instances
+// streamStart) was removed under interface 1. The instances
 // remain for model listing, key verification (`providerAuth.verify` fetches
 // the model list) and as the rawStream base-URL / credential anchor.
 //

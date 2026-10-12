@@ -134,7 +134,7 @@ std::optional<std::string> ApplySecretCaptures(
 // `rawStreamOpen` may name its own stream id, so the guest can cancel the
 // request before the response head arrives (the id it would otherwise learn
 // only from the head). See
-// internal/docs/investigations/2026/2026-10-02-raw-stream-cancel-before-head.md.
+// P-4.
 
 // A caller-chosen stream id: 8-64 chars of [A-Za-z0-9_-].
 bool IsValidClientStreamId(std::string_view id);

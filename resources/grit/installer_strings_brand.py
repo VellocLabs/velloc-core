@@ -1,4 +1,4 @@
-# Copyright 2026 The Custom Browser Authors
+# Copyright 2026 VellocLabs
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Brands the installer's embedded strings with the GRIT branding rules.

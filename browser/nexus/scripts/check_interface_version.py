@@ -1,4 +1,4 @@
-# Copyright 2026 The Custom Browser Authors. All rights reserved.
+# Copyright 2026 VellocLabs. All rights reserved.
 """Bridge interface version: sync + ninja-time gate against nexus_web.
 
 SINGLE SOURCE OF TRUTH: the `NEXUS_INTERFACE_VERSION=<int>` key in

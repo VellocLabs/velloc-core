@@ -1,4 +1,4 @@
-// Copyright 2026 The Custom Browser Authors. All rights reserved.
+// Copyright 2026 VellocLabs. All rights reserved.
 
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_NEXUS_INTERFACE_VERSION_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_NEXUS_INTERFACE_VERSION_H_

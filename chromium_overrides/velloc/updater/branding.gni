@@ -1,4 +1,4 @@
-# Copyright 2020 The Velloc Authors
+# Copyright 2020 VellocLabs
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -27,7 +27,7 @@ updater_company_short_name = "Velloc"
 updater_company_short_name_lowercase = "velloc"
 updater_company_short_name_uppercase = "VELLOC"
 updater_copyright =
-    "Copyright 2020 The Velloc Authors. All rights reserved."
+    "Copyright 2020 VellocLabs. All rights reserved."
 updater_product_full_name = "VellocUpdater"
 updater_product_full_name_dashed_lowercase = "velloc-updater"
 updater_product_full_display_name = "Velloc Updater"

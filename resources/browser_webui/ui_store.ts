@@ -21,7 +21,14 @@ export class UiStore {
 
   private constructor() {
     const modeKey = IntKey[IntKey.kUIMode];
-    if (loadTimeData.valueExists(modeKey)) {
+    // The window's own mode rides on the page URL (CustomBrowserUiPrefs::
+    // BuildInitUrl), so the first layout is already that mode: a Nexus
+    // window drawing from the shared baked value would mount a browser
+    // layout, tab strip and all, until native answered GetUIMode.
+    const urlMode = modeFromPageUrl(modeKey);
+    if (urlMode !== null) {
+      this.mode_ = urlMode;
+    } else if (loadTimeData.valueExists(modeKey)) {
       const stored = loadTimeData.getInteger(modeKey);
       // A per-window mode (kNexus, kSingleWeb) is one window's alone and only
       // native says which window: drawn from the shared baked value, a browser
@@ -61,11 +68,10 @@ export class UiStore {
 
     BATCH.setPaused(this.mode_ === UIMode.kStandard);
 
-    // The shell data source only bakes the profile-global mode, so the value
-    // read above can be wrong for a per-window mode (e.g. the dedicated kNexus
-    // window would otherwise render the last-saved browser mode like kSidebar).
-    // Pull this window's authoritative mode from native and apply it. Unlike
-    // the startup push, a request/response cannot be lost to page-load timing.
+    // Native's answer stays authoritative: a page loaded without the URL mode
+    // (a plain reload) starts from the baked profile-global value, which is
+    // wrong for a per-window mode. Unlike the startup push, a request/response
+    // cannot be lost to page-load timing.
     BrowserApiProxyImpl.getInstance().getUIMode().then(({uiMode}) => {
       if ((UIMode as any)[uiMode] !== undefined) {
         this.setMode_(uiMode, /*syncToNative=*/false);
@@ -146,6 +152,18 @@ export class UiStore {
     BATCH.setPaused(mode === UIMode.kStandard);
     this.notifyUiModeChanged_();
   }
+}
+
+// The mode the page URL carries under `key`, or null when it carries none or
+// an unknown one.
+function modeFromPageUrl(key: string): UIMode|null {
+  const raw = new URLSearchParams(window.location.search).get(key);
+  if (raw === null || !/^\d+$/.test(raw)) {
+    return null;
+  }
+  const mode = Number(raw);
+  return (UIMode as any)[mode] !== undefined ? mode as unknown as UIMode :
+                                               null;
 }
 
 export const uiStore = UiStore.getInstance();

@@ -11,9 +11,13 @@
 #include "components/prefs/testing_pref_service.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_web_ui_data_source.h"
+#include "base/strings/string_number_conversions.h"
 #include "custom_browser/common/pref_names.h"
+#include "custom_browser/common/url_constants.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
+#include "net/base/url_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -122,6 +126,34 @@ TEST(CustomBrowserUiPrefsModeTest, PerWindowModesClampToABrowserMode) {
                    static_cast<int>(UIMode::kCompactStandard));
   EXPECT_EQ(UIMode::kCompactStandard,
             CustomBrowserUiPrefs::GetUIModeFromPref(&prefs));
+}
+
+// A page's URL carries its window's own mode — per-window or shared — so
+// the page's first layout is that mode and not the profile-global baked one.
+TEST(CustomBrowserUiPrefsModeTest, InitUrlCarriesTheWindowMode) {
+  TestingPrefServiceSimple prefs;
+  CustomBrowserUiPrefs::RegisterProfilePrefs(prefs.registry());
+  prefs.SetInteger(kCustomUIModePrefPath,
+                   static_cast<int>(UIMode::kCompactStandard));
+
+  const auto mode_on = [](const GURL& url) {
+    std::string value;
+    return net::GetValueForKeyInQuery(url, "kUIMode", &value) ? value
+                                                               : "(none)";
+  };
+  const auto number = [](UIMode mode) {
+    return base::NumberToString(static_cast<int>(mode));
+  };
+
+  CustomBrowserUiPrefs shared(&prefs);
+  const GURL shared_url = shared.BuildInitUrl();
+  EXPECT_EQ(custom_browser::kChromeUICustomBrowserHost, shared_url.host());
+  EXPECT_EQ("/", shared_url.path());
+  EXPECT_EQ(number(UIMode::kCompactStandard), mode_on(shared_url));
+
+  CustomBrowserUiPrefs nexus(&prefs);
+  nexus.set_initial_mode_override(UIMode::kNexus);
+  EXPECT_EQ(number(UIMode::kNexus), mode_on(nexus.BuildInitUrl()));
 }
 
 // The baked starting mode of a page is the clamped browser mode, never a

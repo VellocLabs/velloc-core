@@ -8,6 +8,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
@@ -36,6 +37,7 @@
 // For mojo struct serialization to bytes
 #include "mojo/public/cpp/bindings/lib/serialization.h"
 #include "mojo/public/cpp/bindings/type_converter.h"
+#include "net/base/url_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -120,10 +122,11 @@ void CustomBrowserUiPrefs::InitMainUI(content::WebUIDataSource* source,
     }
   }
 
-  // The baked mode is every page's first layout, before the window's own
-  // mode arrives (UIViewHandler::GetUIMode). A stored per-window mode would
-  // have a browser window's page draw the Nexus panel, guest and all, until
-  // then — so the clamped browser mode is baked, whatever the dict holds.
+  // The baked mode is a page's first layout only when its URL carries none
+  // (BuildInitUrl), and before the window's own mode arrives
+  // (UIViewHandler::GetUIMode). A stored per-window mode would have a browser
+  // window's page draw the Nexus panel, guest and all, until then — so the
+  // clamped browser mode is baked, whatever the dict holds.
   UIMode mode = GetUIModeFromPref(prefs);
   source->AddInteger(MojomToString(IntKey::kUIMode), static_cast<int>(mode));
 
@@ -199,7 +202,14 @@ void CustomBrowserUiPrefs::RestoreFromPrefs() {
 
 GURL CustomBrowserUiPrefs::BuildInitUrl() {
   LoadUILayoutParams(initial_mode_override_.value_or(pref_mode()));
-  return GURL(custom_browser::kChromeUICustomBrowserURL);
+  // The window's own mode rides on the URL, under the load-time-data key, so
+  // the page's first layout is this mode and not the baked profile-global
+  // one: a Nexus window would otherwise draw a browser layout until
+  // GetUIMode answered.
+  return net::AppendQueryParameter(
+      GURL(custom_browser::kChromeUICustomBrowserURL),
+      MojomToString(IntKey::kUIMode),
+      base::NumberToString(static_cast<int>(ui_mode_)));
 }
 
 bool CustomBrowserUiPrefs::LoadUILayoutParams(const UIMode& mode) {

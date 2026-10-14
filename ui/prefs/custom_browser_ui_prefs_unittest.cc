@@ -7,7 +7,10 @@
 #include <string>
 #include <vector>
 
+#include "components/prefs/scoped_user_pref_update.h"
 #include "components/prefs/testing_pref_service.h"
+#include "content/public/test/browser_task_environment.h"
+#include "content/public/test/test_web_ui_data_source.h"
 #include "custom_browser/common/pref_names.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -119,6 +122,42 @@ TEST(CustomBrowserUiPrefsModeTest, PerWindowModesClampToABrowserMode) {
                    static_cast<int>(UIMode::kCompactStandard));
   EXPECT_EQ(UIMode::kCompactStandard,
             CustomBrowserUiPrefs::GetUIModeFromPref(&prefs));
+}
+
+// The baked starting mode of a page is the clamped browser mode, never a
+// per-window one the dict may hold (F-29): a browser window's page must not
+// draw the Nexus panel while it waits for its own window's mode.
+class CustomBrowserUiPrefsBakedModeTest : public testing::Test {
+ protected:
+  std::optional<int> BakedMode(PrefService* prefs) {
+    auto source = content::TestWebUIDataSource::Create("custom-browser-test");
+    CustomBrowserUiPrefs::InitMainUI(source->GetWebUIDataSource(), prefs);
+    return source->GetLocalizedStrings()->FindInt("kUIMode");
+  }
+
+  content::BrowserTaskEnvironment task_environment_;
+};
+
+TEST_F(CustomBrowserUiPrefsBakedModeTest, PerWindowModeBakesAsABrowserMode) {
+  TestingPrefServiceSimple prefs;
+  CustomBrowserUiPrefs::RegisterProfilePrefs(prefs.registry());
+
+  // A nested store keeps the mode inside the dict, where the global loop
+  // bakes it raw: the clamp must win over that entry too.
+  prefs.SetInteger(kCustomUIModePrefPath, static_cast<int>(UIMode::kNexus));
+  {
+    ScopedDictPrefUpdate update(&prefs, kCustomBrowserPrefPath);
+    update->Set("kUIMode", static_cast<int>(UIMode::kNexus));
+  }
+  EXPECT_EQ(static_cast<int>(UIMode::kSidebar), BakedMode(&prefs));
+
+  prefs.SetInteger(kCustomUIModePrefPath,
+                   static_cast<int>(UIMode::kCompactStandard));
+  {
+    ScopedDictPrefUpdate update(&prefs, kCustomBrowserPrefPath);
+    update->Set("kUIMode", static_cast<int>(UIMode::kCompactStandard));
+  }
+  EXPECT_EQ(static_cast<int>(UIMode::kCompactStandard), BakedMode(&prefs));
 }
 
 }  // namespace

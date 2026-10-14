@@ -23,7 +23,11 @@ export class UiStore {
     const modeKey = IntKey[IntKey.kUIMode];
     if (loadTimeData.valueExists(modeKey)) {
       const stored = loadTimeData.getInteger(modeKey);
-      if ((UIMode as any)[stored] !== undefined) {
+      // A per-window mode (kNexus, kSingleWeb) is one window's alone and only
+      // native says which window: drawn from the shared baked value, a browser
+      // window would mount the Nexus panel and its guest until native answered.
+      if ((UIMode as any)[stored] !== undefined && stored !== UIMode.kNexus &&
+          stored !== UIMode.kSingleWeb) {
         this.mode_ = stored as unknown as UIMode;
       }
     }

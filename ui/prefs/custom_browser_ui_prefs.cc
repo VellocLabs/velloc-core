@@ -120,8 +120,14 @@ void CustomBrowserUiPrefs::InitMainUI(content::WebUIDataSource* source,
     }
   }
 
-  // 2) Load per-UIMode child prefs for the current mode.
+  // The baked mode is every page's first layout, before the window's own
+  // mode arrives (UIViewHandler::GetUIMode). A stored per-window mode would
+  // have a browser window's page draw the Nexus panel, guest and all, until
+  // then — so the clamped browser mode is baked, whatever the dict holds.
   UIMode mode = GetUIModeFromPref(prefs);
+  source->AddInteger(MojomToString(IntKey::kUIMode), static_cast<int>(mode));
+
+  // 2) Load per-UIMode child prefs for the current mode.
   const base::DictValue* prefs_by_mode = root.FindDict(MojomToString(mode));
   if (!prefs_by_mode) {
     return;

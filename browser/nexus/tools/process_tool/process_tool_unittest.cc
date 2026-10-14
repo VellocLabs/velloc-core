@@ -1,6 +1,6 @@
 // Copyright 2026 VellocLabs
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Use of this source code is governed by the Apache License, Version 2.0,
+// which can be found in the LICENSE file.
 
 // Unit tests for the Grep tool's pure helpers (arg construction, glob
 // splitting, head-limit slicing). Pins spec 2-4-5 (arg build) and

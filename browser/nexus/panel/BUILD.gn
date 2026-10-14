@@ -1,6 +1,6 @@
 # Copyright 2026 VellocLabs. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# Use of this source code is governed by the Apache License, Version 2.0,
+# which can be found in the LICENSE file.
 
 # Parking slot for the kNexus window's top-chrome WebContents while no window
 # shows it (System > "Continue running background apps when main window is

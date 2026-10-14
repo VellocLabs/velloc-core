@@ -1,6 +1,6 @@
 # Copyright 2026 VellocLabs
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# Use of this source code is governed by the Apache License, Version 2.0,
+# which can be found in the LICENSE file.
 
 # The view sources compile into //chrome/browser/ui, since CustomBrowserView
 # derives from BrowserView. Header-only leaves (window_hit_test.h,

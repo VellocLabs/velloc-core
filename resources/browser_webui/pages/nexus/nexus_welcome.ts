@@ -1,6 +1,6 @@
 // Copyright 2025 VellocLabs. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Use of this source code is governed by the Apache License, Version 2.0,
+// which can be found in the LICENSE file.
 
 // Boot-time welcome overlay rendered inside <nexus-view> while the chrome://glic
 // guest webview boots and the nexus_web React app hydrates. The same visual is

@@ -1,6 +1,6 @@
 // Copyright 2026 VellocLabs. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Use of this source code is governed by the Apache License, Version 2.0,
+// which can be found in the LICENSE file.
 
 // Guards upstream behaviour the guest relies on: a frame holding a Web Lock
 // gets CannotFreezeReason::kHoldingWebLock, which FreezingPolicy honours, so a

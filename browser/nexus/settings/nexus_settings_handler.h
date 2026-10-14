@@ -1,6 +1,6 @@
 // Copyright 2024 VellocLabs
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Use of this source code is governed by the Apache License, Version 2.0,
+// which can be found in the LICENSE file.
 
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_SETTINGS_NEXUS_SETTINGS_HANDLER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_SETTINGS_NEXUS_SETTINGS_HANDLER_H_

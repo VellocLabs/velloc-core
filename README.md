@@ -60,5 +60,7 @@ Velloc's own code is licensed under the Apache License 2.0; see
 
 Files whose header names The Chromium Authors are Chromium code and remain
 under Chromium's BSD-style licence; see [LICENSE.chromium](LICENSE.chromium).
+The two files under `utility/importer/` headed The Brave Authors are under
+the Mozilla Public License 2.0, as their headers state.
 The bundled ripgrep binary is under the MIT licence; see
 [installer/bundled/rg-LICENSE-MIT](installer/bundled/rg-LICENSE-MIT).

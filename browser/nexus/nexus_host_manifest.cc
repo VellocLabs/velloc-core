@@ -109,6 +109,8 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // An empty {{oauth:account_id}} omits its header / query parameter
     // instead of refusing the request (an older host refuses it).
     "model.rawStreamOpen.oauthOptional",
+    // Memory-pressure purge of the guest / GPU / agent-tab processes' caches.
+    "appInfo.purgeRenderCaches",
 });
 
 template <size_t N>

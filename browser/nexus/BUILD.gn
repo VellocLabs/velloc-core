@@ -169,6 +169,7 @@ action("nexus_tools_codegen") {
     "api/declarations/browser_tools/snapshot.api.json",
     "api/declarations/app_info/getVersionInfo.api.json",
     "api/declarations/app_info/getWebappUrl.api.json",
+    "api/declarations/app_info/purgeRenderCaches.api.json",
     "api/declarations/app_info/relaunch.api.json",
     "api/declarations/app_info/setWebappUrl.api.json",
     "api/declarations/system_prefs/get.api.json",
@@ -546,6 +547,8 @@ source_set("bridge") {
     "api/alarms/nexus_alarms_bridge_adapter.h",
     "api/app_info/nexus_app_info_bridge_adapter.cc",
     "api/app_info/nexus_app_info_bridge_adapter.h",
+    "api/app_info/nexus_render_cache_purger.cc",
+    "api/app_info/nexus_render_cache_purger.h",
     "api/appearance/nexus_appearance_bridge_adapter.cc",
     "api/appearance/nexus_appearance_bridge_adapter.h",
     "api/browser_tools/nexus_browser_tools_bridge_adapter.cc",
@@ -756,6 +759,9 @@ source_set("bridge") {
     # NexusAppInfoBridgeAdapter::HandleRelaunchOnUI restarts the client so a
     # new runtime source / update channel takes effect.
     ":client_restart",
+
+    # NexusRenderCachePurger finds the guest's renderers by its WebContents.
+    "//custom_browser/browser/nexus/panel:panel_guest",
 
     # NexusUiBridgeAdapter::HandleShowNotificationOnUI surfaces turn-end
     # notifications via NotificationDisplayService.
@@ -1159,6 +1165,7 @@ source_set("unit_tests") {
 
   sources = [
     "api/alarms/nexus_alarm_service_unittest.cc",
+    "api/app_info/nexus_render_cache_purger_unittest.cc",
     "api/appearance/nexus_appearance_bridge_adapter_unittest.cc",
     "api/files/nexus_files_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",

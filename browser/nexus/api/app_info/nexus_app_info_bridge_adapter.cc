@@ -2,12 +2,16 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "base/memory/memory_pressure_listener.h"
+#include "base/strings/strcat.h"
 #include "base/system/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 #include "components/version_info/version_info.h"
+#include "custom_browser/browser/nexus/api/app_info/nexus_render_cache_purger.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/nexus_client_restart.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
@@ -97,6 +101,79 @@ void NexusAppInfoBridgeAdapter::HandleRelaunchOnUI(
   // guest's promise is answered instead of being dropped by teardown.
   std::move(done).SuccessVoid();
   RestartClient();
+}
+
+namespace {
+
+struct PurgeTargetName {
+  NexusRenderCachePurger::Target target;
+  const char* name;
+};
+
+constexpr PurgeTargetName kPurgeTargetNames[] = {
+    {NexusRenderCachePurger::kGuest, "guest"},
+    {NexusRenderCachePurger::kGpu, "gpu"},
+    {NexusRenderCachePurger::kAgentTabs, "agentTabs"},
+};
+
+base::ListValue PurgeTargetList(uint32_t targets) {
+  base::ListValue list;
+  for (const PurgeTargetName& entry : kPurgeTargetNames) {
+    if (targets & entry.target) {
+      list.Append(entry.name);
+    }
+  }
+  return list;
+}
+
+}  // namespace
+
+void NexusAppInfoBridgeAdapter::HandlePurgeRenderCachesOnUI(
+    ::nexus::generated::PurgeRenderCachesInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  uint32_t targets = 0;
+  if (!input.targets.has_value()) {
+    targets = NexusRenderCachePurger::kGuest | NexusRenderCachePurger::kGpu;
+  }
+  for (const std::string& name : input.targets.value_or(
+           std::vector<std::string>())) {
+    bool known = false;
+    for (const PurgeTargetName& entry : kPurgeTargetNames) {
+      if (name == entry.name) {
+        targets |= entry.target;
+        known = true;
+      }
+    }
+    if (!known) {
+      std::move(done).InvalidArgs(
+          base::StrCat({"appInfo.purgeRenderCaches: unknown target '", name,
+                        "'"}));
+      return;
+    }
+  }
+
+  base::MemoryPressureLevel level =
+      base::MEMORY_PRESSURE_LEVEL_CRITICAL;
+  if (input.level.has_value() && *input.level != "critical") {
+    if (*input.level != "moderate") {
+      std::move(done).InvalidArgs(
+          base::StrCat({"appInfo.purgeRenderCaches: unknown level '",
+                        *input.level, "'"}));
+      return;
+    }
+    level = base::MEMORY_PRESSURE_LEVEL_MODERATE;
+  }
+
+  const NexusRenderCachePurger::Result result =
+      NexusRenderCachePurger::Purge(profile_, targets, level);
+  base::DictValue dict;
+  dict.Set("purged", PurgeTargetList(result.purged));
+  dict.Set("throttled", PurgeTargetList(result.throttled));
+  dict.Set("guestProcesses", result.guest_processes);
+  dict.Set("agentTabProcesses", result.agent_tab_processes);
+  dict.Set("gpuProcesses", result.gpu_processes);
+  std::move(done).Success(std::move(dict));
 }
 
 }  // namespace nexus

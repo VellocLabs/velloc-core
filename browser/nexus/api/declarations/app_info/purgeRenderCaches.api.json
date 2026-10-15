@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "purgeRenderCaches",
+  "description": "Ask the renderers and GPU process a Nexus client uses to drop their caches (decoded images, GPU transfer cache, font and Skia caches) by sending them a memory-pressure level. Nothing is terminated or frozen. Rate-limited per target in the host (10 s). Returns { purged: string[], throttled: string[], guestProcesses, agentTabProcesses, gpuProcesses }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "targets",
+      "type": "array<string>",
+      "required": false,
+      "description": "Any of \"guest\" (the Nexus page's renderers in every window), \"gpu\" (the GPU process), \"agentTabs\" (renderers of session-tagged tabs). Default [\"guest\", \"gpu\"]. An unknown name is invalid_args."
+    },
+    {
+      "name": "level",
+      "type": "string",
+      "required": false,
+      "description": "\"moderate\" or \"critical\" (default). An unknown level is invalid_args."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

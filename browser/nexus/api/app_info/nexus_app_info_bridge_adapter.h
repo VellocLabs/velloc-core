@@ -57,6 +57,15 @@ class NexusAppInfoBridgeAdapter
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
 
+  // Sends a memory-pressure level to the requested targets' processes
+  // (NexusRenderCachePurger). Returns `{purged, throttled, guestProcesses,
+  // agentTabProcesses, gpuProcesses}`; an unknown target or level is
+  // invalid_args.
+  void HandlePurgeRenderCachesOnUI(
+      ::nexus::generated::PurgeRenderCachesInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+
   raw_ptr<Profile> profile_;
 };
 

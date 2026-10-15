@@ -1,15 +1,12 @@
 #include "custom_browser/features/patch_webui/register_hooks.h"
 
+#include <memory>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/path_service.h"
-#include "base/strings/strcat.h"
-#include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/webui_url_constants.h"
 #include "content/public/browser/web_ui_controller_interface_binder.h"
@@ -18,6 +15,7 @@
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
+#include "custom_browser/features/patch_webui/custom_browser_strings_hook.h"
 #include "custom_browser/features/patch_webui/extensions_hooks.h"
 #include "custom_browser/features/patch_webui/nexus_bootstrap_hooks.h"
 #include "custom_browser/features/patch_webui/navigation_hooks.h"
@@ -33,43 +31,25 @@ namespace {
 #define CUSTOM_BROWSER_PATCH_WEBUI_RENDER_FRAME_INTERFACES(X) \
   X(nexus::mojom::NexusBridgeBootstrap)
 
-void LoadCustomBrowserStrings() {
+std::string GetApplicationLocale() {
+  return g_browser_process ? g_browser_process->GetApplicationLocale()
+                           : std::string();
+}
+
+void AddCustomBrowserStringsPak(const base::FilePath& pak_path) {
+  ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+      pak_path, ui::kScaleFactorNone);
+}
+
+void RegisterCustomBrowserStrings(HookRegistrar* registrar) {
   base::FilePath assets_path;
   if (!base::PathService::Get(base::DIR_ASSETS, &assets_path)) {
     return;
   }
-
-  auto try_load = [&](const std::string& locale) -> bool {
-    if (locale.empty()) {
-      return false;
-    }
-    const base::FilePath pak_path = assets_path.AppendASCII(
-        base::StrCat({"custom_browser_strings_", locale, ".pak"}));
-    if (!base::PathExists(pak_path)) {
-      return false;
-    }
-    ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-        pak_path, ui::kScaleFactorNone);
-    return true;
-  };
-
-  std::string locale =
-      g_browser_process ? g_browser_process->GetApplicationLocale() : "";
-  base::ReplaceChars(locale, "_", "-", &locale);
-
-  if (try_load(locale)) {
-    return;
-  }
-
-  const size_t dash = locale.find('-');
-  if (dash != std::string::npos) {
-    const std::string parent_locale = locale.substr(0, dash);
-    if (try_load(parent_locale)) {
-      return;
-    }
-  }
-
-  try_load("en-US");
+  registrar->AddBrowserMainLifecycleHook(
+      std::make_unique<CustomBrowserStringsHook>(
+          std::move(assets_path), base::BindRepeating(&GetApplicationLocale),
+          base::BindRepeating(&AddCustomBrowserStringsPak)));
 }
 
 template <typename Interface>
@@ -106,7 +86,7 @@ void PopulatePatchWebUIRenderFrameBinders(
 }  // namespace
 
 void RegisterHooks(custom_browser::HookRegistrar* registrar) {
-  LoadCustomBrowserStrings();
+  RegisterCustomBrowserStrings(registrar);
   registrar->AddWebUIDataSourceConfiguringCallback(
       chrome::kChromeUINewTabPageHost,
       base::BindRepeating(&OnNewTabPageDataSourceConfiguring));

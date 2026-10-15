@@ -14,6 +14,17 @@ source_set("patch_resources") {
   ]
 }
 
+source_set("strings_hook") {
+  sources = [
+    "custom_browser_strings_hook.cc",
+    "custom_browser_strings_hook.h",
+  ]
+
+  public_deps = [ "//custom_browser/chromium_hooks:hook_api" ]
+
+  deps = [ "//base" ]
+}
+
 source_set("feature") {
   sources = [
     "extensions_hooks.cc",
@@ -32,6 +43,7 @@ source_set("feature") {
 
   deps = [
     ":patch_resources",
+    ":strings_hook",
     "//base",
     "//chrome/app:generated_resources_grit",
     "//chrome/app/theme:chrome_unscaled_resources_grit",
@@ -62,10 +74,15 @@ source_set("feature") {
 source_set("unit_tests") {
   testonly = true
 
-  sources = [ "patch_resources_unittest.cc" ]
+  sources = [
+    "custom_browser_strings_hook_unittest.cc",
+    "patch_resources_unittest.cc",
+  ]
 
   deps = [
     ":patch_resources",
+    ":strings_hook",
+    "//base",
     "//testing/gtest",
   ]
 }

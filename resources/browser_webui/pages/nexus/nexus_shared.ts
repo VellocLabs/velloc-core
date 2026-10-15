@@ -110,6 +110,17 @@ export function getString(key: string, fallback = ''): string {
   }
 }
 
+// True until the guest runtime has once finished booting on this profile
+// (loadTimeData `customBrowserNexusFirstRun`, read once per page load).
+export function isNexusFirstRun(): boolean {
+  try {
+    return loadTimeData.valueExists('customBrowserNexusFirstRun') &&
+        loadTimeData.getBoolean('customBrowserNexusFirstRun');
+  } catch {
+    return false;
+  }
+}
+
 export function getStringF(
     key: string, fallback: string,
     ...replacements: Array<number|string>): string {

@@ -216,5 +216,6 @@
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">다시 시도</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">오프라인 상태입니다</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/>을(를) 불러오려면 인터넷 연결이 필요합니다. 다시 온라인 상태가 되면 자동으로 다시 시도합니다.</translation>
+  <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">처음 실행을 준비하고 있습니다. 시간이 조금 걸릴 수 있으니 잠시만 기다려 주세요.</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">페이지 주소</translation>
 </translationbundle>

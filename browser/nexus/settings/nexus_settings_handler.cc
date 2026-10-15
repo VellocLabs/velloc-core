@@ -38,6 +38,7 @@
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_prefs.h"
 #include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
 #include "custom_browser/browser/nexus/nexus_client_restart.h"
+#include "custom_browser/browser/nexus/nexus_guest_config.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
 
@@ -262,6 +263,10 @@ void NexusSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "reloadPanel",
       base::BindRepeating(&NexusSettingsHandler::HandleReloadPanel,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "markRuntimeBooted",
+      base::BindRepeating(&NexusSettingsHandler::HandleMarkRuntimeBooted,
                           base::Unretained(this)));
   // `getBrowserToolsSeparateWindow` / `setBrowserToolsSeparateWindow`
   // routes removed: migrated to `browserTools.snapshot` /
@@ -713,6 +718,11 @@ void NexusSettingsHandler::HandleReloadPanel(
             }
           },
           web_ui()->GetWebContents()->GetWeakPtr()));
+}
+
+void NexusSettingsHandler::HandleMarkRuntimeBooted(
+    const base::ListValue& /*args*/) {
+  nexus::MarkNexusRuntimeBooted(GetProfile());
 }
 
 // HandleGetBrowserToolsSeparateWindow / HandleSetBrowserToolsSeparateWindow

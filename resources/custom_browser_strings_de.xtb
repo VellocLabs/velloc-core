@@ -218,5 +218,6 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Erneut versuchen</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Du bist offline</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> braucht zum Laden eine Internetverbindung. Sobald du wieder online bist, wird es automatisch erneut versucht.</translation>
+  <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">Alles wird zum ersten Mal eingerichtet – das kann einen Moment dauern. Danke für deine Geduld!</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Seitenadresse</translation>
 </translationbundle>

@@ -19,6 +19,7 @@ import {sendWithPromise} from 'chrome://resources/js/cr.js';
 
 import './nexus_welcome.js';
 import './nexus_guest_recovery.js';
+import {isNexusFirstRun} from './nexus_shared.js';
 import {LOADING_STAGE_ORDER, type LoadingStage} from './nexus_welcome.js';
 import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 
@@ -26,6 +27,14 @@ import {bootstrapNexusGuest} from './nexus_runtime_bootstrap.js';
 // time since the last progress signal (each one re-arms it), not total boot
 // time, and is sized to clear the guest's initial boot with margin.
 const DISMISS_BOOT_WELCOME_FALLBACK_MS = 25_000;
+
+// How long a first run sits on the boot welcome before its subtitle switches
+// to the first-run patience note.
+const FIRST_RUN_NOTE_DELAY_MS = 10_000;
+
+// Fired on <nexus-view> when the boot welcome goes away for any reason: the
+// guest is ready, the fallback fired, or the recovery overlay took over.
+export const BOOT_WELCOME_CLOSED_EVENT = 'nexus-boot-welcome-closed';
 
 export class NexusViewElement extends CrLitElement {
   static get is() {
@@ -111,6 +120,13 @@ export class NexusViewElement extends CrLitElement {
   // 'nexusDismissBootWelcome' event (fired when the React guest calls
   // nexus.ui.dismissBootWelcome) or the fallback timer.
   private bootWelcomeDismissed_ = false;
+  // The guest runtime has never finished booting on this profile. Read once:
+  // a reload after the first successful boot reads false.
+  private readonly firstRun_ = isNexusFirstRun();
+  // Set FIRST_RUN_NOTE_DELAY_MS into a first run's welcome; passed down to
+  // <nexus-welcome>, which then shows the patience note.
+  private firstRunNoteShown_ = false;
+  private firstRunNoteTimer_: number|null = null;
   // Guest bundle build time (ISO string), pushed once by the guest early in
   // boot via nexus.ui.buildInfo. Empty until it arrives; passed down to the
   // <nexus-welcome> overlay whose footer renders it. Applied via
@@ -170,6 +186,13 @@ export class NexusViewElement extends CrLitElement {
         this.shadowRoot?.querySelector('main-contents-view') ?? null;
     this.applyMainContentsLayout_();
     this.armDismissBootWelcomeFallback_();
+    if (this.firstRun_ && !this.bootWelcomeDismissed_) {
+      this.firstRunNoteTimer_ = setTimeout(() => {
+        this.firstRunNoteTimer_ = null;
+        this.firstRunNoteShown_ = true;
+        this.requestUpdate();
+      }, FIRST_RUN_NOTE_DELAY_MS);
+    }
     // Hand the guest <webview> off to the bootstrap controller. It sets the
     // src, runs the nexus-init handshake, calls
     // NexusBridgeBootstrap.guestReady(), and forwards the bridge ports
@@ -215,9 +238,25 @@ export class NexusViewElement extends CrLitElement {
     console.error('[NexusView] guest failed to start', {guestUrl, reason});
     this.guestFailureUrl_ = guestUrl ?? '';
     this.guestFailureReason_ = reason;
-    this.bootWelcomeDismissed_ = true;
+    if (!this.bootWelcomeDismissed_) {
+      this.bootWelcomeDismissed_ = true;
+      this.onBootWelcomeClosed_();
+    }
     this.clearDismissBootWelcomeFallbackTimer_();
     this.requestUpdate();
+  }
+
+  // Runs once, when bootWelcomeDismissed_ latches.
+  private onBootWelcomeClosed_() {
+    this.clearFirstRunNoteTimer_();
+    this.dispatchEvent(new CustomEvent(BOOT_WELCOME_CLOSED_EVENT));
+  }
+
+  private clearFirstRunNoteTimer_() {
+    if (this.firstRunNoteTimer_ !== null) {
+      clearTimeout(this.firstRunNoteTimer_);
+      this.firstRunNoteTimer_ = null;
+    }
   }
 
   // Clears the `nexus.webapp_url` override (empty = built-in default) and
@@ -324,17 +363,24 @@ export class NexusViewElement extends CrLitElement {
       this.bootProgressUnsubscribe_ = null;
     }
     this.clearDismissBootWelcomeFallbackTimer_();
+    this.clearFirstRunNoteTimer_();
     window.removeEventListener('online', this.onConnectionChange_);
     window.removeEventListener('offline', this.onConnectionChange_);
     super.disconnectedCallback();
   }
 
-  private onDismissBootWelcome_(_reason: 'signal'|'timeout') {
+  private onDismissBootWelcome_(reason: 'signal'|'timeout') {
     if (this.bootWelcomeDismissed_) {
       return;
     }
     this.bootWelcomeDismissed_ = true;
     this.clearDismissBootWelcomeFallbackTimer_();
+    this.onBootWelcomeClosed_();
+    // Only the guest's own ready signal proves the runtime booted; the
+    // fallback reveals a guest that may still be failing.
+    if (reason === 'signal' && this.firstRun_) {
+      chrome.send('markRuntimeBooted');
+    }
     this.requestUpdate();
     // A layout that arrived during boot (e.g. the SharedWorker's
     // replay-on-attach of a pre-reload session's geometry) was stored but
@@ -434,7 +480,8 @@ export class NexusViewElement extends CrLitElement {
       ${this.bootWelcomeDismissed_ ? nothing : html`
         <nexus-welcome class="welcome-overlay"
             .buildTime=${this.buildTime_}
-            .loadingStage=${this.loadingStage_}></nexus-welcome>
+            .loadingStage=${this.loadingStage_}
+            .firstRunNote=${this.firstRunNoteShown_}></nexus-welcome>
       `}
       ${this.guestFailureUrl_ === null ? nothing : html`
         <nexus-guest-recovery class="recovery-overlay"

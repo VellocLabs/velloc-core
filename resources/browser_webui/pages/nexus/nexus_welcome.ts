@@ -247,6 +247,9 @@ export class NexusWelcomeElement extends CrLitElement {
       font-size: clamp(1rem, 2vw, 1.125rem);
       color: var(--text-secondary);
       line-height: 1.4;
+      max-width: 440px;
+      margin: 0 auto;
+      text-wrap: balance;
     }
 
     .visually-hidden {
@@ -315,6 +318,22 @@ export class NexusWelcomeElement extends CrLitElement {
     this.requestUpdate();
   }
 
+  // Set by <nexus-view> once a first run has been on the welcome for a while:
+  // the subtitle then tells the user the first start takes longer.
+  private firstRunNote_ = false;
+
+  get firstRunNote(): boolean {
+    return this.firstRunNote_;
+  }
+
+  set firstRunNote(value: boolean) {
+    if (value === this.firstRunNote_) {
+      return;
+    }
+    this.firstRunNote_ = value;
+    this.requestUpdate();
+  }
+
   // Format an ISO build timestamp for the footer, matching the guest's
   // formatBuildTime() options so the boot overlay and the About page render
   // the same "Jul 11, 2026, 5:30 PM" form. Empty for missing/invalid input.
@@ -359,7 +378,13 @@ export class NexusWelcomeElement extends CrLitElement {
           role="presentation">
       <div class="welcome-text">
         <div class="welcome-title">${copy.greeting}</div>
-        <div class="welcome-subtitle">${copy.subtitle}</div>
+        <div class="welcome-subtitle" id="welcomeSubtitle"
+            data-first-run-note=${this.firstRunNote_ ? 'shown' : 'hidden'}
+            aria-live="polite">${
+            this.firstRunNote_ ?
+                getString('customBrowserNexusWelcomeFirstRunPatience',
+                          copy.subtitle) :
+                copy.subtitle}</div>
       </div>
       <div class="welcome-footer">
         ${segments.map((seg, i) => html`${

@@ -213,5 +213,24 @@ TEST_F(NexusGuestConfigTest,
   EXPECT_EQ(GURL("http://localhost:5173/"), url);
 }
 
+TEST_F(NexusGuestConfigTest, FreshProfileIsFirstRunUntilMarkedBooted) {
+  std::unique_ptr<TestingProfile> profile = CreateTestingProfileWithNexusPrefs();
+  EXPECT_TRUE(IsNexusRuntimeFirstRun(profile.get()));
+
+  MarkNexusRuntimeBooted(profile.get());
+  EXPECT_FALSE(IsNexusRuntimeFirstRun(profile.get()));
+  EXPECT_TRUE(profile->GetPrefs()->GetBoolean(
+      prefs::kNexusRuntimeFirstBootCompleted));
+
+  // Idempotent: a second boot leaves it marked.
+  MarkNexusRuntimeBooted(profile.get());
+  EXPECT_FALSE(IsNexusRuntimeFirstRun(profile.get()));
+}
+
+TEST_F(NexusGuestConfigTest, NullProfileIsNotFirstRun) {
+  EXPECT_FALSE(IsNexusRuntimeFirstRun(nullptr));
+  MarkNexusRuntimeBooted(nullptr);
+}
+
 }  // namespace
 }  // namespace nexus

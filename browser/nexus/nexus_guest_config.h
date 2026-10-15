@@ -19,6 +19,15 @@ GURL GetResolvedNexusGuestURL(Profile* profile);
 // bases already ending in a /v<digits>/ segment pass through unchanged.
 GURL AppendNexusInterfaceVersionToBase(const GURL& base);
 
+// True until the guest runtime has once finished booting on `profile`
+// (MarkNexusRuntimeBooted). A null profile, or one without prefs, is not a
+// first run.
+bool IsNexusRuntimeFirstRun(Profile* profile);
+
+// Records that the guest runtime finished booting on `profile`. Idempotent;
+// a null profile is a no-op.
+void MarkNexusRuntimeBooted(Profile* profile);
+
 }  // namespace nexus
 
 #endif  // CUSTOM_BROWSER_BROWSER_NEXUS_NEXUS_GUEST_CONFIG_H_

@@ -1049,6 +1049,9 @@ source_set("nexus_settings_handler") {
     # documented on `:shell_launcher`.
     ":client_restart",
 
+    # `markRuntimeBooted` — the first-run boot welcome's pref.
+    ":guest_config",
+
     ":secret_crypt",
     "//base",
     "//chrome/browser/profiles:profile",

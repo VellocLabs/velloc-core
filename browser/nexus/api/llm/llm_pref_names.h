@@ -16,6 +16,12 @@ inline constexpr char kNexusActiveProviderId[] = "nexus.active_provider_id";
 // Custom agent webapp URL (empty string = use default).
 inline constexpr char kNexusWebappUrl[] = "nexus.webapp_url";
 
+// True once the guest runtime has finished booting on this profile. Until
+// then every launch is a first run: the boot welcome hides the window caption
+// buttons and, after a delay, tells the user the first start takes longer.
+inline constexpr char kNexusRuntimeFirstBootCompleted[] =
+    "nexus.runtime_first_boot_completed";
+
 // Controls where BrowserTool creates and hosts the agent's tabs.
 //   false (default) — create tabs in the active window that hosts the Nexus
 //                     UI (the tabs live alongside the user's own tabs).

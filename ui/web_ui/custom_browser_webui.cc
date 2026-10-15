@@ -176,6 +176,8 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
       {"customBrowserNexusGuestRecoveryReset", IDS_NEXUS_GUEST_RECOVERY_RESET},
       {"customBrowserNexusGuestRecoveryRetry", IDS_NEXUS_GUEST_RECOVERY_RETRY},
       {"customBrowserNexusGuestOfflineTitle", IDS_NEXUS_GUEST_OFFLINE_TITLE},
+      {"customBrowserNexusWelcomeFirstRunPatience",
+       IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE},
   };
   html_source->AddLocalizedStrings(kNexusStrings);
 }
@@ -249,6 +251,10 @@ CustomBrowserWebUI::CustomBrowserWebUI(content::WebUI* web_ui)
   // page can read it synchronously at boot via loadTimeData.getString().
   html_source->AddString("customBrowserNexusGuestUrl",
                          nexus::GetResolvedNexusGuestURL(profile).spec());
+  // Read by <nexus-view> at boot: on a first run the boot welcome hides the
+  // window caption buttons and shows the first-run patience note.
+  html_source->AddBoolean("customBrowserNexusFirstRun",
+                          nexus::IsNexusRuntimeFirstRun(profile));
 
   // Boot-welcome product logo: the unscaled product_logo_*.png resources are
   // not served by chrome://theme/, so expose them under stable WebUI paths.

@@ -11,6 +11,7 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kNexusCompletedOnboarding, false);
   registry->RegisterStringPref(prefs::kNexusActiveProviderId, std::string());
   registry->RegisterStringPref(prefs::kNexusWebappUrl, std::string());
+  registry->RegisterBooleanPref(prefs::kNexusRuntimeFirstBootCompleted, false);
 
   // Where BrowserTool hosts the agent's tabs: false = active (Nexus) window,
   // true = a dedicated separate browser window. Default preserves the legacy

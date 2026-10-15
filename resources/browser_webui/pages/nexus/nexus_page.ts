@@ -7,6 +7,7 @@ import {
 
 import '../../components/native/native_view_aliases.js';
 
+import {isNexusFirstRun} from './nexus_shared.js';
 import './nexus_view.js';
 import type {NexusViewElement} from './nexus_view.js';
 // Session-list custom element. Registered for global use so any surface
@@ -75,7 +76,27 @@ export class NexusPage extends CrLitElement {
       z-index: 30;
       -webkit-app-region: no-drag;
     }
+
+    /* The holder reports display:none as not visible, which hides the native
+     * buttons. Needed explicitly: the holder's :host{display:block} outranks
+     * the UA [hidden] rule. */
+    caption-button-container[hidden] {
+      display: none;
+    }
   `;
+
+  // A first run's boot welcome has no caption buttons, so the user cannot
+  // close the window mid-setup; they return when the welcome goes away,
+  // including when the recovery overlay replaces it.
+  private captionButtonsHidden_ = isNexusFirstRun();
+
+  private onBootWelcomeClosed_() {
+    if (!this.captionButtonsHidden_) {
+      return;
+    }
+    this.captionButtonsHidden_ = false;
+    this.requestUpdate();
+  }
 
   private readonly openSettingsFromHost_ = (section?: string) => {
     this.forwardSettingsDeepLink_(this.normalizeSection_(section));
@@ -135,12 +156,15 @@ export class NexusPage extends CrLitElement {
   protected override render() {
     return html`
       <div id="pane">
-        <nexus-view></nexus-view>
+        <nexus-view
+            @nexus-boot-welcome-closed=${this.onBootWelcomeClosed_}>
+        </nexus-view>
       </div>
       <!-- Native OS caption controls, painted over the window's top-right
            (see :host styles). Sibling of #pane (not a child) so the
            #pane flex layout doesn't stretch it. -->
-      <caption-button-container align-x="right"></caption-button-container>
+      <caption-button-container align-x="right"
+          ?hidden=${this.captionButtonsHidden_}></caption-button-container>
     `;
   }
 }

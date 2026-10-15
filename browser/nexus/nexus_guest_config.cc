@@ -122,4 +122,16 @@ GURL GetResolvedNexusGuestURL(Profile* profile) {
   return AppendNexusInterfaceVersionToBase(base);
 }
 
+bool IsNexusRuntimeFirstRun(Profile* profile) {
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  return prefs && !prefs->GetBoolean(prefs::kNexusRuntimeFirstBootCompleted);
+}
+
+void MarkNexusRuntimeBooted(Profile* profile) {
+  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
+  if (prefs) {
+    prefs->SetBoolean(prefs::kNexusRuntimeFirstBootCompleted, true);
+  }
+}
+
 }  // namespace nexus

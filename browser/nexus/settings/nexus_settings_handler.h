@@ -113,6 +113,12 @@ class NexusSettingsHandler : public SettingsPageUIHandler {
   // JS: chrome.send('reloadPanel')
   void HandleReloadPanel(const base::ListValue& args);
 
+  // Records that the guest runtime finished booting on this profile, which
+  // ends the first-run boot welcome on later launches. Sent by <nexus-view>
+  // when the guest dismisses the boot welcome. Fire-and-forget.
+  // JS: chrome.send('markRuntimeBooted')
+  void HandleMarkRuntimeBooted(const base::ListValue& args);
+
   // HandleGet/SetBrowserToolsSeparateWindow declarations removed:
   // migrated to `browserTools.snapshot` / `browserTools.setField` on the
   // panel WebUI bridge port (A5 Tier 2). See

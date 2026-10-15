@@ -1199,6 +1199,7 @@ source_set("unit_tests") {
     "nexus_test_support.cc",
     "nexus_test_support.h",
     "session/nexus_session_tab_tag_unittest.cc",
+    "tools/browser_tool/browser_tool_capture_hold_unittest.cc",
     "tools/browser_tool/node_registry_unittest.cc",
     "tools/browser_tool/observation_slim_unittest.cc",
     "tools/browser_tool/screenshot_shaping_unittest.cc",
@@ -1244,6 +1245,8 @@ source_set("unit_tests") {
     "//components/sync_preferences:test_support",
     "//components/tab_groups",
     "//components/tabs:public",
+    # tabs::MockTabInterface (browser_tool_capture_hold_unittest.cc).
+    "//components/tabs:test_support",
     "//content/public/browser",
     "//custom_browser/browser/nexus/api/llm:pref_registration",
     "//custom_browser/browser/nexus/launcher",

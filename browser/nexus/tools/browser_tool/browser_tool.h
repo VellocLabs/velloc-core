@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "base/callback_list.h"
+#include "base/containers/span.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/files/file_path.h"
@@ -66,7 +67,8 @@ class BrowserTool : public ToolBase {
   BrowserTool& operator=(const BrowserTool&) = delete;
 
 
-  // Stops the per-session actor task and clears the node registry. Idempotent.
+  // Stops the per-session actor task, clears the node registry and drops the
+  // turn's capture holds. Idempotent.
   // Does not close tabs: `~BrowserTool` does, when the session is erased or the
   // adapter dies.
   void OnStop(OnStopReason reason) override;
@@ -90,6 +92,14 @@ class BrowserTool : public ToolBase {
   // The most recent tab a tool operated on, if still alive and session-tagged;
   // the fallback after Chrome's active tab for tab-less tools.
   std::optional<tabs::TabHandle> LastWorkTab() const;
+
+  // Holds every session tab visible (a capture hold) until `OnStop`, so an
+  // agent tab behind the chat window keeps painting while the turn's tools
+  // run. Called before each browser tool dispatch. Idempotent.
+  void HoldSessionTabsForTurn();
+
+  // Holds `handles` until `OnStop`; skips tabs already held or gone.
+  void HoldTabsForTurn(base::span<const tabs::TabHandle> handles);
 
   // Per-action wall-clock budget propagated from `ToolSession`.
   // Read by `RunActorAction` / `RunTabObservation` to wrap every
@@ -446,10 +456,13 @@ class BrowserTool : public ToolBase {
   base::flat_set<tabs::TabHandle> session_tabs_;
   tabs::TabHandle last_work_tab_;
 
-  // Per-session-tab capture hold so agent tabs behind the chat window keep
-  // painting despite occlusion throttling; only agent tabs are held. Releases
-  // are weak-bound to the WebContents; the map drops every hold with the
-  // BrowserTool.
+  // Takes the capture hold on `handle` if it has none and the tab is alive.
+  void TakeCaptureHold(tabs::TabHandle handle);
+
+  // Turn-scoped capture holds on agent tabs: taken by
+  // `HoldSessionTabsForTurn` / `BindTabToSession`, dropped by `OnStop`.
+  // Releases are weak-bound to the WebContents, so a closed tab's entry is a
+  // safe no-op.
   base::flat_map<tabs::TabHandle, base::ScopedClosureRunner>
       session_tab_capture_holds_;
 

@@ -137,6 +137,10 @@ void ToolSessionRegistry::Run(NexusBridgeCapabilityHandler& handler,
       handler.AsWeakPtr(), request_id, std::string(capability),
       std::string(action)));
 
+  if (capability == "browser") {
+    session.browser_tool().HoldSessionTabsForTurn();
+  }
+
   auto holder = std::make_shared<DoneHolder>(std::move(done));
 
   auto on_success = base::BindOnce(

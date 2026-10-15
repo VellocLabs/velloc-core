@@ -211,9 +211,42 @@ void BrowserTool::OnStop(OnStopReason reason) {
   } else {
     observation_baseline_.Discard();
   }
+  // Between turns agent tabs follow their real visibility, so a hidden or
+  // minimised tab releases its tiles and GPU resources (F-21).
+  session_tab_capture_holds_.clear();
   // Note: tabs are NOT closed here. Closure happens in ~BrowserTool
   // so that the OnStop-but-stay-warm reasons (kCompleted /
   // kUserStopped) preserve the user's tabs across turns.
+}
+
+void BrowserTool::HoldSessionTabsForTurn() {
+  HoldTabsForTurn(CollectSessionTabs());
+}
+
+void BrowserTool::HoldTabsForTurn(base::span<const tabs::TabHandle> handles) {
+  for (const tabs::TabHandle& handle : handles) {
+    TakeCaptureHold(handle);
+  }
+}
+
+void BrowserTool::TakeCaptureHold(tabs::TabHandle handle) {
+  if (session_tab_capture_holds_.contains(handle)) {
+    return;
+  }
+  tabs::TabInterface* tab = handle.Get();
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+  if (!contents) {
+    return;
+  }
+  // A visible capturer keeps the tab compositing while its window is occluded
+  // behind the chat window, so observations and screenshots do not stall.
+  // stay_hidden=false: the page counts as visible. stay_awake=false: no
+  // display wake lock. is_activity=false: no synthetic user activity.
+  session_tab_capture_holds_.emplace(
+      handle, contents->IncrementCapturerCount(gfx::Size(),
+                                               /*stay_hidden=*/false,
+                                               /*stay_awake=*/false,
+                                               /*is_activity=*/false));
 }
 
 void BrowserTool::BindTabToSession(tabs::TabHandle handle) {
@@ -264,20 +297,8 @@ void BrowserTool::BindTabToSession(tabs::TabHandle handle) {
 
   session_tabs_.insert(handle);
 
-  // Keep this agent tab's renderer painting even when its (separate) window is
-  // occluded behind the chat window — otherwise occlusion/background
-  // throttling freezes it and observations/screenshots hang. A visible
-  // capturer hold forces compositor frames regardless of occlusion
-  // (web_contents.h), scoped to THIS WebContents only (user tabs untouched).
-  // stay_hidden=false → page is treated visible; stay_awake=false → no
-  // display wake-lock; is_activity=false → don't fake user activity.
-  if (session_tab_capture_holds_.find(handle) ==
-      session_tab_capture_holds_.end()) {
-    session_tab_capture_holds_.emplace(
-        handle, located.contents->IncrementCapturerCount(
-                    gfx::Size(), /*stay_hidden=*/false,
-                    /*stay_awake=*/false, /*is_activity=*/false));
-  }
+  // A tab is bound while a tool runs, so it joins the turn's holds.
+  TakeCaptureHold(handle);
 
   // Nudge the profile-wide tracker: its TabStripModelObserver saw the
   // strip insert BEFORE the tag attach above, so the new tab was tallied

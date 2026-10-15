@@ -12,12 +12,9 @@
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/security_principal.h"
-#include "content/public/browser/site_instance.h"
-#include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/url_constants.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/panel/nexus_panel_guest.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/window.h"
@@ -30,10 +27,6 @@
 namespace nexus {
 
 namespace {
-
-// Matches `<webview id="nexusPane" partition="persist:nexus">` in
-// resources/browser_webui/pages/nexus/nexus_view.ts.
-constexpr char kNexusGuestPartitionName[] = "nexus";
 
 constexpr int kInspectCommandId = 1;
 
@@ -128,28 +121,6 @@ class NexusInspectMenu : public ui::SimpleMenuModel::Delegate {
   ui::SimpleMenuModel model_;
   std::unique_ptr<views::MenuRunner> menu_runner_;
 };
-
-// True when `guest` is the Nexus panel guest: the persist:nexus storage
-// partition, owned by a chrome:// WebUI page (the browser shell). Regular
-// tabs are native views (not guests) in this fork, so partition + owner
-// uniquely identify the panel; an ordinary web page can never claim a
-// chrome://-owned webview partition.
-bool IsNexusPanelGuest(extensions::WebViewGuest* guest,
-                       content::RenderFrameHost& render_frame_host) {
-  if (!guest) {
-    return false;
-  }
-  content::RenderFrameHost* owner = guest->owner_rfh();
-  if (!owner || !owner->GetMainFrame()->GetLastCommittedURL().SchemeIs(
-                    content::kChromeUIScheme)) {
-    return false;
-  }
-  const content::StoragePartitionConfig partition_config =
-      render_frame_host.GetSiteInstance()
-          ->GetSecurityPrincipal()
-          .GetStoragePartitionConfig();
-  return partition_config.partition_name() == kNexusGuestPartitionName;
-}
 
 }  // namespace
 

@@ -27,3 +27,40 @@ source_set("background_panel_host") {
     "//content/public/browser",
   ]
 }
+
+# Is a WebContents / guest the Nexus panel guest. Shared by the guest's
+# context menu and its priority voter. Docs: P-2.
+source_set("panel_guest") {
+  sources = [
+    "nexus_panel_guest.cc",
+    "nexus_panel_guest.h",
+  ]
+
+  deps = [
+    "//components/guest_view/browser",
+    "//content/public/browser",
+    "//content/public/common",
+  ]
+}
+
+# Performance-manager voter that keeps the Nexus guest's renderers at
+# foreground priority while it is hidden or parked. Docs: P-2
+# ("Runtime priority").
+source_set("guest_priority") {
+  sources = [
+    "nexus_guest_priority_voter.cc",
+    "nexus_guest_priority_voter.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//components/performance_manager",
+    "//custom_browser/chromium_hooks:hook_api",
+    "//third_party/abseil-cpp:absl",
+  ]
+
+  deps = [
+    ":panel_guest",
+    "//content/public/browser",
+  ]
+}

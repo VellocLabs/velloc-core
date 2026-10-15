@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "custom_browser/browser/nexus/launcher/nexus_background_mode_manager.h"
+#include "custom_browser/browser/nexus/panel/nexus_guest_priority_voter.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/features/nexus_keyed_service_registration.h"
 #include "custom_browser/features/patch_webui/register_hooks.h"
@@ -29,6 +30,11 @@ void RegisterAllHooks(custom_browser::HookRegistrar* registrar) {
   // later stages).
   registrar->AddBrowserMainLifecycleHook(
       std::make_unique<nexus::NexusLauncherLifecycleHook>());
+
+  // Keeps the Nexus guest's renderers (UI, runtime SharedWorker, sandboxed
+  // mod-worker frames) at foreground priority while hidden or parked (P-2).
+  registrar->AddBrowserMainLifecycleHook(
+      std::make_unique<nexus::NexusGuestPriorityLifecycleHook>());
 }
 
 }  // namespace custom_browser::features

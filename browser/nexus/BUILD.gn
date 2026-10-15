@@ -874,6 +874,7 @@ source_set("webview_context_menu") {
     "//content/public/browser",
     "//content/public/common",
     "//custom_browser/browser/nexus/api/llm:pref_names",
+    "//custom_browser/browser/nexus/panel:panel_guest",
     "//extensions/browser",
     "//ui/aura",
     "//ui/base",
@@ -1174,6 +1175,7 @@ source_set("unit_tests") {
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_guest_config_unittest.cc",
     "panel/nexus_background_panel_host_unittest.cc",
+    "panel/nexus_guest_priority_voter_unittest.cc",
     # A guard on upstream behaviour: a held Web Lock is a CannotFreezeReason
     # for every FreezingType — what the guest's runtime keep-alive relies on.
     "panel/nexus_runtime_freeze_exemption_unittest.cc",
@@ -1240,6 +1242,9 @@ source_set("unit_tests") {
     # FreezingPolicy::CannotFreezeReasonsForType
     # (panel/nexus_runtime_freeze_exemption_unittest.cc).
     "//components/performance_manager",
+    # GraphTestHarness, mock graphs, DummyVoteObserver
+    # (panel/nexus_guest_priority_voter_unittest.cc).
+    "//components/performance_manager/test_support",
     "//components/prefs",
     "//components/prefs:test_support",
     "//components/sync_preferences:test_support",
@@ -1252,6 +1257,7 @@ source_set("unit_tests") {
     "//custom_browser/browser/nexus/launcher",
     "//custom_browser/browser/nexus/launcher:prefs",
     "//custom_browser/browser/nexus/panel:background_panel_host",
+    "//custom_browser/browser/nexus/panel:guest_priority",
     "//net",
 
     # TRAFFIC_ANNOTATION_FOR_TESTS (nexus_http_byte_stream_unittest.cc).

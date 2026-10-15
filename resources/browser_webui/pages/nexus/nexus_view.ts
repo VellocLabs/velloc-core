@@ -127,6 +127,8 @@ export class NexusViewElement extends CrLitElement {
   // <nexus-welcome>, which then shows the patience note.
   private firstRunNoteShown_ = false;
   private firstRunNoteTimer_: number|null = null;
+  // Latches once markRuntimeBooted has been sent for this page.
+  private bootRecorded_ = false;
   // Guest bundle build time (ISO string), pushed once by the guest early in
   // boot via nexus.ui.buildInfo. Empty until it arrives; passed down to the
   // <nexus-welcome> overlay whose footer renders it. Applied via
@@ -244,6 +246,14 @@ export class NexusViewElement extends CrLitElement {
     }
     this.clearDismissBootWelcomeFallbackTimer_();
     this.requestUpdate();
+  }
+
+  private recordRuntimeBooted_() {
+    if (!this.firstRun_ || this.bootRecorded_) {
+      return;
+    }
+    this.bootRecorded_ = true;
+    chrome.send('markRuntimeBooted');
   }
 
   // Runs once, when bootWelcomeDismissed_ latches.
@@ -370,17 +380,19 @@ export class NexusViewElement extends CrLitElement {
   }
 
   private onDismissBootWelcome_(reason: 'signal'|'timeout') {
+    // Only the guest's own ready signal proves the runtime booted; the
+    // fallback reveals a guest that may still be failing. Recorded before the
+    // latch: a slow first boot gets its ready signal after the fallback has
+    // already dismissed the welcome.
+    if (reason === 'signal') {
+      this.recordRuntimeBooted_();
+    }
     if (this.bootWelcomeDismissed_) {
       return;
     }
     this.bootWelcomeDismissed_ = true;
     this.clearDismissBootWelcomeFallbackTimer_();
     this.onBootWelcomeClosed_();
-    // Only the guest's own ready signal proves the runtime booted; the
-    // fallback reveals a guest that may still be failing.
-    if (reason === 'signal' && this.firstRun_) {
-      chrome.send('markRuntimeBooted');
-    }
     this.requestUpdate();
     // A layout that arrived during boot (e.g. the SharedWorker's
     // replay-on-attach of a pre-reload session's geometry) was stored but

@@ -696,8 +696,8 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_NEXUS_GUEST_OFFLINE_BODY" desc="Body of the offline overlay in the agent panel. The panel retries by itself when the connection comes back. PRODUCT_NAME is the product name." use_name_for_id="true">
         <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph> needs an internet connection to load. It will try again as soon as you’re back online.
       </message>
-      <message name="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE" desc="Shown under the greeting on the startup splash screen of the agent panel when the first launch on this computer is still loading after about ten seconds. Reassures the user that the first start is slower and asks them to wait. Friendly and polite." use_name_for_id="true">
-        Setting things up for the first time — this may take a little while. Thank you for your patience!
+      <message name="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE" desc="Shown under the greeting on the startup splash screen of the agent panel when the first launch on this computer is still loading after about ten seconds. Reassures the user that the first start is slower. Keep it short and friendly." use_name_for_id="true">
+        First-time setup may take a little while.
       </message>
       <message name="IDS_SINGLE_WEB_ADDRESS_LABEL" desc="Accessible name of the read-only web address shown at the top of a single-page web window (a window that shows one web page and no tabs). Screen readers announce it before the address." use_name_for_id="true">
         Page address

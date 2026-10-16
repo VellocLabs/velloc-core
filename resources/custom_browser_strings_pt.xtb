@@ -218,6 +218,6 @@ Isso remove o provedor armazenado, o endpoint salvo e os modelos selecionados qu
   <translation id="IDS_NEXUS_GUEST_RECOVERY_RETRY">Tentar novamente</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_TITLE">Você está off-line</translation>
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY">O <ph name="PRODUCT_NAME"/> precisa de uma conexão com a internet para carregar. Ele tentará novamente assim que você estiver on-line.</translation>
-  <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">Estamos preparando tudo pela primeira vez; isso pode levar um tempinho. Obrigado pela sua paciência!</translation>
+  <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">A primeira configuração pode levar um tempinho.</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Endereço da página</translation>
 </translationbundle>

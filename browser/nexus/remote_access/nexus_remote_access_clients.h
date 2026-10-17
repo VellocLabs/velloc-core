@@ -36,6 +36,10 @@ void ForgetConnectedClients(const void* source);
 // The summary over every source: `listening` if any is, `clients` summed.
 ConnectedClients GetConnectedClients();
 
+// True while a listener is up and at least one remote device is connected
+// through it — the only case the tray tooltip names a device count.
+bool HasConnectedDevices(const ConnectedClients& summary);
+
 void AddConnectedClientsObserver(ConnectedClientsObserver* observer);
 void RemoveConnectedClientsObserver(ConnectedClientsObserver* observer);
 

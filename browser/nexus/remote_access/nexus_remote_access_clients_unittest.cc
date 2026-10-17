@@ -77,5 +77,18 @@ TEST_F(NexusRemoteAccessClientsTest, ObserversHearOnlyChangesOfTheSummary) {
   EXPECT_EQ(observer.seen.size(), 2u);
 }
 
+TEST_F(NexusRemoteAccessClientsTest, HasConnectedDevicesOnlyWithAClient) {
+  EXPECT_FALSE(HasConnectedDevices(ConnectedClients()));
+  // Listening with nobody connected names no devices.
+  EXPECT_FALSE(
+      HasConnectedDevices(ConnectedClients{.listening = true, .clients = 0}));
+  EXPECT_FALSE(
+      HasConnectedDevices(ConnectedClients{.listening = false, .clients = 2}));
+  EXPECT_TRUE(
+      HasConnectedDevices(ConnectedClients{.listening = true, .clients = 1}));
+  EXPECT_TRUE(
+      HasConnectedDevices(ConnectedClients{.listening = true, .clients = 3}));
+}
+
 }  // namespace
 }  // namespace nexus::remote_access

@@ -52,8 +52,8 @@ class NexusStatusIcon : public StatusIconObserver,
   // Opens/focuses the Nexus window via the registered delegate (no-op if none).
   void OpenNexusWindow();
 
-  // The product name, plus — while remote access is listening — a second line
-  // with the number of connected remote devices.
+  // The product name, plus — while remote devices are connected — a second
+  // line with their count. No devices, no second line.
   void UpdateToolTip(const remote_access::ConnectedClients& summary);
 
   // Velloc's production logo as a tray-sized image, from the resource bundle.

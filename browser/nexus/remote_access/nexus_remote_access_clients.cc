@@ -61,6 +61,10 @@ ConnectedClients GetConnectedClients() {
   return Summarize(GetRegistry());
 }
 
+bool HasConnectedDevices(const ConnectedClients& summary) {
+  return summary.listening && summary.clients > 0;
+}
+
 void AddConnectedClientsObserver(ConnectedClientsObserver* observer) {
   GetRegistry().observers.AddObserver(observer);
 }

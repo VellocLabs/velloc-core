@@ -653,9 +653,8 @@ This removes the stored provider, saved endpoint, and saved model selections.
         Close window
       </message>
       <!-- Remote access: the tray tooltip line and the quit confirmation (F-24) -->
-      <message name="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES" desc="Second line of the system-tray icon tooltip while remote access is on: how many remote devices are connected to this computer" use_name_for_id="true">
+      <message name="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES" desc="Second line of the system-tray icon tooltip, shown only while at least one remote device is connected through remote access: how many are connected to this computer" use_name_for_id="true">
         {COUNT, plural,
-          =0 {Remote access: no devices connected}
           =1 {Remote access: # device connected}
           other {Remote access: # devices connected}}
       </message>

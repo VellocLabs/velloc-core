@@ -207,7 +207,7 @@ Esto elimina el proveedor almacenado, el endpoint guardado y los modelos selecci
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">Administrador de tareas</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">Cerrar la ventana</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">Nueva ventana del navegador</translation>
-  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {Acceso remoto: ningún dispositivo conectado} =1 {Acceso remoto: # dispositivo conectado} other {Acceso remoto: # dispositivos conectados}}</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =1 {Acceso remoto: # dispositivo conectado} other {Acceso remoto: # dispositivos conectados}}</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">¿Salir de <ph name="PRODUCT_NAME"/>?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {Hay # dispositivo conectado mediante el acceso remoto. Si sale, se desconectará.} other {Hay # dispositivos conectados mediante el acceso remoto. Si sale, se desconectarán.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Eliminar también todos los datos (caché + <ph name="DATA_DIR"/>)</translation>

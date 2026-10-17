@@ -207,7 +207,7 @@
   <translation id="IDS_NEXUS_SYSTEM_MENU_TASK_MANAGER">任务管理器</translation>
   <translation id="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW">关闭窗口</translation>
   <translation id="IDS_NEXUS_JUMPLIST_NEW_BROWSER_WINDOW">新建浏览器窗口</translation>
-  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, =0 {远程访问：没有已连接的设备} other {远程访问：已连接 # 台设备}}</translation>
+  <translation id="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES">{COUNT, plural, other {远程访问：已连接 # 台设备}}</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">退出 <ph name="PRODUCT_NAME"/>？</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, other {有 # 台设备正通过远程访问连接。退出后它们会断开连接。}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">同时删除全部数据（缓存 + <ph name="DATA_DIR"/>）</translation>

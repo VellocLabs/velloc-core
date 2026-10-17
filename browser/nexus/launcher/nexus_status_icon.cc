@@ -94,7 +94,7 @@ void NexusStatusIcon::UpdateToolTip(
   }
   std::u16string tool_tip =
       base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName);
-  if (summary.listening) {
+  if (remote_access::HasConnectedDevices(summary)) {
     tool_tip += u'\n';
     tool_tip += l10n_util::GetPluralStringFUTF16(
         IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES, summary.clients);

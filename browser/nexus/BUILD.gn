@@ -750,6 +750,9 @@ source_set("bridge") {
     "mojom",
     "//base",
 
+    # NexusBridgePortService writes one audit line per request.
+    "//custom_browser/log:bridge_audit_log",
+
     # IDR_PRODUCT_LOGO_64 (chrome/grit/chrome_unscaled_resources.h) — the
     # branded Nexus logo used as the turn-end OS-notification icon in
     # NexusUiBridgeAdapter::HandleShowNotificationOnUI.
@@ -1107,6 +1110,7 @@ source_set("unit_tests_lite") {
     "search/transcript_span_index_file_unittest.cc",
     "search/transcript_span_index_unittest.cc",
     "session/nexus_session_tab_counts_unittest.cc",
+    "//custom_browser/log/bridge_audit_log_unittest.cc",
   ]
 
   deps = [
@@ -1149,6 +1153,7 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:provider_factory",
     "//custom_browser/browser/nexus/api/llm:raw_stream_policy",
     "//custom_browser/browser/nexus/api/llm:types",
+    "//custom_browser/log:bridge_audit_log",
     "//services/network/public/cpp",
     "//testing/gtest",
     "//url",

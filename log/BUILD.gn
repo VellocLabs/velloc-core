@@ -1,0 +1,18 @@
+# The bridge audit log writer. One source_set so the process-wide append
+# queue exists once per binary.
+source_set("bridge_audit_log") {
+  sources = [
+    "bridge_audit_log.cc",
+    "bridge_audit_log.h",
+  ]
+
+  public_deps = [
+    "//base",
+
+    # chrome/common/chrome_paths.h (chrome::DIR_USER_DATA) includes these
+    # generated headers.
+    "//build:branding_buildflags",
+    "//extensions/buildflags",
+    "//third_party/widevine/cdm:buildflags",
+  ]
+}

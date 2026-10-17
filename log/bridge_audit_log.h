@@ -3,19 +3,18 @@
 
 #include <stdint.h>
 
+#include <deque>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
-#include "base/functional/bind.h"
-#include "base/logging.h"
+#include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/task/task_traits.h"
-#include "base/task/thread_pool.h"
+#include "base/synchronization/lock.h"
+#include "base/thread_annotations.h"
 #include "base/time/time.h"
 #include "chrome/common/chrome_paths.h"
 #include "custom_browser/log/agent_log.h"
@@ -25,13 +24,19 @@
 // holds id, route, session key (attribution, never authorization), an argument
 // digest (never file contents, command text, secrets, headers or env), outcome
 // and duration. File: <user-data-dir>/custom_browser/log/bridge_audit.log,
-// rotated at kBridgeAuditMaxBytes keeping kBridgeAuditKeepFiles older files;
-// appends run on a MayBlock worker.
+// rotated at kBridgeAuditMaxBytes keeping kBridgeAuditKeepFiles older files.
+// Appends are queued and written by one MayBlock drain at a time, so writes
+// never overlap and lines keep their commit order.
 
 namespace custom_browser::log {
 
 inline constexpr int64_t kBridgeAuditMaxBytes = 8 * 1024 * 1024;
 inline constexpr int kBridgeAuditKeepFiles = 8;
+// An open that fails because another process holds the file without write
+// sharing is retried this many times, kBridgeAuditOpenRetryDelay apart.
+inline constexpr int kBridgeAuditOpenAttempts = 20;
+inline constexpr base::TimeDelta kBridgeAuditOpenRetryDelay =
+    base::Milliseconds(25);
 
 inline base::FilePath GetBridgeAuditLogPath() {
   base::FilePath user_data_dir;
@@ -51,61 +56,44 @@ inline base::FilePath GetBridgeAuditLogPath() {
 
 // Shifts bridge_audit.log.N -> .N+1 (dropping the oldest) and the live file
 // to .1 once it reaches the size cap.
-inline void RotateBridgeAuditLogIfNeeded(const base::FilePath& log_file) {
-  const std::optional<int64_t> file_size = base::GetFileSize(log_file);
-  if (!file_size || *file_size < kBridgeAuditMaxBytes) {
-    return;
-  }
-  const base::FilePath oldest =
-      log_file.AddExtensionASCII(base::NumberToString(kBridgeAuditKeepFiles));
-  if (base::PathExists(oldest) && !base::DeleteFile(oldest)) {
-    return;
-  }
-  for (int n = kBridgeAuditKeepFiles - 1; n >= 1; --n) {
-    const base::FilePath from =
-        log_file.AddExtensionASCII(base::NumberToString(n));
-    const base::FilePath to =
-        log_file.AddExtensionASCII(base::NumberToString(n + 1));
-    if (base::PathExists(from)) {
-      base::Move(from, to);
-    }
-  }
-  base::Move(log_file, log_file.AddExtensionASCII("1"));
-}
+void RotateBridgeAuditLogIfNeeded(const base::FilePath& log_file);
 
-inline void AppendBridgeAuditLineOnWorker(std::string line) {
-  const base::FilePath log_file = GetBridgeAuditLogPath();
-  if (!base::CreateDirectory(log_file.DirName())) {
-    LOG(INFO) << "[BRIDGE_AUDIT_FILE_ERROR] create_dir_failed path="
-              << log_file.DirName().AsUTF8Unsafe();
-    return;
-  }
-  RotateBridgeAuditLogIfNeeded(log_file);
-  line.push_back('\n');
-  if (!base::PathExists(log_file) &&
-      !base::WriteFile(log_file, std::string_view())) {
-    LOG(INFO) << "[BRIDGE_AUDIT_FILE_ERROR] create_failed path="
-              << log_file.AsUTF8Unsafe();
-    return;
-  }
-  if (!base::AppendToFile(log_file, line)) {
-    LOG(INFO) << "[BRIDGE_AUDIT_FILE_ERROR] append_failed path="
-              << log_file.AsUTF8Unsafe();
-  }
-}
+// Appends `data` (one or more newline-terminated lines) to `log_file`,
+// creating it and its directory as needed. The file is opened with read and
+// write sharing, so a reader holding it open does not block the append; an
+// open refused by an exclusive holder is retried kBridgeAuditOpenAttempts
+// times.
+// Blocking; returns false (after logging) if the data was not written.
+bool WriteBridgeAuditData(const base::FilePath& log_file,
+                          std::string_view data);
+
+// Process-wide append queue. Thread-safe; at most one drain runs at a time.
+class BridgeAuditWriter {
+ public:
+  static BridgeAuditWriter& Get();
+
+  BridgeAuditWriter();
+  BridgeAuditWriter(const BridgeAuditWriter&) = delete;
+  BridgeAuditWriter& operator=(const BridgeAuditWriter&) = delete;
+  ~BridgeAuditWriter();
+
+  void Append(std::string line);
+
+  // Redirects writes to `path`; empty restores GetBridgeAuditLogPath().
+  void SetPathForTesting(base::FilePath path);
+
+ private:
+  void Drain(base::ScopedClosureRunner on_dropped);
+  void OnDrainDropped();
+
+  base::Lock lock_;
+  std::deque<std::string> pending_ GUARDED_BY(lock_);
+  bool drain_scheduled_ GUARDED_BY(lock_) = false;
+  base::FilePath path_for_testing_ GUARDED_BY(lock_);
+};
 
 inline void AppendBridgeAuditLine(std::string line) {
-  if (!base::ThreadPoolInstance::Get()) {
-    AppendBridgeAuditLineOnWorker(std::move(line));
-    return;
-  }
-  if (!base::ThreadPool::PostTask(
-          FROM_HERE,
-          {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-          base::BindOnce(&AppendBridgeAuditLineOnWorker, std::move(line)))) {
-    AppendBridgeAuditLineOnWorker(std::move(line));
-  }
+  BridgeAuditWriter::Get().Append(std::move(line));
 }
 
 // Builder for one audit line. Values are sanitized like the agent log's

@@ -1,2 +1,3 @@
 *.exe
 !bundled/rg.exe
+!bundled/OpenConsole.exe

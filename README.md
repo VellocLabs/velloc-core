@@ -64,3 +64,6 @@ The two files under `utility/importer/` headed The Brave Authors are under
 the Mozilla Public License 2.0, as their headers state.
 The bundled ripgrep binary is under the MIT licence; see
 [installer/bundled/rg-LICENSE-MIT](installer/bundled/rg-LICENSE-MIT).
+The bundled console host (`conpty.dll`, `OpenConsole.exe`, from Windows
+Terminal's ConPTY package) is under the MIT licence; see
+[installer/bundled/conpty-LICENSE-MIT](installer/bundled/conpty-LICENSE-MIT).

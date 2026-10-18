@@ -152,6 +152,11 @@ source_set("pty_console_host") {
   public_deps = [ "//base" ]
 
   deps = [ "//custom_browser/common" ]
+
+  # The bundled host the loader resolves first, copied next to the binary.
+  if (is_win) {
+    data_deps = [ "//custom_browser/installer:console_host" ]
+  }
 }
 
 # A streaming child under a Windows pseudoconsole (F-31): the terminal's

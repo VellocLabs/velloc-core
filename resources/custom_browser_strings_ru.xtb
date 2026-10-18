@@ -220,4 +220,6 @@
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY">Для загрузки <ph name="PRODUCT_NAME"/> нужно подключение к интернету. Повторная попытка будет выполнена автоматически, как только подключение восстановится.</translation>
   <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">Первая настройка может занять немного времени.</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Адрес страницы</translation>
+  <translation id="IDS_NEXUS_TRAY_SHOW_APP">Показать приложение</translation>
+  <translation id="IDS_NEXUS_TRAY_QUIT">Выйти</translation>
 </translationbundle>

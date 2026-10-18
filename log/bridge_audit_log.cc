@@ -3,7 +3,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 
 #include "base/containers/span.h"
@@ -97,32 +96,18 @@ void BridgeAuditWriter::Append(std::string line) {
     }
     drain_scheduled_ = true;
   }
-  if (!base::ThreadPoolInstance::Get()) {
-    Drain(base::ScopedClosureRunner());
-    return;
-  }
-  // Dropped unrun (thread-pool shutdown), the task's closure runner releases
-  // scheduling so a later Append posts a fresh drain.
-  if (base::ThreadPool::PostTask(
+  // A queued drain blocks shutdown, so a drain posted before shutdown completes
+  // always runs (posting after it completes is a caller ordering bug the pool
+  // DCHECKs). A post the pool refuses drains here, still holding scheduling.
+  if (base::ThreadPoolInstance::Get() &&
+      base::ThreadPool::PostTask(
           FROM_HERE,
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-          base::BindOnce(&BridgeAuditWriter::Drain, base::Unretained(this),
-                         base::ScopedClosureRunner(base::BindOnce(
-                             &BridgeAuditWriter::OnDrainDropped,
-                             base::Unretained(this)))))) {
+           base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
+          base::BindOnce(&BridgeAuditWriter::Drain, base::Unretained(this)))) {
     return;
   }
-  // Not posted: drain here unless another caller has taken scheduling since
-  // the rejected task released it.
-  {
-    base::AutoLock lock(lock_);
-    if (drain_scheduled_) {
-      return;
-    }
-    drain_scheduled_ = true;
-  }
-  Drain(base::ScopedClosureRunner());
+  Drain();
 }
 
 void BridgeAuditWriter::SetPathForTesting(base::FilePath path) {
@@ -130,7 +115,7 @@ void BridgeAuditWriter::SetPathForTesting(base::FilePath path) {
   path_for_testing_ = std::move(path);
 }
 
-void BridgeAuditWriter::Drain(base::ScopedClosureRunner on_dropped) {
+void BridgeAuditWriter::Drain() {
   for (;;) {
     std::string data;
     base::FilePath log_file;
@@ -138,7 +123,6 @@ void BridgeAuditWriter::Drain(base::ScopedClosureRunner on_dropped) {
       base::AutoLock lock(lock_);
       if (pending_.empty()) {
         drain_scheduled_ = false;
-        std::ignore = on_dropped.Release();
         return;
       }
       for (const std::string& line : pending_) {
@@ -152,11 +136,6 @@ void BridgeAuditWriter::Drain(base::ScopedClosureRunner on_dropped) {
     }
     WriteBridgeAuditData(log_file, data);
   }
-}
-
-void BridgeAuditWriter::OnDrainDropped() {
-  base::AutoLock lock(lock_);
-  drain_scheduled_ = false;
 }
 
 }  // namespace custom_browser::log

@@ -652,6 +652,13 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_NEXUS_SYSTEM_MENU_CLOSE_WINDOW" desc="System menu item on the Nexus agent window that closes the window" use_name_for_id="true">
         Close window
       </message>
+      <!-- System-tray icon context menu -->
+      <message name="IDS_NEXUS_TRAY_SHOW_APP" desc="System-tray icon context menu item that brings the app's main (agent) window to the front, opening it if it is closed" use_name_for_id="true">
+        Show App
+      </message>
+      <message name="IDS_NEXUS_TRAY_QUIT" desc="System-tray icon context menu item that quits the whole app, closing every window and stopping it in the background" use_name_for_id="true">
+        Quit
+      </message>
       <!-- Remote access: the tray tooltip line and the quit confirmation (F-24) -->
       <message name="IDS_NEXUS_TRAY_REMOTE_ACCESS_DEVICES" desc="Second line of the system-tray icon tooltip, shown only while at least one remote device is connected through remote access: how many are connected to this computer" use_name_for_id="true">
         {COUNT, plural,

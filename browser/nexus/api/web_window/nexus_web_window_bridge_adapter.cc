@@ -116,9 +116,14 @@ class NexusWebWindowBridgeAdapter::Window
     owner_->OnWindowClosed(id_, closing_by_api_ ? "api" : "user");
   }
 
+  // kDeniedUnloadHandlersNeedTime is the first pass of a close that runs the
+  // page's unload handlers; the close is still under way.
   void OnCloseCancelled(BrowserWindowInterface* /*browser*/,
-                        BrowserWindowInterface::ClosingStatus /*status*/) {
-    closing_by_api_ = false;
+                        BrowserWindowInterface::ClosingStatus status) {
+    if (status !=
+        BrowserWindowInterface::ClosingStatus::kDeniedUnloadHandlersNeedTime) {
+      closing_by_api_ = false;
+    }
   }
 
   void OnActiveTabChanged(BrowserWindowInterface* /*browser*/) {
@@ -128,6 +133,13 @@ class NexusWebWindowBridgeAdapter::Window
   void ObserveActiveContents() { Observe(contents()); }
 
   // content::WebContentsObserver:
+  // The person chose to stay on the page: the close was cancelled.
+  void BeforeUnloadFired(bool proceed) override {
+    if (!proceed) {
+      closing_by_api_ = false;
+    }
+  }
+
   void DidFinishNavigation(content::NavigationHandle* handle) override {
     if (!handle->IsInPrimaryMainFrame() || !handle->HasCommitted()) {
       return;

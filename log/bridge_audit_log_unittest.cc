@@ -9,12 +9,18 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/strcat.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/task/thread_pool.h"
+#include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/test/task_environment.h"
 #include "base/threading/platform_thread.h"
+#include "base/threading/simple_thread.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -124,6 +130,66 @@ TEST_F(BridgeAuditLogTest, RetriesUntilExclusiveHolderReleases) {
   EXPECT_EQ(ReadLines(), (std::vector<std::string>{"first", "second"}));
 }
 #endif  // BUILDFLAG(IS_WIN)
+
+// Signals `go` once the pool has started shutting down: from then on it
+// refuses a skippable task.
+class ReleaseOnShutdownStart : public base::DelegateSimpleThread::Delegate {
+ public:
+  explicit ReleaseOnShutdownStart(base::WaitableEvent* go) : go_(go) {}
+
+  void Run() override {
+    while (base::ThreadPool::PostTask(
+        FROM_HERE, {base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
+        base::DoNothing())) {
+      base::PlatformThread::Sleep(base::Milliseconds(1));
+    }
+    go_->Signal();
+  }
+
+ private:
+  const raw_ptr<base::WaitableEvent> go_;
+};
+
+// Appends made while thread-pool shutdown is under way are written before
+// shutdown completes, the first and every later one.
+TEST(BridgeAuditLogShutdownTest, AppendsDuringPoolShutdownAreWritten) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath log_file =
+      temp_dir.GetPath().AppendASCII("bridge_audit.log");
+  BridgeAuditWriter::Get().SetPathForTesting(log_file);
+  base::ThreadPoolInstance::CreateAndStartWithDefaultParams("audit-shutdown");
+
+  // A shutdown-blocking task holds shutdown open and appends once it has begun.
+  base::WaitableEvent started;
+  base::WaitableEvent go;
+  base::ThreadPool::PostTask(
+      FROM_HERE,
+      {base::MayBlock(), base::WithBaseSyncPrimitives(),
+       base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
+      base::BindOnce(
+          [](base::WaitableEvent* started, base::WaitableEvent* go) {
+            started->Signal();
+            go->Wait();
+            AppendBridgeAuditLine("first");
+            AppendBridgeAuditLine("second");
+          },
+          &started, &go));
+  started.Wait();
+
+  ReleaseOnShutdownStart release(&go);
+  base::DelegateSimpleThread release_thread(&release, "audit-release");
+  release_thread.Start();
+  base::ThreadPoolInstance::Get()->Shutdown();
+  release_thread.Join();
+
+  base::ThreadPoolInstance::Get()->JoinForTesting();
+  base::ThreadPoolInstance::Set(nullptr);
+  BridgeAuditWriter::Get().SetPathForTesting(base::FilePath());
+  std::string contents;
+  ASSERT_TRUE(base::ReadFileToString(log_file, &contents));
+  EXPECT_EQ(contents, "first\nsecond\n");
+}
 
 }  // namespace
 }  // namespace custom_browser::log

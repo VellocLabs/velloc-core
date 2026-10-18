@@ -48,9 +48,11 @@ NexusStatusIcon::NexusStatusIcon(StatusTray* status_tray,
   UpdateToolTip(remote_access::GetConnectedClients());
 
   auto menu = std::make_unique<StatusIconMenuModel>(this);
-  menu->AddItem(NexusTrayCommand::kOpenNexusWindow, u"Show App");
+  menu->AddItem(NexusTrayCommand::kOpenNexusWindow,
+                l10n_util::GetStringUTF16(IDS_NEXUS_TRAY_SHOW_APP));
   menu->AddSeparator(ui::NORMAL_SEPARATOR);
-  menu->AddItem(NexusTrayCommand::kQuit, u"Quit");
+  menu->AddItem(NexusTrayCommand::kQuit,
+                l10n_util::GetStringUTF16(IDS_NEXUS_TRAY_QUIT));
   status_icon_->SetContextMenu(std::move(menu));
 }
 

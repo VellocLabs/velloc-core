@@ -218,4 +218,6 @@
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/>을(를) 불러오려면 인터넷 연결이 필요합니다. 다시 온라인 상태가 되면 자동으로 다시 시도합니다.</translation>
   <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">처음 설정에는 시간이 조금 걸릴 수 있습니다.</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">페이지 주소</translation>
+  <translation id="IDS_NEXUS_TRAY_SHOW_APP">앱 표시</translation>
+  <translation id="IDS_NEXUS_TRAY_QUIT">종료</translation>
 </translationbundle>

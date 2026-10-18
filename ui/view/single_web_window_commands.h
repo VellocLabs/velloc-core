@@ -8,6 +8,10 @@
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
 
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
+
 namespace custom_browser {
 
 // The browser commands a single-web window (kSingleWeb, F-29) still answers
@@ -47,6 +51,7 @@ inline bool IsCommandAllowedInSingleWebWindow(int command_id) {
     case IDC_NEW_INCOGNITO_WINDOW:
     case IDC_TASK_MANAGER:
     case IDC_TASK_MANAGER_SHORTCUT:
+    case IDC_TASK_MANAGER_CONTEXT_MENU:
     case IDC_MINIMIZE_WINDOW:
     case IDC_MAXIMIZE_WINDOW:
 #if BUILDFLAG(IS_LINUX)
@@ -57,6 +62,50 @@ inline bool IsCommandAllowedInSingleWebWindow(int command_id) {
     default:
       return false;
   }
+}
+
+// The browser command a Windows app command (APPCOMMAND_*) runs, or -1 for
+// any other id. Must match BrowserView's own translation, which runs after
+// the single-web filter.
+inline int BrowserCommandForAppCommand(int app_command) {
+#if BUILDFLAG(IS_WIN)
+  switch (app_command) {
+    case APPCOMMAND_BROWSER_BACKWARD:
+      return IDC_BACK;
+    case APPCOMMAND_BROWSER_FORWARD:
+      return IDC_FORWARD;
+    case APPCOMMAND_BROWSER_REFRESH:
+      return IDC_RELOAD;
+    case APPCOMMAND_BROWSER_HOME:
+      return IDC_HOME;
+    case APPCOMMAND_BROWSER_STOP:
+      return IDC_STOP;
+    case APPCOMMAND_BROWSER_SEARCH:
+      return IDC_FOCUS_SEARCH;
+    case APPCOMMAND_HELP:
+      return IDC_HELP_PAGE_VIA_KEYBOARD;
+    case APPCOMMAND_NEW:
+      return IDC_NEW_TAB;
+    case APPCOMMAND_OPEN:
+      return IDC_OPEN_FILE;
+    case APPCOMMAND_CLOSE:
+      return IDC_CLOSE_TAB;
+    case APPCOMMAND_SAVE:
+      return IDC_SAVE_PAGE;
+    case APPCOMMAND_PRINT:
+      return IDC_PRINT;
+    case APPCOMMAND_COPY:
+      return IDC_COPY;
+    case APPCOMMAND_CUT:
+      return IDC_CUT;
+    case APPCOMMAND_PASTE:
+      return IDC_PASTE;
+    default:
+      return -1;
+  }
+#else
+  return -1;
+#endif
 }
 
 }  // namespace custom_browser

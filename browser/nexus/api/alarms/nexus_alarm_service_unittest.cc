@@ -232,7 +232,6 @@ class RecordingLauncherDelegate : public NexusLauncherDelegate {
   void OpenOrFocusNexusWindowForProfile(Profile* profile) override {
     opened_for.push_back(profile);
   }
-  void OpenOrFocusNormalWindow() override {}
   void ConfirmQuit(base::OnceClosure proceed) override {}
   void Quit() override {}
 

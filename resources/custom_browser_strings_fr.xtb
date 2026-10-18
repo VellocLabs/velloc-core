@@ -220,4 +220,6 @@ Cela supprime le fournisseur mémorisé, le point de terminaison enregistré et 
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> a besoin d’une connexion Internet pour se charger. Une nouvelle tentative aura lieu dès que vous serez de nouveau en ligne.</translation>
   <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">La première configuration peut prendre un peu de temps.</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Adresse de la page</translation>
+  <translation id="IDS_NEXUS_TRAY_SHOW_APP">Afficher l’application</translation>
+  <translation id="IDS_NEXUS_TRAY_QUIT">Quitter</translation>
 </translationbundle>

@@ -42,10 +42,6 @@ class NexusLauncherDelegateImpl : public nexus::NexusLauncherDelegate {
     window_util::OpenOrFocusNexusWindow(profile ? profile : LaunchProfile());
   }
 
-  void OpenOrFocusNormalWindow() override {
-    window_util::OpenOrFocusNormalWindow(LaunchProfile());
-  }
-
   void ConfirmQuit(base::OnceClosure proceed) override {
     ConfirmQuitWithRemoteDevices(std::move(proceed));
   }

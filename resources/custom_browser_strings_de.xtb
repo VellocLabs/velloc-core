@@ -220,4 +220,6 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> braucht zum Laden eine Internetverbindung. Sobald du wieder online bist, wird es automatisch erneut versucht.</translation>
   <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">Die erste Einrichtung kann einen Moment dauern.</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Seitenadresse</translation>
+  <translation id="IDS_NEXUS_TRAY_SHOW_APP">App anzeigen</translation>
+  <translation id="IDS_NEXUS_TRAY_QUIT">Beenden</translation>
 </translationbundle>

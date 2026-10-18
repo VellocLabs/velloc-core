@@ -29,6 +29,36 @@ TEST(SingleWebWindowCommandsTest, CommandsThatAddTabsOrEditTheAddressAreOff) {
   }
 }
 
+TEST(SingleWebWindowCommandsTest, SystemMenuCommandsStayOn) {
+  for (int command :
+       {IDC_NEW_WINDOW, IDC_TASK_MANAGER_CONTEXT_MENU, IDC_CLOSE_WINDOW}) {
+    EXPECT_TRUE(IsCommandAllowedInSingleWebWindow(command)) << command;
+  }
+}
+
+#if BUILDFLAG(IS_WIN)
+TEST(SingleWebWindowCommandsTest, AppCommandsThatAddTabsOrGoHomeAreOff) {
+  for (int app : {APPCOMMAND_NEW, APPCOMMAND_BROWSER_HOME, APPCOMMAND_OPEN,
+                  APPCOMMAND_BROWSER_SEARCH, APPCOMMAND_HELP}) {
+    EXPECT_FALSE(
+        IsCommandAllowedInSingleWebWindow(BrowserCommandForAppCommand(app)))
+        << app;
+  }
+  for (int app : {APPCOMMAND_BROWSER_BACKWARD, APPCOMMAND_BROWSER_FORWARD,
+                  APPCOMMAND_BROWSER_REFRESH, APPCOMMAND_BROWSER_STOP,
+                  APPCOMMAND_PRINT, APPCOMMAND_COPY}) {
+    EXPECT_TRUE(
+        IsCommandAllowedInSingleWebWindow(BrowserCommandForAppCommand(app)))
+        << app;
+  }
+}
+#endif
+
+TEST(SingleWebWindowCommandsTest, NonAppCommandIdsAreNotTranslated) {
+  EXPECT_EQ(BrowserCommandForAppCommand(IDC_NEW_TAB), -1);
+  EXPECT_EQ(BrowserCommandForAppCommand(0xF060 /* SC_CLOSE */), -1);
+}
+
 TEST(SingleWebWindowCommandsTest, UnknownCommandsAreOff) {
   EXPECT_FALSE(IsCommandAllowedInSingleWebWindow(0));
   EXPECT_FALSE(IsCommandAllowedInSingleWebWindow(-1));

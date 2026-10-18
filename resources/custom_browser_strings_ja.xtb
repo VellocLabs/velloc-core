@@ -218,4 +218,6 @@
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> の読み込みにはインターネット接続が必要です。オンラインに戻ると自動的に再試行します。</translation>
   <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">初回のセットアップには少し時間がかかる場合があります。</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">ページのアドレス</translation>
+  <translation id="IDS_NEXUS_TRAY_SHOW_APP">アプリを表示</translation>
+  <translation id="IDS_NEXUS_TRAY_QUIT">終了</translation>
 </translationbundle>

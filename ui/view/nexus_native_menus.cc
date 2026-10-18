@@ -10,13 +10,14 @@
 namespace custom_browser {
 
 bool BuildNexusSystemMenu(ui::SimpleMenuModel* model, Browser* browser) {
-  if (!window_util::IsNexusBrowser(browser)) {
+  if (!window_util::IsNexusBrowser(browser) &&
+      !window_util::IsSingleWebBrowser(browser)) {
     return false;
   }
 
-  // Purpose-built menu for the tabless agent window. All commands are existing
-  // IDC_* ids that the existing SystemMenuModelDelegate already routes through
-  // chrome::ExecuteCommand; AddItem(id, label) only overrides the label.
+  // Purpose-built menu for the tabless agent window and the one-tab
+  // single-web window. All commands are existing IDC_* ids that the
+  // SystemMenuModelDelegate routes; AddItem(id, label) only sets the label.
   //
   // "Open browser window" → IDC_NEW_WINDOW. From the kNexus window this opens
   // a NORMAL (non-kNexus) window: the profile's startup default is already

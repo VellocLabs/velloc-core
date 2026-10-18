@@ -33,10 +33,6 @@ class NexusLauncherDelegate {
   // A null `profile` means the launch profile, as OpenOrFocusNexusWindow.
   virtual void OpenOrFocusNexusWindowForProfile(Profile* profile) = 0;
 
-  // Focuses an existing normal (non-Nexus) browser window, or opens one. Backs
-  // the tray menu's "Open Browser Window".
-  virtual void OpenOrFocusNormalWindow() = 0;
-
   // Asked before the tray menu's "Quit" does anything: runs `proceed` at once
   // when no remote-access device is connected, otherwise after the user
   // confirms that quitting disconnects them — and drops it if they decline.

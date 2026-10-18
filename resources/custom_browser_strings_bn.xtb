@@ -220,4 +220,6 @@
   <translation id="IDS_NEXUS_GUEST_OFFLINE_BODY"><ph name="PRODUCT_NAME"/> লোড হতে ইন্টারনেট সংযোগ দরকার। আবার অনলাইন হলেই এটি নিজে থেকে আবার চেষ্টা করবে।</translation>
   <translation id="IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE">প্রথমবার সেটআপে একটু সময় লাগতে পারে।</translation>
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">পৃষ্ঠার ঠিকানা</translation>
+  <translation id="IDS_NEXUS_TRAY_SHOW_APP">অ্যাপ দেখান</translation>
+  <translation id="IDS_NEXUS_TRAY_QUIT">প্রস্থান করুন</translation>
 </translationbundle>

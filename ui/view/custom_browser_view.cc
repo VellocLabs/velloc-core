@@ -18,6 +18,8 @@
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
@@ -245,6 +247,20 @@ bool CustomBrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
     }
   }
   return BrowserView::AcceleratorPressed(accelerator);
+}
+
+bool CustomBrowserView::ExecuteWindowsCommand(int command_id) {
+  if (single_web_window_) {
+    const int app_command =
+        custom_browser::BrowserCommandForAppCommand(command_id);
+    const int browser_command = app_command != -1 ? app_command : command_id;
+    // System commands (SC_*) are not browser commands and pass through.
+    if (chrome::SupportsCommand(browser(), browser_command) &&
+        !custom_browser::IsCommandAllowedInSingleWebWindow(browser_command)) {
+      return true;
+    }
+  }
+  return BrowserView::ExecuteWindowsCommand(command_id);
 }
 
 std::u16string CustomBrowserView::GetAccessibleWindowTitle() const {
@@ -692,6 +708,65 @@ void CustomBrowserView::OnActiveTabChanged(content::WebContents* old_contents,
     return;
   }
   GetCustomBrowserViewLayout()->SizeUndisplayedTabs();
+}
+
+void CustomBrowserView::OnTabStripModelChanged(
+    TabStripModel* tab_strip_model,
+    const TabStripModelChange& change,
+    const TabStripSelectionChange& selection) {
+  BrowserView::OnTabStripModelChanged(tab_strip_model, change, selection);
+  if (!single_web_window_ ||
+      change.type() != TabStripModelChange::kInserted ||
+      tab_strip_model->count() <= 1) {
+    return;
+  }
+  std::vector<tabs::TabHandle> extra;
+  for (const TabStripModelChange::ContentsWithIndex& inserted :
+       change.GetInsert()->contents) {
+    if (inserted.tab) {
+      extra.push_back(inserted.tab->GetHandle());
+    }
+  }
+  // The strip may not be changed from inside its own notification.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&CustomBrowserView::MoveTabsToNormalWindow,
+                                weak_ptr_factory_.GetWeakPtr(),
+                                std::move(extra)));
+}
+
+void CustomBrowserView::MoveTabsToNormalWindow(
+    std::vector<tabs::TabHandle> tabs) {
+  TabStripModel* source = browser()->tab_strip_model();
+  Browser* target = nullptr;
+  for (const tabs::TabHandle& handle : tabs) {
+    // Never empty the window: its first tab stays, whichever path it took.
+    if (source->count() <= 1) {
+      break;
+    }
+    const int index = source->GetIndexOfTab(handle.Get());
+    if (index == TabStripModel::kNoTab) {
+      continue;
+    }
+    if (!target) {
+      target = custom_browser::window_util::FindNormalWindow(
+          browser()->profile());
+    }
+    if (!target) {
+      if (Browser::GetCreationStatusForProfile(browser()->profile()) !=
+          Browser::CreationStatus::kOk) {
+        return;
+      }
+      custom_browser::window_util::SetPendingExternalUrlWindow(
+          browser()->profile());
+      target = Browser::Create(
+          Browser::CreateParams(browser()->profile(), /*user_gesture=*/true));
+    }
+    target->tab_strip_model()->AppendTab(
+        source->DetachTabAtForInsertion(index), /*foreground=*/true);
+  }
+  if (target) {
+    target->window()->Show();
+  }
 }
 
 void CustomBrowserView::TabStripEmpty() {

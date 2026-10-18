@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "base/files/file_path.h"
-#include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -83,8 +82,7 @@ class BridgeAuditWriter {
   void SetPathForTesting(base::FilePath path);
 
  private:
-  void Drain(base::ScopedClosureRunner on_dropped);
-  void OnDrainDropped();
+  void Drain();
 
   base::Lock lock_;
   std::deque<std::string> pending_ GUARDED_BY(lock_);

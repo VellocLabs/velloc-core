@@ -25,6 +25,7 @@
 #include "chrome/browser/extensions/extension_commands_global_registry.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/ui/browser.h"
+#include "components/tabs/public/tab_interface.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
 #include "chrome/browser/ui/exclusive_access/fullscreen_observer.h"
@@ -200,6 +201,12 @@ class CustomBrowserView : public BrowserView,
   // Both are idempotent.
   void WillCloseAllTabs(TabStripModel* tab_strip_model) override;
   void TabStripEmpty() override;
+  // A single-web window holds one tab: a tab inserted by any other path (a
+  // profile-level open, a restored tab) moves to a normal window (F-29).
+  void OnTabStripModelChanged(
+      TabStripModel* tab_strip_model,
+      const TabStripModelChange& change,
+      const TabStripSelectionChange& selection) override;
 
   // BrowserWindow:
   // In the custom layouts a tab activated while <main-contents-view> is
@@ -227,6 +234,9 @@ class CustomBrowserView : public BrowserView,
   // ui::AcceleratorTarget: a single-web window swallows the shortcuts of
   // commands outside IsCommandAllowedInSingleWebWindow().
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  // views::WidgetDelegate: the same allowlist for Windows system-menu and
+  // app commands (WM_SYSCOMMAND / WM_APPCOMMAND), which bypass accelerators.
+  bool ExecuteWindowsCommand(int command_id) override;
 
   // Stores the active Nexus session's display title (already sanitized by
   // NexusUiBridgeAdapter) and refreshes the title bar. Empty clears back to
@@ -313,6 +323,7 @@ private:
 
   // Set once in InitializeCustomBrowser() from the pending single-web marker.
   bool single_web_window_ = false;
+  void MoveTabsToNormalWindow(std::vector<tabs::TabHandle> tabs);
 
   bool custom_layout_allowed_ = false;
   bool is_custom_initialized_ = false;

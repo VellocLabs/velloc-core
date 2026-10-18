@@ -477,6 +477,10 @@ void StreamingChildProcess::Kill() {
   // The wait sequence observes the exit and fires OnExit + RequestClose.
 }
 
+void StreamingChildProcess::Resize(mojom::PtySizePtr /*size*/) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+}
+
 void StreamingChildProcess::OnControllerDisconnect() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Browser dropped the controller — kill the child and tear down.

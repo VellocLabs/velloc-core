@@ -66,6 +66,8 @@ class StreamingChildProcess : public mojom::NexusStreamingProcess {
   void WriteStdin(const std::vector<uint8_t>& data) override;
   void CloseStdin() override;
   void Kill() override;
+  // A pipe child has no console: nothing to resize.
+  void Resize(mojom::PtySizePtr size) override;
 
  private:
   // Result of the worker-sequence launch hop: the live process + the

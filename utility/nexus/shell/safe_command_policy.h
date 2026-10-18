@@ -91,6 +91,12 @@ class SafeCommandPolicy {
   static base::EnvironmentMap BuildSafeEnvironment(
       const std::vector<EnvOverride>& extras);
 
+  // Child env for a program the person types into (F-31): this process's
+  // whole environment, plus `extras`, minus the forbidden names. Use with
+  // `clear_environment = true`.
+  static base::EnvironmentMap BuildFullEnvironment(
+      const std::vector<EnvOverride>& extras);
+
   // Mutates `env` for a resolved command after policy resolution. Currently
   // Windows-only: when `command_id == "bash"` resolves to Git for Windows,
   // prepends the adjacent Git dirs (usr/bin, mingw64/bin, bin, cmd) so commands

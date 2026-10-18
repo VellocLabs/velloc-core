@@ -23,6 +23,7 @@
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/utility/nexus/shell/child_process_runner.h"
+#include "custom_browser/utility/nexus/shell/pty_console_host.h"
 #include "custom_browser/utility/nexus/shell/safe_command_policy.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
@@ -84,6 +85,9 @@ void RunErrorReply(NexusShellServiceImpl::ExecCallback callback,
 // the cap if every slot is an in-flight process — bounded in practice by
 // how many background commands a session realistically launches at once.
 constexpr size_t kMaxBackgroundEntries = 32;
+
+// Largest pseudoconsole size accepted in either axis.
+constexpr uint16_t kMaxPtyCells = 1000;
 
 bool TerminateBackgroundTree(ChildProcessKillHandle& kill_handle) {
 #if BUILDFLAG(IS_WIN)
@@ -151,8 +155,12 @@ base::FilePath FindCmdExe(const ResolvedCapabilities& caps) {
 }
 #endif  // BUILDFLAG(IS_WIN)
 
+// With `full_environment` (a pseudoconsole child the person types into) the
+// child gets this process's whole environment minus the forbidden names plus
+// TERM / COLORTERM, instead of the agent-shell baseline.
 PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
-                         const ResolvedCapabilities& caps) {
+                         const ResolvedCapabilities& caps,
+                         bool full_environment = false) {
   PreparedExec prep;
 
   // Step 1: validate cwd (most-specific error first if cwd + command
@@ -234,11 +242,17 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
   request.stdin_data = options.stdin_data;
 
   std::vector<EnvOverride> env_overrides;
-  env_overrides.reserve(options.env.size());
+  env_overrides.reserve(options.env.size() + 2);
+  if (full_environment) {
+    env_overrides.push_back({"TERM", "xterm-256color"});
+    env_overrides.push_back({"COLORTERM", "truecolor"});
+  }
   for (const auto& entry : options.env) {
     env_overrides.push_back({entry->name, entry->value});
   }
-  request.env = SafeCommandPolicy::BuildSafeEnvironment(env_overrides);
+  request.env = full_environment
+                    ? SafeCommandPolicy::BuildFullEnvironment(env_overrides)
+                    : SafeCommandPolicy::BuildSafeEnvironment(env_overrides);
   SafeCommandPolicy::AugmentEnvironmentForResolvedCommand(
       final_command, request.exe, &request.env);
   request.timeout = base::Milliseconds(
@@ -350,7 +364,12 @@ void NexusShellServiceImpl::EnsureResolveStarted() {
       // child-process wait as a "base sync primitive" and DCHECKs if the task
       // wasn't declared to allow it (same reason as the Exec path below).
       {base::MayBlock(), base::WithBaseSyncPrimitives()},
-      base::BindOnce(&ShellResolver::Resolve),
+      base::BindOnce([]() {
+        // The console-host lookup may load a DLL, so it is settled here, on
+        // the worker, and read from the cache on the binding sequence.
+        PtyConsoleHost::Get();
+        return ShellResolver::Resolve();
+      }),
       base::BindOnce(&NexusShellServiceImpl::OnResolved,
                      weak_factory_.GetWeakPtr()));
 }
@@ -381,8 +400,9 @@ void NexusShellServiceImpl::OnResolved(ResolvedCapabilities capabilities) {
   std::vector<PendingStreamSpawn> drained_stream_spawns;
   drained_stream_spawns.swap(pending_stream_spawns_);
   for (auto& pending : drained_stream_spawns) {
-    RunStreamSpawn(std::move(pending.options), std::move(pending.controller),
-                   std::move(pending.client), std::move(pending.callback));
+    RunStreamSpawn(std::move(pending.options), std::move(pending.pty_size),
+                   std::move(pending.controller), std::move(pending.client),
+                   std::move(pending.callback));
   }
 }
 
@@ -403,8 +423,10 @@ void NexusShellServiceImpl::RespondFromCache(
     tools.push_back(ToMojom(tool));
   }
 
+  const PtyConsoleHostTable& pty = PtyConsoleHost::Get();
   std::move(callback).Run(caps.platform, std::move(default_shell),
-                          std::move(tools), caps.command_allowlist);
+                          std::move(tools), caps.command_allowlist,
+                          pty.available(), pty.available() ? pty.host : "");
 }
 
 void NexusShellServiceImpl::RunExec(mojom::ShellSpawnOptionsPtr options,
@@ -749,22 +771,83 @@ void NexusShellServiceImpl::StreamSpawn(
     return;
   }
 
-  RunStreamSpawn(std::move(options), std::move(controller), std::move(client),
+  RunStreamSpawn(std::move(options), /*pty_size=*/nullptr,
+                 std::move(controller), std::move(client),
                  std::move(callback));
 }
 
+void NexusShellServiceImpl::StreamSpawnPty(
+    mojom::ShellSpawnOptionsPtr options,
+    mojom::PtySizePtr size,
+    mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
+    mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
+    StreamSpawnPtyCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!options || !size) {
+    std::move(callback).Run(
+        /*ok=*/false, "INVALID_ARGS",
+        "StreamSpawnPty requires a non-null ShellSpawnOptions and PtySize",
+        /*install_hint=*/std::nullopt);
+    return;
+  }
+  if (size->cols < 1 || size->cols > kMaxPtyCells || size->rows < 1 ||
+      size->rows > kMaxPtyCells) {
+    std::move(callback).Run(/*ok=*/false, "INVALID_ARGS",
+                            "pty cols and rows must be within 1..1000",
+                            /*install_hint=*/std::nullopt);
+    return;
+  }
+
+  if (!cached_capabilities_.has_value()) {
+    PendingStreamSpawn pending;
+    pending.options = std::move(options);
+    pending.pty_size = std::move(size);
+    pending.controller = std::move(controller);
+    pending.client = std::move(client);
+    pending.callback = std::move(callback);
+    pending_stream_spawns_.push_back(std::move(pending));
+    EnsureResolveStarted();
+    return;
+  }
+
+  RunStreamSpawn(std::move(options), std::move(size), std::move(controller),
+                 std::move(client), std::move(callback));
+}
+
+#if BUILDFLAG(IS_WIN)
+void NexusShellServiceImpl::SetPtyChildFactoryForTesting(
+    PtyChildFactory factory) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  pty_child_factory_ = std::move(factory);
+}
+#endif
+
 void NexusShellServiceImpl::RunStreamSpawn(
     mojom::ShellSpawnOptionsPtr options,
+    mojom::PtySizePtr pty_size,
     mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
     mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
     StreamSpawnCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(cached_capabilities_.has_value());
 
-  // Identical allowlist / cwd / shell-rewrite / env policy as Exec/Spawn.
-  // `stdin_data` / `timeout_ms` in the request are ignored for streaming
-  // (StreamingChildProcess uses live pipes + controller-driven lifetime).
-  PreparedExec prep = PrepareExec(*options, *cached_capabilities_);
+  // A pty child needs a console host; without one the guest never asks, so
+  // this is a programming error on its side, not an install problem.
+  const PtyConsoleHostTable& pty_table = PtyConsoleHost::Get();
+  if (pty_size && !pty_table.available()) {
+    std::move(callback).Run(/*ok=*/false, "PTY_UNSUPPORTED",
+                            "this host has no pseudoconsole",
+                            /*install_hint=*/std::nullopt);
+    return;
+  }
+
+  // Identical allowlist / cwd / shell-rewrite policy as Exec/Spawn; the env
+  // is the agent baseline for a pipe child and the person's own for a pty
+  // child. `stdin_data` / `timeout_ms` in the request are ignored for
+  // streaming (live pipes + controller-driven lifetime).
+  PreparedExec prep = PrepareExec(*options, *cached_capabilities_,
+                                  /*full_environment=*/!!pty_size);
   if (!prep.ok) {
     std::optional<std::string> hint;
     if (!prep.install_hint.empty()) {
@@ -776,19 +859,46 @@ void NexusShellServiceImpl::RunStreamSpawn(
   }
 
   const uint64_t id = next_streaming_id_++;
-  auto child = std::make_unique<StreamingChildProcess>(
-      std::move(prep.request), std::move(controller), std::move(client),
+  base::OnceClosure on_closed =
       base::BindOnce(&NexusShellServiceImpl::OnStreamingChildClosed,
-                     weak_factory_.GetWeakPtr(), id));
-  StreamingChildProcess* child_ptr = child.get();
-  streaming_children_[id] = std::move(child);
+                     weak_factory_.GetWeakPtr(), id);
+  base::OnceClosure start;
+  if (pty_size) {
+#if BUILDFLAG(IS_WIN)
+    std::unique_ptr<PtyChildProcess> child =
+        pty_child_factory_
+            ? pty_child_factory_.Run(std::move(prep.request), pty_size->cols,
+                                     pty_size->rows, pty_table,
+                                     std::move(controller), std::move(client),
+                                     std::move(on_closed))
+            : std::make_unique<PtyChildProcess>(
+                  std::move(prep.request), pty_size->cols, pty_size->rows,
+                  pty_table, std::move(controller), std::move(client),
+                  std::move(on_closed));
+    start = base::BindOnce(&PtyChildProcess::Start,
+                           base::Unretained(child.get()));
+    streaming_children_[id] = std::move(child);
+#else
+    std::move(callback).Run(/*ok=*/false, "PTY_UNSUPPORTED",
+                            "pseudoconsole children are Windows-only",
+                            /*install_hint=*/std::nullopt);
+    return;
+#endif
+  } else {
+    auto child = std::make_unique<StreamingChildProcess>(
+        std::move(prep.request), std::move(controller), std::move(client),
+        std::move(on_closed));
+    start = base::BindOnce(&StreamingChildProcess::Start,
+                           base::Unretained(child.get()));
+    streaming_children_[id] = std::move(child);
+  }
 
   // Reply BEFORE Start() so the browser can bind its controller Remote and
   // begin pipelining WriteStdin (queued internally until launch finishes).
   std::move(callback).Run(/*ok=*/true, /*error_code=*/std::nullopt,
                           /*error_message=*/std::nullopt,
                           /*install_hint=*/std::nullopt);
-  child_ptr->Start();
+  std::move(start).Run();
 }
 
 void NexusShellServiceImpl::OnStreamingChildClosed(uint64_t id) {

@@ -140,6 +140,40 @@ source_set("streaming_child_process") {
   ]
 }
 
+# The pseudoconsole entry points (F-31): the bundled console host next to
+# chrome.dll first, kernel32's ConPTY second. A leaf (//base + common) so the
+# browser process can ask the same question the utility answers.
+source_set("pty_console_host") {
+  sources = [
+    "pty_console_host.cc",
+    "pty_console_host.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [ "//custom_browser/common" ]
+}
+
+# A streaming child under a Windows pseudoconsole (F-31): the terminal's
+# shell. Same ownership and mojom interface as the pipe child above.
+source_set("pty_child_process") {
+  sources = []
+  if (is_win) {
+    sources += [
+      "pty_child_process.cc",
+      "pty_child_process.h",
+    ]
+  }
+
+  public_deps = [
+    ":child_process_runner",
+    ":pty_console_host",
+    "//base",
+    "//custom_browser/browser/nexus/mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
 # `nexus.mojom.NexusShellService` implementation. Slice 2: GetCapabilities
 # + Exec; slice 4: streaming StreamSpawn.
 source_set("nexus_shell_service") {
@@ -150,6 +184,8 @@ source_set("nexus_shell_service") {
 
   public_deps = [
     ":child_process_runner",
+    ":pty_child_process",
+    ":pty_console_host",
     ":safe_command_policy",
     ":shell_resolver",
     ":streaming_child_process",
@@ -191,15 +227,21 @@ source_set("unit_tests") {
     "child_process_runner_unittest.cc",
     "install_hints_unittest.cc",
     "nexus_shell_service_impl_unittest.cc",
+    "pty_console_host_unittest.cc",
     "safe_command_policy_unittest.cc",
     "shell_resolver_unittest.cc",
   ]
+  if (is_win) {
+    sources += [ "pty_child_process_unittest.cc" ]
+  }
 
   deps = [
     ":child_process_runner",
     ":install_hints",
     ":media_service",
     ":nexus_shell_service",
+    ":pty_child_process",
+    ":pty_console_host",
     ":safe_command_policy",
     ":shell_resolver",
     "//base",

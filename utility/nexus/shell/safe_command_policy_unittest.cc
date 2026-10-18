@@ -4,15 +4,18 @@
 
 #include "custom_browser/utility/nexus/shell/safe_command_policy.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/scoped_environment_variable_override.h"
 #include "base/base_paths.h"
 #include "base/test/scoped_path_override.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "custom_browser/common/nexus_runtime_paths.h"
@@ -293,6 +296,56 @@ TEST(SafeCommandPolicyTest, BuildSafeEnvironmentDropsForbiddenExtras) {
     EXPECT_EQ(env.find(key), env.end())
         << "Forbidden var must be dropped from sanitised env";
   }
+}
+
+// The full environment (a pty child the person types into) carries variables
+// the agent baseline would drop, still drops the forbidden names, and lets an
+// extra override an inherited value without leaving a second copy.
+TEST(SafeCommandPolicyTest, BuildFullEnvironmentKeepsTheParentsVariables) {
+  std::unique_ptr<base::Environment> parent = base::Environment::Create();
+  ASSERT_TRUE(parent->SetVar("VELLOC_FULL_ENV_PROBE", "inherited"));
+  ASSERT_TRUE(parent->SetVar("VELLOC_FULL_ENV_OVERRIDDEN", "old"));
+  ASSERT_TRUE(parent->SetVar("NODE_OPTIONS", "--inspect"));
+
+  const std::vector<EnvOverride> extras = {
+      {"VELLOC_FULL_ENV_OVERRIDDEN", "new"},
+      {"LD_PRELOAD", "/tmp/evil.so"},
+      {"TERM", "xterm-256color"},
+  };
+  base::EnvironmentMap full = SafeCommandPolicy::BuildFullEnvironment(extras);
+  base::EnvironmentMap safe = SafeCommandPolicy::BuildSafeEnvironment({});
+
+  parent->UnSetVar("VELLOC_FULL_ENV_PROBE");
+  parent->UnSetVar("VELLOC_FULL_ENV_OVERRIDDEN");
+  parent->UnSetVar("NODE_OPTIONS");
+
+#if BUILDFLAG(IS_WIN)
+  auto key = [](const char* name) { return base::UTF8ToWide(name); };
+  auto value = [](const char* text) { return base::UTF8ToWide(text); };
+#else
+  auto key = [](const char* name) { return std::string(name); };
+  auto value = [](const char* text) { return std::string(text); };
+#endif
+  EXPECT_EQ(full[key("VELLOC_FULL_ENV_PROBE")], value("inherited"));
+  EXPECT_EQ(safe.find(key("VELLOC_FULL_ENV_PROBE")), safe.end())
+      << "the agent baseline must not pick up arbitrary parent variables";
+  EXPECT_EQ(full[key("VELLOC_FULL_ENV_OVERRIDDEN")], value("new"));
+  EXPECT_EQ(full[key("TERM")], value("xterm-256color"));
+  EXPECT_EQ(full.find(key("NODE_OPTIONS")), full.end());
+  EXPECT_EQ(full.find(key("LD_PRELOAD")), full.end());
+  EXPECT_NE(full.find(key("PATH")), full.end());
+  size_t overridden_copies = 0;
+  for (const auto& entry : full) {
+#if BUILDFLAG(IS_WIN)
+    if (base::EqualsCaseInsensitiveASCII(base::WideToUTF8(entry.first),
+                                         "VELLOC_FULL_ENV_OVERRIDDEN")) {
+#else
+    if (entry.first == "VELLOC_FULL_ENV_OVERRIDDEN") {
+#endif
+      ++overridden_copies;
+    }
+  }
+  EXPECT_EQ(overridden_copies, 1u);
 }
 
 TEST(SafeCommandPolicyTest, InheritedEnvNamesIncludesPathext) {

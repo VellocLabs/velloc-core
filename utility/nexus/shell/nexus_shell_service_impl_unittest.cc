@@ -19,6 +19,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
+#include "custom_browser/utility/nexus/shell/pty_console_host.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -32,6 +33,8 @@ struct CapabilitiesSnapshot {
   mojom::ShellResolvedToolPtr default_shell;
   std::vector<mojom::ShellResolvedToolPtr> tools;
   std::vector<std::string> command_allowlist;
+  bool pty_supported = false;
+  std::string pty_host;
 };
 
 CapabilitiesSnapshot WaitForCapabilities(
@@ -42,11 +45,14 @@ CapabilitiesSnapshot WaitForCapabilities(
       [&](const std::string& platform,
           mojom::ShellResolvedToolPtr default_shell,
           std::vector<mojom::ShellResolvedToolPtr> tools,
-          const std::vector<std::string>& command_allowlist) {
+          const std::vector<std::string>& command_allowlist,
+          bool pty_supported, const std::string& pty_host) {
         snapshot.platform = platform;
         snapshot.default_shell = std::move(default_shell);
         snapshot.tools = std::move(tools);
         snapshot.command_allowlist = command_allowlist;
+        snapshot.pty_supported = pty_supported;
+        snapshot.pty_host = pty_host;
         loop.Quit();
       }));
   loop.Run();
@@ -98,7 +104,7 @@ TEST(NexusShellServiceImplTest, ConcurrentCallsShareSingleProbe) {
   auto on_response = base::BindLambdaForTesting(
       [&](const std::string& platform, mojom::ShellResolvedToolPtr,
           std::vector<mojom::ShellResolvedToolPtr>,
-          const std::vector<std::string>&) {
+          const std::vector<std::string>&, bool, const std::string&) {
         EXPECT_FALSE(platform.empty());
         if (++responses == 3) {
           loop.Quit();
@@ -622,6 +628,99 @@ TEST(NexusShellServiceImplTest, BackgroundShellIdsAreUniqueAcrossServiceRestarts
       << "Restarted NexusShellService instances must not reuse shell_id values; "
          "otherwise the SharedWorker can mistake a fresh background shell for a "
          "stale finished one and hide/drop its notification.";
+}
+
+// The capability reply names the console host behind `pty_supported`, and a
+// host without any pseudoconsole (injected empty table) reports none and
+// refuses StreamSpawnPty before touching the command.
+TEST(NexusShellServiceImplTest, CapabilitiesReportThePtyHost) {
+  base::test::TaskEnvironment task_environment;
+  {
+    mojo::Remote<mojom::NexusShellService> remote;
+    NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+    const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+    if (caps.pty_supported) {
+      EXPECT_TRUE(caps.pty_host == "bundled" || caps.pty_host == "system")
+          << caps.pty_host;
+    } else {
+      EXPECT_TRUE(caps.pty_host.empty());
+    }
+  }
+
+  PtyConsoleHost::SetTableForTesting(PtyConsoleHostTable());
+  {
+    base::ScopedTempDir tmp;
+    ASSERT_TRUE(tmp.CreateUniqueTempDir());
+    mojo::Remote<mojom::NexusShellService> remote;
+    NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+    const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+    EXPECT_FALSE(caps.pty_supported);
+    EXPECT_TRUE(caps.pty_host.empty());
+
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = FindAllowlistedShellId(caps);
+    options->cwd = tmp.GetPath();
+    auto size = mojom::PtySize::New();
+    size->cols = 80;
+    size->rows = 24;
+    RecordingStreamClient client;
+    mojo::Receiver<mojom::NexusStreamingProcessClient> client_receiver(
+        &client);
+    mojo::Remote<mojom::NexusStreamingProcess> controller;
+    base::RunLoop loop;
+    remote->StreamSpawnPty(
+        std::move(options), std::move(size),
+        controller.BindNewPipeAndPassReceiver(),
+        client_receiver.BindNewPipeAndPassRemote(),
+        base::BindLambdaForTesting(
+            [&](bool ok, const std::optional<std::string>& error_code,
+                const std::optional<std::string>&,
+                const std::optional<std::string>&) {
+              EXPECT_FALSE(ok);
+              EXPECT_EQ(error_code.value_or(""), "PTY_UNSUPPORTED");
+              loop.Quit();
+            }));
+    loop.Run();
+  }
+  PtyConsoleHost::SetTableForTesting(std::nullopt);
+}
+
+// A size outside 1..1000 is refused with INVALID_ARGS whatever the host.
+TEST(NexusShellServiceImplTest, StreamSpawnPtyRefusesAnOutOfRangeSize) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+
+  const std::vector<std::pair<uint16_t, uint16_t>> bad_sizes = {
+      {0, 24}, {80, 0}, {1001, 24}};
+  for (const auto& [cols, rows] : bad_sizes) {
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = "cmd";
+    options->cwd = tmp.GetPath();
+    auto size = mojom::PtySize::New();
+    size->cols = cols;
+    size->rows = rows;
+    RecordingStreamClient client;
+    mojo::Receiver<mojom::NexusStreamingProcessClient> client_receiver(
+        &client);
+    mojo::Remote<mojom::NexusStreamingProcess> controller;
+    base::RunLoop loop;
+    remote->StreamSpawnPty(
+        std::move(options), std::move(size),
+        controller.BindNewPipeAndPassReceiver(),
+        client_receiver.BindNewPipeAndPassRemote(),
+        base::BindLambdaForTesting(
+            [&](bool ok, const std::optional<std::string>& error_code,
+                const std::optional<std::string>&,
+                const std::optional<std::string>&) {
+              EXPECT_FALSE(ok);
+              EXPECT_EQ(error_code.value_or(""), "INVALID_ARGS");
+              loop.Quit();
+            }));
+    loop.Run();
+  }
 }
 
 TEST(NexusShellServiceImplTest, ExecRejectsNonAllowlistedCommand) {

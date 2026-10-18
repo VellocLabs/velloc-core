@@ -12,15 +12,21 @@
 #include <string>
 #include <vector>
 
-#include "base/functional/callback_forward.h"
+#include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
+#include "build/build_config.h"
 #include "custom_browser/utility/nexus/shell/child_process_runner.h"
+#include "custom_browser/utility/nexus/shell/pty_console_host.h"
 #include "custom_browser/utility/nexus/shell/shell_resolver.h"
 #include "custom_browser/utility/nexus/shell/streaming_child_process.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "custom_browser/utility/nexus/shell/pty_child_process.h"
+#endif
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -58,6 +64,27 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
       mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
       mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
       StreamSpawnCallback callback) override;
+  void StreamSpawnPty(
+      mojom::ShellSpawnOptionsPtr options,
+      mojom::PtySizePtr size,
+      mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
+      mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
+      StreamSpawnPtyCallback callback) override;
+
+#if BUILDFLAG(IS_WIN)
+  // Builds the pseudoconsole child `StreamSpawnPty` starts (F-31); the seam
+  // a POSIX backend or a test replaces.
+  using PtyChildFactory =
+      base::RepeatingCallback<std::unique_ptr<PtyChildProcess>(
+          ChildProcessRequest request,
+          uint16_t cols,
+          uint16_t rows,
+          PtyConsoleHostTable table,
+          mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
+          mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
+          base::OnceClosure on_closed)>;
+  void SetPtyChildFactoryForTesting(PtyChildFactory factory);
+#endif
 
  private:
   // Posts the `ShellResolver::Resolve()` probe to the thread pool the
@@ -101,13 +128,15 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
                           std::vector<uint8_t> bytes,
                           bool truncated);
 
-  // Streaming `StreamSpawn` helpers (slice 4). `RunStreamSpawn` runs the
-  // same PrepareExec validation as Exec/Spawn, then — on success —
-  // constructs + starts a `StreamingChildProcess` keyed in
-  // `streaming_children_`. `OnStreamingChildClosed` erases the entry when
-  // the child exits or either pipe drops.
+  // Streaming `StreamSpawn` / `StreamSpawnPty` helpers (slice 4). `RunStreamSpawn`
+  // runs the same PrepareExec validation as Exec/Spawn, then — on success —
+  // constructs + starts a `StreamingChildProcess` (or, with `pty_size`, a
+  // `PtyChildProcess`) keyed in `streaming_children_`.
+  // `OnStreamingChildClosed` erases the entry when the child exits or either
+  // pipe drops.
   void RunStreamSpawn(
       mojom::ShellSpawnOptionsPtr options,
+      mojom::PtySizePtr pty_size,
       mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
       mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
       StreamSpawnCallback callback);
@@ -152,6 +181,8 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
     PendingStreamSpawn& operator=(PendingStreamSpawn&&);
 
     mojom::ShellSpawnOptionsPtr options;
+    // Null for a pipe child.
+    mojom::PtySizePtr pty_size;
     mojo::PendingReceiver<mojom::NexusStreamingProcess> controller;
     mojo::PendingRemote<mojom::NexusStreamingProcessClient> client;
     StreamSpawnCallback callback;
@@ -208,12 +239,17 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // capped at `kMaxBackgroundEntries` (oldest evicted) to bound memory.
   std::map<std::string, BackgroundEntry> background_;
 
-  // Live streaming children started by `StreamSpawn`, keyed by an internal
-  // id. Each erases itself (via `OnStreamingChildClosed`) when its child
-  // exits or either mojo pipe drops.
-  std::map<uint64_t, std::unique_ptr<StreamingChildProcess>>
+  // Live streaming children started by `StreamSpawn` / `StreamSpawnPty`,
+  // keyed by an internal id. Each erases itself (via
+  // `OnStreamingChildClosed`) when its child exits or either mojo pipe
+  // drops.
+  std::map<uint64_t, std::unique_ptr<mojom::NexusStreamingProcess>>
       streaming_children_;
   uint64_t next_streaming_id_ = 1;
+
+#if BUILDFLAG(IS_WIN)
+  PtyChildFactory pty_child_factory_;
+#endif
 
   bool resolve_in_flight_ = false;
 

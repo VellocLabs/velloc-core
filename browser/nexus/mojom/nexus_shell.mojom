@@ -152,8 +152,16 @@ struct ShellBackgroundOutput {
   ShellExitInfo? exit;
 };
 
-// Controller for a long-lived child started by `StreamSpawn`, held by the
-// browser; the utility owns the child. Data streams in/out for its lifetime.
+// Size of a pseudoconsole in character cells. The service refuses a value
+// outside 1..1000 in either axis with INVALID_ARGS.
+struct PtySize {
+  uint16 cols;
+  uint16 rows;
+};
+
+// Controller for a long-lived child started by `StreamSpawn` or
+// `StreamSpawnPty`, held by the browser; the utility owns the child. Data
+// streams in/out for its lifetime.
 interface NexusStreamingProcess {
   // Append bytes to the child's stdin. The stream stays OPEN (contrast
   // with `Exec`'s one-shot `stdin_data`, which closes stdin after the
@@ -171,6 +179,10 @@ interface NexusStreamingProcess {
   // POSIX) and tear down the pumps. Idempotent. The client's `OnExit`
   // fires (with `killed = true`) once teardown completes.
   Kill();
+
+  // Resizes the console of a child started by `StreamSpawnPty`; a no-op for
+  // a pipe child. An out-of-range size is ignored.
+  Resize(PtySize size);
 };
 
 // Observer for a streaming child process (slice 4). Implemented by the
@@ -201,10 +213,15 @@ interface NexusStreamingProcessClient {
 [ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
 interface NexusShellService {
   // See ShellResolvedTool / `GetCapabilities` doc on slice 1.
+  // `pty_supported` says whether `StreamSpawnPty` can run a child under a
+  // pseudoconsole on this host; `pty_host` names the console host behind it
+  // ("bundled" | "system", empty when unsupported) for diagnostics.
   GetCapabilities() => (string platform,
                         ShellResolvedTool? default_shell,
                         array<ShellResolvedTool> tools,
-                        array<string> command_allowlist);
+                        array<string> command_allowlist,
+                        bool pty_supported,
+                        string pty_host);
 
   // Synchronous child-process invocation. `ok = false` with `error_code` /
   // `error_message` only for pre-launch rejections; after launch the outcome is
@@ -244,6 +261,22 @@ interface NexusShellService {
   StreamSpawn(ShellSpawnOptions options,
               pending_receiver<NexusStreamingProcess> controller,
               pending_remote<NexusStreamingProcessClient> client)
+      => (bool ok,
+          string? error_code,
+          string? error_message,
+          string? install_hint);
+
+  // `StreamSpawn` under a pseudoconsole of `size` (F-31): `OnStdout` carries
+  // the console's merged output, `OnStderr` is never called, `CloseStdin` is
+  // a no-op and `Resize` works. Validation is `StreamSpawn`'s (command
+  // allowlist, cwd); the child gets this process's whole environment minus
+  // the forbidden names, plus TERM and COLORTERM. `ok = false` with
+  // PTY_UNSUPPORTED when the host has no pseudoconsole (`pty_supported`
+  // false), INVALID_ARGS for a size outside 1..1000.
+  StreamSpawnPty(ShellSpawnOptions options,
+                 PtySize size,
+                 pending_receiver<NexusStreamingProcess> controller,
+                 pending_remote<NexusStreamingProcessClient> client)
       => (bool ok,
           string? error_code,
           string? error_message,

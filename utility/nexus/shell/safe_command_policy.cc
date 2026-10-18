@@ -5,11 +5,14 @@
 #include "custom_browser/utility/nexus/shell/safe_command_policy.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -19,6 +22,14 @@
 #include "build/build_config.h"
 #include "custom_browser/common/nexus_runtime_paths.h"
 #include "custom_browser/utility/nexus/shell/install_hints.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#else
+#include <unistd.h>
+
+extern char** environ;
+#endif
 
 namespace nexus {
 
@@ -281,6 +292,76 @@ base::EnvironmentMap SafeCommandPolicy::BuildSafeEnvironment(
     if (extra.name.empty() || IsForbiddenEnvName(extra.name)) {
       continue;
     }
+    env[ToNativeEnvKey(extra.name)] = ToNativeEnvValue(extra.value);
+  }
+
+  return env;
+}
+
+// static
+base::EnvironmentMap SafeCommandPolicy::BuildFullEnvironment(
+    const std::vector<EnvOverride>& extras) {
+  base::EnvironmentMap env;
+
+  // Drops a key that matches `name` under the platform's own rules, so an
+  // override never leaves a second, differently-cased copy behind on
+  // Windows.
+  auto erase_matching = [&env](const std::string& name) {
+    for (auto it = env.begin(); it != env.end();) {
+#if BUILDFLAG(IS_WIN)
+      const bool same =
+          base::EqualsCaseInsensitiveASCII(base::WideToUTF8(it->first), name);
+#else
+      const bool same = it->first == name;
+#endif
+      it = same ? env.erase(it) : std::next(it);
+    }
+  };
+
+#if BUILDFLAG(IS_WIN)
+  // The block is NAME=value\0 ... \0\0; entries that begin with '=' are the
+  // per-drive working directories, which belong to this process.
+  if (LPWCH block = ::GetEnvironmentStringsW()) {
+    const wchar_t* cursor = block;
+    while (*cursor) {
+      const std::wstring_view entry(cursor);
+      // SAFETY: every entry is NUL-terminated inside the block, and the block
+      // ends with an empty entry, which the loop condition stops on.
+      cursor = UNSAFE_BUFFERS(cursor + entry.size() + 1);
+      const size_t eq = entry.find(L'=', 1);
+      if (entry.front() == L'=' || eq == std::wstring_view::npos) {
+        continue;
+      }
+      std::wstring name(entry.substr(0, eq));
+      if (IsForbiddenEnvName(base::WideToUTF8(name))) {
+        continue;
+      }
+      env[std::move(name)] = std::wstring(entry.substr(eq + 1));
+    }
+    ::FreeEnvironmentStringsW(block);
+  }
+#else
+  for (char** cursor = environ; cursor && *cursor;
+       // SAFETY: `environ` is a NULL-terminated array of C strings.
+       cursor = UNSAFE_BUFFERS(cursor + 1)) {
+    const std::string_view entry(*cursor);
+    const size_t eq = entry.find('=');
+    if (eq == std::string_view::npos || eq == 0) {
+      continue;
+    }
+    std::string name(entry.substr(0, eq));
+    if (IsForbiddenEnvName(name)) {
+      continue;
+    }
+    env[std::move(name)] = std::string(entry.substr(eq + 1));
+  }
+#endif
+
+  for (const EnvOverride& extra : extras) {
+    if (extra.name.empty() || IsForbiddenEnvName(extra.name)) {
+      continue;
+    }
+    erase_matching(extra.name);
     env[ToNativeEnvKey(extra.name)] = ToNativeEnvValue(extra.value);
   }
 

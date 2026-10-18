@@ -11,6 +11,12 @@ namespace custom_browser::switches {
 // switch.)
 inline constexpr char kBrowserMode[] = "browser-mode";
 
+// Which console host backs a pseudoconsole child (F-31). The only value is
+// `system`: skip the bundled conpty.dll next to chrome.dll and use the OS's
+// ConPTY. Absent, the bundled host is tried first.
+inline constexpr char kConsoleHost[] = "velloc-console-host";
+inline constexpr char kConsoleHostSystem[] = "system";
+
 }  // namespace custom_browser::switches
 
 #endif  // CUSTOM_BROWSER_COMMON_CUSTOM_BROWSER_SWITCHES_H_

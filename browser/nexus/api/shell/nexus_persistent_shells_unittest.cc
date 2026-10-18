@@ -32,6 +32,7 @@ class FakeController : public mojom::NexusStreamingProcess {
   }
   void CloseStdin() override { stdin_closed = true; }
   void Kill() override { ++kill_count; }
+  void Resize(mojom::PtySizePtr /*size*/) override {}
 
   std::vector<uint8_t> stdin_bytes;
   bool stdin_closed = false;

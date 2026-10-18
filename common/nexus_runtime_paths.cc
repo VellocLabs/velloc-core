@@ -12,6 +12,7 @@
 #include "base/base_paths.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -121,6 +122,30 @@ base::FilePath GetBundledBinaryPath(std::string_view id) {
   exe += ".exe";
 #endif
   return module_dir.AppendASCII(exe);
+}
+
+base::FilePath GetBundledConsoleHostPath() {
+  base::FilePath module_dir;
+  if (!base::PathService::Get(base::DIR_MODULE, &module_dir)) {
+    return base::FilePath();
+  }
+  return GetBundledConsoleHostPathIn(module_dir);
+}
+
+base::FilePath GetBundledConsoleHostPathIn(const base::FilePath& module_dir) {
+#if BUILDFLAG(IS_WIN)
+  if (module_dir.empty()) {
+    return base::FilePath();
+  }
+  const base::FilePath dll = module_dir.AppendASCII("conpty.dll");
+  const base::FilePath host = module_dir.AppendASCII("OpenConsole.exe");
+  if (!base::PathExists(dll) || !base::PathExists(host)) {
+    return base::FilePath();
+  }
+  return dll;
+#else
+  return base::FilePath();
+#endif
 }
 
 bool IsBundledBinaryPath(const base::FilePath& path) {

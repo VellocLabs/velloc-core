@@ -52,6 +52,17 @@ base::FilePath GetBundledBinaryPath(std::string_view id);
 // True when `path` is exactly the bundled path of some bundled id.
 bool IsBundledBinaryPath(const base::FilePath& path);
 
+// Absolute path of the bundled console host's `conpty.dll` (F-31):
+// `<DIR_MODULE>/conpty.dll` when that file and `OpenConsole.exe` both exist
+// there. Empty when either is missing (a dev build without the files, or a
+// non-x64 build), when DIR_MODULE can't be resolved, or off Windows.
+// Security: the only directory ever consulted is chrome.dll's own, so the
+// DLL carries the same trust as chrome.dll; nothing is searched on PATH.
+base::FilePath GetBundledConsoleHostPath();
+
+// The same lookup against an explicit directory, for tests.
+base::FilePath GetBundledConsoleHostPathIn(const base::FilePath& module_dir);
+
 }  // namespace custom_browser
 
 #endif  // CUSTOM_BROWSER_COMMON_NEXUS_RUNTIME_PATHS_H_

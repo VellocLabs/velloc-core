@@ -195,27 +195,27 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
   in_read.Close();
   out_write.Close();
 
-  // The child joins the kill-on-close job as it is created, before its first
-  // instruction, so nothing it starts can escape Kill. No job, no launch.
+  // The child joins the kill-on-close job before its first instruction, so
+  // nothing it starts can escape Kill: it is created suspended, assigned,
+  // then resumed. No job, no launch.
   base::win::ScopedHandle job = CreateKillOnCloseJob();
   if (!job.is_valid()) {
     table.close(console);
     result.error_message = "could not create the terminal's job object";
     return result;
   }
-  HANDLE job_list[] = {job.get()};
 
   base::win::StartupInformation startup_info_wrapper;
   STARTUPINFOW* startup_info = startup_info_wrapper.startup_info();
-  // Two attributes: the pseudoconsole and the job. No handle list and no
-  // inheritance, so the child's std handles come from the console, never
-  // from this process.
-  if (!startup_info_wrapper.InitializeProcThreadAttributeList(2) ||
+  // One attribute: the pseudoconsole. The job is not passed as an attribute:
+  // a pseudoconsole client created straight into a job exits at once under
+  // the shell utility process, while assigning the suspended child works.
+  // No handle list and no inheritance, so the child's std handles come from
+  // the console, never from this process.
+  if (!startup_info_wrapper.InitializeProcThreadAttributeList(1) ||
       !startup_info_wrapper.UpdateProcThreadAttribute(
-          PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, console, sizeof(console)) ||
-      !startup_info_wrapper.UpdateProcThreadAttribute(
-          PROC_THREAD_ATTRIBUTE_JOB_LIST, job_list, sizeof(job_list))) {
-    PLOG(ERROR) << "[PtyChildProcess] process attribute failed";
+          PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, console, sizeof(console))) {
+    PLOG(ERROR) << "[PtyChildProcess] pseudoconsole attribute failed";
     table.close(console);
     result.error_message = "could not attach the pseudoconsole";
     return result;
@@ -229,8 +229,8 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
 
   // No CREATE_NO_WINDOW, CREATE_NEW_CONSOLE or DETACHED_PROCESS: each would
   // give the child a console other than the pseudoconsole.
-  const DWORD creation_flags =
-      EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT;
+  const DWORD creation_flags = EXTENDED_STARTUPINFO_PRESENT |
+                               CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
   static const wchar_t kEmptyEnvironment[] = {0};
   base::NativeEnvironmentString env_block =
       base::internal::AlterEnvironment(kEmptyEnvironment, request.env);
@@ -256,8 +256,22 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
   }
   base::win::ScopedProcessInformation process_info(temp_process_info);
   base::Process process(process_info.TakeProcessHandle());
+  if (!::AssignProcessToJobObject(job.get(), process.Handle())) {
+    PLOG(ERROR) << "[PtyChildProcess] AssignProcessToJobObject failed";
+    process.Terminate(1, /*wait=*/false);
+    table.close(console);
+    result.error_message = "could not place the shell in the terminal's job";
+    return result;
+  }
   if (flags.on_created) {
     flags.on_created.Run(process.Handle(), job.get());
+  }
+  if (::ResumeThread(process_info.thread_handle()) == static_cast<DWORD>(-1)) {
+    PLOG(ERROR) << "[PtyChildProcess] ResumeThread failed";
+    process.Terminate(1, /*wait=*/false);
+    table.close(console);
+    result.error_message = "could not start the shell";
+    return result;
   }
 
   result.process = std::move(process);

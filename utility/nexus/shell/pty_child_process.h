@@ -62,8 +62,9 @@ class PtyChildProcess : public mojom::NexusStreamingProcess,
     // handles from the pseudoconsole instead of this process's own, which
     // may be redirected.
     bool unset_std_handles = true;
-    // Runs on the launch worker right after `CreateProcessW` returns, with
-    // the child's process handle and the terminal's job. Test-only.
+    // Runs on the launch worker once the child is in the terminal's job and
+    // before its first instruction runs, with the child's process handle and
+    // the job. Test-only.
     base::RepeatingCallback<void(HANDLE process, HANDLE job)> on_created;
   };
 

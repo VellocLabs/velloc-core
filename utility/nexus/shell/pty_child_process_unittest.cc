@@ -342,9 +342,9 @@ TEST_P(PtyChildProcessTest, GrandchildDiesWithTheTree) {
       << "waitfor.exe " << grandchild << " outlived the killed terminal";
 }
 
-// The child is already in the terminal's job when CreateProcessW returns,
-// before any of its code has run. (This test process may itself sit in a job,
-// so the check names the terminal's job.)
+// The child is in the terminal's job before any of its code has run. (This
+// test process may itself sit in a job, so the check names the terminal's
+// job.)
 TEST_P(PtyChildProcessTest, ChildIsInTheJobWhenCreated) {
   std::optional<bool> in_job;
   base::Lock lock;

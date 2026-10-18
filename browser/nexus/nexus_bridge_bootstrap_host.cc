@@ -10,7 +10,6 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/message_port_provider.h"
 #include "content/public/browser/render_frame_host.h"
 #include "custom_browser/browser/nexus/nexus_bridge_port_service.h"
@@ -54,19 +53,29 @@ NexusHostFeatures ProbeHostFeatures() {
 NexusBridgeBootstrapHost::NexusBridgeBootstrapHost(
     content::RenderFrameHost* render_frame_host,
     Profile* profile)
-    : render_frame_host_(render_frame_host), profile_(profile) {}
+    : document_(render_frame_host->GetWeakDocumentPtr()), profile_(profile) {}
 
 NexusBridgeBootstrapHost::~NexusBridgeBootstrapHost() = default;
 
+content::RenderFrameHost* NexusBridgeBootstrapHost::ActiveFrame() const {
+  // A document in the back-forward cache is still a live frame, but not the
+  // one the person sees: ports posted there would serve a hidden page.
+  content::RenderFrameHost* render_frame_host =
+      document_.AsRenderFrameHostIfValid();
+  return render_frame_host && render_frame_host->IsActive() ? render_frame_host
+                                                            : nullptr;
+}
+
 void NexusBridgeBootstrapHost::GuestReady() {
-  if (!render_frame_host_ || !profile_) {
+  content::RenderFrameHost* render_frame_host = ActiveFrame();
+  if (!render_frame_host || !profile_) {
     LOG(WARNING) << "[NexusTrace][BootstrapHost] GuestReady skipped: missing "
                  << "render frame host or profile";
     return;
   }
 
   LOG(INFO) << "[NexusTrace][BootstrapHost] GuestReady from frame "
-            << render_frame_host_->GetLastCommittedURL();
+            << render_frame_host->GetLastCommittedURL();
 
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock()}, base::BindOnce(&ProbeHostFeatures),
@@ -75,13 +84,10 @@ void NexusBridgeBootstrapHost::GuestReady() {
 }
 
 void NexusBridgeBootstrapHost::PostBootstrap(NexusHostFeatures features) {
-  // The frame may have navigated or closed during the probe; the receiver
-  // that owns this host dies with the frame, but a reply already queued can
-  // still arrive, and a RenderFrameHost pointer is only valid while live.
-  if (!render_frame_host_ || !content::RenderFrameHost::FromID(
-                                 render_frame_host_->GetGlobalId())) {
-    LOG(WARNING) << "[NexusTrace][BootstrapHost] bootstrap skipped: frame "
-                 << "gone";
+  content::RenderFrameHost* render_frame_host = ActiveFrame();
+  if (!render_frame_host) {
+    LOG(WARNING) << "[NexusTrace][BootstrapHost] bootstrap skipped: document "
+                 << "gone or inactive";
     return;
   }
 
@@ -100,13 +106,13 @@ void NexusBridgeBootstrapHost::PostBootstrap(NexusHostFeatures features) {
   ports.push_back(std::move(worker_port));
 
   const url::Origin host_origin =
-      url::Origin::Create(render_frame_host_->GetLastCommittedURL());
+      url::Origin::Create(render_frame_host->GetLastCommittedURL());
 
   // The bootstrap message carries no tool definitions: the runtime defines
   // the host tools itself and offers them by the advertised capabilities.
   // Bootstrap stays minimal — capabilities + transferred ports.
   content::MessagePortProvider::PostMessageToFrame(
-      render_frame_host_->GetPage(), &host_origin, &host_origin,
+      render_frame_host->GetPage(), &host_origin, &host_origin,
       bridge_support::Utf8Payload(
           BuildNexusBridgeBootstrapMessage(GetAgentConfig(profile_),
                                            features)),
@@ -116,14 +122,15 @@ void NexusBridgeBootstrapHost::PostBootstrap(NexusHostFeatures features) {
 }
 
 void NexusBridgeBootstrapHost::AttachPanelBridge() {
-  if (!render_frame_host_ || !profile_) {
+  content::RenderFrameHost* render_frame_host = ActiveFrame();
+  if (!render_frame_host || !profile_) {
     LOG(WARNING) << "[NexusTrace][BootstrapHost] AttachPanelBridge skipped: "
                  << "missing render frame host or profile";
     return;
   }
 
   LOG(INFO) << "[NexusTrace][BootstrapHost] AttachPanelBridge from frame "
-            << render_frame_host_->GetLastCommittedURL();
+            << render_frame_host->GetLastCommittedURL();
 
   // Idempotent: lazily create the panel port service; CreatePortPair()
   // already resets any previously-allocated port. This is what makes the
@@ -141,14 +148,14 @@ void NexusBridgeBootstrapHost::AttachPanelBridge() {
   ports.push_back(std::move(panel_port));
 
   const url::Origin host_origin =
-      url::Origin::Create(render_frame_host_->GetLastCommittedURL());
+      url::Origin::Create(render_frame_host->GetLastCommittedURL());
 
   // Single envelope, single port. Same `PostMessageToFrame` mechanism the
   // guest bootstrap uses — keeps the WebUI's message-handling shape
   // uniform (parse + dispatch on `type`, transferred ports in
   // `event.ports`).
   content::MessagePortProvider::PostMessageToFrame(
-      render_frame_host_->GetPage(), &host_origin, &host_origin,
+      render_frame_host->GetPage(), &host_origin, &host_origin,
       bridge_support::Utf8Payload(BuildPanelBridgeAttachMessage()),
       std::move(ports));
   LOG(INFO) << "[NexusTrace][BootstrapHost] Posted nexus-panel-bridge-attach "

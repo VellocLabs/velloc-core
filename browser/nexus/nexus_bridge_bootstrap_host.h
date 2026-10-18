@@ -5,6 +5,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom.h"
 #include "custom_browser/browser/nexus/nexus_host_manifest.h"
 
@@ -35,13 +36,24 @@ class NexusBridgeBootstrapHost : public mojom::NexusBridgeBootstrap {
   // can re-attach safely without leaving stale ports behind.
   void AttachPanelBridge() override;
 
+  // True once the guest bootstrap has been posted to the frame.
+  bool bootstrap_posted_for_testing() const { return !!page_bridge_; }
+
  private:
+  // The frame of `document_` while that document is live and active, else
+  // null.
+  content::RenderFrameHost* ActiveFrame() const;
+
   // Second half of GuestReady, once the host features are known: creates
   // the port pairs and posts the bootstrap message to the frame. Skipped if
-  // the frame went away in between.
+  // the document that asked is gone or inactive (frame closed, navigated or
+  // cached) in between.
   void PostBootstrap(NexusHostFeatures features);
 
-  raw_ptr<content::RenderFrameHost> render_frame_host_;
+  // The document this host was bound for. Every entry point resolves it
+  // afresh: the receiver that owns this host outlives the frame, so a raw
+  // RenderFrameHost pointer could dangle.
+  content::WeakDocumentPtr document_;
   raw_ptr<Profile> profile_;
   std::unique_ptr<NexusBridgePortService> page_bridge_;
   std::unique_ptr<NexusBridgePortService> worker_bridge_;

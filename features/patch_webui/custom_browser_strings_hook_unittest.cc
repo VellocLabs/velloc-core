@@ -59,6 +59,17 @@ TEST_F(CustomBrowserStringsHookTest, NoPakSelectsNothing) {
 // The hook is built from RegisterHooks(), before BrowserProcess exists and the
 // application locale is known; the pak must follow the locale as it stands at
 // PreCreateThreads, not at construction.
+TEST(CustomBrowserStringsPakLocaleTest, ReadsTheLocaleFromThePakName) {
+  EXPECT_EQ("zh-CN", CustomBrowserStringsPakLocale(base::FilePath(
+                         FILE_PATH_LITERAL("a/custom_browser_strings_zh-CN.pak"))));
+  EXPECT_EQ("en-US", CustomBrowserStringsPakLocale(base::FilePath(
+                         FILE_PATH_LITERAL("custom_browser_strings_en-US.pak"))));
+  EXPECT_EQ("", CustomBrowserStringsPakLocale(base::FilePath(
+                    FILE_PATH_LITERAL("custom_browser_strings_.pak"))));
+  EXPECT_EQ("", CustomBrowserStringsPakLocale(
+                    base::FilePath(FILE_PATH_LITERAL("resources.pak"))));
+}
+
 TEST_F(CustomBrowserStringsHookTest, ReadsTheLocaleAtPreCreateThreads) {
   AddPak("en-US");
   const base::FilePath zh_cn = AddPak("zh-CN");

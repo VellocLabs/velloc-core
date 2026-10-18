@@ -10,6 +10,10 @@ import '../../components/native/native_view_aliases.js';
 import {isNexusFirstRun} from './nexus_shared.js';
 import './nexus_view.js';
 import type {NexusViewElement} from './nexus_view.js';
+
+// Longest a first run keeps the window's caption buttons hidden.
+export const CAPTION_BUTTONS_HIDDEN_MAX_MS = 90_000;
+
 // Session-list custom element. Registered for global use so any surface
 // inside this page (today: nothing renders it by default) receives
 // `nexusSessionsSummary` updates from the SharedWorker.
@@ -87,15 +91,25 @@ export class NexusPage extends CrLitElement {
 
   // A first run's boot welcome has no caption buttons, so the user cannot
   // close the window mid-setup; they return when the welcome goes away,
-  // including when the recovery overlay replaces it.
+  // including when the recovery overlay replaces it, and at the latest after
+  // CAPTION_BUTTONS_HIDDEN_MAX_MS, since a stalled boot can keep the welcome up.
   private captionButtonsHidden_ = isNexusFirstRun();
+  private captionButtonsCapTimer_: number|null = null;
 
   private onBootWelcomeClosed_() {
+    this.clearCaptionButtonsCap_();
     if (!this.captionButtonsHidden_) {
       return;
     }
     this.captionButtonsHidden_ = false;
     this.requestUpdate();
+  }
+
+  private clearCaptionButtonsCap_() {
+    if (this.captionButtonsCapTimer_ !== null) {
+      clearTimeout(this.captionButtonsCapTimer_);
+      this.captionButtonsCapTimer_ = null;
+    }
   }
 
   private readonly openSettingsFromHost_ = (section?: string) => {
@@ -104,6 +118,10 @@ export class NexusPage extends CrLitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    if (this.captionButtonsHidden_ && this.captionButtonsCapTimer_ === null) {
+      this.captionButtonsCapTimer_ = setTimeout(
+          () => this.onBootWelcomeClosed_(), CAPTION_BUTTONS_HIDDEN_MAX_MS);
+    }
     window.customBrowserOpenNexusSettings = this.openSettingsFromHost_;
     // Deep-link: rejection messages from native tools include a chrome://nexus
     // URL with `?settings=<section>`. Forward it to the guest's React settings.
@@ -118,6 +136,7 @@ export class NexusPage extends CrLitElement {
   }
 
   override disconnectedCallback(): void {
+    this.clearCaptionButtonsCap_();
     if (window.customBrowserOpenNexusSettings === this.openSettingsFromHost_) {
       delete window.customBrowserOpenNexusSettings;
     }

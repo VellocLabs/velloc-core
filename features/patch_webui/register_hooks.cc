@@ -12,6 +12,7 @@
 #include "content/public/browser/web_ui_controller_interface_binder.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_url_opener.h"
 #include "custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom.h"
+#include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/chromium_hooks/hook_dispatcher.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
@@ -39,6 +40,7 @@ std::string GetApplicationLocale() {
 void AddCustomBrowserStringsPak(const base::FilePath& pak_path) {
   ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
       pak_path, ui::kScaleFactorNone);
+  nexus::SetNexusHostStringsLocale(CustomBrowserStringsPakLocale(pak_path));
 }
 
 void RegisterCustomBrowserStrings(HookRegistrar* registrar) {

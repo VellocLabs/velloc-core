@@ -14,6 +14,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/values.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -100,9 +101,11 @@ class NexusRenderCachePurgerTest : public ChromeRenderViewHostTestHarness {
     ChromeRenderViewHostTestHarness::TearDown();
   }
 
-  std::unique_ptr<content::WebContents> MakeTab(bool tagged) {
+  std::unique_ptr<content::WebContents> MakeTab(bool tagged,
+                                               Profile* in_profile = nullptr) {
     std::unique_ptr<content::WebContents> contents =
-        content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
+        content::WebContentsTester::CreateTestWebContents(
+            in_profile ? in_profile : profile(), nullptr);
     content::NavigationSimulator::NavigateAndCommitFromBrowser(
         contents.get(), GURL("https://example.com/"));
     if (tagged) {
@@ -138,10 +141,13 @@ TEST_F(NexusRenderCachePurgerTest, SendsToEachSessionTabProcessOnce) {
   EXPECT_EQ(result.throttled, 0u);
   EXPECT_EQ(result.agent_tab_processes, 1);
   EXPECT_EQ(result.guest_processes, 0);
-  ASSERT_EQ(renderer_sends_.size(), 1u);
+  ASSERT_EQ(renderer_sends_.size(), 2u);
   EXPECT_EQ(renderer_sends_[0].host.get(),
             tab->GetPrimaryMainFrame()->GetProcess());
   EXPECT_EQ(renderer_sends_[0].level, base::MEMORY_PRESSURE_LEVEL_MODERATE);
+  EXPECT_EQ(renderer_sends_[1].host.get(),
+            tab->GetPrimaryMainFrame()->GetProcess());
+  EXPECT_EQ(renderer_sends_[1].level, base::MEMORY_PRESSURE_LEVEL_NONE);
   EXPECT_TRUE(gpu_sends_.empty());
 }
 
@@ -159,6 +165,40 @@ TEST_F(NexusRenderCachePurgerTest, UntaggedTabsAreLeftAlone) {
   EXPECT_TRUE(renderer_sends_.empty());
 }
 
+TEST_F(NexusRenderCachePurgerTest, PurgeThatReachesNoProcessIsNotThrottled) {
+  Purger::Purge(profile(), Purger::kAgentTabs,
+                base::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  std::unique_ptr<content::WebContents> tab = MakeTab(/*tagged=*/true);
+
+  const Purger::Result result = Purger::Purge(
+      profile(), Purger::kAgentTabs, base::MEMORY_PRESSURE_LEVEL_CRITICAL);
+
+  EXPECT_EQ(result.throttled, 0u);
+  EXPECT_EQ(result.agent_tab_processes, 1);
+}
+
+TEST_F(NexusRenderCachePurgerTest, RendererRateLimitIsPerProfile) {
+  std::unique_ptr<TestingProfile> other_profile =
+      TestingProfile::Builder()
+          .AddTestingFactories(test::GlicDisablingTestingFactories())
+          .Build();
+  std::unique_ptr<content::WebContents> tab = MakeTab(/*tagged=*/true);
+  std::unique_ptr<content::WebContents> other_tab =
+      MakeTab(/*tagged=*/true, other_profile.get());
+  Purger::Purge(profile(), Purger::kAgentTabs,
+                base::MEMORY_PRESSURE_LEVEL_CRITICAL);
+
+  const Purger::Result result = Purger::Purge(
+      other_profile.get(), Purger::kAgentTabs, base::MEMORY_PRESSURE_LEVEL_CRITICAL);
+
+  EXPECT_EQ(result.throttled, 0u);
+  EXPECT_EQ(result.agent_tab_processes, 1);
+  EXPECT_EQ(Purger::Purge(profile(), Purger::kAgentTabs,
+                          base::MEMORY_PRESSURE_LEVEL_CRITICAL)
+                .throttled,
+            static_cast<uint32_t>(Purger::kAgentTabs));
+}
+
 TEST_F(NexusRenderCachePurgerTest, GpuTargetSendsOnlyToGpu) {
   std::unique_ptr<content::WebContents> tab = MakeTab(/*tagged=*/true);
 
@@ -168,8 +208,9 @@ TEST_F(NexusRenderCachePurgerTest, GpuTargetSendsOnlyToGpu) {
   EXPECT_EQ(result.purged, static_cast<uint32_t>(Purger::kGpu));
   EXPECT_EQ(result.gpu_processes, 1);
   EXPECT_TRUE(renderer_sends_.empty());
-  ASSERT_EQ(gpu_sends_.size(), 1u);
+  ASSERT_EQ(gpu_sends_.size(), 2u);
   EXPECT_EQ(gpu_sends_[0], base::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  EXPECT_EQ(gpu_sends_[1], base::MEMORY_PRESSURE_LEVEL_NONE);
 }
 
 TEST_F(NexusRenderCachePurgerTest, RateLimitIsPerTarget) {
@@ -181,14 +222,14 @@ TEST_F(NexusRenderCachePurgerTest, RateLimitIsPerTarget) {
                     base::MEMORY_PRESSURE_LEVEL_CRITICAL);
   EXPECT_EQ(result.throttled, static_cast<uint32_t>(Purger::kGpu));
   EXPECT_EQ(result.purged, static_cast<uint32_t>(Purger::kAgentTabs));
-  EXPECT_EQ(gpu_sends_.size(), 1u);
+  EXPECT_EQ(gpu_sends_.size(), 2u);
 
   task_environment()->FastForwardBy(Purger::kMinInterval / 2);
   result = Purger::Purge(profile(), Purger::kGpu,
                          base::MEMORY_PRESSURE_LEVEL_CRITICAL);
   EXPECT_EQ(result.purged, static_cast<uint32_t>(Purger::kGpu));
   EXPECT_EQ(result.throttled, 0u);
-  EXPECT_EQ(gpu_sends_.size(), 2u);
+  EXPECT_EQ(gpu_sends_.size(), 4u);
 }
 
 TEST_F(NexusRenderCachePurgerTest, ActionDefaultsToGuestAndGpuCritical) {
@@ -205,8 +246,9 @@ TEST_F(NexusRenderCachePurgerTest, ActionDefaultsToGuestAndGpuCritical) {
   EXPECT_EQ(reply.FindInt("guestProcesses"), 0);
   EXPECT_EQ(reply.FindInt("agentTabProcesses"), 0);
   EXPECT_EQ(reply.FindInt("gpuProcesses"), 1);
-  ASSERT_EQ(gpu_sends_.size(), 1u);
+  ASSERT_EQ(gpu_sends_.size(), 2u);
   EXPECT_EQ(gpu_sends_[0], base::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  EXPECT_EQ(gpu_sends_[1], base::MEMORY_PRESSURE_LEVEL_NONE);
 }
 
 TEST_F(NexusRenderCachePurgerTest, ActionHonoursTargetsAndLevel) {
@@ -220,7 +262,7 @@ TEST_F(NexusRenderCachePurgerTest, ActionHonoursTargetsAndLevel) {
 
   ASSERT_EQ(delegate_.success_count, 1);
   EXPECT_EQ(delegate_.last_success.GetDict().FindInt("agentTabProcesses"), 1);
-  ASSERT_EQ(renderer_sends_.size(), 1u);
+  ASSERT_EQ(renderer_sends_.size(), 2u);
   EXPECT_EQ(renderer_sends_[0].level, base::MEMORY_PRESSURE_LEVEL_MODERATE);
   EXPECT_TRUE(gpu_sends_.empty());
 }

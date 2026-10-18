@@ -168,6 +168,29 @@ function resolveWelcomeLocale(raw: string|null|undefined): WelcomeLocale {
   return 'en';
 }
 
+// The welcome locale a host strings pak locale ("zh-CN", "en-US") is written
+// in, or null when the welcome copy has no catalog for that language.
+export function welcomeLocaleOfHostStrings(raw: string|null|undefined):
+    WelcomeLocale|null {
+  const lang = (raw ?? '').toLowerCase();
+  if (lang === 'zh-cn') {
+    return 'zh';
+  }
+  const primary = lang.split('-')[0];
+  return primary === 'en' || primary === 'es' || primary === 'fr' ||
+          primary === 'de' ?
+      primary :
+      null;
+}
+
+// A host string joins the welcome copy only when both are in one language.
+export function hostStringsMatchWelcome(
+    hostLocale: string|null|undefined,
+    browserLanguage: string|null|undefined): boolean {
+  const host = welcomeLocaleOfHostStrings(hostLocale);
+  return host !== null && host === resolveWelcomeLocale(browserLanguage);
+}
+
 export class NexusWelcomeElement extends CrLitElement {
   static get is() {
     return 'nexus-welcome';
@@ -362,6 +385,11 @@ export class NexusWelcomeElement extends CrLitElement {
     const runtimeText =
         buildTime ? copy.runtimeBuilt.replace('{date}', buildTime) : '';
     const loadingText = copy.loading[this.loadingStage_] ?? '';
+    const subtitle = this.firstRunNote_ &&
+            hostStringsMatchWelcome(
+                getString('customBrowserNexusHostStringsLocale'), locale) ?
+        getString('customBrowserNexusWelcomeFirstRunPatience', copy.subtitle) :
+        copy.subtitle;
     // Footer format: {client version} · {runtime} · {loading status}. The
     // runtime segment is omitted until the async build time arrives; the
     // segments are dot-separated with a lighter middot.
@@ -380,11 +408,7 @@ export class NexusWelcomeElement extends CrLitElement {
         <div class="welcome-title">${copy.greeting}</div>
         <div class="welcome-subtitle" id="welcomeSubtitle"
             data-first-run-note=${this.firstRunNote_ ? 'shown' : 'hidden'}
-            aria-live="polite">${
-            this.firstRunNote_ ?
-                getString('customBrowserNexusWelcomeFirstRunPatience',
-                          copy.subtitle) :
-                copy.subtitle}</div>
+            aria-live="polite">${subtitle}</div>
       </div>
       <div class="welcome-footer">
         ${segments.map((seg, i) => html`${

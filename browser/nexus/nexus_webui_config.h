@@ -1,6 +1,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_NEXUS_WEBUI_CONFIG_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_NEXUS_WEBUI_CONFIG_H_
 
+#include <string>
+
 #include "build/buildflag.h"
 
 namespace content {
@@ -32,6 +34,12 @@ extern const char kReleaseNexusGuestURL[];
 
 // The chrome://nexus host string.
 extern const char kNexusHost[];
+
+// The locale of the host strings pak loaded at startup ("zh-CN", "en-US"),
+// or empty when none was loaded. Set once on the main thread before threads
+// start; read on the UI thread.
+void SetNexusHostStringsLocale(std::string locale);
+const std::string& GetNexusHostStringsLocale();
 
 }  // namespace nexus
 

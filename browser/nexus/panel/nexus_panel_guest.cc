@@ -43,8 +43,9 @@ bool IsNexusPanelGuestContents(content::WebContents* contents) {
   if (!contents) {
     return false;
   }
-  return IsNexusPanelGuest(guest_view::GuestViewBase::FromWebContents(contents),
-                           *contents->GetPrimaryMainFrame());
+  content::RenderFrameHost* main_frame = contents->GetPrimaryMainFrame();
+  return IsNexusPanelGuest(
+      guest_view::GuestViewBase::FromRenderFrameHost(main_frame), *main_frame);
 }
 
 }  // namespace nexus

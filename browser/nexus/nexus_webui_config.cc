@@ -1,6 +1,9 @@
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
 
+#include <utility>
+
 #include "base/logging.h"
+#include "base/no_destructor.h"
 #include "build/buildflag.h"
 
 namespace nexus {
@@ -37,6 +40,21 @@ void RegisterNexusWebUI() {
 
 bool IsNexusWebUIRegistered() {
   return g_nexus_webui_registered;
+}
+
+namespace {
+std::string& HostStringsLocale() {
+  static base::NoDestructor<std::string> locale;
+  return *locale;
+}
+}  // namespace
+
+void SetNexusHostStringsLocale(std::string locale) {
+  HostStringsLocale() = std::move(locale);
+}
+
+const std::string& GetNexusHostStringsLocale() {
+  return HostStringsLocale();
 }
 
 }  // namespace nexus

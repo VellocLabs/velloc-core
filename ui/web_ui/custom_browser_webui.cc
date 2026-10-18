@@ -180,6 +180,10 @@ void AddNexusStrings(content::WebUIDataSource* html_source) {
        IDS_NEXUS_WELCOME_FIRST_RUN_PATIENCE},
   };
   html_source->AddLocalizedStrings(kNexusStrings);
+  // The language the strings above are in; the boot welcome compares it with
+  // its own copy's language before mixing the two.
+  html_source->AddString("customBrowserNexusHostStringsLocale",
+                         nexus::GetNexusHostStringsLocale());
 }
 
 }  // namespace

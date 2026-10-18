@@ -19,13 +19,14 @@ class RenderProcessHost;
 
 namespace nexus {
 
-// Asks the renderers and the GPU process a Nexus client uses to drop their
-// caches by sending them a memory-pressure level directly, without the
+// Contract: asks the renderers and the GPU process a Nexus client uses to drop
+// their caches by sending them a memory-pressure level directly, without the
 // browser-global signal that would discard tabs. Nothing is terminated or
 // frozen: pages, SharedWorkers and dedicated workers keep running (P-3).
-//
-// Contract: UI thread only. Rate-limited process-wide per target; a target
-// purged less than `kMinInterval` ago is reported as throttled, not sent.
+// UI thread only. Rate-limited per target: per profile for the
+// renderer targets, process-wide for the GPU. A target that reached a process
+// less than `kMinInterval` ago is reported as throttled, not sent; a purge that
+// reached no process does not start the interval.
 class NexusRenderCachePurger {
  public:
   enum Target : uint32_t {
@@ -56,8 +57,10 @@ class NexusRenderCachePurger {
 
   NexusRenderCachePurger() = delete;
 
-  // Sends `level` to each target in the `targets` bitmask that is not
-  // throttled. Each renderer process is sent at most once per call.
+  // Sends `level` and then NONE, so no process keeps a pressure level, to each
+  // target in the `targets` bitmask that is not throttled; each renderer
+  // process at most once per call. On Windows and macOS the GPU process frees
+  // only its shader and program caches and discardable memory (P-3).
   static Result Purge(Profile* profile,
                       uint32_t targets,
                       base::MemoryPressureLevel level);

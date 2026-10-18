@@ -15,6 +15,8 @@ namespace custom_browser::patch_webui {
 namespace {
 
 constexpr char kFallbackLocale[] = "en-US";
+constexpr std::string_view kPakPrefix = "custom_browser_strings_";
+constexpr std::string_view kPakSuffix = ".pak";
 
 base::FilePath ExistingPakFor(const base::FilePath& assets_dir,
                               std::string_view locale) {
@@ -22,7 +24,7 @@ base::FilePath ExistingPakFor(const base::FilePath& assets_dir,
     return base::FilePath();
   }
   const base::FilePath pak_path = assets_dir.AppendASCII(
-      base::StrCat({"custom_browser_strings_", locale, ".pak"}));
+      base::StrCat({kPakPrefix, locale, kPakSuffix}));
   return base::PathExists(pak_path) ? pak_path : base::FilePath();
 }
 
@@ -45,6 +47,16 @@ base::FilePath SelectCustomBrowserStringsPak(const base::FilePath& assets_dir,
     }
   }
   return ExistingPakFor(assets_dir, kFallbackLocale);
+}
+
+std::string CustomBrowserStringsPakLocale(const base::FilePath& pak_path) {
+  const std::string name = pak_path.BaseName().MaybeAsASCII();
+  if (name.size() <= kPakPrefix.size() + kPakSuffix.size() ||
+      !name.starts_with(kPakPrefix) || !name.ends_with(kPakSuffix)) {
+    return std::string();
+  }
+  return name.substr(kPakPrefix.size(),
+                     name.size() - kPakPrefix.size() - kPakSuffix.size());
 }
 
 CustomBrowserStringsHook::CustomBrowserStringsHook(base::FilePath assets_dir,

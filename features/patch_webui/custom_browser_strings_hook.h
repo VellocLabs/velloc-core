@@ -20,6 +20,10 @@ namespace custom_browser::patch_webui {
 base::FilePath SelectCustomBrowserStringsPak(const base::FilePath& assets_dir,
                                              std::string_view app_locale);
 
+// The locale a pak returned by SelectCustomBrowserStringsPak() holds
+// ("custom_browser_strings_zh-CN.pak" -> "zh-CN"); empty for any other name.
+std::string CustomBrowserStringsPakLocale(const base::FilePath& pak_path);
+
 // Loads the custom_browser_strings pak for the application locale at
 // PreCreateThreads. Constructing it must stay inert: it is built from
 // RegisterHooks(), before BrowserProcess exists and the locale is known.

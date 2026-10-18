@@ -56,6 +56,10 @@ export const topic = {
   mods: (): TopicId => 'mods/state',
   /** One session's mod-authored lines (status, notices) and toasts. */
   modsUi: (sessionId: string): TopicId => `mods/ui/${segment(sessionId, 'sessionId')}`,
+  /** The runtime's terminal list (`terminal` capability, full scope). */
+  terminals: (): TopicId => 'terminals',
+  /** One terminal: size, state, scrollback snapshot, then output / resize / title / state deltas. */
+  terminal: (terminalId: string): TopicId => `terminal/${segment(terminalId, 'terminalId')}`,
 } as const
 
 export type ParsedTopic =
@@ -71,6 +75,8 @@ export type ParsedTopic =
   | { family: 'diagTrace' }
   | { family: 'mods' }
   | { family: 'modsUi'; sessionId: string }
+  | { family: 'terminals' }
+  | { family: 'terminal'; terminalId: string }
 
 function isSessionTopicKind(value: string): value is SessionTopicKind {
   return (SESSION_TOPIC_KINDS as readonly string[]).includes(value)
@@ -85,6 +91,7 @@ export function parseTopic(id: string): ParsedTopic | null {
   if (id === 'presence') return { family: 'presence' }
   if (id === 'diag/trace') return { family: 'diagTrace' }
   if (id === 'mods/state') return { family: 'mods' }
+  if (id === 'terminals') return { family: 'terminals' }
 
   const parts = id.split('/')
   if (!parts.every(isTopicSegment)) return null
@@ -111,6 +118,9 @@ export function parseTopic(id: string): ParsedTopic | null {
   }
   if (head === 'mods' && second === 'ui' && parts.length === 3 && third) {
     return { family: 'modsUi', sessionId: third }
+  }
+  if (head === 'terminal' && parts.length === 2 && second) {
+    return { family: 'terminal', terminalId: second }
   }
   return null
 }

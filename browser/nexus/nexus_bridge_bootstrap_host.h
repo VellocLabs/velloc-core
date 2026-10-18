@@ -4,7 +4,9 @@
 #include <memory>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "custom_browser/browser/nexus/mojom/nexus_bridge_bootstrap.mojom.h"
+#include "custom_browser/browser/nexus/nexus_host_manifest.h"
 
 class Profile;
 
@@ -34,6 +36,11 @@ class NexusBridgeBootstrapHost : public mojom::NexusBridgeBootstrap {
   void AttachPanelBridge() override;
 
  private:
+  // Second half of GuestReady, once the host features are known: creates
+  // the port pairs and posts the bootstrap message to the frame. Skipped if
+  // the frame went away in between.
+  void PostBootstrap(NexusHostFeatures features);
+
   raw_ptr<content::RenderFrameHost> render_frame_host_;
   raw_ptr<Profile> profile_;
   std::unique_ptr<NexusBridgePortService> page_bridge_;
@@ -44,6 +51,8 @@ class NexusBridgeBootstrapHost : public mojom::NexusBridgeBootstrap {
   // settings-related capabilities (initially: `providers`), so its
   // dispatcher is constructed with `kPanel` mode.
   std::unique_ptr<NexusBridgePortService> panel_bridge_;
+
+  base::WeakPtrFactory<NexusBridgeBootstrapHost> weak_factory_{this};
 };
 
 }  // namespace nexus

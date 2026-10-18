@@ -124,7 +124,8 @@ base::ListValue BuildStringList(const std::array<const char*, N>& entries) {
 
 }  // namespace
 
-base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
+base::DictValue BuildNexusHostManifest(base::DictValue agent_config,
+                                       const NexusHostFeatures& features) {
   base::DictValue manifest;
   manifest.Set("hostKind", kHostKind);
 
@@ -136,8 +137,14 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   // launcher; nothing in the bridge serializes those calls.
   manifest.Set("capabilities", std::move(capabilities));
 
-  // The additive primitives (see kNativePrimitives).
-  manifest.Set("primitives", BuildStringList(kNativePrimitives));
+  // The additive primitives (see kNativePrimitives), plus the ones this
+  // particular host has: `shell.spawn.pty` only where a pseudoconsole exists
+  // (an older host, or one without a console host, would run a pipe child).
+  base::ListValue primitives = BuildStringList(kNativePrimitives);
+  if (features.pty_supported) {
+    primitives.Append("shell.spawn.pty");
+  }
+  manifest.Set("primitives", std::move(primitives));
 
   // A `document` part may sit at the top level of a message, not only inside
   // a tool result. The guest inlines an @-mentioned PDF only when this is
@@ -157,11 +164,14 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config) {
   return manifest;
 }
 
-std::string BuildNexusBridgeBootstrapMessage(base::DictValue agent_config) {
+std::string BuildNexusBridgeBootstrapMessage(
+    base::DictValue agent_config,
+    const NexusHostFeatures& features) {
   base::DictValue message;
   message.Set("type", "nexus-bridge-bootstrap");
   message.Set("nexus", true);
-  message.Set("manifest", BuildNexusHostManifest(std::move(agent_config)));
+  message.Set("manifest",
+              BuildNexusHostManifest(std::move(agent_config), features));
   return bridge_support::SerializeJson(base::Value(std::move(message)));
 }
 

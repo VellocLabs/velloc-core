@@ -46,6 +46,13 @@ class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
   // Most names one shell.env call may read.
   static constexpr size_t kMaxEnvNames = 64;
 
+  // Largest pseudoconsole size accepted in either axis (F-31).
+  static constexpr int kMaxPtyCells = 1000;
+
+  // Spawns through `service` instead of the profile's launcher.
+  void SetShellServiceForTesting(
+      mojo::PendingRemote<mojom::NexusShellService> service);
+
  private:
   void HandleSpawnOnUI(
       ::nexus::generated::SpawnInput input,
@@ -61,6 +68,11 @@ class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
       ::nexus::BridgeResponseCallback done) override;
   void HandleStreamKillOnUI(
       ::nexus::generated::StreamKillInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  // shell.resize: the console size of a child spawned with `pty` (F-31).
+  void HandleResizeOnUI(
+      ::nexus::generated::ShellResizeInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   // The persistent children (`spawn` with `persist`) — see
@@ -103,10 +115,15 @@ class NexusShellBridgeAdapter : public ::nexus::generated::ShellApiBase {
   // The child exited or its pipe broke: forget it.
   void OnStreamingChildGone(const std::string& stream_id);
 
+  // The service children are spawned through: the test override when set,
+  // else the profile's shared launcher. Null without either.
+  mojom::NexusShellService* ShellService();
+
   // The Profile owns the shared launcher (Profile user-data); it outlives this
   // adapter (which is owned by the port service, itself bound to a render frame
   // of the profile). Used only to fetch `GetSharedShellLauncher(profile_)`.
   raw_ptr<Profile> profile_;
+  mojo::Remote<mojom::NexusShellService> service_for_testing_;
 
   // Streaming children by streamId. Destroying an entry drops the
   // controller remote and the client receiver; the service kills a child

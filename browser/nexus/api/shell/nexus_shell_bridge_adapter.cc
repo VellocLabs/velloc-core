@@ -23,6 +23,7 @@
 #include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
 #include "custom_browser/browser/nexus/api/shell/nexus_persistent_shells.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
+#include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/tools/process_tool/nexus_shell_service_launcher.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -74,6 +75,22 @@ NexusShellBridgeAdapter::NexusShellBridgeAdapter(
     : ::nexus::generated::ShellApiBase(delegate), profile_(profile) {}
 
 NexusShellBridgeAdapter::~NexusShellBridgeAdapter() = default;
+
+void NexusShellBridgeAdapter::SetShellServiceForTesting(
+    mojo::PendingRemote<mojom::NexusShellService> service) {
+  service_for_testing_.reset();
+  service_for_testing_.Bind(std::move(service));
+}
+
+mojom::NexusShellService* NexusShellBridgeAdapter::ShellService() {
+  if (service_for_testing_.is_bound()) {
+    return service_for_testing_.get();
+  }
+  if (!profile_) {
+    return nullptr;
+  }
+  return GetSharedShellLauncher(profile_).GetService().get();
+}
 
 // One streaming child of `shell.spawn`: implements the service's client
 // interface (output and exit pushes) and holds the controller remote. UI
@@ -225,6 +242,32 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
   // streaming path (RunStreamSpawn): the controller drives stdin and the
   // life of the child; the guest bounds what it keeps of the output.
 
+  // `pty: {cols, rows}` runs the child under a pseudoconsole (advertised as
+  // shell.spawn.pty). A console child is interactive by nature, so the
+  // one-shot stdin fields and detaching make no sense with it.
+  mojom::PtySizePtr pty_size;
+  if (input.pty.has_value()) {
+    if (input.persist.has_value() || input.stdinText.has_value() ||
+        input.closeStdin.has_value()) {
+      std::move(done).InvalidArgs(
+          "pty cannot be combined with persist, stdinText or closeStdin");
+      return;
+    }
+    const std::optional<int64_t> cols =
+        bridge_support::FindIntegralValue(*input.pty, "cols");
+    const std::optional<int64_t> rows =
+        bridge_support::FindIntegralValue(*input.pty, "rows");
+    if (!cols || !rows || *cols < 1 || *cols > kMaxPtyCells || *rows < 1 ||
+        *rows > kMaxPtyCells) {
+      std::move(done).InvalidArgs(
+          "pty.cols and pty.rows must be integers within 1..1000");
+      return;
+    }
+    pty_size = mojom::PtySize::New();
+    pty_size->cols = static_cast<uint16_t>(*cols);
+    pty_size->rows = static_cast<uint16_t>(*rows);
+  }
+
   if (input.persist.has_value()) {
     // Detached from this connection: the profile-wide registry owns it and
     // its output goes to the log file (advertised as shell.spawn.persist).
@@ -257,7 +300,8 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
     return;
   }
 
-  if (!profile_) {
+  mojom::NexusShellService* service = ShellService();
+  if (!service) {
     std::move(done).Error(kShellUnavailableCode, kShellUnavailableMessage);
     return;
   }
@@ -279,10 +323,17 @@ void NexusShellBridgeAdapter::HandleSpawnOnUI(
   }
   streams_[stream_id] = std::move(child);
 
-  GetSharedShellLauncher(profile_).GetService()->StreamSpawn(
-      std::move(options), std::move(controller), std::move(client),
+  auto on_done =
       base::BindOnce(&NexusShellBridgeAdapter::OnStreamSpawnDone,
-                     weak_factory_.GetWeakPtr(), stream_id, std::move(done)));
+                     weak_factory_.GetWeakPtr(), stream_id, std::move(done));
+  if (pty_size) {
+    service->StreamSpawnPty(std::move(options), std::move(pty_size),
+                            std::move(controller), std::move(client),
+                            std::move(on_done));
+  } else {
+    service->StreamSpawn(std::move(options), std::move(controller),
+                         std::move(client), std::move(on_done));
+  }
 }
 
 void NexusShellBridgeAdapter::OnStreamSpawnDone(
@@ -395,6 +446,29 @@ void NexusShellBridgeAdapter::HandleStreamKillOnUI(
   if (found) {
     // The exit arrives through the client (killed=true) and erases the entry.
     it->second->controller()->Kill();
+  }
+  dict.Set("found", found);
+  std::move(done).Success(std::move(dict));
+}
+
+void NexusShellBridgeAdapter::HandleResizeOnUI(
+    ::nexus::generated::ShellResizeInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (input.cols < 1 || input.cols > kMaxPtyCells || input.rows < 1 ||
+      input.rows > kMaxPtyCells) {
+    std::move(done).InvalidArgs("cols and rows must be within 1..1000");
+    return;
+  }
+  auto it = streams_.find(input.streamId);
+  Dict dict;
+  const bool found = it != streams_.end() && !it->second->exited();
+  if (found) {
+    // A pipe child ignores this in the service.
+    auto size = mojom::PtySize::New();
+    size->cols = static_cast<uint16_t>(input.cols);
+    size->rows = static_cast<uint16_t>(input.rows);
+    it->second->controller()->Resize(std::move(size));
   }
   dict.Set("found", found);
   std::move(done).Success(std::move(dict));

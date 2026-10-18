@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "resize",
+  "struct_name": "ShellResize",
+  "description": "Resize the pseudoconsole of a streaming child started by shell.spawn with `pty` (NexusStreamingProcess.Resize). Returns { found }: false for an unknown or exited stream; a pipe child (spawned without `pty`) answers found: true and nothing happens. cols and rows outside 1..1000 are INVALID_ARGS. Covered by the shell.spawn.pty primitive; an older host answers NOT_IMPLEMENTED.",
+  "inputs": [
+    {
+      "name": "streamId",
+      "type": "string",
+      "required": true,
+      "description": "The streamId shell.spawn returned."
+    },
+    {
+      "name": "cols",
+      "type": "integer",
+      "required": true,
+      "description": "Console width in cells, 1..1000."
+    },
+    {
+      "name": "rows",
+      "type": "integer",
+      "required": true,
+      "description": "Console height in cells, 1..1000."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

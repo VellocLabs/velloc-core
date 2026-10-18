@@ -4,16 +4,20 @@
 #include <utility>
 #include <vector>
 
+#include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/message_port_provider.h"
 #include "content/public/browser/render_frame_host.h"
 #include "custom_browser/browser/nexus/nexus_bridge_port_service.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 #include "custom_browser/browser/nexus/nexus_browser_tools_config.h"
 #include "custom_browser/browser/nexus/nexus_host_manifest.h"
+#include "custom_browser/utility/nexus/shell/pty_console_host.h"
 #include "url/origin.h"
 
 namespace nexus {
@@ -36,6 +40,15 @@ std::string BuildPanelBridgeAttachMessage() {
   return serialized;
 }
 
+// Blocking: probes the console host (file checks, LoadLibrary), so it runs
+// on the thread pool. The same resolver the shell service uses, so the
+// manifest and `GetCapabilities` agree (F-31).
+NexusHostFeatures ProbeHostFeatures() {
+  NexusHostFeatures features;
+  features.pty_supported = PtyConsoleHost::Get().available();
+  return features;
+}
+
 }  // namespace
 
 NexusBridgeBootstrapHost::NexusBridgeBootstrapHost(
@@ -54,6 +67,23 @@ void NexusBridgeBootstrapHost::GuestReady() {
 
   LOG(INFO) << "[NexusTrace][BootstrapHost] GuestReady from frame "
             << render_frame_host_->GetLastCommittedURL();
+
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock()}, base::BindOnce(&ProbeHostFeatures),
+      base::BindOnce(&NexusBridgeBootstrapHost::PostBootstrap,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void NexusBridgeBootstrapHost::PostBootstrap(NexusHostFeatures features) {
+  // The frame may have navigated or closed during the probe; the receiver
+  // that owns this host dies with the frame, but a reply already queued can
+  // still arrive, and a RenderFrameHost pointer is only valid while live.
+  if (!render_frame_host_ || !content::RenderFrameHost::FromID(
+                                 render_frame_host_->GetGlobalId())) {
+    LOG(WARNING) << "[NexusTrace][BootstrapHost] bootstrap skipped: frame "
+                 << "gone";
+    return;
+  }
 
   if (!page_bridge_) {
     page_bridge_ = std::make_unique<NexusBridgePortService>(profile_);
@@ -78,7 +108,8 @@ void NexusBridgeBootstrapHost::GuestReady() {
   content::MessagePortProvider::PostMessageToFrame(
       render_frame_host_->GetPage(), &host_origin, &host_origin,
       bridge_support::Utf8Payload(
-          BuildNexusBridgeBootstrapMessage(GetAgentConfig(profile_))),
+          BuildNexusBridgeBootstrapMessage(GetAgentConfig(profile_),
+                                           features)),
       std::move(ports));
   LOG(INFO) << "[NexusTrace][BootstrapHost] Posted bootstrap message + 2 "
             << "ports to host page (hostedTools fetched via catalog API)";

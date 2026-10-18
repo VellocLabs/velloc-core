@@ -25,10 +25,13 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/chrome_unscaled_resources.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -39,6 +42,8 @@
 #include "ui/base/clipboard/clipboard_buffer.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/models/image_model.h"
+#include "ui/base/page_transition_types.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
@@ -54,6 +59,9 @@
 #include "ui/message_center/public/cpp/notifier_id.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/session/nexus_session_features.h"
+#include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
+#include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/common/branding_constants.h"
 #include "url/gurl.h"
 
@@ -390,6 +398,47 @@ void NexusUiBridgeAdapter::HandleOpenLanguageSettingsOnUI(
   // rejects chrome:// because its URLs come from untrusted conversation links).
   custom_browser::window_util::OpenUrlInNormalWindow(
       profile_, GURL("chrome://settings/languages"));
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleOpenSessionTabOnUI(
+    ::nexus::generated::OpenSessionTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Security: the tab opens the new-tab page, never a URL the caller
+  // chose; the session id only tags the tab, so an unknown id yields a tab
+  // no session shows. A tab is tagged only while session-scoped tabs are
+  // on, so none is opened otherwise.
+  if (input.sessionId.empty()) {
+    std::move(done).Error("UI_ERROR", "openSessionTab: sessionId is required");
+    return;
+  }
+  if (!::nexus::features::IsSessionScopedTabsEnabled()) {
+    std::move(done).Error("UI_ERROR",
+                          "openSessionTab: session tabs are disabled");
+    return;
+  }
+  Browser* nexus = custom_browser::window_util::FindNexusWindow(profile_);
+  if (!nexus) {
+    std::move(done).Error("UI_ERROR", "openSessionTab: no Nexus window");
+    return;
+  }
+  NavigateParams params(nexus, GURL(chrome::kChromeUINewTabURL),
+                        ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  Navigate(&params);
+  content::WebContents* contents = params.navigated_or_inserted_contents;
+  if (!contents) {
+    std::move(done).Error("UI_ERROR", "openSessionTab: no tab was created");
+    return;
+  }
+  ::nexus::NexusSessionTabTag::AttachTo(contents, input.sessionId);
+  // The strip insert was tallied before the tag: recount, so the session's
+  // counts change and `browser.sessionTabsChanged` reaches the guest.
+  if (NexusSessionTabTracker* tracker =
+          NexusSessionTabTrackerFactory::GetForProfile(profile_)) {
+    tracker->NotifyTabBound(contents);
+  }
   std::move(done).SuccessVoid();
 }
 

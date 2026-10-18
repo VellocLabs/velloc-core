@@ -148,6 +148,7 @@ action("nexus_tools_codegen") {
     "api/declarations/ui/openBrowserWindow.api.json",
     "api/declarations/ui/openLanguageSettings.api.json",
     "api/declarations/ui/openNexusSettings.api.json",
+    "api/declarations/ui/openSessionTab.api.json",
     "api/declarations/ui/openUrl.api.json",
     "api/declarations/ui/pickAttachmentFiles.api.json",
     "api/declarations/ui/pickProjectFolder.api.json",

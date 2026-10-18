@@ -96,6 +96,10 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
       ::nexus::generated::OpenLanguageSettingsInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  void HandleOpenSessionTabOnUI(
+      ::nexus::generated::OpenSessionTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   void HandleWriteClipboardOnUI(
       ::nexus::generated::WriteClipboardInput input,
       std::vector<blink::MessagePortDescriptor> ports,

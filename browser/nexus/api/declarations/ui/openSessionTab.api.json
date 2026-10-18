@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "openSessionTab",
+  "description": "Open a new tab owned by a chat session in this Nexus window: the new-tab page, foregrounded, tagged with the session and counted in its tab tally, so the guest's browser pane shows it. Backs the topbar browser toggle and the pane's New tab when the session has no tab yet. The URL is never the caller's.",
+  "inputs": [
+    {
+      "name": "sessionId",
+      "type": "string",
+      "required": true,
+      "description": "The owning chat session's id, the key the session tab tracker tallies by."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

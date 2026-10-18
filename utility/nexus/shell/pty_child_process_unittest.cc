@@ -23,6 +23,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
@@ -339,6 +340,58 @@ TEST_P(PtyChildProcessTest, GrandchildDiesWithTheTree) {
   EXPECT_TRUE(WaitUntil(base::BindLambdaForTesting(
       [&] { return !ProcessIsAlive(grandchild); })))
       << "waitfor.exe " << grandchild << " outlived the killed terminal";
+}
+
+// The child is already in the terminal's job when CreateProcessW returns,
+// before any of its code has run. (This test process may itself sit in a job,
+// so the check names the terminal's job.)
+TEST_P(PtyChildProcessTest, ChildIsInTheJobWhenCreated) {
+  std::optional<bool> in_job;
+  base::Lock lock;
+  PtyChildProcess::LaunchFlags flags;
+  flags.on_created =
+      base::BindLambdaForTesting([&](HANDLE process, HANDLE job) {
+        BOOL result = FALSE;
+        const bool ok = ::IsProcessInJob(process, job, &result);
+        base::AutoLock guard(lock);
+        in_job = ok && result;
+      });
+  PtyChildProcess::SetLaunchFlagsForTesting(flags);
+
+  Spawn({"/c", "echo velloc-job"}, 80, 24);
+  ASSERT_TRUE(WaitForExit()) << Text();
+  base::AutoLock guard(lock);
+  ASSERT_TRUE(in_job.has_value());
+  EXPECT_TRUE(*in_job);
+}
+
+// The shell's very first act starts a grandchild; Kill still takes it.
+TEST_P(PtyChildProcessTest, GrandchildStartedAtOnceDiesWithTheTree) {
+  const base::FilePath::StringType kWaitFor = FILE_PATH_LITERAL("waitfor.exe");
+  const std::set<base::ProcessId> before = PidsOf(kWaitFor);
+  const unsigned self = static_cast<unsigned>(::GetCurrentProcessId());
+  Spawn({"/c", base::StringPrintf("start /b waitfor VellocPtyFirst%u /t "
+                                  "300 & waitfor VellocPtyHold%u /t 300",
+                                  self, self)},
+        80, 24);
+  std::set<base::ProcessId> spawned;
+  ASSERT_TRUE(WaitUntil(base::BindLambdaForTesting([&] {
+    spawned.clear();
+    for (base::ProcessId pid : PidsOf(kWaitFor)) {
+      if (!before.count(pid)) {
+        spawned.insert(pid);
+      }
+    }
+    return spawned.size() >= 2;
+  }))) << Text();
+
+  controller_->Kill();
+  ASSERT_TRUE(WaitForExit());
+  for (base::ProcessId pid : spawned) {
+    EXPECT_TRUE(WaitUntil(
+        base::BindLambdaForTesting([&] { return !ProcessIsAlive(pid); })))
+        << "waitfor.exe " << pid << " outlived the killed terminal";
+  }
 }
 
 // This process's stdout and stderr are redirected to a file, the way

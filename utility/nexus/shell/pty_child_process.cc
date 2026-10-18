@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/no_destructor.h"
 #include "base/process/environment_internal.h"
 #include "base/synchronization/lock.h"
 #include "base/task/bind_post_task.h"
@@ -41,8 +42,8 @@ constexpr base::TaskTraits kBlockingTraits = {
     base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN};
 
 std::optional<PtyChildProcess::LaunchFlags>& LaunchFlagsOverride() {
-  static std::optional<PtyChildProcess::LaunchFlags> flags;
-  return flags;
+  static base::NoDestructor<std::optional<PtyChildProcess::LaunchFlags>> flags;
+  return *flags;
 }
 
 // Security: every pty child goes in a Job Object with KILL_ON_JOB_CLOSE, so
@@ -65,6 +66,12 @@ base::win::ScopedHandle CreateKillOnCloseJob() {
 }
 
 }  // namespace
+
+PtyChildProcess::LaunchFlags::LaunchFlags() = default;
+PtyChildProcess::LaunchFlags::LaunchFlags(const LaunchFlags&) = default;
+PtyChildProcess::LaunchFlags& PtyChildProcess::LaunchFlags::operator=(
+    const LaunchFlags&) = default;
+PtyChildProcess::LaunchFlags::~LaunchFlags() = default;
 
 PtyChildProcess::LaunchResult::LaunchResult() = default;
 PtyChildProcess::LaunchResult::~LaunchResult() = default;
@@ -188,14 +195,27 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
   in_read.Close();
   out_write.Close();
 
+  // The child joins the kill-on-close job as it is created, before its first
+  // instruction, so nothing it starts can escape Kill. No job, no launch.
+  base::win::ScopedHandle job = CreateKillOnCloseJob();
+  if (!job.is_valid()) {
+    table.close(console);
+    result.error_message = "could not create the terminal's job object";
+    return result;
+  }
+  HANDLE job_list[] = {job.get()};
+
   base::win::StartupInformation startup_info_wrapper;
   STARTUPINFOW* startup_info = startup_info_wrapper.startup_info();
-  // One attribute: the pseudoconsole. No handle list and no inheritance, so
-  // the child's std handles come from the console, never from this process.
-  if (!startup_info_wrapper.InitializeProcThreadAttributeList(1) ||
+  // Two attributes: the pseudoconsole and the job. No handle list and no
+  // inheritance, so the child's std handles come from the console, never
+  // from this process.
+  if (!startup_info_wrapper.InitializeProcThreadAttributeList(2) ||
       !startup_info_wrapper.UpdateProcThreadAttribute(
-          PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, console, sizeof(console))) {
-    PLOG(ERROR) << "[PtyChildProcess] pseudoconsole attribute failed";
+          PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, console, sizeof(console)) ||
+      !startup_info_wrapper.UpdateProcThreadAttribute(
+          PROC_THREAD_ATTRIBUTE_JOB_LIST, job_list, sizeof(job_list))) {
+    PLOG(ERROR) << "[PtyChildProcess] process attribute failed";
     table.close(console);
     result.error_message = "could not attach the pseudoconsole";
     return result;
@@ -223,8 +243,6 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
   LPCWSTR current_directory =
       request.cwd.empty() ? nullptr : request.cwd.value().c_str();
 
-  base::win::ScopedHandle job = CreateKillOnCloseJob();
-
   PROCESS_INFORMATION temp_process_info = {};
   if (!::CreateProcessW(nullptr, writable_cmdline.data(), nullptr, nullptr,
                         /*bInheritHandles=*/FALSE, creation_flags,
@@ -238,12 +256,8 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
   }
   base::win::ScopedProcessInformation process_info(temp_process_info);
   base::Process process(process_info.TakeProcessHandle());
-
-  if (job.is_valid() &&
-      !::AssignProcessToJobObject(job.get(), process.Handle())) {
-    PLOG(WARNING) << "[PtyChildProcess] AssignProcessToJobObject failed; Kill "
-                     "ends the shell alone";
-    job.Close();
+  if (flags.on_created) {
+    flags.on_created.Run(process.Handle(), job.get());
   }
 
   result.process = std::move(process);

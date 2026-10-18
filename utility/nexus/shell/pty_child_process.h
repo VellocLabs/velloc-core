@@ -53,10 +53,18 @@ class PtyChildProcess : public mojom::NexusStreamingProcess,
   // the production choice keeps this process's redirected stdio out of the
   // child; production always uses the defaults.
   struct LaunchFlags {
+    LaunchFlags();
+    LaunchFlags(const LaunchFlags&);
+    LaunchFlags& operator=(const LaunchFlags&);
+    ~LaunchFlags();
+
     // STARTF_USESTDHANDLES with null std handles: the child takes its std
     // handles from the pseudoconsole instead of this process's own, which
     // may be redirected.
     bool unset_std_handles = true;
+    // Runs on the launch worker right after `CreateProcessW` returns, with
+    // the child's process handle and the terminal's job. Test-only.
+    base::RepeatingCallback<void(HANDLE process, HANDLE job)> on_created;
   };
 
   // `request` is the policy-validated launch spec (`stdin_data` / `timeout`

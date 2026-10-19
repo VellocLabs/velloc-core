@@ -24,6 +24,7 @@
 #include "chrome/browser/notifications/notification_handler.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
@@ -58,6 +59,10 @@
 #include "ui/message_center/public/cpp/notification_types.h"
 #include "ui/message_center/public/cpp/notifier_id.h"
 #include "components/prefs/pref_service.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/url_formatter/url_fixer.h"
+#include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/session/nexus_session_features.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
@@ -438,6 +443,123 @@ void NexusUiBridgeAdapter::HandleOpenSessionTabOnUI(
   if (NexusSessionTabTracker* tracker =
           NexusSessionTabTrackerFactory::GetForProfile(profile_)) {
     tracker->NotifyTabBound(contents);
+  }
+  std::move(done).SuccessVoid();
+}
+
+std::optional<GURL> ResolveTypedAddress(const std::string& text) {
+  const std::string trimmed(
+      base::TrimWhitespaceASCII(text, base::TRIM_ALL));
+  if (trimmed.empty() || trimmed.find_first_of(" \t\r\n") != std::string::npos) {
+    return std::nullopt;
+  }
+  // "localhost:5173" parses as scheme "localhost", so a typed scheme is
+  // recognised by its prefix, not by GURL.
+  const bool typed_scheme =
+      base::StartsWith(trimmed, "http://", base::CompareCase::INSENSITIVE_ASCII) ||
+      base::StartsWith(trimmed, "https://", base::CompareCase::INSENSITIVE_ASCII);
+  const GURL direct(trimmed);
+  if (typed_scheme && direct.is_valid() && direct.has_host()) {
+    return direct;
+  }
+  // Scheme-less input: only a host with a dot, "localhost" or an IP is an
+  // address; a bare word is search terms.
+  const GURL fixed = url_formatter::FixupURL(trimmed, std::string());
+  if (!fixed.is_valid() || !fixed.SchemeIsHTTPOrHTTPS() || !fixed.has_host()) {
+    return std::nullopt;
+  }
+  const std::string_view host = fixed.host();
+  const bool host_like = host.find('.') != std::string::npos ||
+                         host == "localhost" || fixed.HostIsIPAddress() ||
+                         fixed.has_port();
+  if (!host_like) {
+    return std::nullopt;
+  }
+  if (!typed_scheme) {
+    GURL::Replacements https;
+    https.SetSchemeStr("https");
+    return fixed.ReplaceComponents(https);
+  }
+  return fixed;
+}
+
+namespace {
+
+// The default search engine's results URL for `terms`, or empty when the
+// profile has none.
+GURL DefaultSearchUrl(Profile* profile, const std::string& terms) {
+  TemplateURLService* service =
+      TemplateURLServiceFactory::GetForProfile(profile);
+  const TemplateURL* engine =
+      service ? service->GetDefaultSearchProvider() : nullptr;
+  if (!engine) {
+    return GURL();
+  }
+  return GURL(engine->url_ref().ReplaceSearchTerms(
+      TemplateURLRef::SearchTermsArgs(base::UTF8ToUTF16(terms)),
+      service->search_terms_data()));
+}
+
+}  // namespace
+
+void NexusUiBridgeAdapter::HandleActivateSessionTabOnUI(
+    ::nexus::generated::ActivateSessionTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Security: the tracker acts only on a tab carrying the session's tag.
+  NexusSessionTabTracker* tracker =
+      NexusSessionTabTrackerFactory::GetForProfile(profile_);
+  if (!tracker || !tracker->ActivateTab(input.sessionId, input.tabId)) {
+    std::move(done).Error("UI_ERROR",
+                          "activateSessionTab: not one of the session's tabs");
+    return;
+  }
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleCloseSessionTabOnUI(
+    ::nexus::generated::CloseSessionTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Security: the tracker acts only on a tab carrying the session's tag.
+  NexusSessionTabTracker* tracker =
+      NexusSessionTabTrackerFactory::GetForProfile(profile_);
+  if (!tracker || !tracker->CloseTab(input.sessionId, input.tabId)) {
+    std::move(done).Error("UI_ERROR",
+                          "closeSessionTab: not one of the session's tabs");
+    return;
+  }
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleNavigateSessionTabOnUI(
+    ::nexus::generated::NavigateSessionTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  // Security: typed text becomes an http/https URL or a search-results URL
+  // from the profile's default engine, never another scheme; the tracker
+  // loads it only in a tab carrying the session's tag.
+  GURL url = ResolveTypedAddress(input.text).value_or(GURL());
+  if (!url.is_valid()) {
+    const std::string terms(
+        base::TrimWhitespaceASCII(input.text, base::TRIM_ALL));
+    if (terms.empty()) {
+      std::move(done).Error("UI_ERROR", "navigateSessionTab: nothing to load");
+      return;
+    }
+    url = DefaultSearchUrl(profile_, terms);
+  }
+  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
+    std::move(done).Error("UI_ERROR",
+                          "navigateSessionTab: no http/https URL to load");
+    return;
+  }
+  NexusSessionTabTracker* tracker =
+      NexusSessionTabTrackerFactory::GetForProfile(profile_);
+  if (!tracker || !tracker->NavigateTab(input.sessionId, input.tabId, url)) {
+    std::move(done).Error("UI_ERROR",
+                          "navigateSessionTab: not one of the session's tabs");
+    return;
   }
   std::move(done).SuccessVoid();
 }

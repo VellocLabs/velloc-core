@@ -61,6 +61,9 @@ class NexusSessionBridgeAdapter
   // a `browser.sessionTabsChanged` event.
   void OnSessionTabCountsChanged(const std::string& session_key,
                                  const SessionTabCounts& counts) override;
+  // Forwarded as `browser.sessionTabListChanged` — the browser pane's strip.
+  void OnSessionTabsChanged(const std::string& session_key,
+                            const std::vector<SessionTabEntry>& tabs) override;
 
   // Pushes `nexus.agent_config` to the guest as `session.applyAgentConfig`
   // whenever the pref changes; its only writer is LlmBroker::SetDefaultSelection.

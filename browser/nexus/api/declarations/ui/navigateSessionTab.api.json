@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "navigateSessionTab",
+  "description": "Load what the person typed into the browser pane's address field in one of a chat session's tabs: a fixed-up http/https URL, else a default-search-engine query. Refused for a tab the session does not own.",
+  "inputs": [
+    {
+      "name": "sessionId",
+      "type": "string",
+      "required": true,
+      "description": "The owning chat session's id; the tab must carry its tag."
+    },
+    {
+      "name": "tabId",
+      "type": "integer",
+      "required": true,
+      "description": "The tab's id as published in the session's tab list (the tab handle)."
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "required": true,
+      "description": "The typed address or search terms, as entered."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "closeSessionTab",
+  "description": "Close one of a chat session's tabs in this Nexus window: the browser pane's tab-strip close. Refused for a tab the session does not own.",
+  "inputs": [
+    {
+      "name": "sessionId",
+      "type": "string",
+      "required": true,
+      "description": "The owning chat session's id; the tab must carry its tag."
+    },
+    {
+      "name": "tabId",
+      "type": "integer",
+      "required": true,
+      "description": "The tab's id as published in the session's tab list (the tab handle)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

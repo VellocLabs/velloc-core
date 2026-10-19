@@ -86,3 +86,27 @@ TEST(NexusWriteClipboardTest, WritesTextAndConfirmsByReadBack) {
 
 }  // namespace
 }  // namespace nexus
+
+TEST(NexusResolveTypedAddressTest, KeepsHttpAndHttpsUrls) {
+  EXPECT_EQ(nexus::ResolveTypedAddress("https://example.com/a?b=1")->spec(),
+            "https://example.com/a?b=1");
+  EXPECT_EQ(nexus::ResolveTypedAddress(" http://example.com ")->spec(),
+            "http://example.com/");
+}
+
+TEST(NexusResolveTypedAddressTest, SchemelessHostGainsHttps) {
+  EXPECT_EQ(nexus::ResolveTypedAddress("example.com/path")->spec(),
+            "https://example.com/path");
+  EXPECT_EQ(nexus::ResolveTypedAddress("localhost:5173")->spec(),
+            "https://localhost:5173/");
+  EXPECT_EQ(nexus::ResolveTypedAddress("127.0.0.1")->spec(), "https://127.0.0.1/");
+}
+
+TEST(NexusResolveTypedAddressTest, WordsAndOtherSchemesAreNotAddresses) {
+  EXPECT_FALSE(nexus::ResolveTypedAddress("velloc").has_value());
+  EXPECT_FALSE(nexus::ResolveTypedAddress("how to fold a crane").has_value());
+  EXPECT_FALSE(nexus::ResolveTypedAddress("").has_value());
+  EXPECT_FALSE(nexus::ResolveTypedAddress("chrome://settings").has_value());
+  EXPECT_FALSE(nexus::ResolveTypedAddress("file:///C:/x").has_value());
+  EXPECT_FALSE(nexus::ResolveTypedAddress("javascript:alert(1)").has_value());
+}

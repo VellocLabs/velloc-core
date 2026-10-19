@@ -11,6 +11,7 @@
 #include "custom_browser/browser/nexus/api/ui/ui_api.gen.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+#include "url/gurl.h"
 
 class Profile;
 
@@ -61,6 +62,11 @@ message_center::Notification BuildNexusToastNotification(
 void WriteNexusClipboardText(const std::string& text,
                              base::OnceCallback<void(bool)> done);
 
+// The address field's text as a navigable http/https URL: a scheme-less host
+// gains https, a bare word or anything that fixes up to another scheme is
+// nullopt (the caller falls back to a search). Exposed for the unit test.
+std::optional<GURL> ResolveTypedAddress(const std::string& text);
+
 // Concrete adapter implementing the generated `UiApiBase` virtuals. All
 // actions run on UI. The two `broadcast*` actions re-broadcast their opaque
 // `passthrough_payload` verbatim as a WebUI listener event.
@@ -98,6 +104,18 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
       ::nexus::BridgeResponseCallback done) override;
   void HandleOpenSessionTabOnUI(
       ::nexus::generated::OpenSessionTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleActivateSessionTabOnUI(
+      ::nexus::generated::ActivateSessionTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleCloseSessionTabOnUI(
+      ::nexus::generated::CloseSessionTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleNavigateSessionTabOnUI(
+      ::nexus::generated::NavigateSessionTabInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
   void HandleWriteClipboardOnUI(

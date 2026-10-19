@@ -19,6 +19,24 @@ namespace nexus {
 
 namespace {
 
+base::ListValue SessionTabEntriesToList(
+    const std::vector<SessionTabEntry>& tabs) {
+  base::ListValue out;
+  for (const SessionTabEntry& tab : tabs) {
+    base::DictValue row;
+    row.Set("id", tab.id);
+    row.Set("title", tab.title);
+    row.Set("url", tab.url);
+    row.Set("active", tab.active);
+    out.Append(std::move(row));
+  }
+  return out;
+}
+
+}  // namespace
+
+namespace {
+
 using Dict = base::DictValue;
 
 // Pull the session id out of an `OnStop` / `SetAgentLoopSettings`
@@ -189,7 +207,23 @@ void NexusSessionBridgeAdapter::HandleSetActiveSessionOnUI(
   result.Set("activated", activated);
   result.Set("nexusTabCount", counts.nexus_count);
   result.Set("totalTabCount", counts.total_count);
+  result.Set("tabs",
+             SessionTabEntriesToList(tracker->GetSessionTabs(input.sessionId)));
   std::move(done).Success(base::Value(std::move(result)));
+}
+
+void NexusSessionBridgeAdapter::OnSessionTabsChanged(
+    const std::string& session_key,
+    const std::vector<SessionTabEntry>& tabs) {
+  Dict route;
+  route.Set("namespace", "nexus");
+  route.Set("capability", "browser");
+  route.Set("action", "sessionTabListChanged");
+
+  Dict payload;
+  payload.Set("sessionId", session_key);
+  payload.Set("tabs", SessionTabEntriesToList(tabs));
+  SendEvent(route, base::Value(std::move(payload)));
 }
 
 void NexusSessionBridgeAdapter::OnSessionTabCountsChanged(

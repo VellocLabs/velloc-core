@@ -22,7 +22,9 @@
 #include "components/tabs/public/tab_interface.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_counts.h"
 
+class GURL;
 class Profile;
+class TabStripModel;
 
 namespace content {
 class WebContents;
@@ -33,6 +35,19 @@ class PrefRegistrySyncable;
 }
 
 namespace nexus {
+
+// One session-owned tab in the profile's kNexus window, as the guest's
+// browser pane draws it. `id` is the tab handle's raw value, the id the
+// browser tools use.
+struct SessionTabEntry {
+  int32_t id = 0;
+  std::string title;
+  std::string url;
+  bool active = false;
+
+  friend bool operator==(const SessionTabEntry&,
+                         const SessionTabEntry&) = default;
+};
 
 // Profile-scoped, UI-thread registry of each Nexus session's tab counts and
 // last work tab, visible across bridge ports. Fed by the tab-strip observer
@@ -46,6 +61,10 @@ class NexusSessionTabTracker : public KeyedService,
    public:
     virtual void OnSessionTabCountsChanged(const std::string& session_key,
                                            const SessionTabCounts& counts) = 0;
+    // The session's kNexus-window tab list, in strip order: membership,
+    // order, the active tab, a title or URL. Empty when the last one left.
+    virtual void OnSessionTabsChanged(const std::string& session_key,
+                                      const std::vector<SessionTabEntry>& tabs) {}
   };
 
   explicit NexusSessionTabTracker(Profile* profile);
@@ -83,11 +102,27 @@ class NexusSessionTabTracker : public KeyedService,
   // the Nexus window, e.g. in separate-agent-window mode.
   bool ActivateSessionTab(const std::string& session_key);
 
+  // The session's kNexus-window tabs in strip order, with the strip's
+  // active tab marked.
+  std::vector<SessionTabEntry> GetSessionTabs(
+      const std::string& session_key) const;
+
+  // Security: each acts only on a live kNexus-window tab that carries
+  // `session_key`'s tag; any other id is refused (false, nothing done).
+  bool ActivateTab(const std::string& session_key, int32_t tab_id);
+  bool CloseTab(const std::string& session_key, int32_t tab_id);
+  bool NavigateTab(const std::string& session_key,
+                   int32_t tab_id,
+                   const GURL& url);
+
   // TabStripModelObserver:
   void OnTabStripModelChanged(
       TabStripModel* tab_strip_model,
       const TabStripModelChange& change,
       const TabStripSelectionChange& selection) override;
+  void OnTabChangedAt(tabs::TabInterface* tab,
+                      int index,
+                      TabChangeType change_type) override;
 
   // BrowserTabStripTrackerDelegate:
   bool ShouldTrackBrowser(BrowserWindowInterface* browser) override;
@@ -95,6 +130,13 @@ class NexusSessionTabTracker : public KeyedService,
  private:
   std::vector<SessionTabSnapshotEntry> SnapshotTaggedTabs() const;
   void RecomputeAndNotify();
+  // The kNexus-window strip index of the session's tab `tab_id`, or
+  // kNoTab; `out_strip` receives the strip when found.
+  int FindSessionTab(const std::string& session_key,
+                     int32_t tab_id,
+                     TabStripModel** out_strip) const;
+  void NotifySessionTabs(const std::string& session_key);
+  void NotifySessionTabsFor(content::WebContents* contents);
 
   const raw_ptr<Profile> profile_;
   SessionTabCountsMap counts_;

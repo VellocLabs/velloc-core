@@ -16,8 +16,14 @@
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/common/referrer.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
+#include "ui/base/page_transition_types.h"
+#include "url/gurl.h"
 
 namespace nexus {
 
@@ -145,16 +151,146 @@ bool NexusSessionTabTracker::ActivateSessionTab(
   return true;
 }
 
+std::vector<SessionTabEntry> NexusSessionTabTracker::GetSessionTabs(
+    const std::string& session_key) const {
+  std::vector<SessionTabEntry> out;
+  if (session_key.empty()) {
+    return out;
+  }
+  Browser* browser = custom_browser::window_util::FindNexusWindow(profile_);
+  TabStripModel* tab_strip = browser ? browser->tab_strip_model() : nullptr;
+  if (!tab_strip) {
+    return out;
+  }
+  for (int i = 0; i < tab_strip->count(); ++i) {
+    content::WebContents* contents = tab_strip->GetWebContentsAt(i);
+    const std::string* tag = NexusSessionTabTag::SessionKeyFor(contents);
+    if (!tag || *tag != session_key) {
+      continue;
+    }
+    tabs::TabInterface* tab = tab_strip->GetTabAtIndex(i);
+    if (!tab) {
+      continue;
+    }
+    SessionTabEntry entry;
+    entry.id = tab->GetHandle().raw_value();
+    entry.title = base::UTF16ToUTF8(contents->GetTitle());
+    entry.url = contents->GetVisibleURL().spec();
+    entry.active = i == tab_strip->active_index();
+    out.push_back(std::move(entry));
+  }
+  return out;
+}
+
+int NexusSessionTabTracker::FindSessionTab(const std::string& session_key,
+                                           int32_t tab_id,
+                                           TabStripModel** out_strip) const {
+  if (session_key.empty()) {
+    return TabStripModel::kNoTab;
+  }
+  tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+  const std::string* tag = NexusSessionTabTag::SessionKeyFor(contents);
+  if (!tag || *tag != session_key) {
+    return TabStripModel::kNoTab;
+  }
+  Browser* browser = custom_browser::window_util::FindNexusWindow(profile_);
+  TabStripModel* tab_strip = browser ? browser->tab_strip_model() : nullptr;
+  if (!tab_strip) {
+    return TabStripModel::kNoTab;
+  }
+  const int index = tab_strip->GetIndexOfWebContents(contents);
+  if (index != TabStripModel::kNoTab && out_strip) {
+    *out_strip = tab_strip;
+  }
+  return index;
+}
+
+bool NexusSessionTabTracker::ActivateTab(const std::string& session_key,
+                                         int32_t tab_id) {
+  TabStripModel* tab_strip = nullptr;
+  const int index = FindSessionTab(session_key, tab_id, &tab_strip);
+  if (index == TabStripModel::kNoTab) {
+    return false;
+  }
+  if (index != tab_strip->active_index()) {
+    tab_strip->ActivateTabAt(index);
+  }
+  return true;
+}
+
+bool NexusSessionTabTracker::CloseTab(const std::string& session_key,
+                                      int32_t tab_id) {
+  TabStripModel* tab_strip = nullptr;
+  const int index = FindSessionTab(session_key, tab_id, &tab_strip);
+  if (index == TabStripModel::kNoTab) {
+    return false;
+  }
+  tab_strip->CloseWebContentsAt(
+      index, TabCloseTypes::CLOSE_USER_GESTURE |
+                 TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
+  return true;
+}
+
+bool NexusSessionTabTracker::NavigateTab(const std::string& session_key,
+                                         int32_t tab_id,
+                                         const GURL& url) {
+  TabStripModel* tab_strip = nullptr;
+  const int index = FindSessionTab(session_key, tab_id, &tab_strip);
+  if (index == TabStripModel::kNoTab || !url.is_valid()) {
+    return false;
+  }
+  content::WebContents* contents = tab_strip->GetWebContentsAt(index);
+  if (!contents) {
+    return false;
+  }
+  contents->GetController().LoadURL(url, content::Referrer(),
+                                    ui::PAGE_TRANSITION_TYPED, std::string());
+  return true;
+}
+
 void NexusSessionTabTracker::OnTabStripModelChanged(
     TabStripModel* tab_strip_model,
     const TabStripModelChange& change,
     const TabStripSelectionChange& selection) {
   // Counts only depend on strip membership; pure selection flips are the
-  // high-frequency case and never change them.
+  // high-frequency case and never change them. The tab list does carry the
+  // active tab, so a flip between tagged tabs re-publishes their sessions.
   if (change.type() == TabStripModelChange::kSelectionOnly) {
+    if (selection.active_tab_changed()) {
+      NotifySessionTabsFor(selection.old_contents);
+      NotifySessionTabsFor(selection.new_contents);
+    }
     return;
   }
   RecomputeAndNotify();
+}
+
+void NexusSessionTabTracker::OnTabChangedAt(tabs::TabInterface* tab,
+                                            int index,
+                                            TabChangeType change_type) {
+  // A title or URL change arrives as kAll; a loading flip carries the new
+  // URL too, so both re-publish the tab's session.
+  if (change_type == TabChangeType::kAttentionOnly ||
+      change_type == TabChangeType::kBlockedOnly) {
+    return;
+  }
+  NotifySessionTabsFor(tab ? tab->GetContents() : nullptr);
+}
+
+void NexusSessionTabTracker::NotifySessionTabsFor(
+    content::WebContents* contents) {
+  const std::string* tag = NexusSessionTabTag::SessionKeyFor(contents);
+  if (tag && !tag->empty()) {
+    NotifySessionTabs(*tag);
+  }
+}
+
+void NexusSessionTabTracker::NotifySessionTabs(const std::string& session_key) {
+  const std::vector<SessionTabEntry> tabs = GetSessionTabs(session_key);
+  for (Observer& observer : observers_) {
+    observer.OnSessionTabsChanged(session_key, tabs);
+  }
 }
 
 bool NexusSessionTabTracker::ShouldTrackBrowser(
@@ -199,6 +335,22 @@ void NexusSessionTabTracker::RecomputeAndNotify() {
     for (Observer& observer : observers_) {
       observer.OnSessionTabCountsChanged(change.session_key, change.counts);
     }
+  }
+  // Membership, order and the active tab can all move on one strip event
+  // without any count changing (a reorder, a close that activates a
+  // neighbour): every session with a tab, and every one that just lost
+  // its last, gets its list again.
+  std::vector<std::string> keys;
+  for (const auto& [session_key, counts] : counts_) {
+    keys.push_back(session_key);
+  }
+  for (const SessionTabCountsChange& change : changes) {
+    if (!std::ranges::contains(keys, change.session_key)) {
+      keys.push_back(change.session_key);
+    }
+  }
+  for (const std::string& session_key : keys) {
+    NotifySessionTabs(session_key);
   }
 }
 

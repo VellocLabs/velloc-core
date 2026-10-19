@@ -16,6 +16,8 @@
 #include "base/values.h"
 #include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+#include "base/strings/string_number_conversions.h"
+#include "custom_browser/browser/nexus/boot_bundle/boot_bundle_store.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
@@ -282,6 +284,16 @@ void NexusNetworkHost::Start() {
       base::BindRepeating(&NexusNetworkHost::OnDownloadProgress,
                           weak_ptr_factory_.GetWeakPtr()));
 
+  if (const BootBundleStore* store = BootBundleStore::Get();
+      store && store->index() && spec_.method == "GET" &&
+      store->index()->LookupFallback(GURL(spec_.url))) {
+    fallback_timer_.Start(
+        FROM_HERE,
+        base::Milliseconds(std::min(timeout_ms_, kFallbackDeadlineMs)),
+        base::BindOnce(base::IgnoreResult(
+                           &NexusNetworkHost::CompleteFromFallback),
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
   timeout_timer_.Start(
       FROM_HERE, base::Milliseconds(timeout_ms_),
       base::BindOnce(&NexusNetworkHost::OnTimeout,
@@ -322,6 +334,11 @@ void NexusNetworkHost::OnDownloadComplete(
         return;
       }
     }
+    completed_ = false;
+    if (CompleteFromFallback()) {
+      return;
+    }
+    completed_ = true;
     CompleteWithError(
         "NETWORK_ERROR",
         base::StringPrintf("Request failed with net error %d.", net_error));
@@ -387,6 +404,7 @@ void NexusNetworkHost::OnResponseStarted(
     const GURL& /*final_url*/,
     const network::mojom::URLResponseHead& response_head) {
   if (completed_) return;
+  fallback_timer_.Stop();
   // The egress policy on the IP the socket connected to. Headers are
   // in, no body byte has been read: aborting here leaks nothing of
   // the body to the caller.
@@ -475,6 +493,9 @@ void NexusNetworkHost::OnRedirect(
 
 void NexusNetworkHost::OnTimeout() {
   if (completed_) return;
+  if (CompleteFromFallback()) {
+    return;
+  }
   completed_ = true;
   loader_.reset();  // cancel in-flight
   CompleteWithError(
@@ -519,6 +540,48 @@ void NexusNetworkHost::AbortForEgress(const std::string& reason) {
           "hosts are reachable through network.* (allowPrivateNetwork "
           "opts a person's own request out).",
           reason.c_str()));
+}
+
+bool NexusNetworkHost::CompleteFromFallback() {
+  if (completed_ || spec_.method != "GET") {
+    return false;
+  }
+  const BootBundleStore* store = BootBundleStore::Get();
+  const BootBundleIndex* index = store ? store->index() : nullptr;
+  const BootBundleEntry* entry =
+      index ? index->LookupFallback(GURL(spec_.url)) : nullptr;
+  if (!entry) {
+    return false;
+  }
+  completed_ = true;
+  timeout_timer_.Stop();
+  fallback_timer_.Stop();
+  loader_.reset();
+  store->Read(*entry, base::BindOnce(&NexusNetworkHost::OnFallbackRead,
+                                     weak_ptr_factory_.GetWeakPtr(),
+                                     entry->mime_type));
+  return true;
+}
+
+void NexusNetworkHost::OnFallbackRead(std::string mime_type,
+                                      std::optional<std::string> bytes) {
+  if (!bytes) {
+    CompleteWithError("NETWORK_ERROR",
+                      "Request failed and the bundled copy is unreadable.");
+    return;
+  }
+  Dict headers;
+  headers.Set("content-type", mime_type);
+  headers.Set("content-length", base::NumberToString(bytes->size()));
+  Dict envelope;
+  envelope.Set("status", 200);
+  envelope.Set("statusText", "OK");
+  envelope.Set("finalUrl", spec_.visible_url.For(GURL(spec_.url)));
+  envelope.Set("headers", std::move(headers));
+  std::move(done_).Binary(Value(std::move(envelope)),
+                          mojo_base::BigBuffer(base::as_byte_span(*bytes)),
+                          /*binary_field=*/"body");
+  std::move(on_complete_).Run(this);
 }
 
 void NexusNetworkHost::CompleteWithError(const std::string& code,

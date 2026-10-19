@@ -10,11 +10,15 @@
 #include <string_view>
 #include <utility>
 
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/test/bind.h"
 #include "base/values.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
+#include "custom_browser/browser/nexus/boot_bundle/boot_bundle_index.h"
+#include "custom_browser/browser/nexus/boot_bundle/boot_bundle_store.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
@@ -413,6 +417,91 @@ TEST_F(NexusNetworkStreamTest, OAuthTemplatesNeedAProviderAndItsDomain) {
   Dispatch("streamOpen", std::move(with_provider));
   EXPECT_EQ(delegate_.last_error_code, "TARGET_NOT_ALLOWED");
   EXPECT_EQ(adapter_.stream_count_for_testing(), 0u);
+}
+
+// A GET whose URL has a boot-bundle fallback (F-33) is answered from the
+// bundle when the network fails, and from the network otherwise.
+class NexusNetworkFallbackTest : public NexusNetworkStreamTest {
+ protected:
+  static constexpr char kIndexUrl[] = "https://plugins.velloc.app/index.json";
+
+  void SetUp() override {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    base::FilePath data = temp_dir_.GetPath().AppendASCII("boot_bundle.dat");
+    ASSERT_TRUE(base::WriteFile(data, "{\"bundled\":1}"));
+    std::optional<BootBundleIndex> index = BootBundleIndex::Parse(
+        R"({"format":1,"buildTimeMs":1,"base":"/v1/","origins":[],"files":[],
+            "fallback":[{"url":"https://plugins.velloc.app/index.json",
+                         "offset":0,"size":13,"type":"application/json"}]})",
+        13);
+    ASSERT_TRUE(index);
+    store_.SetForTesting(std::move(*index), data);
+    BootBundleStore::SetGlobal(&store_);
+  }
+
+  void TearDown() override { BootBundleStore::SetGlobal(nullptr); }
+
+  void Get(const std::string& url) {
+    base::DictValue get;
+    get.Set("url", url);
+    Dispatch("httpGet", std::move(get));
+  }
+
+  int Status() const {
+    return delegate_.last_binary_envelope.GetDict().FindInt("status").value_or(
+        -1);
+  }
+
+  base::ScopedTempDir temp_dir_;
+  BootBundleStore store_;
+};
+
+TEST_F(NexusNetworkFallbackTest, NetworkErrorIsAnsweredFromTheBundle) {
+  factory_.AddResponse(GURL(kIndexUrl), network::mojom::URLResponseHead::New(),
+                       "",
+                       network::URLLoaderCompletionStatus(
+                           net::ERR_NAME_NOT_RESOLVED));
+  Get(kIndexUrl);
+  ASSERT_EQ(delegate_.binary_count, 1) << delegate_.last_error_code;
+  EXPECT_EQ(Status(), 200);
+  EXPECT_EQ(delegate_.last_binary_bytes, "{\"bundled\":1}");
+  const std::string* type = delegate_.last_binary_envelope.GetDict().FindStringByDottedPath(
+      "headers.content-type");
+  ASSERT_TRUE(type);
+  EXPECT_EQ(*type, "application/json");
+}
+
+TEST_F(NexusNetworkFallbackTest, AReachableNetworkWins) {
+  auto head = network::CreateURLResponseHead(net::HTTP_OK);
+  head->remote_endpoint = net::IPEndPoint(net::IPAddress(93, 184, 216, 34), 443);
+  head->proxy_chain = net::ProxyChain::Direct();
+  factory_.AddResponse(GURL(kIndexUrl), std::move(head), "{\"live\":1}",
+                       network::URLLoaderCompletionStatus(net::OK));
+  Get(kIndexUrl);
+  ASSERT_EQ(delegate_.binary_count, 1) << delegate_.last_error_code;
+  EXPECT_EQ(delegate_.last_binary_bytes, "{\"live\":1}");
+}
+
+TEST_F(NexusNetworkFallbackTest, AnHttpErrorStatusNeverFallsBack) {
+  auto head = network::CreateURLResponseHead(net::HTTP_SERVICE_UNAVAILABLE);
+  head->remote_endpoint = net::IPEndPoint(net::IPAddress(93, 184, 216, 34), 443);
+  head->proxy_chain = net::ProxyChain::Direct();
+  factory_.AddResponse(GURL(kIndexUrl), std::move(head), "down",
+                       network::URLLoaderCompletionStatus(net::OK));
+  Get(kIndexUrl);
+  ASSERT_EQ(delegate_.binary_count, 1) << delegate_.last_error_code;
+  EXPECT_EQ(Status(), 503);
+  EXPECT_EQ(delegate_.last_binary_bytes, "down");
+}
+
+TEST_F(NexusNetworkFallbackTest, AUrlWithoutAFallbackStillFails) {
+  const GURL other("https://plugins.velloc.app/other.json");
+  factory_.AddResponse(other, network::mojom::URLResponseHead::New(), "",
+                       network::URLLoaderCompletionStatus(
+                           net::ERR_NAME_NOT_RESOLVED));
+  Get(other.spec());
+  EXPECT_EQ(delegate_.binary_count, 0);
+  EXPECT_EQ(delegate_.last_error_code, "NETWORK_ERROR");
 }
 
 }  // namespace

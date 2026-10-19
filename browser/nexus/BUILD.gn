@@ -705,6 +705,8 @@ source_set("bridge") {
   ]
 
   deps = [
+    "//custom_browser/browser/nexus/boot_bundle",
+
     # Reads the `separate window` tab-hosting pref so RunCreateTabAction can
     # target/create the dedicated agent window.
     ":browser_tools_config",
@@ -1241,6 +1243,7 @@ source_set("unit_tests") {
   ]
 
   deps = [
+    "//custom_browser/browser/nexus/boot_bundle",
     ":agent_notice",
     ":alarms",
     ":bridge",

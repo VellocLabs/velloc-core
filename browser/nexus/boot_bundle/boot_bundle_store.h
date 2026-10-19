@@ -32,8 +32,8 @@ class BootBundleStore {
   BootBundleStore& operator=(const BootBundleStore&) = delete;
   ~BootBundleStore();
 
-  // Reads `<dir>/nexus_boot_bundle.json` and validates it against
-  // `<dir>/nexus_boot_bundle.dat`, off the UI thread.
+  // Reads `<dir>/boot_bundle.json` and validates it against
+  // `<dir>/boot_bundle.dat`, off the UI thread.
   void Load(const base::FilePath& dir);
 
   // Test seam: installs an already-parsed index and its data file.

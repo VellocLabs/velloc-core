@@ -29,7 +29,8 @@ struct BootBundleEntry {
 // Contract: the parsed index of the guest boot bundle (F-33), the copy of one
 // web runtime build shipped next to chrome.dll. Lookup maps a request URL to
 // an entry only for an exact listed path under `base` on a listed https
-// origin; nothing is derived from the URL beyond that map key.
+// origin. LookupFallback maps an exact listed https URL to a file served only
+// when the network fails. Nothing is derived from a URL beyond those keys.
 class BootBundleIndex {
  public:
   BootBundleIndex();
@@ -46,8 +47,12 @@ class BootBundleIndex {
   // `index.html`; the query and fragment are ignored.
   const BootBundleEntry* Lookup(const GURL& url) const;
 
+  // The network-failure fallback for `url` (exact match, fragment ignored),
+  // or null.
+  const BootBundleEntry* LookupFallback(const GURL& url) const;
+
   bool ServesOrigin(const url::Origin& origin) const;
-  bool empty() const { return files_.empty(); }
+  bool empty() const { return files_.empty() && fallback_.empty(); }
 
   // The build's time, used as every served response's response_time so the
   // code cache stays valid across boots.
@@ -57,6 +62,7 @@ class BootBundleIndex {
   std::string base_;
   std::set<url::Origin> origins_;
   std::map<std::string, BootBundleEntry, std::less<>> files_;
+  std::map<std::string, BootBundleEntry, std::less<>> fallback_;
   base::Time build_time_;
 };
 

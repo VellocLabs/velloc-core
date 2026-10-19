@@ -105,7 +105,7 @@ class BootBundleURLLoaderTest : public testing::Test {
  protected:
   void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    data_path_ = temp_dir_.GetPath().AppendASCII("nexus_boot_bundle.dat");
+    data_path_ = temp_dir_.GetPath().AppendASCII("boot_bundle.dat");
     ASSERT_TRUE(base::WriteFile(data_path_, "<html>okconsole.log(1)"));
     std::optional<BootBundleIndex> index = BootBundleIndex::Parse(
         R"({"format":1,"buildTimeMs":1758774728561,"base":"/v1/",

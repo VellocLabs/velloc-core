@@ -135,6 +135,15 @@ class NexusNetworkHost {
   // a TIMEOUT error envelope.
   void OnTimeout();
 
+  // Contract (F-33): for a GET whose URL has a boot-bundle fallback, a
+  // network-layer failure, the hard timeout, or no response within
+  // kFallbackDeadlineMs completes with the bundled bytes (status 200)
+  // instead of an error. Returns false, completing nothing, when the URL has
+  // no fallback. An HTTP error status and an egress refusal never fall back.
+  bool CompleteFromFallback();
+  void OnFallbackRead(std::string mime_type, std::optional<std::string> bytes);
+  static constexpr int kFallbackDeadlineMs = 15'000;
+
   // The egress refusal for the endpoint a response came from, or
   // nullopt when it is allowed (or the policy is opted out).
   std::optional<std::string> EgressRefusalForEndpoint(
@@ -161,6 +170,8 @@ class NexusNetworkHost {
   // Per-request mutable state.
   std::unique_ptr<network::SimpleURLLoader> loader_;
   base::OneShotTimer timeout_timer_;
+  // Runs only for a URL with a boot-bundle fallback, until headers arrive.
+  base::OneShotTimer fallback_timer_;
   int redirect_count_ = 0;
   bool completed_ = false;
 

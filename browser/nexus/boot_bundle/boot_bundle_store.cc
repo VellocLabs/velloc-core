@@ -15,8 +15,8 @@ namespace nexus {
 
 namespace {
 
-constexpr char kIndexFileName[] = "nexus_boot_bundle.json";
-constexpr char kDataFileName[] = "nexus_boot_bundle.dat";
+constexpr char kIndexFileName[] = "boot_bundle.json";
+constexpr char kDataFileName[] = "boot_bundle.dat";
 // The index lists a few hundred files; anything larger is not ours.
 constexpr size_t kMaxIndexBytes = 4 * 1024 * 1024;
 

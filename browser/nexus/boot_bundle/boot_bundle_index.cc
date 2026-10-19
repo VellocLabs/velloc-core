@@ -18,6 +18,29 @@ namespace {
 constexpr int kFormat = 1;
 constexpr char kDirectoryDocument[] = "index.html";
 
+std::optional<BootBundleEntry> ParseEntry(const base::DictValue& file,
+                                          uint64_t data_size) {
+  const std::string* type = file.FindString("type");
+  std::optional<double> offset = file.FindDouble("offset");
+  std::optional<double> size = file.FindDouble("size");
+  if (!type || type->empty() || !offset || !size || *offset < 0 ||
+      *size < 0) {
+    return std::nullopt;
+  }
+  BootBundleEntry entry;
+  entry.offset = static_cast<uint64_t>(*offset);
+  entry.size = static_cast<uint64_t>(*size);
+  entry.mime_type = *type;
+  if (entry.offset > data_size || entry.size > data_size - entry.offset) {
+    return std::nullopt;
+  }
+  return entry;
+}
+
+std::string FallbackKey(const GURL& url) {
+  return url.GetWithoutRef().spec();
+}
+
 }  // namespace
 
 BootBundleIndex::BootBundleIndex() = default;
@@ -62,21 +85,24 @@ std::optional<BootBundleIndex> BootBundleIndex::Parse(std::string_view json,
       return std::nullopt;
     }
     const std::string* path = file->FindString("path");
-    const std::string* type = file->FindString("type");
-    std::optional<double> offset = file->FindDouble("offset");
-    std::optional<double> size = file->FindDouble("size");
-    if (!path || path->empty() || base::StartsWith(*path, "/") || !type ||
-        type->empty() || !offset || !size || *offset < 0 || *size < 0) {
+    std::optional<BootBundleEntry> entry = ParseEntry(*file, data_size);
+    if (!path || path->empty() || base::StartsWith(*path, "/") || !entry) {
       return std::nullopt;
     }
-    BootBundleEntry entry;
-    entry.offset = static_cast<uint64_t>(*offset);
-    entry.size = static_cast<uint64_t>(*size);
-    entry.mime_type = *type;
-    if (entry.offset > data_size || entry.size > data_size - entry.offset) {
-      return std::nullopt;
+    index.files_.insert_or_assign(*path, std::move(*entry));
+  }
+  if (const base::ListValue* fallback = root->FindList("fallback")) {
+    for (const base::Value& value : *fallback) {
+      const base::DictValue* file = value.GetIfDict();
+      const std::string* url_string = file ? file->FindString("url") : nullptr;
+      std::optional<BootBundleEntry> entry =
+          file ? ParseEntry(*file, data_size) : std::nullopt;
+      GURL url(url_string ? *url_string : std::string());
+      if (!entry || !url.is_valid() || !url.SchemeIs(url::kHttpsScheme)) {
+        return std::nullopt;
+      }
+      index.fallback_.insert_or_assign(FallbackKey(url), std::move(*entry));
     }
-    index.files_.insert_or_assign(*path, std::move(entry));
   }
   return index;
 }
@@ -96,6 +122,14 @@ const BootBundleEntry* BootBundleIndex::Lookup(const GURL& url) const {
   }
   auto it = files_.find(relative);
   return it == files_.end() ? nullptr : &it->second;
+}
+
+const BootBundleEntry* BootBundleIndex::LookupFallback(const GURL& url) const {
+  if (!url.is_valid() || !url.SchemeIs(url::kHttpsScheme)) {
+    return nullptr;
+  }
+  auto it = fallback_.find(FallbackKey(url));
+  return it == fallback_.end() ? nullptr : &it->second;
 }
 
 bool BootBundleIndex::ServesOrigin(const url::Origin& origin) const {

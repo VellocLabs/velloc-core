@@ -74,6 +74,41 @@ TEST(BootBundleIndexTest, RejectsMalformedIndexes) {
       0));
 }
 
+TEST(BootBundleIndexTest, FallbackMatchesTheExactUrlOnly) {
+  std::optional<BootBundleIndex> index = BootBundleIndex::Parse(
+      R"({"format":1,"buildTimeMs":1,"base":"/v1/",
+          "origins":["https://app.velloc.app"],"files":[],
+          "fallback":[{"url":"https://plugins.velloc.app/index.json",
+                       "offset":0,"size":4,"type":"application/json"}]})",
+      4);
+  ASSERT_TRUE(index);
+  EXPECT_FALSE(index->empty());
+  EXPECT_TRUE(
+      index->LookupFallback(GURL("https://plugins.velloc.app/index.json")));
+  EXPECT_TRUE(
+      index->LookupFallback(GURL("https://plugins.velloc.app/index.json#x")));
+  EXPECT_FALSE(
+      index->LookupFallback(GURL("https://plugins.velloc.app/index.json?a")));
+  EXPECT_FALSE(
+      index->LookupFallback(GURL("http://plugins.velloc.app/index.json")));
+  EXPECT_FALSE(index->LookupFallback(GURL("https://plugins.velloc.app/x")));
+  // A fallback entry never answers the cache-first path.
+  EXPECT_FALSE(index->Lookup(GURL("https://plugins.velloc.app/index.json")));
+}
+
+TEST(BootBundleIndexTest, RejectsABadFallbackEntry) {
+  EXPECT_FALSE(BootBundleIndex::Parse(
+      R"({"format":1,"buildTimeMs":1,"base":"/v1/","origins":[],"files":[],
+          "fallback":[{"url":"http://plugins.velloc.app/index.json",
+                       "offset":0,"size":4,"type":"application/json"}]})",
+      4));
+  EXPECT_FALSE(BootBundleIndex::Parse(
+      R"({"format":1,"buildTimeMs":1,"base":"/v1/","origins":[],"files":[],
+          "fallback":[{"url":"https://plugins.velloc.app/index.json",
+                       "offset":0,"size":5,"type":"application/json"}]})",
+      4));
+}
+
 TEST(BootBundleIndexTest, EmptyFileListParsesAsEmpty) {
   std::optional<BootBundleIndex> index = BootBundleIndex::Parse(
       R"({"format":1,"buildTimeMs":1,"base":"/v1/",

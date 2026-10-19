@@ -1308,6 +1308,7 @@ source_set("unit_tests") {
 test("custom_browser_nexus_unittests") {
   deps = [
     ":unit_tests_lite",
+    "//custom_browser/browser/nexus/boot_bundle:unit_tests",
     "//base/test:run_all_unittests",
 
     # Not nexus-owned, but ui/view's only pure-logic test (the window
@@ -1331,6 +1332,7 @@ test("custom_browser_nexus_browser_unittests") {
   deps = [
     ":unit_tests",
     "//chrome/test:test_support_unit",
+    "//custom_browser/browser/nexus/boot_bundle:browser_unit_tests",
     "//custom_browser/features:unit_tests",
     "//testing/gtest",
   ]

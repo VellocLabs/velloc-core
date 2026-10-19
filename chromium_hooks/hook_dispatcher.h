@@ -17,6 +17,10 @@ namespace views {
 class View;
 }  // namespace views
 
+namespace network {
+class URLLoaderFactoryBuilder;
+}  // namespace network
+
 namespace content {
 class BrowserContext;
 class NavigationThrottleRegistry;
@@ -39,6 +43,13 @@ CUSTOM_BROWSER_HOOKS_EXPORT void OnWebUIConfiguringLocalResource(
 // ---------- Navigation throttles hook ----------
 CUSTOM_BROWSER_HOOKS_EXPORT void AppendNavigationThrottles(
     content::NavigationThrottleRegistry& registry);
+
+// ---------- URLLoaderFactory interceptor hook ----------
+CUSTOM_BROWSER_HOOKS_EXPORT void MaybeInterceptURLLoaderFactory(
+    content::BrowserContext* browser_context,
+    content::RenderFrameHost* frame,
+    bool is_navigation,
+    network::URLLoaderFactoryBuilder& builder);
 
 // ---------- WebUI RenderFrame BinderMap population hook ----------
 CUSTOM_BROWSER_HOOKS_EXPORT void PopulateWebUIRenderFrameBinders(

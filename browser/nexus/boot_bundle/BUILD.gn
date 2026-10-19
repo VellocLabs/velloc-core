@@ -1,0 +1,61 @@
+# Copyright 2026 VellocLabs
+# Use of this source code is governed by the Apache License, Version 2.0,
+# which can be found in the LICENSE file.
+
+# Guest boot bundle (F-33): answers HTTP-cache misses for the web runtime's
+# own files from a build shipped by the installer.
+source_set("boot_bundle") {
+  sources = [
+    "boot_bundle_index.cc",
+    "boot_bundle_index.h",
+    "boot_bundle_registration.cc",
+    "boot_bundle_registration.h",
+    "boot_bundle_store.cc",
+    "boot_bundle_store.h",
+    "boot_bundle_url_loader.cc",
+    "boot_bundle_url_loader.h",
+  ]
+
+  deps = [
+    "//base",
+    "//custom_browser/chromium_hooks:hook_api",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+
+  sources = [ "boot_bundle_index_unittest.cc" ]
+
+  deps = [
+    ":boot_bundle",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+# Needs Mojo initialized: runs in custom_browser_nexus_browser_unittests.
+source_set("browser_unit_tests") {
+  testonly = true
+
+  sources = [ "boot_bundle_url_loader_unittest.cc" ]
+
+  deps = [
+    ":boot_bundle",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//testing/gtest",
+    "//url",
+  ]
+}

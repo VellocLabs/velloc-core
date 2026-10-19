@@ -22,6 +22,9 @@ class HookRegistrar {
   virtual void AddNavigationThrottleProvider(
       NavigationThrottleProviderCallback provider) = 0;
 
+  virtual void AddURLLoaderFactoryInterceptor(
+      URLLoaderFactoryInterceptorCallback cb) = 0;
+
   virtual void AddWebUIRenderFrameBinderMapPopulator(
       WebUIRenderFrameBinderMapPopulatorCallback cb) = 0;
 

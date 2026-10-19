@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "custom_browser/browser/nexus/boot_bundle/boot_bundle_registration.h"
 #include "custom_browser/browser/nexus/launcher/nexus_background_mode_manager.h"
 #include "custom_browser/browser/nexus/panel/nexus_guest_priority_voter.h"
 #include "custom_browser/chromium_hooks/hook_registrar.h"
@@ -35,6 +36,9 @@ void RegisterAllHooks(custom_browser::HookRegistrar* registrar) {
   // mod-worker frames) at foreground priority while hidden or parked (P-2).
   registrar->AddBrowserMainLifecycleHook(
       std::make_unique<nexus::NexusGuestPriorityLifecycleHook>());
+
+  // Answers guest HTTP-cache misses from the installer's bundle (F-33).
+  nexus::RegisterBootBundleHooks(registrar);
 }
 
 }  // namespace custom_browser::features

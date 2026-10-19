@@ -43,6 +43,11 @@ class HookRegistryImpl final : public HookRegistrar {
     nav_providers_.push_back(std::move(provider));
   }
 
+  void AddURLLoaderFactoryInterceptor(
+      URLLoaderFactoryInterceptorCallback cb) override {
+    url_loader_factory_interceptors_.push_back(std::move(cb));
+  }
+
   void AddWebUIRenderFrameBinderMapPopulator(
       WebUIRenderFrameBinderMapPopulatorCallback cb) override {
     webui_render_frame_binder_map_populators_.push_back(std::move(cb));
@@ -71,6 +76,10 @@ class HookRegistryImpl final : public HookRegistrar {
   const std::vector<NavigationThrottleProviderCallback>& nav_providers() const {
     return nav_providers_;
   }
+  const std::vector<URLLoaderFactoryInterceptorCallback>&
+  url_loader_factory_interceptors() const {
+    return url_loader_factory_interceptors_;
+  }
   const std::vector<WebUIRenderFrameBinderMapPopulatorCallback>&
   webui_render_frame_binder_map_populators() const {
     return webui_render_frame_binder_map_populators_;
@@ -90,6 +99,8 @@ class HookRegistryImpl final : public HookRegistrar {
  private:
   std::vector<WebUIDataSourceConfiguringCallbackEntry> configuring_callbacks_;
   std::vector<NavigationThrottleProviderCallback> nav_providers_;
+  std::vector<URLLoaderFactoryInterceptorCallback>
+      url_loader_factory_interceptors_;
   std::vector<WebUIRenderFrameBinderMapPopulatorCallback>
       webui_render_frame_binder_map_populators_;
   std::vector<RenderFrameInterfaceBinderEntry> render_frame_interface_binders_;
@@ -123,6 +134,17 @@ void AppendNavigationThrottles(
     content::NavigationThrottleRegistry& registry) {
   for (const auto& provider : GetRegistry().nav_providers()) {
     provider.Run(registry);
+  }
+}
+
+void MaybeInterceptURLLoaderFactory(
+    content::BrowserContext* browser_context,
+    content::RenderFrameHost* frame,
+    bool is_navigation,
+    network::URLLoaderFactoryBuilder& builder) {
+  for (const auto& interceptor :
+       GetRegistry().url_loader_factory_interceptors()) {
+    interceptor.Run(browser_context, frame, is_navigation, builder);
   }
 }
 

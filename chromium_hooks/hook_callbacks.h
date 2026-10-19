@@ -17,6 +17,10 @@ namespace views {
 class View;
 }  // namespace views
 
+namespace network {
+class URLLoaderFactoryBuilder;
+}  // namespace network
+
 namespace content {
 class BrowserContext;
 class NavigationThrottleRegistry;
@@ -57,6 +61,14 @@ using BubbleAnchorRectOverrideCallback =
 using RenderFrameInterfaceBinderCallback =
     base::RepeatingCallback<bool(content::RenderFrameHost*,
                                  mojo::GenericPendingReceiver*)>;
+
+// Interceptor-style hook for URLLoaderFactory creation: may append one
+// proxying factory to `builder`. `frame` may be null. Called on the UI thread.
+using URLLoaderFactoryInterceptorCallback =
+    base::RepeatingCallback<void(content::BrowserContext*,
+                                 content::RenderFrameHost*,
+                                 bool is_navigation,
+                                 network::URLLoaderFactoryBuilder&)>;
 
 }  // namespace custom_browser
 

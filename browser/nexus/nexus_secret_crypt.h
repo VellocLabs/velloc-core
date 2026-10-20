@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/os_crypt/async/common/encryptor.h"
 
@@ -44,7 +45,7 @@ class NexusSecretCrypt {
   // `g_browser_process->os_crypt_async()`.
   void EnsureAcquired(os_crypt_async::OSCryptAsync* service);
 
-  bool ready() const { return encryptor_.has_value(); }
+  bool ready() const { return !!encryptor_; }
 
   // Runs `callback` once the encryptor is available — immediately if it
   // already is.
@@ -68,7 +69,8 @@ class NexusSecretCrypt {
   // True iff `stored` carries the encryption marker.
   static bool IsEncrypted(const std::string& stored);
 
-  void SetEncryptorForTesting(os_crypt_async::Encryptor encryptor);
+  void SetEncryptorForTesting(
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
   // Puts the singleton back into the not-yet-acquired state so a test can
   // exercise the "encryptor not ready" paths (Encrypt passthrough, Decrypt
   // → "", the byte-compare fallback in StoredApiKeysDiffer).
@@ -82,9 +84,9 @@ class NexusSecretCrypt {
   NexusSecretCrypt();
   ~NexusSecretCrypt();
 
-  void OnEncryptor(os_crypt_async::Encryptor encryptor);
+  void OnEncryptor(scoped_refptr<os_crypt_async::Encryptor> encryptor);
 
-  std::optional<os_crypt_async::Encryptor> encryptor_;
+  scoped_refptr<os_crypt_async::Encryptor> encryptor_;
   bool acquiring_ = false;
   std::vector<base::OnceClosure> ready_callbacks_;
 

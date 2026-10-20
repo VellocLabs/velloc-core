@@ -55,13 +55,13 @@ class PendingSingleWebWindowMarker : public base::SupportsUserData::Data {};
 
 // Returns the first normal browser window of |profile| whose CustomBrowserView
 // is in kNexus mode (when |want_nexus|) or in a browser mode (otherwise).
-Browser* FindWindowByMode(Profile* profile, bool want_nexus) {
-  Browser* result = nullptr;
+BrowserWindowInterface* FindWindowByMode(Profile* profile, bool want_nexus) {
+  BrowserWindowInterface* result = nullptr;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser = window->GetBrowserForMigrationOnly();
-        if (!browser || browser->profile() != profile ||
-            !browser->is_type_normal()) {
+        BrowserWindowInterface* browser = window;
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;
         }
         auto* view = static_cast<CustomBrowserView*>(
@@ -86,19 +86,19 @@ Browser* FindWindowByMode(Profile* profile, bool want_nexus) {
 
 }  // namespace
 
-Browser* FindNexusWindow(Profile* profile) {
+BrowserWindowInterface* FindNexusWindow(Profile* profile) {
   return FindWindowByMode(profile, /*want_nexus=*/true);
 }
 
-Browser* FindNormalWindow(Profile* profile) {
+BrowserWindowInterface* FindNormalWindow(Profile* profile) {
   return FindWindowByMode(profile, /*want_nexus=*/false);
 }
 
-Browser* FindOrCreateNormalWindow(Profile* profile) {
+BrowserWindowInterface* FindOrCreateNormalWindow(Profile* profile) {
   if (!profile) {
     return nullptr;
   }
-  if (Browser* existing = FindNormalWindow(profile)) {
+  if (BrowserWindowInterface* existing = FindNormalWindow(profile)) {
     return existing;
   }
   // No normal window yet. Create one. We deliberately do NOT call
@@ -110,15 +110,15 @@ Browser* FindOrCreateNormalWindow(Profile* profile) {
   // BrowserWindowInterface*; convert to Browser* for callers.
   auto* bwi = chrome::OpenEmptyWindow(
       profile, /*should_trigger_session_restore=*/false);
-  return bwi ? bwi->GetBrowserForMigrationOnly() : nullptr;
+  return bwi ? bwi : nullptr;
 }
 
 void OpenOrFocusNexusWindow(Profile* profile) {
   if (!profile) {
     return;
   }
-  if (Browser* nexus = FindNexusWindow(profile)) {
-    nexus->window()->Activate();
+  if (BrowserWindowInterface* nexus = FindNexusWindow(profile)) {
+    BrowserWindow::FromBrowser(nexus)->Activate();
     return;
   }
   SetPendingNexusWindow(profile);
@@ -129,8 +129,8 @@ void OpenOrFocusNormalWindow(Profile* profile) {
   if (!profile) {
     return;
   }
-  if (Browser* browser = FindNormalWindow(profile)) {
-    browser->window()->Activate();
+  if (BrowserWindowInterface* browser = FindNormalWindow(profile)) {
+    BrowserWindow::FromBrowser(browser)->Activate();
     return;
   }
   chrome::NewEmptyWindow(profile, /*should_trigger_session_restore=*/false);
@@ -144,11 +144,11 @@ void OpenUrlInNormalWindow(Profile* profile, const GURL& url) {
   // Prefer an existing normal (non-kNexus) window: add a foreground tab and
   // raise it. This keeps the click out of the kNexus window so the nexus
   // chat pane is never replaced.
-  if (Browser* target = FindNormalWindow(profile)) {
+  if (BrowserWindowInterface* target = FindNormalWindow(profile)) {
     NavigateParams params(target, url, ui::PAGE_TRANSITION_LINK);
     params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
     Navigate(&params);
-    target->window()->Activate();
+    BrowserWindow::FromBrowser(target)->Activate();
     return;
   }
 
@@ -196,8 +196,9 @@ bool ConsumePendingSingleWebWindow(Profile* profile) {
   return true;
 }
 
-bool IsSingleWebBrowser(Browser* browser) {
-  if (!browser || !browser->is_type_normal()) {
+bool IsSingleWebBrowser(BrowserWindowInterface* browser) {
+  if (!browser ||
+      browser->GetType() != BrowserWindowInterface::Type::TYPE_NORMAL) {
     return false;
   }
   auto* view = static_cast<CustomBrowserView*>(
@@ -205,8 +206,9 @@ bool IsSingleWebBrowser(Browser* browser) {
   return view && view->IsSingleWebWindow();
 }
 
-bool IsNexusBrowser(Browser* browser) {
-  if (!browser || !browser->is_type_normal()) {
+bool IsNexusBrowser(BrowserWindowInterface* browser) {
+  if (!browser ||
+      browser->GetType() != BrowserWindowInterface::Type::TYPE_NORMAL) {
     return false;
   }
   auto* view = static_cast<CustomBrowserView*>(
@@ -214,8 +216,8 @@ bool IsNexusBrowser(Browser* browser) {
   return view && view->IsNexusUIMode();
 }
 
-Browser* AdjustBrowserForExternalUrlOpen(Profile* profile,
-                                         Browser* candidate) {
+BrowserWindowInterface* AdjustBrowserForExternalUrlOpen(Profile* profile,
+                                         BrowserWindowInterface* candidate) {
   if (candidate && !IsNexusBrowser(candidate) &&
       !IsSingleWebBrowser(candidate)) {
     // Common case: the startup code already picked a normal window.
@@ -226,7 +228,7 @@ Browser* AdjustBrowserForExternalUrlOpen(Profile* profile,
     // reroute to any existing
     // normal window instead (FindNormalWindow ignores workspaces; landing on
     // another workspace beats landing in the chat window).
-    if (Browser* normal = FindNormalWindow(profile)) {
+    if (BrowserWindowInterface* normal = FindNormalWindow(profile)) {
       return normal;
     }
   }

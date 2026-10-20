@@ -45,7 +45,7 @@ bool ConsumePendingDeferredCrashBubble(Profile* profile) {
   return true;
 }
 
-void ShowDeferredCrashBubbleNow(base::WeakPtr<Browser> browser) {
+void ShowDeferredCrashBubbleNow(base::WeakPtr<BrowserWindowInterface> browser) {
   if (!browser) {
     return;
   }
@@ -62,21 +62,21 @@ bool MaybeSuppressStartupPrompts(BrowserWindowInterface* browser) {
   if (!browser) {
     return false;
   }
-  Browser* as_browser = browser->GetBrowserForMigrationOnly();
+  BrowserWindowInterface* as_browser = browser;
   if (!custom_browser::window_util::IsNexusBrowser(as_browser)) {
     return false;
   }
   // The crash bubble's gate (HasPendingUncleanExit) burns the moment this
   // startup window finishes opening — stash the offer so the next normal
   // window can show it (MaybeShowDeferredCrashBubble).
-  if (HasPendingUncleanExit(as_browser->profile())) {
-    SetPendingDeferredCrashBubble(as_browser->profile());
+  if (HasPendingUncleanExit(as_browser->GetProfile())) {
+    SetPendingDeferredCrashBubble(as_browser->GetProfile());
   }
   return true;
 }
 
-void MaybeShowDeferredCrashBubble(Browser* browser) {
-  if (!browser || !ConsumePendingDeferredCrashBubble(browser->profile())) {
+void MaybeShowDeferredCrashBubble(BrowserWindowInterface* browser) {
+  if (!browser || !ConsumePendingDeferredCrashBubble(browser->GetProfile())) {
     return;
   }
   // Called from CustomBrowserView::InitializeCustomBrowser — inside
@@ -84,7 +84,7 @@ void MaybeShowDeferredCrashBubble(Browser* browser) {
   // the task runs the window has finished coming up.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
-      base::BindOnce(&ShowDeferredCrashBubbleNow, browser->AsWeakPtr()));
+      base::BindOnce(&ShowDeferredCrashBubbleNow, browser->GetWeakPtr()));
 }
 
 }  // namespace custom_browser::nexus_startup_ui

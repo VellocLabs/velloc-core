@@ -94,6 +94,23 @@ std::optional<base::DictValue> LoadMessageCatalogResource(
   return catalog;
 }
 
+// Locales to search for messages, most specific first: the application
+// locale and its parents (e.g. "en_GB", "en"), then `default_locale`.
+std::vector<std::string> GetFallbackLocales(const std::string& default_locale) {
+  std::vector<std::string> locales;
+  std::string tag = extension_l10n_util::CurrentLocaleOrDefault();
+  while (!tag.empty() && tag != default_locale) {
+    locales.push_back(tag);
+    const size_t separator = tag.find_last_of("_-");
+    if (separator == std::string::npos) {
+      break;
+    }
+    tag.resize(separator);
+  }
+  locales.push_back(default_locale);
+  return locales;
+}
+
 std::optional<base::DictValue> LocalizeManifestForDisplay(
     const CustomComponentExtension& extension,
     const base::DictValue& manifest) {
@@ -104,9 +121,8 @@ std::optional<base::DictValue> LocalizeManifestForDisplay(
     return std::nullopt;
   }
 
-  std::vector<std::string> fallback_locales;
-  extension_l10n_util::GetAllFallbackLocales(default_locale,
-                                             &fallback_locales);
+  const std::vector<std::string> fallback_locales =
+      GetFallbackLocales(default_locale);
 
   extensions::MessageBundle::CatalogVector catalogs;
   const base::FilePath extension_root(extension.root_relative_path);

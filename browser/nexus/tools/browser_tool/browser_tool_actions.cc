@@ -407,7 +407,8 @@ void BrowserTool::OnCreateTabActionDone(
     std::string action_name,
     actor::ActorTask::TabHandleSet tabs_before,
     base::TimeTicks /*start_time*/,
-    std::vector<actor::ActionResultWithLatencyInfo> action_results) {
+    std::vector<actor::ActionResultWithLatencyInfo> action_results,
+    actor::TabObservationStrategy /*observation_strategy*/) {
   // 149 folded the standalone result_code / index_of_failed_action out of
   // PerformActionsCallback into the per-action `action_results` vector;
   // reduce it via upstream's canonical helper (first non-OK wins). This

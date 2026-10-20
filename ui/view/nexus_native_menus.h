@@ -1,7 +1,7 @@
 #ifndef CUSTOM_BROWSER_UI_VIEW_NEXUS_NATIVE_MENUS_H_
 #define CUSTOM_BROWSER_UI_VIEW_NEXUS_NATIVE_MENUS_H_
 
-class Browser;
+class BrowserWindowInterface;
 
 namespace ui {
 class SimpleMenuModel;
@@ -17,7 +17,8 @@ namespace custom_browser {
 // SystemMenuModelDelegate routes them; only the labels are overridden.
 // Returns false (no-op) for every other window, so normal browser windows
 // keep the default menu.
-bool BuildNexusSystemMenu(ui::SimpleMenuModel* model, Browser* browser);
+bool BuildNexusSystemMenu(ui::SimpleMenuModel* model,
+                          BrowserWindowInterface* browser);
 
 }  // namespace custom_browser
 

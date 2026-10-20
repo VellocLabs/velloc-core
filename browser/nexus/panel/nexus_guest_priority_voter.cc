@@ -69,7 +69,8 @@ void NexusGuestPriorityVoter::OnBeforePageNodeRemoved(
   guest_pages_.erase(page_node);
 }
 
-void NexusGuestPriorityVoter::OnMainFrameUrlChanged(const PageNode* page_node) {
+void NexusGuestPriorityVoter::OnMainFrameUrlChanged(const PageNode* page_node,
+                                                    const GURL& previous_url) {
   UpdatePage(page_node);
 }
 

@@ -24,7 +24,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
+#include "chrome/browser/ui/immersive/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/tabs/groups/tab_group_editor_bubble_view.h"
 #include "custom_browser/ui/web_ui/tab_strip_ui_util.h"
 #include "chrome/common/webui_url_constants.h"
@@ -468,7 +468,7 @@ bool CustomBrowserWebUIView::CanDragEnter(
     bool found_tab_id = base::StringToInt(it->second, &tab_id);
     return found_tab_id &&
            extensions::ExtensionTabUtil::GetTabById(
-               tab_id, custom_browser_view_->browser()->profile(), false,
+               tab_id, custom_browser_view_->browser()->GetProfile(), false,
                nullptr);
   }
 
@@ -476,7 +476,7 @@ bool CustomBrowserWebUIView::CanDragEnter(
       it != data.custom_data.end()) {
     std::string group_id = base::UTF16ToUTF8(it->second);
     BrowserWindowInterface* found_browser = tab_strip_ui::GetBrowserWithGroupId(
-        Profile::FromBrowserContext(custom_browser_view_->browser()->profile()),
+        Profile::FromBrowserContext(custom_browser_view_->browser()->GetProfile()),
         group_id);
     return found_browser != nullptr;
   }

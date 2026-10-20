@@ -28,16 +28,15 @@
 #include "components/tabs/public/tab_interface.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
-#include "chrome/browser/ui/exclusive_access/fullscreen_observer.h"
 #include "chrome/browser/ui/tabs/tab_data.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/translate/partial_translate_bubble_model.h"
 #include "chrome/browser/ui/user_education/browser_user_education_interface.h"
-#include "chrome/browser/ui/views/exclusive_access_bubble_views_context.h"
+#include "chrome/browser/ui/views/exclusive_access/exclusive_access_bubble_views_context.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
 #include "chrome/browser/ui/views/frame/contents_container_view.h"
 #include "chrome/browser/ui/views/frame/contents_web_view.h"
-#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
+#include "chrome/browser/ui/immersive/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/intent_picker_bubble_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_closer.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
@@ -156,11 +155,10 @@ struct CustomBrowserViews {
 // CustomBrowserView implements the BrowserWindow interface for custom browser UI.
 // It handles custom browser window behaviors and appearance.
 class CustomBrowserView : public BrowserView,
-                          public CustomBrowserUiPrefs::Observer,
-                          public FullscreenObserver {
+                          public CustomBrowserUiPrefs::Observer {
 
  public:
-  explicit CustomBrowserView(Browser* browser);
+  explicit CustomBrowserView(BrowserWindowInterface* browser);
   CustomBrowserView(const CustomBrowserView&) = delete;
   CustomBrowserView& operator=(const CustomBrowserView&) = delete;
   ~CustomBrowserView() override;
@@ -218,8 +216,8 @@ class CustomBrowserView : public BrowserView,
                           int index,
                           int reason) override;
 
-  // FullscreenObserver:
-  void OnFullscreenStateChanged() override;
+  // Runs whenever the window's FullscreenController changes state.
+  void OnFullscreenStateChanged();
 
   // views::WidgetDelegate:
   // In kNexus mode the native window title (taskbar / alt-tab / a11y) is
@@ -333,8 +331,7 @@ private:
   void StopMouseCapture(bool success);
   std::optional<int> active_capture_id_;
   base::OnceCallback<void(bool)> capture_finished_callback_;
-  base::ScopedObservation<FullscreenController, FullscreenObserver>
-      fullscreen_observation_{this};
+  base::CallbackListSubscription fullscreen_subscription_;
   base::CallbackListSubscription browser_did_close_subscription_;
   std::unique_ptr<MouseEventHandler> mouse_event_filter_;
   views::ViewTracker active_tab_search_button_tracker_;

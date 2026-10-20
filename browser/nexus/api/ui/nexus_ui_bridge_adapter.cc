@@ -122,10 +122,10 @@ bool OpenNexusSettingsForProfile(Profile* profile, std::string_view section) {
   bool opened = false;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile ||
-            !browser->is_type_normal()) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;
         }
 
@@ -170,10 +170,10 @@ void ApplyGuestDragRegionForProfile(Profile* profile,
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile ||
-            !browser->is_type_normal()) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;  // Keep scanning.
         }
         auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
@@ -202,10 +202,10 @@ bool IsNexusBrowserWindowActiveForProfile(Profile* profile) {
   bool active = false;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile ||
-            !browser->is_type_normal()) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;  // Keep scanning.
         }
         auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
@@ -228,10 +228,10 @@ bool IsNexusBrowserWindowActiveForProfile(Profile* profile) {
 void ActivateNexusWindowForProfileId(uintptr_t profile_id) {
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || !browser->is_type_normal() ||
-            reinterpret_cast<uintptr_t>(browser->profile()) != profile_id) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
+            reinterpret_cast<uintptr_t>(browser->GetProfile()) != profile_id) {
           return true;  // Keep scanning.
         }
         if (auto* browser_view =
@@ -254,13 +254,13 @@ gfx::NativeWindow GetNexusOwningWindowForProfile(Profile* profile) {
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile ||
-            !browser->is_type_normal()) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;  // Keep scanning.
         }
-        if (BrowserWindow* browser_window = browser->window()) {
+        if (BrowserWindow* browser_window = BrowserWindow::FromBrowser(browser)) {
           owning_window = browser_window->GetNativeWindow();
           return false;  // Found the Nexus window; stop.
         }
@@ -423,7 +423,7 @@ void NexusUiBridgeAdapter::HandleOpenSessionTabOnUI(
                           "openSessionTab: session tabs are disabled");
     return;
   }
-  Browser* nexus = custom_browser::window_util::FindNexusWindow(profile_);
+  BrowserWindowInterface* nexus = custom_browser::window_util::FindNexusWindow(profile_);
   if (!nexus) {
     std::move(done).Error("UI_ERROR", "openSessionTab: no Nexus window");
     return;
@@ -632,7 +632,7 @@ void NexusUiBridgeAdapter::HandleSetActiveSessionTitleOnUI(
 
   // Fire-and-forget like setWindowDragRegions: no error when no kNexus window
   // exists (e.g. mid-close) — the guest republishes on next mount.
-  if (Browser* nexus =
+  if (BrowserWindowInterface* nexus =
           custom_browser::window_util::FindNexusWindow(profile_)) {
     if (auto* view = static_cast<CustomBrowserView*>(
             BrowserView::GetBrowserViewForBrowser(nexus))) {

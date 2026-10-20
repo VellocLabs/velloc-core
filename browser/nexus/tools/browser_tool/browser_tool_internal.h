@@ -22,7 +22,7 @@
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
 
-class Browser;
+class BrowserWindowInterface;
 class Profile;
 
 namespace actor {
@@ -134,7 +134,7 @@ const char* RoleStringFromAXRole(apc::AXRole role);
 
 // Most-recently-active Browser whose Profile matches `profile`, or
 // nullptr.
-Browser* GetActiveBrowserForProfile(Profile* profile);
+BrowserWindowInterface* GetActiveBrowserForProfile(Profile* profile);
 
 // SessionID (int32) of the active window, or std::nullopt.
 std::optional<int32_t> GetActiveWindowSessionId(Profile* profile);

@@ -338,7 +338,7 @@ void CustomBrowserWebUI::CreatePageHandler(
 void CustomBrowserWebUI::Initialize(CustomBrowserView* custom_browser_view) {
   // content::WebUI* const web_ui = CustomBrowserWebUI::web_ui();
   // DCHECK_EQ(Profile::FromWebUI(web_ui),
-  // custom_browser_view->browser()->profile());
+  // custom_browser_view->browser()->GetProfile());
   custom_browser_view_ = custom_browser_view;
 }
 

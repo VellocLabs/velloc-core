@@ -26,7 +26,6 @@
 #include "chrome/browser/glic/actor/glic_actor_policy_checker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
@@ -103,7 +102,7 @@ std::u16string TabGroupTitleFor(std::string_view session_key) {
 // `browser` is null when the tab is gone or its WebContents is
 // orphaned.
 struct LocatedTab {
-  raw_ptr<Browser> browser = nullptr;
+  raw_ptr<BrowserWindowInterface> browser = nullptr;
   raw_ptr<TabStripModel> tab_strip = nullptr;
   int index = TabStripModel::kNoTab;
   raw_ptr<content::WebContents> contents = nullptr;
@@ -116,7 +115,7 @@ LocatedTab LocateTabForHandle(tabs::TabHandle handle) {
   content::WebContents* contents = tab->GetContents();
   if (!contents) return out;
   out.contents = contents;
-  out.browser = chrome::FindBrowserWithTab(contents);
+  out.browser = tab->GetBrowserWindowInterface();
   if (!out.browser) return out;
   out.tab_strip = out.browser->tab_strip_model();
   if (!out.tab_strip) {
@@ -353,9 +352,9 @@ std::vector<tabs::TabHandle> BrowserTool::CollectSessionTabs() const {
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile) {
           return true;
         }
         TabStripModel* tab_strip = browser->tab_strip_model();
@@ -591,12 +590,12 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
       actor::webui::mojom::TaskOptions::New();
   options->title = base::StrCat({"nexus-browser-tools:", GetSessionKey()});
 
-  // custom-browser: Chromium 149 added a leading TaskSourceInfo argument.
   task_id_ = service->CreateTaskWithOptions(
       actor::TaskSourceInfo(actor::TaskSourceInfo::Client::kGlic,
                             /*id=*/std::nullopt),
       policy_checker, std::move(options),
-      /*delegate=*/base::WeakPtr<actor::ActorTaskDelegate>());
+      /*delegate=*/base::WeakPtr<actor::ActorTaskDelegate>(),
+      service->GetActorUiStateManager());
 
   // Post-create validation: the previous task's async cleanup can leave the new
   // task null or not yet kCreated, which would silently drop the next callback;
@@ -722,7 +721,8 @@ void BrowserTool::OnActorPerformActionsDone(
     base::TimeTicks start_time,
     apc::Actions actions_for_retry,
     bool retried,
-    std::vector<actor::ActionResultWithLatencyInfo> action_results) {
+    std::vector<actor::ActionResultWithLatencyInfo> action_results,
+    actor::TabObservationStrategy /*observation_strategy*/) {
   // Chromium 149's PerformActions callback no longer passes a separate
   // result_code — it's folded into the per-action `action_results` vector.
   // Reduce to the overall code via upstream's canonical helper (first

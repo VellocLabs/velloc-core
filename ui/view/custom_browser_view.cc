@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/views/frame/contents_container_view.h"
 #include "chrome/browser/ui/views/frame/multi_contents_view.h"
@@ -97,7 +98,7 @@ CustomBrowserViews& CustomBrowserViews::operator=(
 CustomBrowserViews::~CustomBrowserViews() noexcept = default;
 
 
-CustomBrowserView::CustomBrowserView(Browser* browser)
+CustomBrowserView::CustomBrowserView(BrowserWindowInterface* browser)
     : BrowserView(browser) {
   DCHECK(browser_);
   browser_did_close_subscription_ =
@@ -108,7 +109,7 @@ CustomBrowserView::CustomBrowserView(Browser* browser)
 
 CustomBrowserView::~CustomBrowserView() {
   StopMouseCapture(false);
-  fullscreen_observation_.Reset();
+  fullscreen_subscription_ = {};
   // Explicit teardown order: native_ui_container_ (references both) -> webui
   // view (its handler holds a raw ui_prefs_ pointer) -> ui_prefs_ last. The
   // reverse-declaration order would be a use-after-free.
@@ -157,7 +158,7 @@ void CustomBrowserView::AddedToWidget() {
     if (!is_custom_initialized_) {
         // Perform any custom initialization here.
         is_custom_initialized_ = true;
-        if (browser_->is_type_normal()) {
+        if (browser_->GetType() == BrowserWindowInterface::TYPE_NORMAL) {
           InitializeCustomBrowser();
         }
     }
@@ -165,7 +166,7 @@ void CustomBrowserView::AddedToWidget() {
 
 void CustomBrowserView::RemovedFromWidget() {
   StopMouseCapture(false);
-  fullscreen_observation_.Reset();
+  fullscreen_subscription_ = {};
   BrowserView::RemovedFromWidget();
 }
 
@@ -315,12 +316,12 @@ std::optional<gfx::Rect> CustomBrowserView::GetTabSearchAnchorRectOverride(
 }
 
 void CustomBrowserView::InitializeCustomBrowser() {
-    ui_prefs_ = std::make_unique<CustomBrowserUiPrefs>(browser()->profile()->GetPrefs());
+    ui_prefs_ = std::make_unique<CustomBrowserUiPrefs>(browser()->GetProfile()->GetPrefs());
     ui_prefs_->AddObserver(this);
 
     // Decide whether this window should open directly in kNexus, before the
     // WebUI view triggers BuildInitUrl() below.
-    Profile* profile = browser()->profile();
+    Profile* profile = browser()->GetProfile();
     // A window created to host externally-launched URLs (OS default-browser
     // open routed by AdjustBrowserForExternalUrlOpen) is pinned to normal
     // mode and takes precedence over everything else for THIS window. A
@@ -476,16 +477,11 @@ CustomBrowserView::NativeChildType CustomBrowserView::GetNativeChildType(gfx::Na
 }
 
 void CustomBrowserView::ObserveFullscreenController() {
-  if (fullscreen_observation_.IsObserving() || !browser()) {
+  if (fullscreen_subscription_ || !browser()) {
     return;
   }
 
-  BrowserWindowFeatures* features = browser()->browser_window_features();
-  if (!features) {
-    return;
-  }
-
-  auto* exclusive_access_manager = features->exclusive_access_manager();
+  auto* exclusive_access_manager = ExclusiveAccessManager::From(browser());
   if (!exclusive_access_manager) {
     return;
   }
@@ -496,7 +492,10 @@ void CustomBrowserView::ObserveFullscreenController() {
     return;
   }
 
-  fullscreen_observation_.Observe(fullscreen_controller);
+  fullscreen_subscription_ =
+      fullscreen_controller->RegisterOnFullscreenStateChanged(
+          base::BindRepeating(&CustomBrowserView::OnFullscreenStateChanged,
+                              base::Unretained(this)));
 }
 
 custom_browser::ResizeEdge CustomBrowserView::ResizeEdgeAtLocalPoint(
@@ -737,7 +736,7 @@ void CustomBrowserView::OnTabStripModelChanged(
 void CustomBrowserView::MoveTabsToNormalWindow(
     std::vector<tabs::TabHandle> tabs) {
   TabStripModel* source = browser()->tab_strip_model();
-  Browser* target = nullptr;
+  BrowserWindowInterface* target = nullptr;
   for (const tabs::TabHandle& handle : tabs) {
     // Never empty the window: its first tab stays, whichever path it took.
     if (source->count() <= 1) {
@@ -749,23 +748,23 @@ void CustomBrowserView::MoveTabsToNormalWindow(
     }
     if (!target) {
       target = custom_browser::window_util::FindNormalWindow(
-          browser()->profile());
+          browser()->GetProfile());
     }
     if (!target) {
-      if (Browser::GetCreationStatusForProfile(browser()->profile()) !=
-          Browser::CreationStatus::kOk) {
+      if (GetBrowserWindowCreationStatusForProfile(*browser()->GetProfile()) !=
+          BrowserWindowInterface::CreationStatus::kOk) {
         return;
       }
       custom_browser::window_util::SetPendingExternalUrlWindow(
-          browser()->profile());
-      target = Browser::Create(
-          Browser::CreateParams(browser()->profile(), /*user_gesture=*/true));
+          browser()->GetProfile());
+      target = ::CreateBrowserWindow(BrowserWindowCreateParams(
+          browser()->GetProfile(), /*from_user_gesture=*/true));
     }
     target->tab_strip_model()->AppendTab(
         source->DetachTabAtForInsertion(index), /*foreground=*/true);
   }
   if (target) {
-    target->window()->Show();
+    BrowserWindow::FromBrowser(target)->Show();
   }
 }
 

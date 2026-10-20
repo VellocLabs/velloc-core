@@ -67,7 +67,7 @@ class NativeViewHost;
 class WebView;
 }  // namespace views
 
-class Browser;
+class BrowserWindowInterface;
 class CustomBrowserView;
 class ImmersiveRevealedLock;
 
@@ -84,8 +84,8 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   CustomBrowserWebUIView(CustomBrowserView* browser_view);
   ~CustomBrowserWebUIView() override;
 
-  static bool SupportsTouchableTabStrip(const Browser* browser);
-  static bool UseTouchableTabStrip(const Browser* browser);
+  static bool SupportsTouchableTabStrip(const BrowserWindowInterface* browser);
+  static bool UseTouchableTabStrip(const BrowserWindowInterface* browser);
 
   // For drag-and-drop support:
   static void GetDropFormatsForView(

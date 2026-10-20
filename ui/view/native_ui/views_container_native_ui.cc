@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
-#include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
 #include "custom_browser/ui/view/custom_browser_view.h"
 #include "custom_browser/ui/view/native_ui/native_ui_utils.h"
@@ -158,12 +158,9 @@ bool ViewsContainerNativeUI::EnsureChildViews() {
     }
   }
 
-  auto* toolbar_button_provider =
-      GetCustomBrowserView()->toolbar_button_provider();
+  ToolbarView* toolbar = GetCustomBrowserView()->toolbar();
   auto* extensions_toolbar_container =
-      toolbar_button_provider
-          ? toolbar_button_provider->GetExtensionsToolbarDesktop()
-          : nullptr;
+      toolbar ? toolbar->extensions_container() : nullptr;
   for (auto& view : views_) {
     bool is_location_bar = view == GetCustomBrowserView()->GetLocationBarView();
     views::View* parent = is_location_bar ? host_view()->parent() : host_view();

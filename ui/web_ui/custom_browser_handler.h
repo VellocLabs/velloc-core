@@ -23,7 +23,7 @@
 #include "ui/native_theme/native_theme_observer.h"
 #include "ui/views/widget/widget_observer.h"
 
-class Browser;
+class BrowserWindowInterface;
 class CustomBrowserView;
 namespace tabs {
 class TabInterface;
@@ -74,7 +74,6 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
       const TabStripModelChange& change,
       const TabStripSelectionChange& selection) override;
   void OnTabChangedAt(tabs::TabInterface* tab,
-                      int index,
                       TabChangeType change_type) override;
   void OnTabPinnedStateChanged(tabs::TabInterface* tab, int index) override;
   // custom-browser: Chromium 149 removed OnTabBlockedStateChanged from
@@ -146,7 +145,7 @@ class CustomBrowserHandler : public custom_browser::mojom::BrowserHandler,
   // Re-pointed by DetachFromView / AttachToView; null while detached (the
   // receiver is paused then, so no BrowserHandler method runs on null).
   raw_ptr<CustomBrowserView> custom_browser_view_;
-  raw_ptr<Browser> browser_;
+  raw_ptr<BrowserWindowInterface> browser_;
   // The profile outlives every window the handler is attached to; theme
   // observation is keyed to it, not to a Browser.
   const raw_ptr<Profile> profile_;

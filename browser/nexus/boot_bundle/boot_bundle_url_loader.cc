@@ -11,8 +11,10 @@
 #include <utility>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/self_deleting.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -28,6 +30,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/http_request_headers_update_params.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/self_deleting_url_loader_factory.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
@@ -122,13 +125,11 @@ class BootBundleURLLoader : public network::mojom::URLLoader,
 
   // network::mojom::URLLoader:
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override {
     if (target_loader_) {
-      target_loader_->FollowRedirect(removed_headers, modified_headers,
-                                     modified_cors_exempt_headers, new_url);
+      target_loader_->FollowRedirect(std::move(headers_update_params),
+                                     new_url);
     }
   }
 
@@ -240,7 +241,7 @@ class BootBundleURLLoader : public network::mojom::URLLoader,
     client_->OnReceiveResponse(MakeBundleHead(request_, entry, build_time),
                                std::move(consumer), std::nullopt);
     network::URLLoaderCompletionStatus status(net::OK);
-    status.decoded_body_length = static_cast<int64_t>(bytes->size());
+    status.decoded_body_length = base::ByteSize(bytes->size());
     status.encoded_body_length = status.decoded_body_length;
     client_->OnComplete(status);
   }
@@ -265,8 +266,9 @@ class BootBundleURLLoaderFactory
   BootBundleURLLoaderFactory(
       const BootBundleStore* store,
       mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
-      mojo::PendingRemote<network::mojom::URLLoaderFactory> target)
-      : network::SelfDeletingURLLoaderFactory(std::move(receiver)),
+      mojo::PendingRemote<network::mojom::URLLoaderFactory> target,
+      base::SelfDeletingPassKey key)
+      : network::SelfDeletingURLLoaderFactory(std::move(receiver), key),
         store_(store),
         target_(std::move(target)) {
     target_.set_disconnect_handler(
@@ -322,8 +324,8 @@ void CreateBootBundleURLLoaderFactory(
     const BootBundleStore* store,
     mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
     mojo::PendingRemote<network::mojom::URLLoaderFactory> target) {
-  new BootBundleURLLoaderFactory(store, std::move(receiver),
-                                 std::move(target));
+  base::MakeSelfDeleting<BootBundleURLLoaderFactory>(store, std::move(receiver),
+                                                    std::move(target));
 }
 
 void MaybeProxyURLLoaderFactoryForBootBundle(

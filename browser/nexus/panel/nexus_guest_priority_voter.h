@@ -50,8 +50,8 @@ class NexusGuestPriorityVoter
   void OnPageNodeAdded(const performance_manager::PageNode* page_node) override;
   void OnBeforePageNodeRemoved(
       const performance_manager::PageNode* page_node) override;
-  void OnMainFrameUrlChanged(
-      const performance_manager::PageNode* page_node) override;
+  void OnMainFrameUrlChanged(const performance_manager::PageNode* page_node,
+                             const GURL& previous_url) override;
 
   // FrameNodeObserver:
   void OnBeforeFrameNodeAdded(

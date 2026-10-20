@@ -1,6 +1,7 @@
 #include "custom_browser/ui/view/webui_color_resolver.h"
 
 #include "chrome/browser/ui/color/chrome_color_id.h"
+#include "ui/color/color_id.h"
 #include "ui/color/color_provider.h"
 // No state; only uses ColorProvider input.
 
@@ -14,7 +15,7 @@ std::optional<SkColor> ResolveChromeColorId(
   }
   switch (id) {
     case custom_browser::mojom::ChromeColorID::kColorWebUiTabStripBackground:
-      return color_provider->GetColor(kColorWebUiTabStripBackground);
+      return color_provider->GetColor(ui::kColorSysHeader);
     case custom_browser::mojom::ChromeColorID::
         kColorToolbarBackgroundSubtleEmphasis:
       return color_provider->GetColor(kColorToolbarBackgroundSubtleEmphasis);
@@ -28,7 +29,7 @@ std::optional<ui::ColorId> ResolveChromeColorId(
     custom_browser::mojom::ChromeColorID id) {
   switch (id) {
     case custom_browser::mojom::ChromeColorID::kColorWebUiTabStripBackground:
-      return kColorWebUiTabStripBackground;
+      return ui::kColorSysHeader;
     case custom_browser::mojom::ChromeColorID::
         kColorToolbarBackgroundSubtleEmphasis:
       return kColorToolbarBackgroundSubtleEmphasis;

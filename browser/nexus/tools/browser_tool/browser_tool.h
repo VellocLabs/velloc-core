@@ -21,10 +21,11 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/actor/actor_task.h"
-#include "chrome/browser/actor/aggregated_journal.h"
+#include "chrome/browser/actor/tab_observation_strategy.h"
 #include "chrome/common/actor.mojom-forward.h"
 #include "chrome/common/actor/action_result.h"
-#include "chrome/common/actor/task_id.h"
+#include "components/actor/core/task_id.h"
+#include "components/actor/core/aggregated_journal.h"
 #include "components/optimization_guide/proto/features/actions_data.pb.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "components/page_content_annotations/content/page_context_fetcher.h"
@@ -275,7 +276,8 @@ class BrowserTool : public ToolBase {
       base::TimeTicks start_time,
       optimization_guide::proto::Actions actions_for_retry,
       bool retried,
-      std::vector<actor::ActionResultWithLatencyInfo> action_results);
+      std::vector<actor::ActionResultWithLatencyInfo> action_results,
+      actor::TabObservationStrategy observation_strategy);
 
   // Two-stage `create_tab` flow: NavigateAction needs a tab id, so the create
   // runs first, the new TabHandle is found by diffing known tabs, then the
@@ -286,7 +288,8 @@ class BrowserTool : public ToolBase {
       std::string action_name,
       actor::ActorTask::TabHandleSet tabs_before,
       base::TimeTicks start_time,
-      std::vector<actor::ActionResultWithLatencyInfo> action_results);
+      std::vector<actor::ActionResultWithLatencyInfo> action_results,
+      actor::TabObservationStrategy observation_strategy);
 
   // Reply for RunDownloadOnUI's url-mode mkdir hop. The forced-path download
   // writer won't create parent directories, and a freshly-created session

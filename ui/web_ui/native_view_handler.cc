@@ -92,7 +92,7 @@ void UIViewHandler::OpenBrowserWindow() {
   // Do NOT change this (pinned nexus) window's UI mode. Focus an existing
   // normal browser window for the profile, or open a new one.
   custom_browser::window_util::OpenOrFocusNormalWindow(
-      custom_browser_view_->browser()->profile());
+      custom_browser_view_->browser()->GetProfile());
 }
 
 void UIViewHandler::SaveIntPref(custom_browser::mojom::IntKey key,

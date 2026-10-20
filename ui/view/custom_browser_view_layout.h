@@ -1,6 +1,7 @@
 #ifndef CUSTOM_BROWSER_UI_CUSTOM_BROWSER_VIEW_LAYOUT_H_
 #define CUSTOM_BROWSER_UI_CUSTOM_BROWSER_VIEW_LAYOUT_H_
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_impl.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_params.h"
@@ -10,6 +11,7 @@
 #include "ui/views/layout/flex_layout_types.h"
 
 
+class BrowserWindowInterface;
 class CustomBrowserWebUIView;
 class CustomBrowserView;
 class NativeUIContainerView;
@@ -19,7 +21,7 @@ namespace custom_browser {
 class CustomBrowserViewLayout : public BrowserViewTabbedLayoutImpl {
  public:
   CustomBrowserViewLayout(std::unique_ptr<BrowserViewLayoutDelegate> delegate,
-                          Browser* browser,
+                          BrowserWindowInterface* browser,
                           BrowserViewLayoutViews views);
   ~CustomBrowserViewLayout() override;
 
@@ -47,6 +49,10 @@ class CustomBrowserViewLayout : public BrowserViewTabbedLayoutImpl {
       const BrowserLayoutParams& params) const override;
 
  private:
+  // The window this layout belongs to; null in unit tests.
+  BrowserWindowInterface* browser() const { return browser_; }
+
+  const raw_ptr<BrowserWindowInterface> browser_;
   UndisplayedContentsSizer undisplayed_contents_sizer_;
 };
 

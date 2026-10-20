@@ -34,7 +34,7 @@ void NewTabButtonNativeUI::OnPrepare() {
 
   auto new_tab_button = std::make_unique<ToolbarButton>(base::BindRepeating(
       &TabStrip::NewTabButtonPressed, base::Unretained(tab_strip)));
-  new_tab_button->SetVectorIcon(vector_icons::kAddIcon);
+  new_tab_button->SetVectorIcon(vector_icons::kAddOldIcon);
   new_tab_button->SetTooltipText(
       l10n_util::GetStringUTF16(IDS_TOOLTIP_NEW_TAB));
   new_tab_button->GetViewAccessibility().SetName(

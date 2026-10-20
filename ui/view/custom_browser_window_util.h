@@ -8,6 +8,7 @@
 #define CUSTOM_BROWSER_UI_VIEW_CUSTOM_BROWSER_WINDOW_UTIL_H_
 
 class Browser;
+class BrowserWindowInterface;
 class GURL;
 class Profile;
 
@@ -19,10 +20,10 @@ namespace custom_browser::window_util {
 
 // Returns |profile|'s single kNexus window, or nullptr if none exists. Use to
 // enforce the at-most-one-kNexus-window invariant.
-Browser* FindNexusWindow(Profile* profile);
+BrowserWindowInterface* FindNexusWindow(Profile* profile);
 
 // Returns a normal (non-kNexus) browser window for |profile|, or nullptr.
-Browser* FindNormalWindow(Profile* profile);
+BrowserWindowInterface* FindNormalWindow(Profile* profile);
 
 // Returns a normal (non-kNexus) browser window for |profile|, creating one if
 // none exists. The newly created window comes up in normal mode because no
@@ -30,7 +31,7 @@ Browser* FindNormalWindow(Profile* profile);
 // only for a null profile or if window creation fails. Used by BrowserTool to
 // host the agent's tabs in a separate window when the user opts in, without
 // touching the kNexus chat window.
-Browser* FindOrCreateNormalWindow(Profile* profile);
+BrowserWindowInterface* FindOrCreateNormalWindow(Profile* profile);
 
 // Focuses |profile|'s existing kNexus window if present; otherwise opens a new
 // window that starts in kNexus (singleton-enforced at window init).
@@ -65,7 +66,7 @@ bool ConsumePendingSingleWebWindow(Profile* profile);
 // True when |browser| is a single-web window. Such a window is never returned
 // by FindNexusWindow / FindNormalWindow and never receives external URLs.
 // Null-safe.
-bool IsSingleWebBrowser(Browser* browser);
+bool IsSingleWebBrowser(BrowserWindowInterface* browser);
 
 // True when |browser| is (or is becoming) the profile's kNexus window: a
 // normal-type browser whose CustomBrowserView reports IsNexusUIMode(). The
@@ -73,7 +74,7 @@ bool IsSingleWebBrowser(Browser* browser);
 // in InitializeCustomBrowser() but the mode only lands once the WebUI loads
 // its layout params, and routing/suppression decisions (startup tabs,
 // startup prompts) fire inside that gap. Null-safe.
-bool IsNexusBrowser(Browser* browser);
+bool IsNexusBrowser(BrowserWindowInterface* browser);
 
 // Routing policy for externally-opened URLs (OS default-browser opens /
 // second-instance command lines): the kNexus window is never the target.
@@ -83,7 +84,7 @@ bool IsNexusBrowser(Browser* browser);
 // creates a fresh window that is pinned to normal mode. Called from the
 // ENABLE_CUSTOM_BROWSER hook in GetExistingBrowserForOpenBehavior
 // (chrome/browser/ui/startup/startup_browser_creator_impl.cc).
-Browser* AdjustBrowserForExternalUrlOpen(Profile* profile, Browser* candidate);
+BrowserWindowInterface* AdjustBrowserForExternalUrlOpen(Profile* profile, BrowserWindowInterface* candidate);
 
 // Marks the next CustomBrowserView created for |profile| as a window opened
 // to host externally-launched URLs: it stays in normal mode even when the

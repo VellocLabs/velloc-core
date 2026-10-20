@@ -35,7 +35,7 @@ NexusSecretCrypt::NexusSecretCrypt() = default;
 NexusSecretCrypt::~NexusSecretCrypt() = default;
 
 void NexusSecretCrypt::EnsureAcquired(os_crypt_async::OSCryptAsync* service) {
-  if (encryptor_.has_value() || acquiring_ || !service) {
+  if (encryptor_ || acquiring_ || !service) {
     return;
   }
   acquiring_ = true;
@@ -43,7 +43,8 @@ void NexusSecretCrypt::EnsureAcquired(os_crypt_async::OSCryptAsync* service) {
                                       weak_factory_.GetWeakPtr()));
 }
 
-void NexusSecretCrypt::OnEncryptor(os_crypt_async::Encryptor encryptor) {
+void NexusSecretCrypt::OnEncryptor(
+    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
   encryptor_ = std::move(encryptor);
   acquiring_ = false;
   std::vector<base::OnceClosure> callbacks;
@@ -54,7 +55,7 @@ void NexusSecretCrypt::OnEncryptor(os_crypt_async::Encryptor encryptor) {
 }
 
 void NexusSecretCrypt::WhenReady(base::OnceClosure callback) {
-  if (encryptor_.has_value()) {
+  if (encryptor_) {
     std::move(callback).Run();
     return;
   }
@@ -62,7 +63,7 @@ void NexusSecretCrypt::WhenReady(base::OnceClosure callback) {
 }
 
 std::string NexusSecretCrypt::Encrypt(const std::string& plaintext) {
-  if (plaintext.empty() || !encryptor_.has_value()) {
+  if (plaintext.empty() || !encryptor_) {
     return plaintext;
   }
   // Idempotent: never double-encrypt. A value that already carries the
@@ -83,7 +84,7 @@ std::string NexusSecretCrypt::Decrypt(const std::string& stored) {
   if (!IsEncrypted(stored)) {
     return stored;  // legacy plaintext / already-decrypted
   }
-  if (!encryptor_.has_value()) {
+  if (!encryptor_) {
     return std::string();  // marked but encryptor not ready
   }
   // Memoize: a hot secret (api_key / token) is read many times; the OS
@@ -118,7 +119,7 @@ bool NexusSecretCrypt::IsEncrypted(const std::string& stored) {
 }
 
 void NexusSecretCrypt::SetEncryptorForTesting(
-    os_crypt_async::Encryptor encryptor) {
+    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
   encryptor_ = std::move(encryptor);
   acquiring_ = false;
   decrypt_cache_.clear();
@@ -126,7 +127,7 @@ void NexusSecretCrypt::SetEncryptorForTesting(
 }
 
 void NexusSecretCrypt::ClearEncryptorForTesting() {
-  encryptor_.reset();
+  encryptor_ = nullptr;
   acquiring_ = false;
   decrypt_cache_.clear();
   decrypt_ops_ = 0;

@@ -18,8 +18,8 @@
 #include "chrome/browser/glic/public/glic_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/tabs/public/tab_interface.h"
 #include "chrome/common/actor.mojom.h"
@@ -224,22 +224,28 @@ actor::ActorTask::StoppedReason ToActorStoppedReason(OnStopReason reason) {
   return actor::ActorTask::StoppedReason::kStoppedByUser;
 }
 
-Browser* GetActiveBrowserForProfile(Profile* profile) {
+BrowserWindowInterface* GetActiveBrowserForProfile(Profile* profile) {
   if (!profile) {
     return nullptr;
   }
-  // custom-browser: Chromium 149's FindLastActiveWithProfile returns
-  // BrowserWindowInterface*.
-  auto* bwi = chrome::FindLastActiveWithProfile(profile);
-  return bwi ? bwi->GetBrowserForMigrationOnly() : nullptr;
+  BrowserWindowInterface* result = nullptr;
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [&](BrowserWindowInterface* window) {
+        if (window->GetProfile() != profile) {
+          return true;
+        }
+        result = window;
+        return false;
+      });
+  return result;
 }
 
 std::optional<int32_t> GetActiveWindowSessionId(Profile* profile) {
-  Browser* browser = GetActiveBrowserForProfile(profile);
+  BrowserWindowInterface* browser = GetActiveBrowserForProfile(profile);
   if (!browser) {
     return std::nullopt;
   }
-  return browser->session_id().id();
+  return browser->GetSessionID().id();
 }
 
 std::optional<int32_t> ResolveCreateTabWindowSessionId(Profile* profile) {
@@ -255,10 +261,10 @@ std::optional<int32_t> ResolveCreateTabWindowSessionId(Profile* profile) {
   // active window only when no Nexus window exists (teardown races; while
   // a guest is alive the panel's window exists by construction).
   if (!::nexus::ShouldHostAgentTabsInSeparateWindow(profile)) {
-    Browser* nexus_window =
+    BrowserWindowInterface* nexus_window =
         custom_browser::window_util::FindNexusWindow(profile);
     if (nexus_window) {
-      return nexus_window->session_id().id();
+      return nexus_window->GetSessionID().id();
     }
     return GetActiveWindowSessionId(profile);
   }
@@ -270,18 +276,18 @@ std::optional<int32_t> ResolveCreateTabWindowSessionId(Profile* profile) {
   // map, so the window it returns is a real normal CustomBrowserView window.
   // The same window is reused across all sessions for this profile (per-
   // session tab groups keep them visually distinct); it's created on demand.
-  Browser* window =
+  BrowserWindowInterface* window =
       custom_browser::window_util::FindOrCreateNormalWindow(profile);
   if (!window) {
     // Creation failed — fall back to the active window so the create still
     // succeeds rather than rejecting the tool call.
     return GetActiveWindowSessionId(profile);
   }
-  return window->session_id().id();
+  return window->GetSessionID().id();
 }
 
 std::optional<int32_t> GetActiveTabHandleId(Profile* profile) {
-  Browser* browser = GetActiveBrowserForProfile(profile);
+  BrowserWindowInterface* browser = GetActiveBrowserForProfile(profile);
   if (!browser) {
     return std::nullopt;
   }

@@ -387,9 +387,9 @@ void CustomBrowserUiPrefs::OnNewTabPrefChanged() {
       prefs_->GetBoolean(kCustomNewTabShowShortcutsPrefPath);
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-    Browser* browser = window->GetBrowserForMigrationOnly();
-    if (!browser || !browser->profile() ||
-        browser->profile()->GetPrefs() != prefs_) {
+    BrowserWindowInterface* browser = window;
+    if (!browser || !browser->GetProfile() ||
+        browser->GetProfile()->GetPrefs() != prefs_) {
       return true;
     }
 

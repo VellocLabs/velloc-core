@@ -58,8 +58,6 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
             BUILDFLAG(CUSTOM_BRANDING_PDF_DOC_DESC_WIDE),
         .active_setup_guid =
             L"{3F419C09-15B6-46BE-8022-345F02FCDBC3}",  // Active Setup GUID.
-        .legacy_command_execute_clsid =
-            L"{C5B2F711-10BE-4F01-91D8-73F2667FAF7C}",  // CommandExecuteImpl.
         .toast_activator_clsid = {0x7178D34C,
                                   0xD527,
                                   0x4C43,
@@ -75,6 +73,7 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
                          0x4050,
                          {0x8F, 0xCD, 0x81, 0x33, 0xF4, 0x60, 0xC3,
                           0x8F}},  // IElevator IID and TypeLib.
+        .old_elevator_iids = {},
         .tracing_service_clsid = {0xB1DCAB96,
                                   0xE4E3,
                                   0x449F,
@@ -85,6 +84,7 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
                                 0x4AC9,
                                 {0x96, 0x35, 0xD7, 0xC3, 0xB3, 0x37, 0x07,
                                  0x30}},  // ISystemTraceSession IID.
+        .old_tracing_service_iids = {},
         .default_channel_name =
             L"",  // Empty default channel name since no update integration.
         .channel_strategy = ChannelStrategy::UNSUPPORTED,

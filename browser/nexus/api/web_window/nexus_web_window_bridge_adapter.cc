@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -57,8 +58,8 @@ base::DictValue OkResult(bool ok) {
 class NexusWebWindowBridgeAdapter::Window
     : public content::WebContentsObserver {
  public:
-  Window(NexusWebWindowBridgeAdapter* owner, Browser* browser)
-      : owner_(owner), browser_(browser), id_(browser->session_id().id()) {
+  Window(NexusWebWindowBridgeAdapter* owner, BrowserWindowInterface* browser)
+      : owner_(owner), browser_(browser), id_(browser->GetSessionID().id()) {
     did_close_ = browser->RegisterBrowserDidClose(base::BindRepeating(
         &Window::OnBrowserDidClose, base::Unretained(this)));
     close_cancelled_ = browser->RegisterBrowserCloseCancelled(
@@ -73,7 +74,7 @@ class NexusWebWindowBridgeAdapter::Window
 
   int32_t id() const { return id_; }
   bool is_open() const { return browser_ != nullptr; }
-  Browser* browser() const { return browser_; }
+  BrowserWindowInterface* browser() const { return browser_; }
 
   content::WebContents* contents() const {
     return browser_ ? browser_->tab_strip_model()->GetActiveWebContents()
@@ -83,14 +84,14 @@ class NexusWebWindowBridgeAdapter::Window
   // Close requested by the owner; onClosed then reports reason 'api'.
   void CloseByApi() {
     closing_by_api_ = true;
-    browser_->window()->Close();
+    BrowserWindow::FromBrowser(browser_)->Close();
   }
 
   // Close without an event: the owning connection is going away.
   void CloseSilently() {
     if (browser_) {
       did_close_ = {};
-      browser_->window()->Close();
+      BrowserWindow::FromBrowser(browser_)->Close();
     }
   }
 
@@ -102,7 +103,7 @@ class NexusWebWindowBridgeAdapter::Window
                                 : std::string());
     row.Set("title", web_contents ? base::UTF16ToUTF8(web_contents->GetTitle())
                                   : std::string());
-    BrowserWindow* window = browser_->window();
+    BrowserWindow* window = BrowserWindow::FromBrowser(browser_);
     row.Set("state", std::string(WebWindowStateName(window->IsMaximized(),
                                                     window->IsMinimized())));
     return row;
@@ -158,7 +159,7 @@ class NexusWebWindowBridgeAdapter::Window
   }
 
   raw_ptr<NexusWebWindowBridgeAdapter> owner_;
-  raw_ptr<Browser> browser_;
+  raw_ptr<BrowserWindowInterface> browser_;
   const int32_t id_;
   bool closing_by_api_ = false;
   base::CallbackListSubscription did_close_;
@@ -222,32 +223,32 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
     }
   }
 
-  if (!profile_ || Browser::GetCreationStatusForProfile(profile_) !=
-                       Browser::CreationStatus::kOk) {
+  if (!profile_ || GetBrowserWindowCreationStatusForProfile(*profile_) !=
+                       BrowserWindowInterface::CreationStatus::kOk) {
     std::move(done).Error(errors::kWindowCreateFailed,
                           "a window cannot be created now");
     return;
   }
 
-  Browser::CreateParams params(Browser::TYPE_NORMAL, profile_,
-                               /*user_gesture=*/true);
+  BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
+                                   profile_, /*from_user_gesture=*/true);
   params.omit_from_session_restore = true;
   params.should_trigger_session_restore = false;
   params.initial_show_state = show_state;
   if (has_origin || has_size) {
     params.initial_bounds = initial_bounds;
     params.initial_origin_specified =
-        has_origin ? Browser::ValueSpecified::kSpecified
-                   : Browser::ValueSpecified::kUnspecified;
+        has_origin ? BrowserWindowCreateParams::ValueSpecified::kSpecified
+                   : BrowserWindowCreateParams::ValueSpecified::kUnspecified;
   }
   // The marker is consumed by the CustomBrowserView inside this synchronous
   // Create; the second consume clears it should no view have taken it.
   custom_browser::window_util::SetPendingSingleWebWindow(profile_);
-  Browser* browser = Browser::Create(params);
+  BrowserWindowInterface* browser = CreateBrowserWindow(std::move(params));
   custom_browser::window_util::ConsumePendingSingleWebWindow(profile_);
   if (!browser || !custom_browser::window_util::IsSingleWebBrowser(browser)) {
     if (browser) {
-      browser->window()->Close();
+      BrowserWindow::FromBrowser(browser)->Close();
     }
     std::move(done).Error(errors::kWindowCreateFailed,
                           "the window could not be created");
@@ -307,7 +308,7 @@ void NexusWebWindowBridgeAdapter::HandleFocusOnUI(
   if (!window) {
     return;
   }
-  BrowserWindow* browser_window = window->browser()->window();
+  BrowserWindow* browser_window = BrowserWindow::FromBrowser(window->browser());
   if (browser_window->IsMinimized()) {
     browser_window->Restore();
   }
@@ -324,7 +325,7 @@ void NexusWebWindowBridgeAdapter::HandleSetBoundsOnUI(
   if (!window) {
     return;
   }
-  BrowserWindow* browser_window = window->browser()->window();
+  BrowserWindow* browser_window = BrowserWindow::FromBrowser(window->browser());
   WebWindowBoundsRequest request{input.left, input.top, input.width,
                                  input.height};
   gfx::Rect bounds;
@@ -359,7 +360,7 @@ void NexusWebWindowBridgeAdapter::HandleSetStateOnUI(
   if (!window) {
     return;
   }
-  BrowserWindow* browser_window = window->browser()->window();
+  BrowserWindow* browser_window = BrowserWindow::FromBrowser(window->browser());
   switch (*state) {
     case ui::mojom::WindowShowState::kMaximized:
       browser_window->Maximize();

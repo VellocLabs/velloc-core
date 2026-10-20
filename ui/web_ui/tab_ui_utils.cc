@@ -84,7 +84,7 @@ bool TabIsValid(const TabContext& context) {
 
 }  // namespace
 
-TabContext PopulateTabContext(Browser* expected_browser,
+TabContext PopulateTabContext(BrowserWindowInterface* expected_browser,
                               int32_t tab_id,
                               int32_t location_x,
                               int32_t location_y) {
@@ -92,7 +92,7 @@ TabContext PopulateTabContext(Browser* expected_browser,
   extensions::WindowController* window = nullptr;
   int tab_index = -1;
   if (!extensions::ExtensionTabUtil::GetTabById(
-          tab_id, expected_browser->profile(), /*include_incognito=*/true,
+          tab_id, expected_browser->GetProfile(), /*include_incognito=*/true,
           &window, nullptr, &tab_index)) {
     return context;
   }
@@ -101,7 +101,7 @@ TabContext PopulateTabContext(Browser* expected_browser,
     return context;
   }
 
-  Browser* browser = window->GetBrowser();
+  BrowserWindowInterface* browser = window->GetBrowser();
   if (browser != expected_browser) {
     context.lookup_result = TabLookupResult::kDifferentBrowser;
     return context;
@@ -152,7 +152,7 @@ bool ShowTabFloatingPreview(const TabContext& context) {
   }
 
   auto* hover_controller =
-      context.tab_strip->hover_card_controller_for_testing();
+      context.tab_strip->hover_card_controller();
   if (!hover_controller) {
     return false;
   }
@@ -186,7 +186,7 @@ bool CloseTabFloatingPreview(const TabContext& context) {
   }
 
   auto* hover_controller =
-      context.tab_strip->hover_card_controller_for_testing();
+      context.tab_strip->hover_card_controller();
   if (!hover_controller) {
     return false;
   }

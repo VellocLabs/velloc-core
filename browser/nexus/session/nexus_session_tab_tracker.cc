@@ -93,9 +93,9 @@ NexusSessionTabTracker::CollectSessionTabsInNexusWindow(
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile_ ||
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile_ ||
             !custom_browser::window_util::IsNexusBrowser(browser)) {
           return true;
         }
@@ -136,7 +136,7 @@ bool NexusSessionTabTracker::ActivateSessionTab(
   if (!contents) {
     return false;
   }
-  Browser* browser = custom_browser::window_util::FindNexusWindow(profile_);
+  BrowserWindowInterface* browser = custom_browser::window_util::FindNexusWindow(profile_);
   TabStripModel* tab_strip = browser ? browser->tab_strip_model() : nullptr;
   if (!tab_strip) {
     return false;
@@ -157,7 +157,7 @@ std::vector<SessionTabEntry> NexusSessionTabTracker::GetSessionTabs(
   if (session_key.empty()) {
     return out;
   }
-  Browser* browser = custom_browser::window_util::FindNexusWindow(profile_);
+  BrowserWindowInterface* browser = custom_browser::window_util::FindNexusWindow(profile_);
   TabStripModel* tab_strip = browser ? browser->tab_strip_model() : nullptr;
   if (!tab_strip) {
     return out;
@@ -194,7 +194,7 @@ int NexusSessionTabTracker::FindSessionTab(const std::string& session_key,
   if (!tag || *tag != session_key) {
     return TabStripModel::kNoTab;
   }
-  Browser* browser = custom_browser::window_util::FindNexusWindow(profile_);
+  BrowserWindowInterface* browser = custom_browser::window_util::FindNexusWindow(profile_);
   TabStripModel* tab_strip = browser ? browser->tab_strip_model() : nullptr;
   if (!tab_strip) {
     return TabStripModel::kNoTab;
@@ -267,7 +267,6 @@ void NexusSessionTabTracker::OnTabStripModelChanged(
 }
 
 void NexusSessionTabTracker::OnTabChangedAt(tabs::TabInterface* tab,
-                                            int index,
                                             TabChangeType change_type) {
   // A title or URL change arrives as kAll; a loading flip carries the new
   // URL too, so both re-publish the tab's session.
@@ -303,9 +302,9 @@ NexusSessionTabTracker::SnapshotTaggedTabs() const {
   std::vector<SessionTabSnapshotEntry> snapshot;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        Browser* browser =
-            window ? window->GetBrowserForMigrationOnly() : nullptr;
-        if (!browser || browser->profile() != profile_) {
+        BrowserWindowInterface* browser =
+            window ? window : nullptr;
+        if (!browser || browser->GetProfile() != profile_) {
           return true;
         }
         TabStripModel* tab_strip = browser->tab_strip_model();

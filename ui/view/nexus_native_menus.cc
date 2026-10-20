@@ -9,7 +9,8 @@
 
 namespace custom_browser {
 
-bool BuildNexusSystemMenu(ui::SimpleMenuModel* model, Browser* browser) {
+bool BuildNexusSystemMenu(ui::SimpleMenuModel* model,
+                          BrowserWindowInterface* browser) {
   if (!window_util::IsNexusBrowser(browser) &&
       !window_util::IsSingleWebBrowser(browser)) {
     return false;

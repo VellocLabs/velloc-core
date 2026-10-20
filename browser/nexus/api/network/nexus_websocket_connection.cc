@@ -12,6 +12,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/unguessable_token.h"
 #include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
 #include "net/base/isolation_info.h"
 #include "net/base/net_errors.h"
@@ -20,6 +21,7 @@
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/originating_process_id.h"
+#include "services/network/public/mojom/ip_address_space.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "url/origin.h"
@@ -163,7 +165,8 @@ void NexusWebSocketConnection::Connect() {
       /*auth_handler=*/mojo::NullRemote(),
       /*header_client=*/mojo::NullRemote(),
       /*throttling_profile_id=*/std::nullopt,
-      /*network_restrictions_id=*/std::nullopt);
+      /*network_restrictions_id=*/base::UnguessableToken::Create(),
+      network::mojom::IPAddressSpace::kUnknown);
 }
 
 void NexusWebSocketConnection::OnOpeningHandshakeStarted(

@@ -769,6 +769,7 @@ source_set("bridge") {
     # NexusUiBridgeAdapter::HandleShowNotificationOnUI.
     "//chrome/app/theme:chrome_unscaled_resources",
     "//chrome/browser/actor",
+    "//components/actor/core:journal",
 
     # NexusAppInfoBridgeAdapter::HandleRelaunchOnUI restarts the client so a
     # new runtime source / update channel takes effect.

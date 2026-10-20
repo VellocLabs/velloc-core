@@ -2,7 +2,7 @@
 
 #include <optional>
 
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_delegate.h"
@@ -14,24 +14,14 @@
 #include "custom_browser/ui/view/native_ui_container_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 #include "content/public/browser/web_contents.h"
-namespace {
-
-// Loading bar is thicker than a separator, but instead of moving the bottom
-// of the top container down, it starts above where the separator would go.
-static constexpr int kLoadingBarHeight = 3;
-static constexpr int kLoadingBarOffset =
-    kLoadingBarHeight - views::Separator::kThickness;
-
-}  // namespace
-
+#include "ui/views/controls/separator.h"
 namespace custom_browser {
 CustomBrowserViewLayout::CustomBrowserViewLayout(
     std::unique_ptr<BrowserViewLayoutDelegate> delegate,
-    Browser* browser,
+    BrowserWindowInterface* browser,
     BrowserViewLayoutViews views)
-    : BrowserViewTabbedLayoutImpl(std::move(delegate),
-                                  browser,
-                                  std::move(views)) {}
+    : BrowserViewTabbedLayoutImpl(std::move(delegate), std::move(views)),
+      browser_(browser) {}
 
 CustomBrowserViewLayout::~CustomBrowserViewLayout() {}
 
@@ -75,7 +65,6 @@ void CustomBrowserViewLayout::FixViewsParentForCustom() {
   };
 
   fix_view_parent(views().bookmark_bar, custom_views().native_ui_container);
-  fix_view_parent(views().loading_bar, custom_views().native_ui_container);
 }
 
 void CustomBrowserViewLayout::LayoutContentsContainerView(
@@ -86,7 +75,6 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
   BrowserLayoutParams params;
   params.visual_client_area = contents_container_bounds;
   const BrowserLayoutParams browser_params = params;
-  const bool show_shadow_overlay = ShadowOverlayVisible();
 
   // Lay out the bookmarks bar if one is present.
   const bool bookmarks_visible = visible && delegate().IsBookmarkBarVisible();
@@ -105,27 +93,10 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
     params.SetTop(bookmarks_bounds.bottom());
   }
 
-  // There are multiple different ways the top separator can render.
-  const TopSeparatorType top_separator_type = GetTopSeparatorType();
-
-  // Lay out the loading bar when present.
-  if (IsParentedTo(views().loading_bar, custom_views().native_ui_container)) {
-    gfx::Rect loading_bar_bounds;
-    if (top_separator_type == TopSeparatorType::kLoadingBar) {
-      loading_bar_bounds =
-          gfx::Rect(params.visual_client_area.x(),
-                    params.visual_client_area.y() - kLoadingBarOffset,
-                    params.visual_client_area.width(), kLoadingBarHeight);
-      params.SetTop(loading_bar_bounds.bottom());
-    }
-    SetViewBoundAndVisibility(
-        views().loading_bar, loading_bar_bounds,
-        visible && (top_separator_type == TopSeparatorType::kLoadingBar));
-  }
-
-  // Maybe show the separator in the multi-contents view.
+  // The multi-contents view draws the top separator unless an infobar sits
+  // between it and the toolbar.
   views().multi_contents_view->SetShouldShowTopSeparator(
-      top_separator_type == TopSeparatorType::kMultiContents);
+      !delegate().IsInfobarVisible());
 
   // Lay out infobar container.
   if (IsParentedTo(views().infobar_container, views().browser_view)) {
@@ -136,8 +107,7 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
       // the toolbar-height side panel shadow box. This is because they only
       // slide down when they are visually adjacent to the toolbar/bookmarks
       // bar.
-      const int additional_offset =
-          show_shadow_overlay ? 0 : delegate().GetExtraInfobarOffset();
+      const int additional_offset = delegate().GetExtraInfobarOffset();
       infobar_bounds =
           gfx::Rect(params.visual_client_area.x(),
                     params.visual_client_area.y() + additional_offset,
@@ -181,10 +151,6 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
       int max_width =
           std::min(preferred_width,
                    params.visual_client_area.width() - min_contents_width);
-      if (contents_height_side_panel->ShouldRestrictMaxWidth()) {
-        max_width =
-            std::min(max_width, params.visual_client_area.width() * 2 / 3);
-      }
 
       // Side panel always gets at least its minimum width.
       contents_height_side_panel_width = std::max(min_width, max_width);
@@ -212,17 +178,13 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
                            contents_height_side_panel_leading);
   }
 
-  // custom-browser: Chromium 149 removed MultiContentsView's public
-  // SetShouldShowLeading/TrailingSeparator(); the contents separator is now
-  // managed internally by MultiContentsView (see browser_view_layout.h), so the
-  // manual leading/trailing control that existed in the 146 baseline is dropped.
-  // TODO(custom-browser): verify the side-panel/contents separator UI on 149.
-
   // Lay out contents container. The contents container contains the multi-
   // contents view when multi-contents are enabled. The checks here are to
   // force the logic to be updated when multi-contents is fully rolled-out.
-  CHECK(IsParentedTo(views().contents_container, views().browser_view));
-  CHECK(views().contents_container->Contains(views().multi_contents_view));
+  views::View* const contents_container =
+      GetCustomBrowserView()->contents_container();
+  CHECK(IsParentedTo(contents_container, views().browser_view));
+  CHECK(contents_container->Contains(views().multi_contents_view));
 
   // Because side panels have minimum width, in a small browser, it is possible
   // for the combination of minimum-sized contents pane and minimum-sized side
@@ -244,8 +206,8 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
   const gfx::Rect contents_container_rect(
       content_left, params.visual_client_area.y(), content_right - content_left,
       params.visual_client_area.height());
-  SetViewBoundAndVisibility(views().contents_container,
-                            contents_container_rect, visible);
+  SetViewBoundAndVisibility(contents_container, contents_container_rect,
+                            visible);
 
   undisplayed_contents_sizer_.OnContentsAreaLaidOut(
       contents_container_rect.size(), visible);
@@ -254,7 +216,7 @@ void CustomBrowserViewLayout::LayoutContentsContainerView(
 
 void CustomBrowserViewLayout::SizeUndisplayedTabs() {
   TabStripModel* const tab_strip_model =
-      browser() ? browser()->tab_strip_model() : nullptr;
+      browser() ? browser()->GetTabStripModel() : nullptr;
   if (!tab_strip_model) {
     return;
   }

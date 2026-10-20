@@ -6,7 +6,7 @@
 #include "base/memory/raw_ptr.h"
 #include "ui/gfx/geometry/point.h"
 
-class Browser;
+class BrowserWindowInterface;
 class BrowserView;
 class Profile;
 class Tab;
@@ -27,7 +27,7 @@ enum class TabLookupResult {
 };
 
 struct TabContext {
-  raw_ptr<Browser> browser = nullptr;
+  raw_ptr<BrowserWindowInterface> browser = nullptr;
   raw_ptr<TabStrip> tab_strip = nullptr;
   raw_ptr<Tab> tab = nullptr;
   gfx::Point target_screen_point;
@@ -35,7 +35,7 @@ struct TabContext {
   TabLookupResult lookup_result = TabLookupResult::kNotFound;
 };
 
-TabContext PopulateTabContext(Browser* expected_browser,
+TabContext PopulateTabContext(BrowserWindowInterface* expected_browser,
                               int32_t tab_id,
                               int32_t location_x,
                               int32_t location_y);

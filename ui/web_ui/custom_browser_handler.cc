@@ -29,6 +29,7 @@
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_group_theme.h"
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
+#include "chrome/browser/ui/tabs/tab_menu_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_data.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/ui_features.h"
@@ -107,7 +108,7 @@ class WebUIBackgroundContextMenu : public ui::SimpleMenuModel::Delegate,
                                    public WebUIBackgroundMenuModel {
  public:
   WebUIBackgroundContextMenu(
-      Browser* browser,
+      BrowserWindowInterface* browser,
       const ui::AcceleratorProvider* accelerator_provider)
       : WebUIBackgroundMenuModel(this),
         browser_(browser),
@@ -129,18 +130,18 @@ class WebUIBackgroundContextMenu : public ui::SimpleMenuModel::Delegate,
   }
 
  private:
-  const raw_ptr<Browser> browser_;
+  const raw_ptr<BrowserWindowInterface> browser_;
   const raw_ptr<const ui::AcceleratorProvider> accelerator_provider_;
 };
 
 class WebUITabContextMenu : public ui::SimpleMenuModel::Delegate,
                             public TabMenuModel {
  public:
-  WebUITabContextMenu(Browser* browser,
+  WebUITabContextMenu(BrowserWindowInterface* browser,
                       const ui::AcceleratorProvider* accelerator_provider,
                       int tab_index)
       : TabMenuModel(this,
-                     browser->GetFeatures().tab_menu_model_delegate(),
+                     TabMenuModelDelegate::From(browser),
                      browser->tab_strip_model(),
                      tab_index),
         browser_(browser),
@@ -169,7 +170,7 @@ class WebUITabContextMenu : public ui::SimpleMenuModel::Delegate,
   }
 
  private:
-  const raw_ptr<Browser> browser_;
+  const raw_ptr<BrowserWindowInterface> browser_;
   const raw_ptr<const ui::AcceleratorProvider> accelerator_provider_;
   const int tab_index_;
 };
@@ -197,7 +198,7 @@ CustomBrowserHandler::CustomBrowserHandler(
       web_ui_(web_ui),
       custom_browser_view_(custom_browser_view),
       browser_(custom_browser_view->browser()),
-      profile_(custom_browser_view->browser()->profile()),
+      profile_(custom_browser_view->browser()->GetProfile()),
       thumbnail_tracker_(
           base::BindRepeating(&CustomBrowserHandler::HandleThumbnailUpdate,
                               base::Unretained(this))),
@@ -249,7 +250,7 @@ void CustomBrowserHandler::AttachToView(
   custom_browser_view_ = custom_browser_view;
   browser_ = custom_browser_view->browser();
   DCHECK(browser_);
-  DCHECK_EQ(profile_, browser_->profile());
+  DCHECK_EQ(profile_, browser_->GetProfile());
   TabStripModel* tab_strip_model = browser_->tab_strip_model();
   tab_strip_model->AddObserver(this);
   // Replay the new window's strip the way kInserted would have: the page's
@@ -464,10 +465,10 @@ void CustomBrowserHandler::OnTabStripModelChanged(
 }
 
 void CustomBrowserHandler::OnTabChangedAt(tabs::TabInterface* tab,
-                                          int index,
                                           TabChangeType change_type) {
   TRACE_EVENT0("browser", "CustomBrowserHandler:OnTabChangedAt");
-  NotifyTabDataChanged(tab->GetContents(), tab, index);
+  NotifyTabDataChanged(tab->GetContents(), tab,
+                       browser_->tab_strip_model()->GetIndexOfTab(tab));
 }
 
 void CustomBrowserHandler::OnTabPinnedStateChanged(tabs::TabInterface* tab,
@@ -628,7 +629,7 @@ void CustomBrowserHandler::GetGroupVisualData(
 void CustomBrowserHandler::GroupTab(int32_t tab_id,
                                     const std::string& group_id_string) {
   int tab_index = -1;
-  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->profile(),
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->GetProfile(),
                                                 /*include_incognito=*/true,
                                                 /*window=*/nullptr,
                                                 /*contents=*/nullptr,
@@ -647,7 +648,7 @@ void CustomBrowserHandler::GroupTab(int32_t tab_id,
 
 void CustomBrowserHandler::UngroupTab(int32_t tab_id) {
   int tab_index = -1;
-  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->profile(),
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->GetProfile(),
                                                 /*include_incognito=*/true,
                                                 /*window=*/nullptr,
                                                 /*contents=*/nullptr,
@@ -666,7 +667,7 @@ void CustomBrowserHandler::MoveGroup(const std::string& group_id_string,
 
   auto* target_browser = browser_.get();
   BrowserWindowInterface* const source_browser =
-      tab_strip_ui::GetBrowserWithGroupId(browser_->profile(), group_id_string);
+      tab_strip_ui::GetBrowserWithGroupId(browser_->GetProfile(), group_id_string);
   if (!source_browser) {
     return;
   }
@@ -713,17 +714,17 @@ void CustomBrowserHandler::MoveTab(int32_t tab_id, int32_t to_index) {
 
   extensions::WindowController* source_window = nullptr;
   int from_index = -1;
-  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->profile(),
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->GetProfile(),
                                                 true, &source_window, nullptr,
                                                 &from_index)) {
     return;
   }
 
-  if (source_window->profile() != browser_->profile()) {
+  if (source_window->profile() != browser_->GetProfile()) {
     return;
   }
 
-  Browser* source_browser = source_window->GetBrowser();
+  BrowserWindowInterface* source_browser = source_window->GetBrowser();
   if (source_browser == browser_) {
     browser_->tab_strip_model()->MoveWebContentsAt(from_index, to_index, false);
     return;
@@ -760,7 +761,7 @@ void CustomBrowserHandler::CloseContainer() {
 
 void CustomBrowserHandler::CloseTab(int32_t tab_id, bool tab_was_swiped) {
   content::WebContents* tab = nullptr;
-  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->profile(),
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->GetProfile(),
                                                 true, &tab)) {
     // ID didn't refer to a valid tab.
     DVLOG(1) << "Invalid tab ID";
@@ -867,7 +868,7 @@ void CustomBrowserHandler::SetThumbnailTracked(int32_t tab_id,
                                                bool thumbnail_tracked) {
   TRACE_EVENT0("browser", "CustomBrowserHandler:HandleSetThumbnailTracked");
   content::WebContents* tab = nullptr;
-  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->profile(),
+  if (!extensions::ExtensionTabUtil::GetTabById(tab_id, browser_->GetProfile(),
                                                 true, &tab)) {
     // ID didn't refer to a valid tab.
     DVLOG(1) << "Invalid tab ID";
@@ -978,7 +979,9 @@ void CustomBrowserHandler::OnNativeThemeUpdated(
 
 void CustomBrowserHandler::ExecuteBrowserCommand(
     custom_browser::mojom::BrowserCommandID command_id) {
-  if (auto* widget = browser_->GetBrowserView().GetWidget(); widget) {
+  if (auto* widget =
+          BrowserView::GetBrowserViewForBrowser(browser_)->GetWidget();
+      widget) {
     switch (command_id) {
       case custom_browser::mojom::BrowserCommandID::IDC_BROWSER_MINIMIZE_WINDOW:
         widget->Minimize();

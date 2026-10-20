@@ -20,7 +20,7 @@ bool MaybeSuppressStartupPrompts(BrowserWindowInterface* browser);
 // any) and shows the session-crashed bubble on |browser| once the current
 // task completes — the consume site runs during Widget::Init, before
 // startup tabs exist. No-op without a marker.
-void MaybeShowDeferredCrashBubble(Browser* browser);
+void MaybeShowDeferredCrashBubble(BrowserWindowInterface* browser);
 
 }  // namespace custom_browser::nexus_startup_ui
 

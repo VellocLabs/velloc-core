@@ -71,6 +71,12 @@ inline void AppendFeatureListOverrides(
   overrides->emplace_back(std::cref(actor::kGlicCrossOriginNavigationGating),
                           base::FeatureList::OVERRIDE_DISABLE_FEATURE);
 
+  // Keep page actions on localhost auto-allowed. Upstream treats localhost
+  // as a sensitive origin and routes actions there through a confirmation
+  // the agent tab cannot answer; the agent's own dev servers live there.
+  overrides->emplace_back(std::cref(actor::kGlicActorLocalhostIsSensitive),
+                          base::FeatureList::OVERRIDE_DISABLE_FEATURE);
+
   // Pin the File System Access picker block ON: an agent tab has no human to
   // answer a native picker, and the agent uses BrowserUpload / BrowserDownload.
   // Pinned so a default flip cannot reintroduce a blocking native dialog.

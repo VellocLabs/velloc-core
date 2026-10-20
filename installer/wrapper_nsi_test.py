@@ -5,7 +5,7 @@
 
 Running the wrapper would act on this machine's real Velloc install (it
 reads and edits HKCU\\Software\\Velloc and launches the installed
-chrome.exe), so these tests compile it and check its structure instead.
+the browser exe), so these tests compile it and check its structure instead.
 
 Run: python custom_browser/installer/wrapper_nsi_test.py
 """
@@ -46,7 +46,7 @@ def _function_body(source, name):
 
 
 def _launch_index(body):
-  """Offset of the Exec statement that launches chrome.exe."""
+  """Offset of the Exec statement that launches the browser exe."""
   match = re.search(r"^\s*Exec '", body, re.MULTILINE)
   assert match, 'LaunchInstalledChrome no longer launches with Exec'
   return match.start()
@@ -161,6 +161,7 @@ class WrapperCompilesTest(unittest.TestCase):
     result = self._makensis(
         '/DPRODUCT_NAME=' + product,
         '/DPRODUCT_VERSION=1.2.3.4',
+        '/DBROWSER_EXE=velloc.exe',
         '/DMINI_INSTALLER_SOURCE=' +
         os.path.join(self.work, 'mini_installer.exe'),
         '/DMASTER_PREFERENCES_SOURCE=' +

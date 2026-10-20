@@ -17,6 +17,12 @@
   !addplugindir /x86-unicode "${VELLOC_NSIS_PLUGIN_DIR}"
 !endif
 
+; The installed browser executable's file name (custom_browser_exe_name +
+; ".exe"); build.sh reads it from the out dir's args.gn.
+!ifndef BROWSER_EXE
+  !error "BROWSER_EXE is required, e.g. /DBROWSER_EXE=velloc.exe"
+!endif
+
 !ifndef PRODUCT_NAME
   !define PRODUCT_NAME "Velloc Code"
 !endif
@@ -243,7 +249,7 @@ SectionEnd
 ; Code") — confirmed against the registered install.
 !define PRODUCT_UNINSTALL_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Velloc"
 
-; Resolves the installed chrome.exe path into $R7. Prefers the registry
+; Resolves the installed ${BROWSER_EXE} path into $R7. Prefers the registry
 ; InstallLocation written by setup.exe under the Uninstall key (covers both
 ; per-user and system-level installs and any custom install dir), falling back
 ; to the default per-user dir under %LOCALAPPDATA%. Sets $R7 to "" if the exe
@@ -259,7 +265,7 @@ Function ResolveInstalledChromeExe
     ; Fallback: default per-user install dir.
     StrCpy $R0 "$LOCALAPPDATA\\Velloc\\Application"
   ${EndIf}
-  StrCpy $R7 "$R0\\chrome.exe"
+  StrCpy $R7 "$R0\\${BROWSER_EXE}"
   ${IfNot} ${FileExists} "$R7"
     StrCpy $R7 ""
   ${EndIf}
@@ -294,7 +300,7 @@ Function LaunchInstalledChrome
     ; setup.exe's own post-first-install launch).
     Exec '"$R7" --from-installer'
   ${Else}
-    DetailPrint "Could not locate installed chrome.exe; skipping launch."
+    DetailPrint "Could not locate installed ${BROWSER_EXE}; skipping launch."
   ${EndIf}
 FunctionEnd
 

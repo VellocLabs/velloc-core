@@ -104,13 +104,10 @@ BrowserWindowInterface* FindOrCreateNormalWindow(Profile* profile) {
   // No normal window yet. Create one. We deliberately do NOT call
   // SetPendingNexusWindow, so the new CustomBrowserView consumes a false
   // pending-nexus marker during init and comes up in normal (non-kNexus)
-  // mode. OpenEmptyWindow returns the Browser* and seeds it with a valid
-  // initial tab, so the window is never in a tabless state.
-  // custom-browser: Chromium 149's OpenEmptyWindow returns
-  // BrowserWindowInterface*; convert to Browser* for callers.
-  auto* bwi = chrome::OpenEmptyWindow(
-      profile, /*should_trigger_session_restore=*/false);
-  return bwi ? bwi : nullptr;
+  // mode. OpenEmptyWindow seeds the window with a valid initial tab, so it
+  // is never in a tabless state.
+  return chrome::OpenEmptyWindow(profile,
+                                 /*should_trigger_session_restore=*/false);
 }
 
 void OpenOrFocusNexusWindow(Profile* profile) {

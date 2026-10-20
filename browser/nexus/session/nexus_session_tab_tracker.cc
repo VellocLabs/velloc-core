@@ -93,8 +93,7 @@ NexusSessionTabTracker::CollectSessionTabsInNexusWindow(
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile_ ||
             !custom_browser::window_util::IsNexusBrowser(browser)) {
           return true;
@@ -302,8 +301,7 @@ NexusSessionTabTracker::SnapshotTaggedTabs() const {
   std::vector<SessionTabSnapshotEntry> snapshot;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile_) {
           return true;
         }

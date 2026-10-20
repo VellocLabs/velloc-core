@@ -352,8 +352,7 @@ std::vector<tabs::TabHandle> BrowserTool::CollectSessionTabs() const {
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile) {
           return true;
         }

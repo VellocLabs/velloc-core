@@ -122,8 +122,7 @@ bool OpenNexusSettingsForProfile(Profile* profile, std::string_view section) {
   bool opened = false;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile ||
             browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;
@@ -170,8 +169,7 @@ void ApplyGuestDragRegionForProfile(Profile* profile,
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile ||
             browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;  // Keep scanning.
@@ -202,8 +200,7 @@ bool IsNexusBrowserWindowActiveForProfile(Profile* profile) {
   bool active = false;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile ||
             browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;  // Keep scanning.
@@ -228,8 +225,7 @@ bool IsNexusBrowserWindowActiveForProfile(Profile* profile) {
 void ActivateNexusWindowForProfileId(uintptr_t profile_id) {
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
             reinterpret_cast<uintptr_t>(browser->GetProfile()) != profile_id) {
           return true;  // Keep scanning.
@@ -254,8 +250,7 @@ gfx::NativeWindow GetNexusOwningWindowForProfile(Profile* profile) {
   }
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* window) {
-        BrowserWindowInterface* browser =
-            window ? window : nullptr;
+        BrowserWindowInterface* browser = window;
         if (!browser || browser->GetProfile() != profile ||
             browser->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
           return true;  // Keep scanning.

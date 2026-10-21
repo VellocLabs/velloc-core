@@ -144,6 +144,41 @@ TEST(ShellResolverTest, FindOnPathFindsGitBashFromCommonProgramFilesLocation) {
 }
 #endif
 
+#if BUILDFLAG(IS_WIN)
+TEST(ShellResolverTest, FindOnPathFindsGitShWhenOnlyGitCmdIsOnPath) {
+  // The Git for Windows installer puts only Git\cmd on PATH; sh.exe lives in
+  // Git\usr\bin and must still resolve.
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  base::FilePath git_root =
+      tmp.GetPath().AppendASCII("ProgramFiles").AppendASCII("Git");
+  base::FilePath sh =
+      git_root.AppendASCII("usr").AppendASCII("bin").AppendASCII("sh.exe");
+  ASSERT_TRUE(base::CreateDirectory(sh.DirName()));
+  ASSERT_TRUE(base::WriteFile(sh, "fake sh"));
+  base::FilePath git_cmd = git_root.AppendASCII("cmd");
+  ASSERT_TRUE(base::CreateDirectory(git_cmd));
+  ASSERT_TRUE(base::WriteFile(git_cmd.AppendASCII("git.exe"), "fake git"));
+
+  // A bash override must not be returned for `sh`.
+  base::FilePath bash = tmp.GetPath().AppendASCII("custom-bash.exe");
+  ASSERT_TRUE(base::WriteFile(bash, "fake bash"));
+  base::ScopedEnvironmentVariableOverride nexus_bash_path_env(
+      "NEXUS_BASH_PATH", bash.AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride velloc_bash_path_env(
+      "VELLOC_BASH_PATH");
+  base::ScopedEnvironmentVariableOverride shell_env("SHELL");
+  base::ScopedEnvironmentVariableOverride program_files_env(
+      "ProgramFiles", git_root.DirName().AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride path_env("PATH",
+                                                   git_cmd.AsUTF8Unsafe());
+
+  std::optional<base::FilePath> found = ShellResolver::FindOnPath("sh");
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, sh);
+}
+#endif
+
 TEST(ShellResolverTest, KnownToolIdsIsAlphabetisedAndDeduped) {
   const std::vector<std::string> ids = ShellResolver::KnownToolIds();
   ASSERT_FALSE(ids.empty());

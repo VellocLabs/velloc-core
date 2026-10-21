@@ -112,13 +112,14 @@ bool ContainsPathEntry(const std::vector<std::string>& entries,
   });
 }
 
-std::optional<base::FilePath> GitRootFromBashPath(const base::FilePath& bash) {
-  // <Git>\bin\bash.exe or <Git>\usr\bin\bash.exe
-  const base::FilePath base = bash.BaseName();
-  if (!base::EqualsCaseInsensitiveASCII(base.AsUTF8Unsafe(), "bash.exe")) {
+std::optional<base::FilePath> GitRootFromShellPath(const base::FilePath& shell) {
+  // <Git>\bin\{bash,sh}.exe or <Git>\usr\bin\{bash,sh}.exe
+  const std::string base = shell.BaseName().AsUTF8Unsafe();
+  if (!base::EqualsCaseInsensitiveASCII(base, "bash.exe") &&
+      !base::EqualsCaseInsensitiveASCII(base, "sh.exe")) {
     return std::nullopt;
   }
-  const base::FilePath parent = bash.DirName();
+  const base::FilePath parent = shell.DirName();
   const std::string parent_name = parent.BaseName().AsUTF8Unsafe();
   if (base::EqualsCaseInsensitiveASCII(parent_name, "bin")) {
     const base::FilePath maybe_git = parent.DirName();
@@ -221,8 +222,8 @@ PolicyDecision SafeCommandPolicy::ResolveCommand(
     decision.error_code = "BINARY_NOT_FOUND";
     decision.error_message =
         "tool id '" + command +
-        "' is allowlisted on this host but the binary is not available on "
-        "PATH; install it and retry";
+        "' is supported but its binary was not found on this host (searched "
+        "PATH and known install locations); install it and retry";
     decision.install_hint = InstallHintFor(command, caps.platform);
     return decision;
   }
@@ -374,10 +375,10 @@ void SafeCommandPolicy::AugmentEnvironmentForResolvedCommand(
     const base::FilePath& resolved_path,
     base::EnvironmentMap* env) {
 #if BUILDFLAG(IS_WIN)
-  if (!env || command_id != "bash") {
+  if (!env || (command_id != "bash" && command_id != "sh")) {
     return;
   }
-  std::optional<base::FilePath> git_root = GitRootFromBashPath(resolved_path);
+  std::optional<base::FilePath> git_root = GitRootFromShellPath(resolved_path);
   if (!git_root.has_value()) {
     return;
   }

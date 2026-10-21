@@ -74,7 +74,7 @@ class ShellResolver {
 
   // Locates `tool_id` on PATH (with platform-appropriate extensions on
   // Windows), plus curated host-specific fallbacks such as Git for Windows'
-  // bash.exe. Exposed for unit testing.
+  // bash.exe and sh.exe. Exposed for unit testing.
   static std::optional<base::FilePath> FindOnPath(const std::string& tool_id);
 
   // Windows-only Git-for-Windows discovery. On non-Windows returns nullopt.

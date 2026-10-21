@@ -96,43 +96,56 @@ std::optional<base::FilePath> EnvPath(const char* name) {
   return base::FilePath::FromUTF8Unsafe(*value);
 }
 
-void AppendGitBashCandidatesFromRoot(const base::FilePath& root,
-                                     std::vector<base::FilePath>* out) {
+void AppendGitShellCandidatesFromRoot(const base::FilePath& root,
+                                      const char* exe_name,
+                                      std::vector<base::FilePath>* out) {
   if (root.empty()) {
     return;
   }
-  out->push_back(root.AppendASCII("bin").AppendASCII("bash.exe"));
-  out->push_back(root.AppendASCII("usr").AppendASCII("bin").AppendASCII("bash.exe"));
+  out->push_back(root.AppendASCII("bin").AppendASCII(exe_name));
+  out->push_back(root.AppendASCII("usr").AppendASCII("bin").AppendASCII(exe_name));
 }
 
-std::vector<base::FilePath> GitBashCandidatePathsForWindows() {
+// Candidate paths for a Git for Windows shell (`exe_name` is bash.exe or
+// sh.exe). The *_BASH_PATH / SHELL overrides name a bash, so they only apply
+// when `include_bash_overrides` is set.
+std::vector<base::FilePath> GitShellCandidatePathsForWindows(
+    const char* exe_name,
+    bool include_bash_overrides) {
   std::vector<base::FilePath> candidates;
 
-  for (const char* env_name : {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "SHELL"}) {
-    if (std::optional<base::FilePath> override_path = EnvPath(env_name);
-        override_path.has_value() && !override_path->empty()) {
-      candidates.push_back(*override_path);
+  if (include_bash_overrides) {
+    for (const char* env_name :
+         {"NEXUS_BASH_PATH", "VELLOC_BASH_PATH", "SHELL"}) {
+      if (std::optional<base::FilePath> override_path = EnvPath(env_name);
+          override_path.has_value() && !override_path->empty()) {
+        candidates.push_back(*override_path);
+      }
     }
   }
 
   if (std::optional<base::FilePath> program_files = EnvPath("ProgramFiles")) {
-    AppendGitBashCandidatesFromRoot(program_files->AppendASCII("Git"), &candidates);
+    AppendGitShellCandidatesFromRoot(program_files->AppendASCII("Git"),
+                                     exe_name, &candidates);
   }
   if (std::optional<base::FilePath> program_files_x86 = EnvPath("ProgramFiles(x86)")) {
-    AppendGitBashCandidatesFromRoot(program_files_x86->AppendASCII("Git"), &candidates);
+    AppendGitShellCandidatesFromRoot(program_files_x86->AppendASCII("Git"),
+                                     exe_name, &candidates);
   }
   if (std::optional<base::FilePath> local_app_data = EnvPath("LOCALAPPDATA")) {
-    AppendGitBashCandidatesFromRoot(
-        local_app_data->AppendASCII("Programs").AppendASCII("Git"), &candidates);
+    AppendGitShellCandidatesFromRoot(
+        local_app_data->AppendASCII("Programs").AppendASCII("Git"), exe_name,
+        &candidates);
   }
 
   // Literal fallbacks for stripped environments where ProgramFiles variables are
   // missing but Git is installed in the default location.
-  AppendGitBashCandidatesFromRoot(
-      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files\\Git")), &candidates);
-  AppendGitBashCandidatesFromRoot(
-      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files (x86)\\Git")),
+  AppendGitShellCandidatesFromRoot(
+      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files\\Git")), exe_name,
       &candidates);
+  AppendGitShellCandidatesFromRoot(
+      base::FilePath(FILE_PATH_LITERAL("C:\\Program Files (x86)\\Git")),
+      exe_name, &candidates);
 
   std::vector<base::FilePath> unique;
   for (const base::FilePath& candidate : candidates) {
@@ -145,6 +158,18 @@ std::vector<base::FilePath> GitBashCandidatePathsForWindows() {
     }
   }
   return unique;
+}
+
+std::optional<base::FilePath> FindGitShellForWindows(
+    const char* exe_name,
+    bool include_bash_overrides) {
+  for (const base::FilePath& candidate :
+       GitShellCandidatePathsForWindows(exe_name, include_bash_overrides)) {
+    if (IsCandidateUsable(candidate)) {
+      return candidate;
+    }
+  }
+  return std::nullopt;
 }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -205,13 +230,10 @@ std::vector<std::string> ShellResolver::KnownToolIds() {
 // static
 std::optional<base::FilePath> ShellResolver::FindGitBashForWindows() {
 #if BUILDFLAG(IS_WIN)
-  for (const base::FilePath& candidate : GitBashCandidatePathsForWindows()) {
-    if (IsCandidateUsable(candidate)) {
-      return candidate;
-    }
-  }
-#endif
+  return FindGitShellForWindows("bash.exe", /*include_bash_overrides=*/true);
+#else
   return std::nullopt;
+#endif
 }
 
 // static
@@ -245,6 +267,16 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
     std::optional<base::FilePath> git_bash = FindGitBashForWindows();
     if (git_bash.has_value()) {
       return git_bash;
+    }
+  }
+
+  // Git for Windows ships sh.exe beside bash.exe, but its installer only puts
+  // Git\cmd on PATH; stdio MCP configs written as `/bin/sh` need it found.
+  if (tool_id == "sh") {
+    std::optional<base::FilePath> git_sh =
+        FindGitShellForWindows("sh.exe", /*include_bash_overrides=*/false);
+    if (git_sh.has_value()) {
+      return git_sh;
     }
   }
 

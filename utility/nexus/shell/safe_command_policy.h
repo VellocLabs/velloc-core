@@ -98,10 +98,11 @@ class SafeCommandPolicy {
       const std::vector<EnvOverride>& extras);
 
   // Mutates `env` for a resolved command after policy resolution. Currently
-  // Windows-only: when `command_id == "bash"` resolves to Git for Windows,
-  // prepends the adjacent Git dirs (usr/bin, mingw64/bin, bin, cmd) so commands
-  // launched inside Git Bash can find the MSYS/Git toolchain even if the
-  // browser's global PATH did not include it. No-op for all other commands.
+  // Windows-only: when `command_id` is "bash" or "sh" and resolves to Git for
+  // Windows, prepends the adjacent Git dirs (usr/bin, mingw64/bin, bin, cmd)
+  // so commands launched inside that shell can find the MSYS/Git toolchain
+  // even if the browser's global PATH did not include it. No-op for all other
+  // commands.
   static void AugmentEnvironmentForResolvedCommand(
       const std::string& command_id,
       const base::FilePath& resolved_path,

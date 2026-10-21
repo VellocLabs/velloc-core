@@ -100,6 +100,19 @@ TEST(SafeCommandPolicyTest, ResolveCommandReportsBinaryNotFoundForKnownAbsent) {
       << "git is a known tool id; install_hint should be populated for it";
 }
 
+TEST(SafeCommandPolicyTest, BinaryNotFoundMessageDoesNotClaimAllowlisted) {
+  // A known-but-missing id is not on the allowlist; the message must not say
+  // it is.
+  ResolvedCapabilities caps = BuildFakeCaps();
+  caps.platform = "windows";
+  PolicyDecision decision = SafeCommandPolicy::ResolveCommand("git", caps);
+  ASSERT_EQ(decision.error_code, "BINARY_NOT_FOUND");
+  EXPECT_EQ(decision.error_message.find("allowlisted"), std::string::npos)
+      << decision.error_message;
+  EXPECT_NE(decision.error_message.find("'git'"), std::string::npos);
+  EXPECT_NE(decision.error_message.find("not found"), std::string::npos);
+}
+
 TEST(SafeCommandPolicyTest, ResolveCommandReportsBinaryNotFoundEvenWithoutAllowlistEntry) {
   // The resolver records every KnownToolIds() entry in `tools[]` even
   // when not on PATH; the `available == false` branch should still be
@@ -383,6 +396,25 @@ TEST(SafeCommandPolicyTest, AugmentsPathForGitBashResolvedCommand) {
   EXPECT_NE(path.find("C:\\Windows\\System32"), std::string::npos);
   EXPECT_EQ(base::WideToUTF8(env[base::UTF8ToWide(std::string("SHELL"))]),
             bash.AsUTF8Unsafe());
+}
+
+TEST(SafeCommandPolicyTest, AugmentsPathForGitShResolvedCommand) {
+  base::FilePath git_root(FILE_PATH_LITERAL("C:\\Program Files\\Git"));
+  base::FilePath sh =
+      git_root.AppendASCII("usr").AppendASCII("bin").AppendASCII("sh.exe");
+  base::EnvironmentMap env;
+  env[base::UTF8ToWide(std::string("PATH"))] =
+      base::UTF8ToWide(std::string("C:\\Program Files\\Git\\cmd"));
+
+  SafeCommandPolicy::AugmentEnvironmentForResolvedCommand("sh", sh, &env);
+
+  const std::string path =
+      base::WideToUTF8(env[base::UTF8ToWide(std::string("PATH"))]);
+  EXPECT_NE(path.find("C:\\Program Files\\Git\\usr\\bin"), std::string::npos);
+  EXPECT_NE(path.find("C:\\Program Files\\Git\\mingw64\\bin"),
+            std::string::npos);
+  EXPECT_EQ(base::WideToUTF8(env[base::UTF8ToWide(std::string("SHELL"))]),
+            sh.AsUTF8Unsafe());
 }
 #endif
 

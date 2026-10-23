@@ -127,6 +127,8 @@ struct PreparedExec {
   std::string error_code;
   std::string error_message;
   std::string install_hint;
+  // The tool id that was BINARY_NOT_FOUND; empty for every other outcome.
+  std::string missing_tool_id;
   ChildProcessRequest request;
 };
 
@@ -204,6 +206,9 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
     prep.error_code = decision.error_code;
     prep.error_message = decision.error_message;
     prep.install_hint = decision.install_hint;
+    if (decision.error_code == "BINARY_NOT_FOUND") {
+      prep.missing_tool_id = final_command;
+    }
     return prep;
   }
 
@@ -318,12 +323,47 @@ void NexusShellServiceImpl::GetCapabilities(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (cached_capabilities_.has_value()) {
-    RespondFromCache(std::move(callback));
+    std::vector<std::string> missing;
+    for (const ResolvedTool& tool : cached_capabilities_->tools) {
+      if (!tool.available) {
+        missing.push_back(tool.id);
+      }
+    }
+    if (missing.empty()) {
+      RespondFromCache(std::move(callback));
+      return;
+    }
+    RefreshTools(std::move(missing),
+                 base::BindOnce(&NexusShellServiceImpl::RespondFromCache,
+                                weak_factory_.GetWeakPtr(),
+                                std::move(callback)));
     return;
   }
 
   pending_callbacks_.push_back(std::move(callback));
   EnsureResolveStarted();
+}
+
+void NexusShellServiceImpl::RefreshTools(std::vector<std::string> tool_ids,
+                                         base::OnceClosure done) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      // Same traits as the full probe: `--version` waits on a child.
+      {base::MayBlock(), base::WithBaseSyncPrimitives(),
+       base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ShellResolver::ResolveTools, std::move(tool_ids)),
+      base::BindOnce(&NexusShellServiceImpl::OnToolsRefreshed,
+                     weak_factory_.GetWeakPtr(), std::move(done)));
+}
+
+void NexusShellServiceImpl::OnToolsRefreshed(base::OnceClosure done,
+                                             std::vector<ResolvedTool> tools) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(cached_capabilities_.has_value());
+  ShellResolver::ApplyResolvedTools(std::move(tools),
+                                    &*cached_capabilities_);
+  std::move(done).Run();
 }
 
 void NexusShellServiceImpl::Exec(mojom::ShellSpawnOptionsPtr options,
@@ -430,12 +470,20 @@ void NexusShellServiceImpl::RespondFromCache(
 }
 
 void NexusShellServiceImpl::RunExec(mojom::ShellSpawnOptionsPtr options,
-                                    ExecCallback callback) {
+                                    ExecCallback callback,
+                                    bool refreshed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(cached_capabilities_.has_value());
 
   // Validate + resolve into a runnable request (shared with Spawn).
   PreparedExec prep = PrepareExec(*options, *cached_capabilities_);
+  if (!prep.ok && !refreshed && !prep.missing_tool_id.empty()) {
+    RefreshTools({prep.missing_tool_id},
+                 base::BindOnce(&NexusShellServiceImpl::RunExec,
+                                weak_factory_.GetWeakPtr(), std::move(options),
+                                std::move(callback), /*refreshed=*/true));
+    return;
+  }
   if (!prep.ok) {
     // Surface the install hint when the missing-binary case fires; for
     // other error codes the hint is empty and the helper omits it.
@@ -518,13 +566,21 @@ void NexusShellServiceImpl::Spawn(mojom::ShellSpawnOptionsPtr options,
 }
 
 void NexusShellServiceImpl::RunSpawn(mojom::ShellSpawnOptionsPtr options,
-                                     SpawnCallback callback) {
+                                     SpawnCallback callback,
+                                     bool refreshed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(cached_capabilities_.has_value());
 
   // Same validation / allowlist / cwd / shell-rewrite as the foreground
   // path. Pre-launch rejections reply with error_* and no shell_id.
   PreparedExec prep = PrepareExec(*options, *cached_capabilities_);
+  if (!prep.ok && !refreshed && !prep.missing_tool_id.empty()) {
+    RefreshTools({prep.missing_tool_id},
+                 base::BindOnce(&NexusShellServiceImpl::RunSpawn,
+                                weak_factory_.GetWeakPtr(), std::move(options),
+                                std::move(callback), /*refreshed=*/true));
+    return;
+  }
   if (!prep.ok) {
     std::optional<std::string> hint;
     if (!prep.install_hint.empty()) {
@@ -828,7 +884,8 @@ void NexusShellServiceImpl::RunStreamSpawn(
     mojom::PtySizePtr pty_size,
     mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
     mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
-    StreamSpawnCallback callback) {
+    StreamSpawnCallback callback,
+    bool refreshed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(cached_capabilities_.has_value());
 
@@ -848,6 +905,15 @@ void NexusShellServiceImpl::RunStreamSpawn(
   // streaming (live pipes + controller-driven lifetime).
   PreparedExec prep = PrepareExec(*options, *cached_capabilities_,
                                   /*full_environment=*/!!pty_size);
+  if (!prep.ok && !refreshed && !prep.missing_tool_id.empty()) {
+    RefreshTools({prep.missing_tool_id},
+                 base::BindOnce(&NexusShellServiceImpl::RunStreamSpawn,
+                                weak_factory_.GetWeakPtr(), std::move(options),
+                                std::move(pty_size), std::move(controller),
+                                std::move(client), std::move(callback),
+                                /*refreshed=*/true));
+    return;
+  }
   if (!prep.ok) {
     std::optional<std::string> hint;
     if (!prep.install_hint.empty()) {

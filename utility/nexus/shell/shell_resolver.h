@@ -61,9 +61,8 @@ struct ResolvedCapabilities {
 // invocations and is therefore blocking — call from a `base::MayBlock()`
 // task, never on the Mojo binding thread.
 //
-// Designed to be called once per utility-process lifetime; the impl in
-// `NexusShellServiceImpl` caches the result across all `GetCapabilities`
-// calls.
+// `NexusShellServiceImpl` caches the result and re-probes only tools that
+// were not found (`ResolveTools` + `ApplyResolvedTools`).
 class ShellResolver {
  public:
   // Tools probed by `Resolve()`. Stable, alphabetised, no extensions.
@@ -72,9 +71,36 @@ class ShellResolver {
   // Performs the full probe and returns the populated capabilities.
   static ResolvedCapabilities Resolve();
 
-  // Locates `tool_id` on PATH (with platform-appropriate extensions on
-  // Windows), plus curated host-specific fallbacks such as Git for Windows'
-  // bash.exe and sh.exe. Exposed for unit testing.
+  // Probes only `tool_ids`, in order. Blocking, like `Resolve()`.
+  static std::vector<ResolvedTool> ResolveTools(
+      const std::vector<std::string>& tool_ids);
+
+  // Replaces the matching entries of `caps->tools` with `tools` (never an
+  // available entry with an unavailable one), then recomputes
+  // `command_allowlist` and `default_shell` from the result.
+  static void ApplyResolvedTools(std::vector<ResolvedTool> tools,
+                                 ResolvedCapabilities* caps);
+
+  // The PATH tools are looked up on and handed to child processes. Windows:
+  // this process's PATH followed by the machine and user `Path` registry
+  // values (REG_EXPAND_SZ expanded), so a tool installed after launch is
+  // found. Elsewhere: this process's PATH.
+  static std::string EffectivePath();
+
+  // Joins PATH-style `lists` in order, dropping empty entries and later
+  // duplicates (case-insensitive, trailing separator ignored, on Windows).
+  // Exposed for unit testing.
+  static std::string MergePathLists(const std::vector<std::string>& lists);
+
+  // Replaces the registry values `EffectivePath()` reads (machine, then user)
+  // with `paths`; nullopt restores the real registry. No effect off Windows.
+  static void SetRegistryPathsForTesting(
+      std::optional<std::vector<std::string>> paths);
+
+  // Locates `tool_id` on `EffectivePath()` (with platform-appropriate
+  // extensions on Windows), plus curated host-specific fallbacks such as Git
+  // for Windows' bash.exe and sh.exe and uv's install dirs. Exposed for unit
+  // testing.
   static std::optional<base::FilePath> FindOnPath(const std::string& tool_id);
 
   // Windows-only Git-for-Windows discovery. On non-Windows returns nullopt.

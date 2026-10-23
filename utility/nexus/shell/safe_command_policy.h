@@ -86,14 +86,14 @@ class SafeCommandPolicy {
   static bool ValidateCwd(const base::FilePath& cwd, std::string* out_reason);
 
   // Child env: the platform baseline allowlist from this process, plus `extras`;
-  // forbidden names (LD_PRELOAD, DYLD_*, NODE_OPTIONS, …) are dropped. Use with
-  // `clear_environment = true`.
+  // forbidden names (LD_PRELOAD, DYLD_*, NODE_OPTIONS, …) are dropped. PATH is
+  // `ShellResolver::EffectivePath()`. Use with `clear_environment = true`.
   static base::EnvironmentMap BuildSafeEnvironment(
       const std::vector<EnvOverride>& extras);
 
   // Child env for a program the person types into (F-31): this process's
-  // whole environment, plus `extras`, minus the forbidden names. Use with
-  // `clear_environment = true`.
+  // whole environment, plus `extras`, minus the forbidden names; PATH is
+  // `ShellResolver::EffectivePath()`. Use with `clear_environment = true`.
   static base::EnvironmentMap BuildFullEnvironment(
       const std::vector<EnvOverride>& extras);
 

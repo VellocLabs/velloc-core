@@ -95,11 +95,23 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   void OnResolved(ResolvedCapabilities capabilities);
   void RespondFromCache(GetCapabilitiesCallback callback) const;
 
+  // Re-probes `tool_ids` on the thread pool, folds the result into
+  // `cached_capabilities_`, then runs `done` on the binding sequence. Used
+  // for tools cached as missing, so a tool installed after the first probe
+  // is found without restarting the utility process.
+  void RefreshTools(std::vector<std::string> tool_ids, base::OnceClosure done);
+  void OnToolsRefreshed(base::OnceClosure done,
+                        std::vector<ResolvedTool> tools);
+
   // Per-Exec helpers. `RunExec` does the policy check on the binding
   // sequence then posts the actual child-process invocation to the
   // thread pool; `OnExecComplete` marshals the worker-thread result
-  // back into a Mojo response.
-  void RunExec(mojom::ShellSpawnOptionsPtr options, ExecCallback callback);
+  // back into a Mojo response. A BINARY_NOT_FOUND re-probes that tool once
+  // and retries with `refreshed` set; the same holds for `RunSpawn` and
+  // `RunStreamSpawn`.
+  void RunExec(mojom::ShellSpawnOptionsPtr options,
+               ExecCallback callback,
+               bool refreshed = false);
 
   // Background `Spawn` helpers. `RunSpawn` runs the same validation /
   // allowlist / cwd checks as `RunExec` (via the shared `PrepareExec`
@@ -108,7 +120,9 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // `OnBackgroundComplete` stores the outcome into `background_` on the
   // binding sequence — so the registry is only ever touched there and
   // needs no lock.
-  void RunSpawn(mojom::ShellSpawnOptionsPtr options, SpawnCallback callback);
+  void RunSpawn(mojom::ShellSpawnOptionsPtr options,
+                SpawnCallback callback,
+                bool refreshed = false);
   void OnBackgroundComplete(std::string shell_id,
                             base::TimeTicks dispatch_start,
                             ChildProcessOutcome outcome);
@@ -139,7 +153,8 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
       mojom::PtySizePtr pty_size,
       mojo::PendingReceiver<mojom::NexusStreamingProcess> controller,
       mojo::PendingRemote<mojom::NexusStreamingProcessClient> client,
-      StreamSpawnCallback callback);
+      StreamSpawnCallback callback,
+      bool refreshed = false);
   void OnStreamingChildClosed(uint64_t id);
 
   // Pending Exec requests waiting for the first capability probe to
@@ -224,7 +239,8 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   mojo::Receiver<mojom::NexusShellService> receiver_{this};
 
   // Populated by `OnResolved`. `has_value()` is the "probe finished"
-  // signal; we never invalidate the cache.
+  // signal; the cache is never invalidated, only missing tools are
+  // re-probed (`RefreshTools`).
   std::optional<ResolvedCapabilities> cached_capabilities_;
 
   // Callbacks waiting for the in-flight probe to finish. Drained by

@@ -13,13 +13,23 @@
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/files/file_util.h"
+#include "base/no_destructor.h"
 #include "base/process/launch.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/synchronization/lock.h"
+#include "base/thread_annotations.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "custom_browser/common/nexus_runtime_paths.h"
 #include "custom_browser/utility/nexus/shell/child_process_runner.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+
+#include "base/strings/utf_string_conversions.h"
+#include "base/win/registry.h"
+#endif
 
 namespace nexus {
 
@@ -56,15 +66,92 @@ std::string DetectPlatform() {
 #endif
 }
 
-std::vector<base::FilePath> GetPathDirectories() {
+std::string ProcessPath() {
   std::unique_ptr<base::Environment> env = base::Environment::Create();
-  std::optional<std::string> path_value = env->GetVar("PATH");
-  if (!path_value.has_value() || path_value->empty()) {
+  return env->GetVar("PATH").value_or(std::string());
+}
+
+#if BUILDFLAG(IS_WIN)
+struct RegistryPathOverride {
+  base::Lock lock;
+  std::optional<std::vector<std::string>> paths GUARDED_BY(lock);
+};
+
+RegistryPathOverride& GetRegistryPathOverride() {
+  static base::NoDestructor<RegistryPathOverride> instance;
+  return *instance;
+}
+
+// Reads a REG_SZ / REG_EXPAND_SZ value of any length; expands the latter
+// against this process's environment. Empty when absent or not a string.
+std::string ReadRegistryPathValue(HKEY root, const wchar_t* subkey) {
+  base::win::RegKey key;
+  if (key.Open(root, subkey, KEY_QUERY_VALUE) != ERROR_SUCCESS) {
+    return std::string();
+  }
+  DWORD type = 0;
+  DWORD size = 0;
+  if (key.ReadValue(L"Path", nullptr, &size, &type) != ERROR_SUCCESS ||
+      (type != REG_SZ && type != REG_EXPAND_SZ) || size == 0) {
+    return std::string();
+  }
+  std::wstring raw(size / sizeof(wchar_t) + 1, L'\0');
+  size = static_cast<DWORD>(raw.size() * sizeof(wchar_t));
+  if (key.ReadValue(L"Path", raw.data(), &size, &type) != ERROR_SUCCESS) {
+    return std::string();
+  }
+  raw.resize(std::min<size_t>(raw.find(L'\0'), size / sizeof(wchar_t)));
+  if (type == REG_SZ) {
+    return base::WideToUTF8(raw);
+  }
+  const DWORD needed = ::ExpandEnvironmentStringsW(raw.c_str(), nullptr, 0);
+  if (needed == 0) {
+    return base::WideToUTF8(raw);
+  }
+  std::wstring expanded(needed, L'\0');
+  const DWORD written =
+      ::ExpandEnvironmentStringsW(raw.c_str(), expanded.data(), needed);
+  if (written == 0 || written > needed) {
+    return base::WideToUTF8(raw);
+  }
+  expanded.resize(written - 1);
+  return base::WideToUTF8(expanded);
+}
+
+// Machine Path first, then user Path, matching how Windows builds a new
+// logon environment.
+std::vector<std::string> ReadRegistryPaths() {
+  {
+    RegistryPathOverride& state = GetRegistryPathOverride();
+    base::AutoLock auto_lock(state.lock);
+    if (state.paths.has_value()) {
+      return *state.paths;
+    }
+  }
+  return {
+      ReadRegistryPathValue(
+          HKEY_LOCAL_MACHINE,
+          L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"),
+      ReadRegistryPathValue(HKEY_CURRENT_USER, L"Environment"),
+  };
+}
+
+std::string NormalizePathEntryForCompare(std::string_view entry) {
+  while (entry.size() > 1 && (entry.back() == '\\' || entry.back() == '/')) {
+    entry.remove_suffix(1);
+  }
+  return base::ToLowerASCII(entry);
+}
+#endif  // BUILDFLAG(IS_WIN)
+
+std::vector<base::FilePath> GetPathDirectories() {
+  const std::string path_value = ShellResolver::EffectivePath();
+  if (path_value.empty()) {
     return {};
   }
 
   const std::vector<std::string_view> parts = base::SplitStringPiece(
-      *path_value, std::string(1, kPathSeparator), base::TRIM_WHITESPACE,
+      path_value, std::string(1, kPathSeparator), base::TRIM_WHITESPACE,
       base::SPLIT_WANT_NONEMPTY);
 
   std::vector<base::FilePath> dirs;
@@ -84,6 +171,42 @@ bool IsCandidateUsable(const base::FilePath& candidate) {
     return false;
   }
   return !base::DirectoryExists(candidate);
+}
+
+std::optional<base::FilePath> FindInDirectories(
+    const std::string& tool_id,
+    const std::vector<base::FilePath>& dirs) {
+  for (const base::FilePath& dir : dirs) {
+    for (const char* ext : kExecutableExtensions) {
+      base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
+      if (IsCandidateUsable(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+// uv's installers write uv / uvx to ~/.local/bin (standalone installer),
+// ~/.cargo/bin (cargo) or, on Windows, WinGet's Links dir.
+std::vector<base::FilePath> UvInstallDirectories() {
+  std::vector<base::FilePath> dirs;
+  const base::FilePath home = custom_browser::GetNexusUserHomeDir();
+  if (!home.empty()) {
+    dirs.push_back(home.AppendASCII(".local").AppendASCII("bin"));
+    dirs.push_back(home.AppendASCII(".cargo").AppendASCII("bin"));
+  }
+#if BUILDFLAG(IS_WIN)
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> local_app_data = env->GetVar("LOCALAPPDATA");
+      local_app_data.has_value() && !local_app_data->empty()) {
+    dirs.push_back(base::FilePath::FromUTF8Unsafe(*local_app_data)
+                       .AppendASCII("Microsoft")
+                       .AppendASCII("WinGet")
+                       .AppendASCII("Links"));
+  }
+#endif
+  return dirs;
 }
 
 #if BUILDFLAG(IS_WIN)
@@ -187,6 +310,34 @@ std::vector<std::string> DefaultShellPreference() {
 #endif
 }
 
+void DeriveShellAndAllowlist(ResolvedCapabilities* caps) {
+  // Pick the highest-priority shell that actually resolved.
+  caps->default_shell.reset();
+  for (const std::string& candidate_id : DefaultShellPreference()) {
+    const auto it = std::ranges::find_if(
+        caps->tools,
+        [&](const ResolvedTool& t) { return t.id == candidate_id; });
+    if (it != caps->tools.end() && it->available) {
+      caps->default_shell = *it;
+      break;
+    }
+  }
+
+  // Slice 2 allowlist: every known tool that actually resolved on the
+  // host is exposed. The allowlist is intentionally a subset of
+  // KnownToolIds() — adding a binary to PATH is not enough to make it
+  // executable through the bridge; it must also have a slot in
+  // KnownToolIds() (and therefore a hardcoded entry in this file).
+  // Future slices may further intersect this with a profile policy
+  // (e.g. enterprise admin disables `cmd` even when present).
+  caps->command_allowlist.clear();
+  for (const ResolvedTool& tool : caps->tools) {
+    if (tool.available) {
+      caps->command_allowlist.push_back(tool.id);
+    }
+  }
+}
+
 }  // namespace
 
 ResolvedTool::ResolvedTool() = default;
@@ -252,14 +403,9 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
   // PATH lookup will normally find it, but System32 is sometimes pruned
   // from sandboxed environments. Fall through to the PATH walk first and
   // then check the absolute fallback.
-  for (const base::FilePath& dir : GetPathDirectories()) {
-    for (const char* ext : kExecutableExtensions) {
-      base::FilePath candidate =
-          dir.AppendASCII(tool_id + std::string(ext));
-      if (IsCandidateUsable(candidate)) {
-        return candidate;
-      }
-    }
+  if (std::optional<base::FilePath> on_path =
+          FindInDirectories(tool_id, GetPathDirectories())) {
+    return on_path;
   }
 
 #if BUILDFLAG(IS_WIN)
@@ -295,12 +441,18 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
   }
 #endif
 
+  if (tool_id == "uv" || tool_id == "uvx") {
+    if (std::optional<base::FilePath> uv =
+            FindInDirectories(tool_id, UvInstallDirectories())) {
+      return uv;
+    }
+  }
+
   // Nexus managed binaries: a tool the installer downloaded into
   // ~/.velloc/bin/<id>/<id>[.exe] resolves even when it isn't on the host
-  // PATH, so a bare `Bash: rg ...` finds it too. NOTE: the shell service
-  // caches capabilities for its lifetime, so a binary downloaded AFTER
-  // the first resolve is only seen here on a later resolve. The Grep path
-  // does not depend on this — it execs the absolute managed path, which
+  // PATH, so a bare `Bash: rg ...` finds it too. The shell service re-probes
+  // a tool cached as missing when a call names it. The Grep path does not
+  // depend on this — it execs the absolute managed path, which
   // SafeCommandPolicy allows directly (see its absolute-path branch).
   base::FilePath managed = custom_browser::GetManagedBinaryPath(tool_id);
   if (!managed.empty() && IsCandidateUsable(managed)) {
@@ -359,7 +511,17 @@ ResolvedCapabilities ShellResolver::Resolve() {
   ResolvedCapabilities caps;
   caps.platform = DetectPlatform();
 
-  for (const std::string& tool_id : KnownToolIds()) {
+  caps.tools = ResolveTools(KnownToolIds());
+  DeriveShellAndAllowlist(&caps);
+  return caps;
+}
+
+// static
+std::vector<ResolvedTool> ShellResolver::ResolveTools(
+    const std::vector<std::string>& tool_ids) {
+  std::vector<ResolvedTool> tools;
+  tools.reserve(tool_ids.size());
+  for (const std::string& tool_id : tool_ids) {
     ResolvedTool tool;
     tool.id = tool_id;
     std::optional<base::FilePath> path = FindOnPath(tool_id);
@@ -368,34 +530,74 @@ ResolvedCapabilities ShellResolver::Resolve() {
       tool.version = ProbeVersion(*path);
       tool.available = true;
     }
-    caps.tools.push_back(std::move(tool));
+    tools.push_back(std::move(tool));
   }
+  return tools;
+}
 
-  // Pick the highest-priority shell that actually resolved.
-  for (const std::string& candidate_id : DefaultShellPreference()) {
+// static
+void ShellResolver::ApplyResolvedTools(std::vector<ResolvedTool> tools,
+                                       ResolvedCapabilities* caps) {
+  for (ResolvedTool& tool : tools) {
     const auto it = std::ranges::find_if(
-        caps.tools,
-        [&](const ResolvedTool& t) { return t.id == candidate_id; });
-    if (it != caps.tools.end() && it->available) {
-      caps.default_shell = *it;
-      break;
+        caps->tools, [&](const ResolvedTool& t) { return t.id == tool.id; });
+    // A tool already found stays found; only misses are replaced.
+    if (it != caps->tools.end() && (tool.available || !it->available)) {
+      *it = std::move(tool);
     }
   }
+  DeriveShellAndAllowlist(caps);
+}
 
-  // Slice 2 allowlist: every known tool that actually resolved on the
-  // host is exposed. The allowlist is intentionally a subset of
-  // KnownToolIds() — adding a binary to PATH is not enough to make it
-  // executable through the bridge; it must also have a slot in
-  // KnownToolIds() (and therefore a hardcoded entry in this file).
-  // Future slices may further intersect this with a profile policy
-  // (e.g. enterprise admin disables `cmd` even when present).
-  for (const ResolvedTool& tool : caps.tools) {
-    if (tool.available) {
-      caps.command_allowlist.push_back(tool.id);
+// static
+std::string ShellResolver::EffectivePath() {
+#if BUILDFLAG(IS_WIN)
+  std::vector<std::string> lists = {ProcessPath()};
+  for (std::string& registry_path : ReadRegistryPaths()) {
+    lists.push_back(std::move(registry_path));
+  }
+  return MergePathLists(lists);
+#else
+  return ProcessPath();
+#endif
+}
+
+// static
+std::string ShellResolver::MergePathLists(
+    const std::vector<std::string>& lists) {
+  std::vector<std::string_view> merged;
+#if BUILDFLAG(IS_WIN)
+  std::vector<std::string> seen;
+#endif
+  for (const std::string& list : lists) {
+    for (std::string_view entry : base::SplitStringPiece(
+             list, std::string(1, kPathSeparator), base::TRIM_WHITESPACE,
+             base::SPLIT_WANT_NONEMPTY)) {
+#if BUILDFLAG(IS_WIN)
+      std::string key = NormalizePathEntryForCompare(entry);
+      if (std::ranges::find(seen, key) != seen.end()) {
+        continue;
+      }
+      seen.push_back(std::move(key));
+#else
+      if (std::ranges::find(merged, entry) != merged.end()) {
+        continue;
+      }
+#endif
+      merged.push_back(entry);
     }
   }
+  return base::JoinString(merged, std::string(1, kPathSeparator));
+}
 
-  return caps;
+// static
+void ShellResolver::SetRegistryPathsForTesting(
+    std::optional<std::vector<std::string>> paths) {
+#if BUILDFLAG(IS_WIN)
+  RegistryPathOverride& state = GetRegistryPathOverride();
+  base::AutoLock auto_lock(state.lock);
+  state.paths = std::move(paths);
+#endif
 }
 
 }  // namespace nexus

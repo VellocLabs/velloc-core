@@ -282,7 +282,10 @@ base::EnvironmentMap SafeCommandPolicy::BuildSafeEnvironment(
       // not the other.
       continue;
     }
-    std::optional<std::string> value = parent->GetVar(name);
+    std::optional<std::string> value =
+        name == "PATH"
+            ? std::optional<std::string>(ShellResolver::EffectivePath())
+            : parent->GetVar(name);
     if (!value.has_value() || value->empty()) {
       continue;
     }
@@ -340,6 +343,17 @@ base::EnvironmentMap SafeCommandPolicy::BuildFullEnvironment(
       env[std::move(name)] = std::wstring(entry.substr(eq + 1));
     }
     ::FreeEnvironmentStringsW(block);
+  }
+  // PATH as a fresh process would see it, under the key's existing spelling.
+  if (const std::string path = ShellResolver::EffectivePath(); !path.empty()) {
+    std::wstring key = L"PATH";
+    for (const auto& [name, value] : env) {
+      if (base::EqualsCaseInsensitiveASCII(base::WideToUTF8(name), "PATH")) {
+        key = name;
+        break;
+      }
+    }
+    env[key] = base::UTF8ToWide(path);
   }
 #else
   for (char** cursor = environ; cursor && *cursor;

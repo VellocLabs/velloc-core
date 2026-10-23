@@ -6,7 +6,10 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -18,6 +21,14 @@
 #include "build/build_config.h"
 #include "custom_browser/common/nexus_runtime_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+
+#include "base/strings/utf_string_conversions.h"
+#include "base/test/test_reg_util_win.h"
+#include "base/win/registry.h"
+#endif
 
 namespace nexus {
 namespace {
@@ -44,11 +55,43 @@ class ScopedManagedHome {
     return exe;
   }
 
+  const base::FilePath& path() const { return home_.GetPath(); }
+
  private:
   base::ScopedTempDir home_;
   std::unique_ptr<base::ScopedEnvironmentVariableOverride> home_env_;
   std::unique_ptr<base::ScopedEnvironmentVariableOverride> userprofile_env_;
 };
+
+// Stands in for the machine and user registry `Path` values for the scope.
+class ScopedRegistryPaths {
+ public:
+  explicit ScopedRegistryPaths(std::vector<std::string> paths) {
+    ShellResolver::SetRegistryPathsForTesting(std::move(paths));
+  }
+  ~ScopedRegistryPaths() { ShellResolver::SetRegistryPathsForTesting(std::nullopt); }
+};
+
+base::FilePath WriteFakeTool(const base::FilePath& dir, const std::string& id) {
+#if BUILDFLAG(IS_WIN)
+  const base::FilePath exe = dir.AppendASCII(id + ".exe");
+#else
+  const base::FilePath exe = dir.AppendASCII(id);
+#endif
+  CHECK(base::CreateDirectory(dir));
+  CHECK(base::WriteFile(exe, "binary"));
+  return exe;
+}
+
+ResolvedTool MakeTool(const std::string& id, bool available) {
+  ResolvedTool tool;
+  tool.id = id;
+  tool.available = available;
+  if (available) {
+    tool.path = base::FilePath(FILE_PATH_LITERAL("/opt/")).AppendASCII(id);
+  }
+  return tool;
+}
 
 TEST(ShellResolverTest, FindOnPathResolvesManagedBinary) {
   // A unique id that won't be on the host PATH, so a hit can only come
@@ -91,6 +134,146 @@ TEST(ShellResolverTest, FindOnPathReturnsNulloptForAbsentManagedBinary) {
       ShellResolver::FindOnPath("nexus-managed-absent-bin").has_value());
 }
 
+#if BUILDFLAG(IS_WIN)
+TEST(ShellResolverTest, MergePathListsKeepsFirstSeenOrderAndDropsDuplicates) {
+  EXPECT_EQ(ShellResolver::MergePathLists(
+                {"C:\\a;C:\\b;;", "c:\\B\\;C:\\m; C:\\A", "C:\\u;C:\\m"}),
+            "C:\\a;C:\\b;C:\\m;C:\\u");
+}
+
+TEST(ShellResolverTest, EffectivePathPutsProcessPathBeforeMachineThenUser) {
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "C:\\p1;C:\\shared");
+  ScopedRegistryPaths registry({"C:\\machine;c:\\SHARED", "C:\\user;C:\\p1\\"});
+  EXPECT_EQ(ShellResolver::EffectivePath(),
+            "C:\\p1;C:\\shared;C:\\machine;C:\\user");
+}
+
+// Reads the real keys (redirected to a scratch hive): a long machine REG_SZ
+// and an expandable user value.
+TEST(ShellResolverTest, EffectivePathReadsAndExpandsTheRegistryValues) {
+  registry_util::RegistryOverrideManager registry_override;
+  ASSERT_NO_FATAL_FAILURE(
+      registry_override.OverrideRegistry(HKEY_LOCAL_MACHINE));
+  ASSERT_NO_FATAL_FAILURE(
+      registry_override.OverrideRegistry(HKEY_CURRENT_USER));
+  const std::wstring machine_dir = L"C:\\" + std::wstring(1500, L'm');
+  ASSERT_EQ(base::win::RegKey(HKEY_LOCAL_MACHINE,
+                              L"SYSTEM\\CurrentControlSet\\Control\\Session "
+                              L"Manager\\Environment",
+                              KEY_SET_VALUE)
+                .WriteValue(L"Path", machine_dir.c_str()),
+            ERROR_SUCCESS);
+  const std::wstring user_value = L"%NEXUS_REGISTRY_TEST_ROOT%\\bin";
+  ASSERT_EQ(base::win::RegKey(HKEY_CURRENT_USER, L"Environment", KEY_SET_VALUE)
+                .WriteValue(L"Path", user_value.c_str(),
+                            static_cast<DWORD>((user_value.size() + 1) *
+                                               sizeof(wchar_t)),
+                            REG_EXPAND_SZ),
+            ERROR_SUCCESS);
+  base::ScopedEnvironmentVariableOverride root_env("NEXUS_REGISTRY_TEST_ROOT",
+                                                   "C:\\uvroot");
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "C:\\process");
+
+  EXPECT_EQ(ShellResolver::EffectivePath(),
+            "C:\\process;" + base::WideToUTF8(machine_dir) + ";C:\\uvroot\\bin");
+}
+
+TEST(ShellResolverTest, FindOnPathFindsToolOnlyOnTheRegistryPath) {
+  // An installer that ran after launch updated only the registry Path.
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  const base::FilePath dir = tmp.GetPath().AppendASCII("installed");
+  const base::FilePath exe = WriteFakeTool(dir, "nexus-registry-path-bin");
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({"", dir.AsUTF8Unsafe()});
+
+  const std::optional<base::FilePath> found =
+      ShellResolver::FindOnPath("nexus-registry-path-bin");
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, exe);
+}
+#else
+TEST(ShellResolverTest, MergePathListsKeepsFirstSeenOrderAndDropsDuplicates) {
+  EXPECT_EQ(ShellResolver::MergePathLists({"/a:/b::", "/b:/m", "/u:/m:/a"}),
+            "/a:/b:/m:/u");
+}
+
+TEST(ShellResolverTest, EffectivePathIsTheProcessPath) {
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "/p1:/p2:/p1");
+  EXPECT_EQ(ShellResolver::EffectivePath(), "/p1:/p2:/p1");
+}
+#endif
+
+TEST(ShellResolverTest, FindOnPathFindsUvInItsInstallDirectories) {
+  ScopedManagedHome home;
+  base::ScopedTempDir local_app_data;
+  ASSERT_TRUE(local_app_data.CreateUniqueTempDir());
+  base::ScopedEnvironmentVariableOverride local_app_data_env(
+      "LOCALAPPDATA", local_app_data.GetPath().AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({});
+
+  EXPECT_FALSE(ShellResolver::FindOnPath("uv").has_value());
+  EXPECT_FALSE(ShellResolver::FindOnPath("uvx").has_value());
+
+  const base::FilePath uvx = WriteFakeTool(
+      home.path().AppendASCII(".local").AppendASCII("bin"), "uvx");
+  const base::FilePath uv = WriteFakeTool(
+      home.path().AppendASCII(".cargo").AppendASCII("bin"), "uv");
+  EXPECT_EQ(ShellResolver::FindOnPath("uvx"), uvx);
+  EXPECT_EQ(ShellResolver::FindOnPath("uv"), uv);
+  // The uv dirs are not a general fallback.
+  WriteFakeTool(home.path().AppendASCII(".local").AppendASCII("bin"),
+                "nexus-not-uv-bin");
+  EXPECT_FALSE(ShellResolver::FindOnPath("nexus-not-uv-bin").has_value());
+}
+
+#if BUILDFLAG(IS_WIN)
+TEST(ShellResolverTest, FindOnPathFindsUvInWinGetLinks) {
+  ScopedManagedHome home;
+  base::ScopedTempDir local_app_data;
+  ASSERT_TRUE(local_app_data.CreateUniqueTempDir());
+  base::ScopedEnvironmentVariableOverride local_app_data_env(
+      "LOCALAPPDATA", local_app_data.GetPath().AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({});
+  const base::FilePath uv = WriteFakeTool(local_app_data.GetPath()
+                                              .AppendASCII("Microsoft")
+                                              .AppendASCII("WinGet")
+                                              .AppendASCII("Links"),
+                                          "uv");
+  EXPECT_EQ(ShellResolver::FindOnPath("uv"), uv);
+}
+#endif
+
+TEST(ShellResolverTest, ApplyResolvedToolsFillsAMissAndKeepsAHit) {
+  ResolvedCapabilities caps;
+  caps.tools = {MakeTool("git", true), MakeTool("uvx", false)};
+  caps.command_allowlist = {"git"};
+
+  ShellResolver::ApplyResolvedTools(
+      {MakeTool("git", false), MakeTool("uvx", true)}, &caps);
+
+  ASSERT_EQ(caps.tools.size(), 2u);
+  EXPECT_TRUE(caps.tools[0].available) << "a found tool must stay found";
+  EXPECT_FALSE(caps.tools[0].path.empty());
+  EXPECT_TRUE(caps.tools[1].available);
+  EXPECT_EQ(caps.command_allowlist, (std::vector<std::string>{"git", "uvx"}));
+}
+
+TEST(ShellResolverTest, ApplyResolvedToolsPicksUpANewlyFoundDefaultShell) {
+  ResolvedCapabilities caps;
+#if BUILDFLAG(IS_WIN)
+  const std::string shell = "cmd";
+#else
+  const std::string shell = "sh";
+#endif
+  caps.tools = {MakeTool(shell, false)};
+  ShellResolver::ApplyResolvedTools({MakeTool(shell, true)}, &caps);
+  ASSERT_TRUE(caps.default_shell.has_value());
+  EXPECT_EQ(caps.default_shell->id, shell);
+}
+
 
 
 #if BUILDFLAG(IS_WIN)
@@ -109,6 +292,7 @@ TEST(ShellResolverTest, FindOnPathHonorsExplicitBashPathEnvOverride) {
   base::ScopedEnvironmentVariableOverride override_env(
       "NEXUS_BASH_PATH", bash.AsUTF8Unsafe());
   base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({});
 
   std::optional<base::FilePath> found = ShellResolver::FindOnPath("bash");
   ASSERT_TRUE(found.has_value());
@@ -137,6 +321,7 @@ TEST(ShellResolverTest, FindOnPathFindsGitBashFromCommonProgramFilesLocation) {
   base::ScopedEnvironmentVariableOverride program_files_env(
       "ProgramFiles", program_files.AsUTF8Unsafe());
   base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({});
 
   std::optional<base::FilePath> found = ShellResolver::FindOnPath("bash");
   ASSERT_TRUE(found.has_value());
@@ -172,6 +357,7 @@ TEST(ShellResolverTest, FindOnPathFindsGitShWhenOnlyGitCmdIsOnPath) {
       "ProgramFiles", git_root.DirName().AsUTF8Unsafe());
   base::ScopedEnvironmentVariableOverride path_env("PATH",
                                                    git_cmd.AsUTF8Unsafe());
+  ScopedRegistryPaths registry({});
 
   std::optional<base::FilePath> found = ShellResolver::FindOnPath("sh");
   ASSERT_TRUE(found.has_value());

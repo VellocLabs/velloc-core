@@ -10,9 +10,11 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/run_loop.h"
+#include "base/scoped_environment_variable_override.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
@@ -20,6 +22,7 @@
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/utility/nexus/shell/pty_console_host.h"
+#include "custom_browser/utility/nexus/shell/shell_resolver.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -798,6 +801,86 @@ TEST(NexusShellServiceImplTest, ExecUsesDefaultShellWhenUseShellIsTrue) {
   const std::string stdout_str(stdout_span.begin(), stdout_span.end());
   EXPECT_NE(stdout_str.find("nexus-shell-ok"), std::string::npos)
       << "Got stdout: " << stdout_str;
+}
+
+
+// A tool installed after the first probe (here uvx, into uv's ~/.local/bin)
+// is found by the next call that names it on the same service, and the cache
+// then reports it.
+TEST(NexusShellServiceImplTest, ExecAndStreamSpawnReprobeAToolCachedAsMissing) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir home;
+  ASSERT_TRUE(home.CreateUniqueTempDir());
+  base::ScopedTempDir cwd;
+  ASSERT_TRUE(cwd.CreateUniqueTempDir());
+  const std::string home_path = home.GetPath().AsUTF8Unsafe();
+  base::ScopedEnvironmentVariableOverride home_env("HOME", home_path);
+  base::ScopedEnvironmentVariableOverride userprofile_env("USERPROFILE",
+                                                          home_path);
+  base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
+                                                             home_path);
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+  auto find_uvx = [](const CapabilitiesSnapshot& caps) {
+    const auto it = std::ranges::find_if(
+        caps.tools,
+        [](const mojom::ShellResolvedToolPtr& t) { return t->id == "uvx"; });
+    CHECK(it != caps.tools.end());
+    return it->Clone();
+  };
+  ASSERT_FALSE(find_uvx(WaitForCapabilities(remote))->available);
+
+  auto make_options = [&] {
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = "uvx";
+    options->cwd = cwd.GetPath();
+    options->timeout_ms = 5000;
+    return options;
+  };
+  EXPECT_EQ(RunExec(remote, make_options()).error_code.value_or(""),
+            "BINARY_NOT_FOUND");
+
+  const base::FilePath bin_dir =
+      home.GetPath().AppendASCII(".local").AppendASCII("bin");
+  ASSERT_TRUE(base::CreateDirectory(bin_dir));
+#if BUILDFLAG(IS_WIN)
+  const base::FilePath uvx = bin_dir.AppendASCII("uvx.exe");
+#else
+  const base::FilePath uvx = bin_dir.AppendASCII("uvx");
+#endif
+  ASSERT_TRUE(base::WriteFile(uvx, "not a real binary"));
+
+  // The fake binary cannot launch; any outcome but BINARY_NOT_FOUND shows it
+  // was resolved. StreamSpawn (a stdio server's launch) goes first, so its
+  // own re-probe is what finds the tool.
+  RecordingStreamClient client;
+  mojo::Receiver<mojom::NexusStreamingProcessClient> client_receiver(&client);
+  mojo::Remote<mojom::NexusStreamingProcess> controller;
+  std::string stream_error;
+  base::RunLoop spawn_loop;
+  remote->StreamSpawn(
+      make_options(), controller.BindNewPipeAndPassReceiver(),
+      client_receiver.BindNewPipeAndPassRemote(),
+      base::BindLambdaForTesting(
+          [&](bool ok, const std::optional<std::string>& error_code,
+              const std::optional<std::string>& error_message,
+              const std::optional<std::string>& install_hint) {
+            stream_error = error_code.value_or("");
+            spawn_loop.Quit();
+          }));
+  spawn_loop.Run();
+  EXPECT_NE(stream_error, "BINARY_NOT_FOUND");
+  EXPECT_NE(RunExec(remote, make_options()).error_code.value_or(""),
+            "BINARY_NOT_FOUND");
+  const mojom::ShellResolvedToolPtr cached =
+      find_uvx(WaitForCapabilities(remote));
+  EXPECT_TRUE(cached->available);
+  EXPECT_EQ(cached->path, uvx);
+
+  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
 }
 
 }  // namespace

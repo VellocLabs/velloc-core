@@ -5,6 +5,7 @@
 #include "custom_browser/utility/nexus/shell/safe_command_policy.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -360,6 +361,30 @@ TEST(SafeCommandPolicyTest, BuildFullEnvironmentKeepsTheParentsVariables) {
   }
   EXPECT_EQ(overridden_copies, 1u);
 }
+
+#if BUILDFLAG(IS_WIN)
+// A child sees PATH entries an installer wrote to the registry after launch,
+// in both the agent baseline and the full environment.
+TEST(SafeCommandPolicyTest, ChildPathIncludesRegistryPathEntries) {
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "C:\\process");
+  ShellResolver::SetRegistryPathsForTesting(
+      std::vector<std::string>{"C:\\machine", "C:\\user;c:\\PROCESS"});
+  base::EnvironmentMap safe = SafeCommandPolicy::BuildSafeEnvironment({});
+  base::EnvironmentMap full = SafeCommandPolicy::BuildFullEnvironment({});
+  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
+
+  const std::wstring expected = L"C:\\process;C:\\machine;C:\\user";
+  EXPECT_EQ(safe[L"PATH"], expected);
+  size_t path_keys = 0;
+  for (const auto& [name, value] : full) {
+    if (base::EqualsCaseInsensitiveASCII(base::WideToUTF8(name), "PATH")) {
+      ++path_keys;
+      EXPECT_EQ(value, expected);
+    }
+  }
+  EXPECT_EQ(path_keys, 1u);
+}
+#endif
 
 TEST(SafeCommandPolicyTest, InheritedEnvNamesIncludesPathext) {
   // Regression: PATHEXT must be inherited so cmd / PowerShell can resolve a

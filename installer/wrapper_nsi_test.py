@@ -24,6 +24,8 @@ _WRAPPER = os.path.join(_HERE, 'custom_browser_installer_wrapper.nsi')
 _BRANDING = os.path.join(_HERE, '..', 'chromium_overrides', 'velloc',
                          'symlink', 'chrome', 'app', 'theme', 'velloc',
                          'BRANDING')
+_CHROME_CONSTANTS = os.path.join(_HERE, '..', '..', 'chrome', 'common',
+                                 'chrome_constants.h')
 
 
 def _find_makensis():
@@ -76,6 +78,52 @@ class WrapperStructureTest(unittest.TestCase):
   def test_launch_runs_only_on_success(self):
     body = _function_body(self.source, '.onInstSuccess')
     self.assertIn('Call LaunchInstalledChrome', body)
+
+
+def _chrome_constant(name):
+  """The string literal Chromium's chrome_constants.h gives `name`."""
+  with open(_CHROME_CONSTANTS, encoding='utf-8') as f:
+    source = f.read()
+  match = re.search(r'%s\[\]\s*=\s*(?:FILE_PATH_LITERAL\()?L?"([^"]*)"' %
+                    re.escape(name), source)
+  assert match, 'no %s in chrome_constants.h' % name
+  return match.group(1)
+
+
+class FirstRunSentinelTest(unittest.TestCase):
+  """The wrapper writes the sentinel Chromium reads to skip its first run."""
+
+  def setUp(self):
+    with open(_WRAPPER, encoding='utf-8') as f:
+      self.source = f.read()
+    self.body = _function_body(self.source, 'SkipBrowserFirstRun')
+    self.assertIsNotNone(self.body)
+
+  def test_path_matches_chromium_user_data_dir(self):
+    # The product dir is the one the install-dir fallback names.
+    install_dir = re.search(r'"\$LOCALAPPDATA\\\\(\w+)\\\\Application"',
+                            self.source)
+    self.assertIsNotNone(install_dir)
+    user_data = '$LOCALAPPDATA\\\\%s\\\\%s' % (
+        install_dir.group(1), _chrome_constant('kUserDataDirname'))
+    self.assertIn('StrCpy $R0 "%s"' % user_data, self.body)
+    self.assertIn('FileOpen $R1 "$R0\\\\%s" w' %
+                  _chrome_constant('kFirstRunSentinel'), self.body)
+
+  def test_existing_sentinel_is_left_untouched(self):
+    guard = re.search(r'\$\{If\} \$\{FileExists\} "\$R0\\\\First Run"\s*\n'
+                      r'\s*Return\s*\n', self.body)
+    self.assertIsNotNone(guard, 'no FileExists guard returning early')
+    self.assertLess(guard.start(), self.body.index('FileOpen'))
+
+  def test_written_only_after_a_successful_install(self):
+    section = re.search(r'^Section "Install"\s*$(.*?)^SectionEnd',
+                        self.source, re.MULTILINE | re.DOTALL).group(1)
+    success = section.index('${If} $MiniExit == 0')
+    failure = section.index('${Else}', success)
+    call = section.index('Call SkipBrowserFirstRun')
+    self.assertLess(success, call)
+    self.assertLess(call, failure)
 
 
 

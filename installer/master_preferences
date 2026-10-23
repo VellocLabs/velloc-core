@@ -1,7 +1,4 @@
 {
-  "first_run_tabs": [
-    "chrome://settings/getStarted"
-  ],
   "session": {
     "restore_on_startup": 0
   }

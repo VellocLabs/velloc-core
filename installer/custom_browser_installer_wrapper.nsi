@@ -214,6 +214,28 @@ Function ClearBreakingInstallerVersionGate
   DetailPrint "Cleared the stale breaking-installer-version gate."
 FunctionEnd
 
+; Velloc has no browser first run: Chromium treats every launch as its first
+; run while "First Run" (chrome::kFirstRunSentinel) is missing from the user
+; data dir (%LOCALAPPDATA%\<kProductPathName>\User Data), and then opens its
+; welcome window and first-run tabs. Writing the sentinel here skips both.
+; It covers the account running the installer only; an existing sentinel is
+; left untouched.
+Function SkipBrowserFirstRun
+  StrCpy $R0 "$LOCALAPPDATA\\Velloc\\User Data"
+  ${If} ${FileExists} "$R0\\First Run"
+    Return
+  ${EndIf}
+  CreateDirectory "$R0"
+  ClearErrors
+  FileOpen $R1 "$R0\\First Run" w
+  ${If} ${Errors}
+    DetailPrint "Could not write the first-run sentinel in $R0."
+    Return
+  ${EndIf}
+  FileClose $R1
+  DetailPrint "Wrote the first-run sentinel in $R0."
+FunctionEnd
+
 Section "Install"
   Call ClearBreakingInstallerVersionGate
   Call UninstallLegacySchemeInstall
@@ -236,6 +258,7 @@ Section "Install"
 
   ${If} $MiniExit == 0
     DetailPrint "Mini installer completed successfully."
+    Call SkipBrowserFirstRun
   ${Else}
     DetailPrint "Mini installer failed with exit code $MiniExit."
     MessageBox MB_ICONSTOP "Installation failed (exit code $MiniExit)." /SD IDOK

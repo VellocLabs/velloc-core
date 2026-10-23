@@ -173,6 +173,12 @@ bool IsCandidateUsable(const base::FilePath& candidate) {
   return !base::DirectoryExists(candidate);
 }
 
+// Found by path only, never launched to read a version: every shell call
+// waits on the first probe, and starting these CLIs is slow (F-34).
+bool SkipsVersionProbe(const std::string& tool_id) {
+  return tool_id == "claude" || tool_id == "codex";
+}
+
 std::optional<base::FilePath> FindInDirectories(
     const std::string& tool_id,
     const std::vector<base::FilePath>& dirs) {
@@ -204,6 +210,25 @@ std::vector<base::FilePath> UvInstallDirectories() {
                        .AppendASCII("Microsoft")
                        .AppendASCII("WinGet")
                        .AppendASCII("Links"));
+  }
+#endif
+  return dirs;
+}
+
+// The coding-agent CLIs a CLI session launches (F-34): the native installer
+// writes to ~/.local/bin, an npm global install to npm's prefix (%APPDATA%/npm
+// on Windows), and neither is always on the PATH a GUI app inherits.
+std::vector<base::FilePath> CliAgentInstallDirectories() {
+  std::vector<base::FilePath> dirs;
+  const base::FilePath home = custom_browser::GetNexusUserHomeDir();
+  if (!home.empty()) {
+    dirs.push_back(home.AppendASCII(".local").AppendASCII("bin"));
+  }
+#if BUILDFLAG(IS_WIN)
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> app_data = env->GetVar("APPDATA");
+      app_data.has_value() && !app_data->empty()) {
+    dirs.push_back(base::FilePath::FromUTF8Unsafe(*app_data).AppendASCII("npm"));
   }
 #endif
   return dirs;
@@ -371,11 +396,13 @@ ResolvedCapabilities& ResolvedCapabilities::operator=(
 std::vector<std::string> ShellResolver::KnownToolIds() {
   // Kept alphabetised (a unit test enforces it): shells + dev tools for the
   // Bash/Grep tools, and script-runtime launchers for user-configured stdio MCP
-  // servers — no wider reach than the Bash tool already has.
-  return {"bash",   "bun",  "bunx",       "cmd",  "deno",
-          "docker", "git",  "node",       "npm",  "npx",
-          "pnpm",   "powershell", "pwsh", "python", "python3",
-          "rg",     "sh",   "uv",         "uvx",  "zsh"};
+  // servers, and the coding-agent CLIs a CLI session runs (F-34) — no wider
+  // reach than the Bash tool already has.
+  return {"bash",   "bun",  "bunx",       "claude", "cmd",
+          "codex",  "deno", "docker",     "git",    "node",
+          "npm",    "npx",  "pnpm",       "powershell", "pwsh",
+          "python", "python3", "rg",      "sh",     "uv",
+          "uvx",    "zsh"};
 }
 
 // static
@@ -445,6 +472,13 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
     if (std::optional<base::FilePath> uv =
             FindInDirectories(tool_id, UvInstallDirectories())) {
       return uv;
+    }
+  }
+
+  if (tool_id == "claude" || tool_id == "codex") {
+    if (std::optional<base::FilePath> cli =
+            FindInDirectories(tool_id, CliAgentInstallDirectories())) {
+      return cli;
     }
   }
 
@@ -527,7 +561,9 @@ std::vector<ResolvedTool> ShellResolver::ResolveTools(
     std::optional<base::FilePath> path = FindOnPath(tool_id);
     if (path.has_value()) {
       tool.path = *path;
-      tool.version = ProbeVersion(*path);
+      if (!SkipsVersionProbe(tool_id)) {
+        tool.version = ProbeVersion(*path);
+      }
       tool.available = true;
     }
     tools.push_back(std::move(tool));

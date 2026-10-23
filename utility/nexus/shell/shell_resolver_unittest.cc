@@ -228,6 +228,58 @@ TEST(ShellResolverTest, FindOnPathFindsUvInItsInstallDirectories) {
   EXPECT_FALSE(ShellResolver::FindOnPath("nexus-not-uv-bin").has_value());
 }
 
+TEST(ShellResolverTest, FindOnPathFindsCliAgentsInTheirInstallDirectories) {
+  ScopedManagedHome home;
+  base::ScopedTempDir app_data;
+  ASSERT_TRUE(app_data.CreateUniqueTempDir());
+  base::ScopedEnvironmentVariableOverride app_data_env(
+      "APPDATA", app_data.GetPath().AsUTF8Unsafe());
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({});
+
+  EXPECT_FALSE(ShellResolver::FindOnPath("claude").has_value());
+  EXPECT_FALSE(ShellResolver::FindOnPath("codex").has_value());
+
+  const base::FilePath claude = WriteFakeTool(
+      home.path().AppendASCII(".local").AppendASCII("bin"), "claude");
+  EXPECT_EQ(ShellResolver::FindOnPath("claude"), claude);
+#if BUILDFLAG(IS_WIN)
+  const base::FilePath codex =
+      WriteFakeTool(app_data.GetPath().AppendASCII("npm"), "codex");
+  EXPECT_EQ(ShellResolver::FindOnPath("codex"), codex);
+#endif
+  // The CLI dirs are not a general fallback.
+  WriteFakeTool(home.path().AppendASCII(".local").AppendASCII("bin"),
+                "nexus-not-a-cli-bin");
+  EXPECT_FALSE(ShellResolver::FindOnPath("nexus-not-a-cli-bin").has_value());
+}
+
+#if BUILDFLAG(IS_WIN)
+TEST(ShellResolverTest, ResolveToolsFindsCliAgentsWithoutLaunchingThem) {
+  ScopedManagedHome home;
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ScopedRegistryPaths registry({});
+  const base::FilePath bin = home.path().AppendASCII(".local").AppendASCII("bin");
+  const base::FilePath marker = home.path().AppendASCII("launched.txt");
+  ASSERT_TRUE(base::CreateDirectory(bin));
+  for (const char* id : {"claude", "codex"}) {
+    ASSERT_TRUE(base::WriteFile(bin.AppendASCII(std::string(id) + ".cmd"),
+                                "@echo 1.0.0\r\n@echo x> \"" +
+                                    marker.AsUTF8Unsafe() + "\"\r\n"));
+  }
+
+  const std::vector<ResolvedTool> tools =
+      ShellResolver::ResolveTools({"claude", "codex"});
+
+  ASSERT_EQ(tools.size(), 2u);
+  for (const ResolvedTool& tool : tools) {
+    EXPECT_TRUE(tool.available) << tool.id;
+    EXPECT_TRUE(tool.version.empty()) << tool.id;
+  }
+  EXPECT_FALSE(base::PathExists(marker));
+}
+#endif
+
 #if BUILDFLAG(IS_WIN)
 TEST(ShellResolverTest, FindOnPathFindsUvInWinGetLinks) {
   ScopedManagedHome home;

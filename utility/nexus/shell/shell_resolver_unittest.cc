@@ -312,6 +312,63 @@ TEST(ShellResolverTest, FindOnPathFindsUvInWinGetLinks) {
 }
 #endif
 
+#if BUILDFLAG(IS_WIN)
+// A host with WSL enabled has %SystemRoot%\System32\bash.exe on PATH ahead of
+// any Git Bash; with no distribution it only prints a UTF-16 notice.
+TEST(ShellResolverTest, FindOnPathPassesTheWslLauncherForALaterBash) {
+  ScopedManagedHome home;
+  base::ScopedTempDir system_root;
+  ASSERT_TRUE(system_root.CreateUniqueTempDir());
+  base::ScopedEnvironmentVariableOverride system_root_env(
+      "SystemRoot", system_root.GetPath().AsUTF8Unsafe());
+  const base::FilePath launcher_dir =
+      system_root.GetPath().AppendASCII("System32");
+  const base::FilePath launcher = WriteFakeTool(launcher_dir, "bash");
+  const base::FilePath real_dir = home.path().AppendASCII("gitbin");
+  const base::FilePath real_bash = WriteFakeTool(real_dir, "bash");
+  base::ScopedEnvironmentVariableOverride path_env(
+      "PATH", launcher_dir.AsUTF8Unsafe() + ";" + real_dir.AsUTF8Unsafe());
+  ScopedRegistryPaths registry({});
+
+  EXPECT_TRUE(custom_browser::IsWslBashLauncher(launcher));
+  EXPECT_FALSE(custom_browser::IsWslBashLauncher(real_bash));
+  EXPECT_EQ(ShellResolver::FindOnPath("bash"), real_bash);
+}
+
+TEST(ShellResolverTest, FindOnPathNeverReturnsTheWslLauncher) {
+  ScopedManagedHome home;
+  base::ScopedTempDir system_root;
+  ASSERT_TRUE(system_root.CreateUniqueTempDir());
+  base::ScopedEnvironmentVariableOverride system_root_env(
+      "SystemRoot", system_root.GetPath().AsUTF8Unsafe());
+  const base::FilePath launcher_dir =
+      system_root.GetPath().AppendASCII("System32");
+  const base::FilePath launcher = WriteFakeTool(launcher_dir, "bash");
+  base::ScopedEnvironmentVariableOverride path_env("PATH",
+                                                   launcher_dir.AsUTF8Unsafe());
+  ScopedRegistryPaths registry({});
+
+  // Git Bash may still be found in its install folders; the launcher never.
+  EXPECT_NE(ShellResolver::FindOnPath("bash"), launcher);
+  // Other tools in the system directory are unaffected.
+  const base::FilePath where = WriteFakeTool(launcher_dir, "where");
+  EXPECT_EQ(ShellResolver::FindOnPath("where"), where);
+}
+
+TEST(ShellResolverTest, WslLauncherAlsoMeansTheWindowsAppsAlias) {
+  base::ScopedTempDir local_app_data;
+  ASSERT_TRUE(local_app_data.CreateUniqueTempDir());
+  base::ScopedEnvironmentVariableOverride local_app_data_env(
+      "LOCALAPPDATA", local_app_data.GetPath().AsUTF8Unsafe());
+  const base::FilePath alias_dir = local_app_data.GetPath()
+                                       .AppendASCII("Microsoft")
+                                       .AppendASCII("WindowsApps");
+  EXPECT_TRUE(custom_browser::IsWslBashLauncher(alias_dir.AppendASCII("bash.exe")));
+  EXPECT_TRUE(custom_browser::IsWslBashLauncher(alias_dir.AppendASCII("BASH.EXE")));
+  EXPECT_FALSE(custom_browser::IsWslBashLauncher(alias_dir.AppendASCII("wsl.exe")));
+}
+#endif
+
 TEST(ShellResolverTest, ApplyResolvedToolsFillsAMissAndKeepsAHit) {
   ResolvedCapabilities caps;
   caps.tools = {MakeTool("git", true), MakeTool("uvx", false)};

@@ -280,7 +280,7 @@ action("nexus_tools_codegen") {
 }
 
 # Which shells the host can run, and the shell name the guest prompt's
-# `Shell:` line carries. A //base-only leaf shared by `fs` (systemInfo) and
+# `Shell:` line carries. A //base + common leaf shared by `fs` (systemInfo) and
 # `bridge` (`exec.listShells`), so the two never disagree.
 source_set("host_shell") {
   sources = [
@@ -288,7 +288,10 @@ source_set("host_shell") {
     "api/shell/host_shell.h",
   ]
 
-  deps = [ "//base" ]
+  deps = [
+    "//base",
+    "//custom_browser/common",
+  ]
 }
 
 # The egress policy every network.* request runs under (public hosts only:

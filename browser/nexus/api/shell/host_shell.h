@@ -12,8 +12,9 @@ namespace nexus {
 // prompt's `Shell:` line), so the shell the prompt names is always the shell
 // the offered tool runs.
 struct HostShellAvailability {
-  // `bash` on PATH, or (Windows) a Git for Windows install — what the Bash
-  // tool invokes (process_tool.cc BuildShellInvocation).
+  // `bash` on PATH (never the Windows WSL launcher), or (Windows) a Git for
+  // Windows install — what the Bash tool invokes (process_tool.cc
+  // BuildShellInvocation).
   bool bash = false;
   // `pwsh` (PowerShell 7+) on PATH — the PowerShell tool's first choice.
   bool pwsh_core = false;
@@ -34,6 +35,11 @@ HostShellAvailability ResolveHostShellAvailability();
 std::string ChooseReportedShellName(const HostShellAvailability& shells,
                                     std::optional<std::string> shell_env,
                                     std::optional<std::string> comspec_env);
+
+// The PowerShell the PowerShell tool runs, for the prompt's environment
+// block: "pwsh" (PowerShell 7+) when installed, else "powershell" (Windows
+// PowerShell 5.1); empty when neither, and always empty off Windows. Pure.
+std::string ChoosePowerShellName(const HostShellAvailability& shells);
 
 // ChooseReportedShellName over the live host: resolves the availability and
 // reads `$SHELL` / `%COMSPEC%`. Stats files: MUST run on a MayBlock sequence.

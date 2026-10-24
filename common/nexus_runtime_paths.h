@@ -63,6 +63,13 @@ base::FilePath GetBundledConsoleHostPath();
 // The same lookup against an explicit directory, for tests.
 base::FilePath GetBundledConsoleHostPathIn(const base::FilePath& module_dir);
 
+// True when `path` is Windows' WSL launcher rather than a bash: a `bash.exe`
+// in the system directory (%SystemRoot%\System32, SysWOW64 or Sysnative) or
+// an app execution alias in %LOCALAPPDATA%\Microsoft\WindowsApps. With no
+// distribution installed it prints a UTF-16 notice and exits 1, so no shell
+// lookup may take it for bash. Always false off Windows.
+bool IsWslBashLauncher(const base::FilePath& path);
+
 }  // namespace custom_browser
 
 #endif  // CUSTOM_BROWSER_COMMON_NEXUS_RUNTIME_PATHS_H_

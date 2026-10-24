@@ -11,6 +11,7 @@
 #include "base/files/file_util.h"
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
+#include "custom_browser/common/nexus_runtime_paths.h"
 
 namespace nexus {
 
@@ -78,7 +79,8 @@ bool IsGitBashInstalledForWindows() {
 // MayBlock thread (it stats files). Mirrors the PATH-walk in
 // ShellResolver::FindOnPath (utility process) but browser-side and probe-
 // free, just to answer "is this shell installed?".
-bool IsExecutableOnPath(const std::string& tool_id) {
+bool IsExecutableOnPath(const std::string& tool_id,
+                        bool (*rejects)(const base::FilePath&) = nullptr) {
   std::unique_ptr<base::Environment> env = base::Environment::Create();
   std::optional<std::string> path_value = env->GetVar("PATH");
   if (!path_value.has_value() || path_value->empty()) {
@@ -90,7 +92,8 @@ bool IsExecutableOnPath(const std::string& tool_id) {
     base::FilePath dir = base::FilePath::FromUTF8Unsafe(part);
     for (const char* ext : kExecutableExtensions) {
       base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
-      if (base::PathExists(candidate) && !base::DirectoryExists(candidate)) {
+      if (base::PathExists(candidate) && !base::DirectoryExists(candidate) &&
+          !(rejects && rejects(candidate))) {
         return true;
       }
     }
@@ -102,7 +105,9 @@ bool IsExecutableOnPath(const std::string& tool_id) {
 
 HostShellAvailability ResolveHostShellAvailability() {
   HostShellAvailability shells;
-  shells.bash = IsExecutableOnPath("bash");
+  // The WSL launcher is not a bash (nexus_runtime_paths.h).
+  shells.bash =
+      IsExecutableOnPath("bash", &custom_browser::IsWslBashLauncher);
 #if BUILDFLAG(IS_WIN)
   if (!shells.bash) {
     shells.bash = IsGitBashInstalledForWindows();
@@ -132,6 +137,18 @@ std::string ChooseReportedShellName(const HostShellAvailability& shells,
 #else
   return ExtractShellBasename(std::move(shell_env));
 #endif
+}
+
+std::string ChoosePowerShellName(const HostShellAvailability& shells) {
+#if BUILDFLAG(IS_WIN)
+  if (shells.pwsh_core) {
+    return "pwsh";
+  }
+  if (shells.windows_powershell) {
+    return "powershell";
+  }
+#endif
+  return std::string();
 }
 
 std::string ResolveReportedShellName() {

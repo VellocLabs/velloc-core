@@ -88,5 +88,20 @@ TEST(HostShellTest, PowershellMeansEitherPowerShell) {
   EXPECT_TRUE(Shells(false, false, true).powershell());
 }
 
+#if BUILDFLAG(IS_WIN)
+// The prompt names the PowerShell the tool launches even when bash is the
+// reported shell: pwsh first, Windows PowerShell 5.1 only without it.
+TEST(HostShellTest, PowerShellNameIsTheOneTheToolLaunches) {
+  EXPECT_EQ("pwsh", ChoosePowerShellName(Shells(true, true, true)));
+  EXPECT_EQ("powershell", ChoosePowerShellName(Shells(true, false, true)));
+  EXPECT_EQ("powershell", ChoosePowerShellName(Shells(false, false, true)));
+  EXPECT_EQ("", ChoosePowerShellName(Shells(true, false, false)));
+}
+#else
+TEST(HostShellTest, PowerShellNameIsEmptyOffWindows) {
+  EXPECT_EQ("", ChoosePowerShellName(Shells(true, true, true)));
+}
+#endif
+
 }  // namespace
 }  // namespace nexus

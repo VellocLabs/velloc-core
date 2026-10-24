@@ -266,6 +266,7 @@ void RespondSystemInfo(BridgeResponseCallback done,
   envelope.Set("platform", result.platform);
   envelope.Set("osVersion", result.os_version);
   envelope.Set("shell", result.shell);
+  envelope.Set("powershell", result.powershell);
   std::move(done).Success(Value(std::move(envelope)));
 }
 

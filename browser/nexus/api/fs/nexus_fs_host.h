@@ -213,6 +213,9 @@ class NexusFsHost : public base::RefCountedThreadSafe<NexusFsHost> {
     // Interpreter name only, no path: the shell the model's shell tool
     // runs (host_shell.h ChooseReportedShellName). Empty when unknown.
     std::string shell;
+    // The PowerShell the PowerShell tool runs: "pwsh" or "powershell"
+    // (host_shell.h ChoosePowerShellName). Empty when none, or off Windows.
+    std::string powershell;
   };
 
   // `fs.paths`: well-known per-user directories, absolute and UTF-8. An

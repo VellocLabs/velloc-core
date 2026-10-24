@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/base_paths.h"
 #include "base/environment.h"
@@ -145,6 +147,40 @@ base::FilePath GetBundledConsoleHostPathIn(const base::FilePath& module_dir) {
   return dll;
 #else
   return base::FilePath();
+#endif
+}
+
+bool IsWslBashLauncher(const base::FilePath& path) {
+#if BUILDFLAG(IS_WIN)
+  if (!base::FilePath::CompareEqualIgnoreCase(path.BaseName().value(),
+                                              FILE_PATH_LITERAL("bash.exe"))) {
+    return false;
+  }
+  const base::FilePath dir = path.DirName().StripTrailingSeparators();
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  std::vector<base::FilePath> launcher_dirs;
+  if (std::optional<std::string> root = env->GetVar("SystemRoot");
+      root.has_value() && !root->empty()) {
+    const base::FilePath system_root = base::FilePath::FromUTF8Unsafe(*root);
+    for (const char* name : {"System32", "SysWOW64", "Sysnative"}) {
+      launcher_dirs.push_back(system_root.AppendASCII(name));
+    }
+  }
+  if (std::optional<std::string> local = env->GetVar("LOCALAPPDATA");
+      local.has_value() && !local->empty()) {
+    launcher_dirs.push_back(base::FilePath::FromUTF8Unsafe(*local)
+                                .AppendASCII("Microsoft")
+                                .AppendASCII("WindowsApps"));
+  }
+  for (const base::FilePath& launcher_dir : launcher_dirs) {
+    if (base::FilePath::CompareEqualIgnoreCase(
+            dir.value(), launcher_dir.StripTrailingSeparators().value())) {
+      return true;
+    }
+  }
+  return false;
+#else
+  return false;
 #endif
 }
 

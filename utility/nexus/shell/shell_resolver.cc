@@ -186,13 +186,16 @@ bool SkipsVersionProbe(const std::string& tool_id) {
   return tool_id == "claude" || tool_id == "codex";
 }
 
+// `rejects`, when set, skips a usable candidate so the walk goes on to the
+// next one.
 std::optional<base::FilePath> FindInDirectories(
     const std::string& tool_id,
-    const std::vector<base::FilePath>& dirs) {
+    const std::vector<base::FilePath>& dirs,
+    bool (*rejects)(const base::FilePath&) = nullptr) {
   for (const base::FilePath& dir : dirs) {
     for (const char* ext : kExecutableExtensions) {
       base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
-      if (IsCandidateUsable(candidate)) {
+      if (IsCandidateUsable(candidate) && !(rejects && rejects(candidate))) {
         return candidate;
       }
     }
@@ -437,8 +440,11 @@ std::optional<base::FilePath> ShellResolver::FindOnPath(
   // PATH lookup will normally find it, but System32 is sometimes pruned
   // from sandboxed environments. Fall through to the PATH walk first and
   // then check the absolute fallback.
-  if (std::optional<base::FilePath> on_path =
-          FindInDirectories(tool_id, GetPathDirectories())) {
+  // `bash` never resolves to the WSL launcher (nexus_runtime_paths.h): the
+  // walk passes it by for a later bash on PATH or Git Bash below.
+  if (std::optional<base::FilePath> on_path = FindInDirectories(
+          tool_id, GetPathDirectories(),
+          tool_id == "bash" ? &custom_browser::IsWslBashLauncher : nullptr)) {
     return on_path;
   }
 

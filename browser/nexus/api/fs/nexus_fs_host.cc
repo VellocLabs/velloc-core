@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -329,7 +330,11 @@ NexusFsHost::SystemInfoResult NexusFsHost::SystemInfo() const {
   // The shell the model's shell tool runs — `bash` whenever the Bash tool
   // is offered on Windows, not `%COMSPEC%` (host_shell.h). Stats files; this
   // runs on the MayBlock pool (HandleSystemInfoOnUI).
-  result.shell = ResolveReportedShellName();
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  const HostShellAvailability shells = ResolveHostShellAvailability();
+  result.shell = ChooseReportedShellName(shells, env->GetVar("SHELL"),
+                                         env->GetVar("COMSPEC"));
+  result.powershell = ChoosePowerShellName(shells);
 
   return result;
 }

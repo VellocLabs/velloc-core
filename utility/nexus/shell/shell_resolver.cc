@@ -119,7 +119,8 @@ std::string ReadRegistryPathValue(HKEY root, const wchar_t* subkey) {
 }
 
 // Machine Path first, then user Path, matching how Windows builds a new
-// logon environment.
+// logon environment. Test seam: e2e sets NEXUS_E2E_NO_REGISTRY_PATH to keep
+// lookups on the process PATH it controls; it only narrows the search.
 std::vector<std::string> ReadRegistryPaths() {
   {
     RegistryPathOverride& state = GetRegistryPathOverride();
@@ -127,6 +128,12 @@ std::vector<std::string> ReadRegistryPaths() {
     if (state.paths.has_value()) {
       return *state.paths;
     }
+  }
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> seam =
+          env->GetVar("NEXUS_E2E_NO_REGISTRY_PATH");
+      seam.has_value() && !seam->empty()) {
+    return {};
   }
   return {
       ReadRegistryPathValue(

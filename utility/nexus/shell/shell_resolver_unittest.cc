@@ -178,6 +178,20 @@ TEST(ShellResolverTest, EffectivePathReadsAndExpandsTheRegistryValues) {
             "C:\\process;" + base::WideToUTF8(machine_dir) + ";C:\\uvroot\\bin");
 }
 
+TEST(ShellResolverTest, EffectivePathSkipsTheRegistryUnderTheE2eSeam) {
+  registry_util::RegistryOverrideManager registry_override;
+  ASSERT_NO_FATAL_FAILURE(
+      registry_override.OverrideRegistry(HKEY_CURRENT_USER));
+  ASSERT_EQ(base::win::RegKey(HKEY_CURRENT_USER, L"Environment", KEY_SET_VALUE)
+                .WriteValue(L"Path", L"C:\\registry-only"),
+            ERROR_SUCCESS);
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "C:\\process");
+  base::ScopedEnvironmentVariableOverride seam("NEXUS_E2E_NO_REGISTRY_PATH",
+                                               "1");
+
+  EXPECT_EQ(ShellResolver::EffectivePath(), "C:\\process");
+}
+
 TEST(ShellResolverTest, FindOnPathFindsToolOnlyOnTheRegistryPath) {
   // An installer that ran after launch updated only the registry Path.
   base::ScopedTempDir tmp;

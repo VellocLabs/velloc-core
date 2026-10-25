@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "removeInitScript",
+  "description": "Stop an init script from running on later documents. Returns { ok } — false when the id is not one of the channel's.",
+  "struct_name": "PageScriptRemoveInitScript",
+  "inputs": [
+    { "name": "channelId", "type": "integer", "required": true, "description": "A channel from attach." },
+    { "name": "scriptId", "type": "string", "required": true, "description": "An id from addInitScript." }
+  ],
+  "errors": [
+    { "code": "channel_not_found" },
+    { "code": "cdp_error", "params": ["detail"] }
+  ],
+  "runtime": { "thread": "ui" }
+}

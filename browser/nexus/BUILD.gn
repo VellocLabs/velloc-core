@@ -226,6 +226,12 @@ action("nexus_tools_codegen") {
     "api/declarations/web_window/reload.api.json",
     "api/declarations/web_window/setBounds.api.json",
     "api/declarations/web_window/setState.api.json",
+    "api/declarations/page_script/addInitScript.api.json",
+    "api/declarations/page_script/attach.api.json",
+    "api/declarations/page_script/detach.api.json",
+    "api/declarations/page_script/executeScript.api.json",
+    "api/declarations/page_script/postMessage.api.json",
+    "api/declarations/page_script/removeInitScript.api.json",
   ]
 
   outputs = [
@@ -269,6 +275,8 @@ action("nexus_tools_codegen") {
     "$target_gen_dir/api/browser/browser_api.gen.cc",
     "$target_gen_dir/api/web_window/web_window_api.gen.h",
     "$target_gen_dir/api/web_window/web_window_api.gen.cc",
+    "$target_gen_dir/api/page_script/page_script_api.gen.h",
+    "$target_gen_dir/api/page_script/page_script_api.gen.cc",
   ]
 
   args = [
@@ -609,6 +617,12 @@ source_set("bridge") {
     "api/web_window/nexus_web_window_bridge_adapter.h",
     "api/web_window/web_window_options.cc",
     "api/web_window/web_window_options.h",
+    "api/page_script/nexus_page_script_bridge_adapter.cc",
+    "api/page_script/nexus_page_script_bridge_adapter.h",
+    "api/page_script/page_script_options.cc",
+    "api/page_script/page_script_options.h",
+    "tools/page_script/page_script_channel.cc",
+    "tools/page_script/page_script_channel.h",
     "bridge_response_callback.cc",
     "bridge_response_callback.h",
     "nexus_bridge_bootstrap_host.cc",
@@ -695,6 +709,7 @@ source_set("bridge") {
     "$target_gen_dir/api/system_prefs/system_prefs_api.gen.cc",
     "$target_gen_dir/api/ui/ui_api.gen.cc",
     "$target_gen_dir/api/web_window/web_window_api.gen.cc",
+    "$target_gen_dir/api/page_script/page_script_api.gen.cc",
   ]
 
   public_deps = [
@@ -1195,6 +1210,7 @@ source_set("unit_tests") {
     "api/network/nexus_network_bridge_adapter_unittest.cc",
     "api/network/nexus_websocket_connection_unittest.cc",
     "api/web_window/web_window_options_unittest.cc",
+    "api/page_script/page_script_options_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
     "api/secrets/nexus_secrets_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",

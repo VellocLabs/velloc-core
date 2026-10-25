@@ -1,0 +1,32 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "attach",
+  "description": "Open a script channel to one page: a single-web window this connection opened (webWindowId) or a tab in this Nexus window (tabId) — exactly one of the two. The channel runs in a private world of the page; `exposeToPage` also lets the page's own scripts message the opener. Returns { channelId }. Events onMessage / onDetached carry the channelId.",
+  "struct_name": "PageScriptAttach",
+  "inputs": [
+    {
+      "name": "webWindowId",
+      "type": "integer",
+      "required": false,
+      "description": "A single-web window this connection opened (webWindow.open)."
+    },
+    {
+      "name": "tabId",
+      "type": "integer",
+      "required": false,
+      "description": "A tab in this Nexus window, by the id its tab list publishes."
+    },
+    {
+      "name": "exposeToPage",
+      "type": "boolean",
+      "required": false,
+      "description": "Also give the page's own scripts the messaging object. Absent: false."
+    }
+  ],
+  "errors": [
+    { "code": "target_not_found" },
+    { "code": "invalid_args", "params": ["reason"] },
+    { "code": "attach_refused" }
+  ],
+  "runtime": { "thread": "ui" }
+}

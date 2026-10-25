@@ -23,6 +23,10 @@ namespace blink {
 class MessagePortDescriptor;
 }
 
+namespace content {
+class WebContents;
+}
+
 namespace nexus {
 
 class NexusBridgeResponseDelegate;
@@ -45,6 +49,10 @@ class NexusWebWindowBridgeAdapter
   NexusWebWindowBridgeAdapter(const NexusWebWindowBridgeAdapter&) = delete;
   NexusWebWindowBridgeAdapter& operator=(const NexusWebWindowBridgeAdapter&) =
       delete;
+
+  // The page of an open window this adapter owns, or null (the `pageScript`
+  // capability resolves its `webWindowId` targets through it).
+  content::WebContents* ContentsForWindow(int32_t window_id) const;
 
  private:
   class Window;

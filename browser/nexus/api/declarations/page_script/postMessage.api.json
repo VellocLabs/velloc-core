@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "postMessage",
+  "description": "Deliver `data` (a JSON text, at most 1 MB) to the listeners the channel's scripts registered with vellocHost.onMessage. Returns { ok: true }.",
+  "struct_name": "PageScriptPostMessage",
+  "inputs": [
+    { "name": "channelId", "type": "integer", "required": true, "description": "A channel from attach." },
+    { "name": "data", "type": "string", "required": true, "description": "The message, as JSON text." }
+  ],
+  "errors": [
+    { "code": "channel_not_found" },
+    { "code": "payload_too_large" },
+    { "code": "no_document" },
+    { "code": "cdp_error", "params": ["detail"] }
+  ],
+  "runtime": { "thread": "ui" }
+}

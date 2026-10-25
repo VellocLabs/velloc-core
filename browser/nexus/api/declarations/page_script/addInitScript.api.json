@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "addInitScript",
+  "description": "Run `source` in the channel's private world at the start of every new document in the page, before the page's own scripts. Returns { scriptId } for removeInitScript.",
+  "struct_name": "PageScriptAddInitScript",
+  "inputs": [
+    { "name": "channelId", "type": "integer", "required": true, "description": "A channel from attach." },
+    { "name": "source", "type": "string", "required": true, "description": "The script source." }
+  ],
+  "errors": [
+    { "code": "channel_not_found" },
+    { "code": "payload_too_large" },
+    { "code": "cdp_error", "params": ["detail"] }
+  ],
+  "runtime": { "thread": "ui" }
+}

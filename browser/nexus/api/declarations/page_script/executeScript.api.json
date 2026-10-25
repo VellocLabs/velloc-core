@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "executeScript",
+  "description": "Evaluate `code` in the page's main frame and await its value: in the channel's private world (default) or in the page's own world (`world: 'main'`). Returns { value } (JSON-serialisable result) or { exception } (the thrown error's text).",
+  "struct_name": "PageScriptExecuteScript",
+  "inputs": [
+    { "name": "channelId", "type": "integer", "required": true, "description": "A channel from attach." },
+    { "name": "code", "type": "string", "required": true, "description": "A JavaScript expression or IIFE." },
+    { "name": "world", "type": "string", "required": false, "description": "'isolated' | 'main'. Absent: 'isolated'." }
+  ],
+  "errors": [
+    { "code": "channel_not_found" },
+    { "code": "invalid_args", "params": ["reason"] },
+    { "code": "no_document" },
+    { "code": "cdp_error", "params": ["detail"] }
+  ],
+  "runtime": { "thread": "ui" }
+}

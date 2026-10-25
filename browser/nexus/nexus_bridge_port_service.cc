@@ -25,6 +25,7 @@
 #include "custom_browser/browser/nexus/api/providers/nexus_providers_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/remote_access/nexus_remote_access_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/web_window/nexus_web_window_bridge_adapter.h"
+#include "custom_browser/browser/nexus/api/page_script/nexus_page_script_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/search/nexus_search_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secrets_bridge_adapter.h"
 #include "custom_browser/browser/nexus/api/session/nexus_session_bridge_adapter.h"
@@ -264,6 +265,14 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   web_window_adapter_ =
       std::make_unique<NexusWebWindowBridgeAdapter>(this, profile);
   RegisterCapability("webWindow", web_window_adapter_.get());
+  // Guest `pageScript` capability — script channels to a window the
+  // connection opened or a tab in this Nexus window (F-29). Window ids
+  // resolve through this connection's webWindow adapter, which outlives it.
+  page_script_adapter_ = std::make_unique<NexusPageScriptBridgeAdapter>(
+      this, profile,
+      base::BindRepeating(&NexusWebWindowBridgeAdapter::ContentsForWindow,
+                          base::Unretained(web_window_adapter_.get())));
+  RegisterCapability("pageScript", page_script_adapter_.get());
   RegisterCapability("ui", ui_adapter_.get());
   RegisterCapability("files", files_adapter_.get());
   RegisterCapability("exec", exec_adapter_.get());

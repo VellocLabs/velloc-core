@@ -452,6 +452,15 @@ void NexusWebWindowBridgeAdapter::HandleReloadOnUI(
   std::move(done).Success(OkResult(true));
 }
 
+content::WebContents* NexusWebWindowBridgeAdapter::ContentsForWindow(
+    int32_t window_id) const {
+  auto it = windows_.find(window_id);
+  if (it == windows_.end() || !it->second->is_open()) {
+    return nullptr;
+  }
+  return it->second->contents();
+}
+
 NexusWebWindowBridgeAdapter::Window* NexusWebWindowBridgeAdapter::FindOrReject(
     int32_t window_id,
     ::nexus::BridgeResponseCallback& done) {

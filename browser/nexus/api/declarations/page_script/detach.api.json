@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "detach",
+  "description": "Close a script channel. Init scripts it added stop running on the next document. Returns { ok: true }; no onDetached follows.",
+  "struct_name": "PageScriptDetach",
+  "inputs": [
+    { "name": "channelId", "type": "integer", "required": true, "description": "A channel from attach." }
+  ],
+  "errors": [ { "code": "channel_not_found" } ],
+  "runtime": { "thread": "ui" }
+}

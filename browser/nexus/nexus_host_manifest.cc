@@ -12,7 +12,7 @@ namespace {
 
 constexpr char kHostKind[] = "nexus";
 
-constexpr std::array<const char*, 14> kBridgeCapabilities = {
+constexpr std::array<const char*, 15> kBridgeCapabilities = {
     "fs",
     "model",
     "ui",
@@ -69,6 +69,12 @@ constexpr std::array<const char*, 14> kBridgeCapabilities = {
     // it only when advertised. See
     // custom_browser/browser/nexus/api/web_window/.
     "webWindow",
+    // Script channels to a single-web window or a tab in this Nexus window
+    // (attach / detach / executeScript / postMessage / addInitScript /
+    // removeInitScript + the onMessage / onDetached events), F-29. Additive:
+    // the runtime calls it only when advertised. See
+    // custom_browser/browser/nexus/api/page_script/.
+    "pageScript",
 };
 
 // Additive native primitives this host serves, by `<capability>.<action>`

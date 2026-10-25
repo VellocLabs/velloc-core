@@ -484,6 +484,18 @@ source_set("alarm_schedule") {
   public_deps = [ "//base" ]
 }
 
+# Pure-logic pieces of the pageScript capability (target / world / size
+# checks, the bootstrap text), kept dependency-free so the lite test binary
+# can cover them.
+source_set("page_script_options") {
+  sources = [
+    "api/page_script/page_script_options.cc",
+    "api/page_script/page_script_options.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 # The per-Profile alarm clock (KeyedService, created with the profile so
 # missed alarms fire at startup). Wakes a runtime through the launcher
 # delegate — the dependency-free leaf the tray icon uses — so no cycle
@@ -619,8 +631,6 @@ source_set("bridge") {
     "api/web_window/web_window_options.h",
     "api/page_script/nexus_page_script_bridge_adapter.cc",
     "api/page_script/nexus_page_script_bridge_adapter.h",
-    "api/page_script/page_script_options.cc",
-    "api/page_script/page_script_options.h",
     "tools/page_script/page_script_channel.cc",
     "tools/page_script/page_script_channel.h",
     "bridge_response_callback.cc",
@@ -740,6 +750,7 @@ source_set("bridge") {
     # `exec.listShells` (the exec adapter).
     ":host_shell",
     ":network_egress_policy",
+    ":page_script_options",
 
     # The remoteAccess bridge adapter forwards onto the per-Profile
     # NexusRemoteAccessService (listener start/stop, proxy, LNA grant).
@@ -1129,6 +1140,7 @@ source_set("unit_tests_lite") {
     "api/fs/nexus_fs_watcher_unittest.cc",
     "api/network/network_egress_policy_unittest.cc",
     "api/network/nexus_guest_request_unittest.cc",
+    "api/page_script/page_script_options_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1151,6 +1163,7 @@ source_set("unit_tests_lite") {
     ":fs",
     ":host_shell",
     ":network_egress_policy",
+    ":page_script_options",
     # Pure routing logic for remote access; a leaf (//base only) so it links
     # into the lite binary without dragging in the listener's net::HttpServer.
     ":remote_access",
@@ -1210,7 +1223,6 @@ source_set("unit_tests") {
     "api/network/nexus_network_bridge_adapter_unittest.cc",
     "api/network/nexus_websocket_connection_unittest.cc",
     "api/web_window/web_window_options_unittest.cc",
-    "api/page_script/page_script_options_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
     "api/secrets/nexus_secrets_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",

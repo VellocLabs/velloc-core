@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "navigateUtilityTab",
+  "description": "Load an http/https URL in a utility tab of this Nexus window (one openUtilityTab returned). Refused for a tab that carries no utility tag.",
+  "inputs": [
+    {
+      "name": "tabId",
+      "type": "integer",
+      "required": true,
+      "description": "The tab's id as openUtilityTab returned it (the tab handle)."
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "The page to load."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

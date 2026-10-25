@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "closeUtilityTab",
+  "description": "Close a utility tab of this Nexus window (one openUtilityTab returned). Refused for a tab that carries no utility tag.",
+  "inputs": [
+    {
+      "name": "tabId",
+      "type": "integer",
+      "required": true,
+      "description": "The tab's id as openUtilityTab returned it (the tab handle)."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

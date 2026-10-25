@@ -118,6 +118,20 @@ class NexusUiBridgeAdapter : public ::nexus::generated::UiApiBase,
       ::nexus::generated::NavigateSessionTabInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // Utility tabs (F-35): tabs of this Nexus window that show one of the
+  // guest's own pages, tagged by key and owned by no chat session.
+  void HandleOpenUtilityTabOnUI(
+      ::nexus::generated::OpenUtilityTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleNavigateUtilityTabOnUI(
+      ::nexus::generated::NavigateUtilityTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
+  void HandleCloseUtilityTabOnUI(
+      ::nexus::generated::CloseUtilityTabInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   void HandleWriteClipboardOnUI(
       ::nexus::generated::WriteClipboardInput input,
       std::vector<blink::MessagePortDescriptor> ports,

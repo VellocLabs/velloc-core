@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "openUtilityTab",
+  "description": "Show one of the guest's own pages in this Nexus window as a utility tab: a tab tagged with `key`, owned by no chat session and absent from every session's tab tally. When a tab with that key already exists it is foregrounded and returned as is (not re-navigated); otherwise a new foreground tab loads `url`. Returns { tabId, created }. http/https only.",
+  "inputs": [
+    {
+      "name": "key",
+      "type": "string",
+      "required": true,
+      "description": "The utility tab's name: 1-32 characters of a-z, 0-9 and hyphen. One tab per key per window."
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "The page a NEW tab loads; ignored when the key's tab already exists."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

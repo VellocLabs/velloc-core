@@ -29,6 +29,11 @@
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/common/referrer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -65,7 +70,9 @@
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/session/nexus_session_features.h"
+#include "custom_browser/browser/nexus/api/ui/utility_tab_options.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
+#include "custom_browser/browser/nexus/session/nexus_utility_tab_tag.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/common/branding_constants.h"
 #include "url/gurl.h"
@@ -556,6 +563,141 @@ void NexusUiBridgeAdapter::HandleNavigateSessionTabOnUI(
                           "navigateSessionTab: not one of the session's tabs");
     return;
   }
+  std::move(done).SuccessVoid();
+}
+
+namespace {
+
+// The strip index of the utility tab carrying `key`, or kNoTab.
+int FindUtilityTabByKey(TabStripModel* strip, std::string_view key) {
+  for (int i = 0; i < strip->count(); ++i) {
+    const std::string* tag =
+        NexusUtilityTabTag::KeyFor(strip->GetWebContentsAt(i));
+    if (tag && *tag == key) {
+      return i;
+    }
+  }
+  return TabStripModel::kNoTab;
+}
+
+// The strip index of the utility tab `tab_id` names in the Nexus window,
+// or kNoTab when the id is unknown, the tab sits elsewhere or carries no
+// utility tag. Security: this is the ownership check of every utility-tab
+// action; a session's tab or a stray tab is never touched.
+int FindUtilityTabById(Profile* profile,
+                       int32_t tab_id,
+                       TabStripModel** out_strip) {
+  tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
+  content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+  if (!contents || !NexusUtilityTabTag::KeyFor(contents)) {
+    return TabStripModel::kNoTab;
+  }
+  BrowserWindowInterface* nexus =
+      custom_browser::window_util::FindNexusWindow(profile);
+  TabStripModel* strip = nexus ? nexus->tab_strip_model() : nullptr;
+  if (!strip) {
+    return TabStripModel::kNoTab;
+  }
+  const int index = strip->GetIndexOfWebContents(contents);
+  if (index != TabStripModel::kNoTab && out_strip) {
+    *out_strip = strip;
+  }
+  return index;
+}
+
+int32_t TabIdAt(TabStripModel* strip, int index) {
+  tabs::TabInterface* tab = strip->GetTabAtIndex(index);
+  return tab ? tab->GetHandle().raw_value() : 0;
+}
+
+base::DictValue UtilityTabResult(int32_t tab_id, bool created) {
+  base::DictValue result;
+  result.Set("tabId", tab_id);
+  result.Set("created", created);
+  return result;
+}
+
+}  // namespace
+
+void NexusUiBridgeAdapter::HandleOpenUtilityTabOnUI(
+    ::nexus::generated::OpenUtilityTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (!IsUtilityTabKey(input.key)) {
+    std::move(done).Error("UI_ERROR", "openUtilityTab: invalid key");
+    return;
+  }
+  const GURL url(input.url);
+  if (!IsUtilityTabUrl(url)) {
+    std::move(done).Error("UI_ERROR",
+                          "openUtilityTab: no http/https URL to load");
+    return;
+  }
+  BrowserWindowInterface* nexus =
+      custom_browser::window_util::FindNexusWindow(profile_);
+  TabStripModel* strip = nexus ? nexus->tab_strip_model() : nullptr;
+  if (!strip) {
+    std::move(done).Error("UI_ERROR", "openUtilityTab: no Nexus window");
+    return;
+  }
+  // One tab per key: an existing one is foregrounded as it is, so the page
+  // keeps its state across open / back / open.
+  const int existing = FindUtilityTabByKey(strip, input.key);
+  if (existing != TabStripModel::kNoTab) {
+    if (existing != strip->active_index()) {
+      strip->ActivateTabAt(existing);
+    }
+    std::move(done).Success(UtilityTabResult(TabIdAt(strip, existing), false));
+    return;
+  }
+  NavigateParams params(nexus, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  Navigate(&params);
+  content::WebContents* contents = params.navigated_or_inserted_contents;
+  const int index =
+      contents ? strip->GetIndexOfWebContents(contents) : TabStripModel::kNoTab;
+  if (index == TabStripModel::kNoTab) {
+    std::move(done).Error("UI_ERROR", "openUtilityTab: no tab was created");
+    return;
+  }
+  NexusUtilityTabTag::AttachTo(contents, input.key);
+  std::move(done).Success(UtilityTabResult(TabIdAt(strip, index), true));
+}
+
+void NexusUiBridgeAdapter::HandleNavigateUtilityTabOnUI(
+    ::nexus::generated::NavigateUtilityTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  const GURL url(input.url);
+  if (!IsUtilityTabUrl(url)) {
+    std::move(done).Error("UI_ERROR",
+                          "navigateUtilityTab: no http/https URL to load");
+    return;
+  }
+  TabStripModel* strip = nullptr;
+  const int index = FindUtilityTabById(profile_, input.tabId, &strip);
+  if (index == TabStripModel::kNoTab) {
+    std::move(done).Error(
+        "UI_ERROR", "navigateUtilityTab: not a utility tab of this window");
+    return;
+  }
+  strip->GetWebContentsAt(index)->GetController().LoadURL(
+      url, content::Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
+  std::move(done).SuccessVoid();
+}
+
+void NexusUiBridgeAdapter::HandleCloseUtilityTabOnUI(
+    ::nexus::generated::CloseUtilityTabInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  TabStripModel* strip = nullptr;
+  const int index = FindUtilityTabById(profile_, input.tabId, &strip);
+  if (index == TabStripModel::kNoTab) {
+    std::move(done).Error("UI_ERROR",
+                          "closeUtilityTab: not a utility tab of this window");
+    return;
+  }
+  strip->CloseWebContentsAt(index, TabCloseTypes::CLOSE_USER_GESTURE);
   std::move(done).SuccessVoid();
 }
 

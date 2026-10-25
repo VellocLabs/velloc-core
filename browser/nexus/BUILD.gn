@@ -145,14 +145,17 @@ action("nexus_tools_codegen") {
     "api/declarations/remote_access/setPairings.api.json",
     "api/declarations/ui/activateSessionTab.api.json",
     "api/declarations/ui/closeSessionTab.api.json",
+    "api/declarations/ui/closeUtilityTab.api.json",
     "api/declarations/ui/getBootTimings.api.json",
     "api/declarations/ui/getInspectMenuEnabled.api.json",
     "api/declarations/ui/getProviderMissingPrompt.api.json",
     "api/declarations/ui/navigateSessionTab.api.json",
+    "api/declarations/ui/navigateUtilityTab.api.json",
     "api/declarations/ui/openBrowserWindow.api.json",
     "api/declarations/ui/openLanguageSettings.api.json",
     "api/declarations/ui/openNexusSettings.api.json",
     "api/declarations/ui/openSessionTab.api.json",
+    "api/declarations/ui/openUtilityTab.api.json",
     "api/declarations/ui/openUrl.api.json",
     "api/declarations/ui/pickAttachmentFiles.api.json",
     "api/declarations/ui/pickProjectFolder.api.json",
@@ -496,6 +499,20 @@ source_set("page_script_options") {
   public_deps = [ "//base" ]
 }
 
+# The key / URL checks of the utility-tab actions (`ui.openUtilityTab`
+# family), dependency-free so the lite test binary covers them.
+source_set("utility_tab_options") {
+  sources = [
+    "api/ui/utility_tab_options.cc",
+    "api/ui/utility_tab_options.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//url",
+  ]
+}
+
 # The per-Profile alarm clock (KeyedService, created with the profile so
 # missed alarms fire at startup). Wakes a runtime through the launcher
 # delegate — the dependency-free leaf the tray icon uses — so no cycle
@@ -751,6 +768,7 @@ source_set("bridge") {
     ":host_shell",
     ":network_egress_policy",
     ":page_script_options",
+    ":utility_tab_options",
 
     # The remoteAccess bridge adapter forwards onto the per-Profile
     # NexusRemoteAccessService (listener start/stop, proxy, LNA grant).
@@ -1022,6 +1040,8 @@ source_set("session_tab_management") {
     "session/nexus_session_features.h",
     "session/nexus_session_tab_tag.cc",
     "session/nexus_session_tab_tag.h",
+    "session/nexus_utility_tab_tag.cc",
+    "session/nexus_utility_tab_tag.h",
   ]
 
   deps = [
@@ -1141,6 +1161,7 @@ source_set("unit_tests_lite") {
     "api/network/network_egress_policy_unittest.cc",
     "api/network/nexus_guest_request_unittest.cc",
     "api/page_script/page_script_options_unittest.cc",
+    "api/ui/utility_tab_options_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1164,6 +1185,7 @@ source_set("unit_tests_lite") {
     ":host_shell",
     ":network_egress_policy",
     ":page_script_options",
+    ":utility_tab_options",
     # Pure routing logic for remote access; a leaf (//base only) so it links
     # into the lite binary without dragging in the listener's net::HttpServer.
     ":remote_access",

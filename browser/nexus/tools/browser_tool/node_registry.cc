@@ -42,9 +42,40 @@ const NodeRegistry::Entry* NodeRegistry::Find(int node_id) const {
   return FindIn(node_id, last_it->second);
 }
 
+int NodeRegistry::AssignIndex(int tab_id,
+                              const std::string& document_id,
+                              int content_node_id,
+                              bool is_main_document) {
+  if (is_main_document) {
+    return content_node_id;
+  }
+  auto [it, inserted] = child_indexes_.try_emplace(
+      ChildKey(tab_id, document_id, content_node_id), next_child_index_);
+  if (inserted) {
+    ++next_child_index_;
+  }
+  return it->second;
+}
+
+std::optional<int> NodeRegistry::IndexOf(int tab_id,
+                                         const std::string& document_id,
+                                         int content_node_id,
+                                         bool is_main_document) const {
+  if (is_main_document) {
+    return content_node_id;
+  }
+  auto it =
+      child_indexes_.find(ChildKey(tab_id, document_id, content_node_id));
+  if (it == child_indexes_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
+}
+
 void NodeRegistry::Clear() {
   entries_.clear();
   last_tab_for_node_.clear();
+  child_indexes_.clear();
 }
 
 void NodeRegistry::ClearTab(int tab_id) {
@@ -64,6 +95,13 @@ void NodeRegistry::ClearTab(int tab_id) {
   for (auto it = last_tab_for_node_.begin(); it != last_tab_for_node_.end();) {
     if (it->second == tab_id) {
       it = last_tab_for_node_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = child_indexes_.begin(); it != child_indexes_.end();) {
+    if (std::get<0>(it->first) == tab_id) {
+      it = child_indexes_.erase(it);
     } else {
       ++it;
     }

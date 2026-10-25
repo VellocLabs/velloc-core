@@ -476,6 +476,22 @@ source_set("secret_crypt") {
   deps = [ "//components/os_crypt/async/browser" ]
 }
 
+# How observed elements map to actor targets: the document an APC node
+# belongs to (iframe → its own frame) and the model-facing index registry.
+# APC proto + std only, so the lite binary tests it.
+source_set("observation_index") {
+  sources = [
+    "tools/browser_tool/frame_document.cc",
+    "tools/browser_tool/frame_document.h",
+    "tools/browser_tool/node_registry.cc",
+    "tools/browser_tool/node_registry.h",
+  ]
+
+  public_deps = [
+    "//components/optimization_guide/proto:optimization_guide_proto",
+  ]
+}
+
 # The `alarms` capability's schedule rules (due / catch-up / grid / prefs
 # form) as pure functions — //base only, so the lite binary tests them.
 source_set("alarm_schedule") {
@@ -708,8 +724,6 @@ source_set("bridge") {
     "tools/browser_tool/browser_tool_internal.h",
     "tools/browser_tool/download_capture.cc",
     "tools/browser_tool/download_capture.h",
-    "tools/browser_tool/node_registry.cc",
-    "tools/browser_tool/node_registry.h",
     "tools/browser_tool/screenshot_shaping.cc",
     "tools/browser_tool/screenshot_shaping.h",
     "tools/file_tool/file_tool.cc",
@@ -777,6 +791,9 @@ source_set("bridge") {
 
     # At-rest secret encryption (NexusSecretCrypt) appears in bridge headers.
     ":secret_crypt",
+
+    # NodeRegistry appears in browser_tool.h.
+    ":observation_index",
 
   ]
 
@@ -1197,6 +1214,8 @@ source_set("unit_tests_lite") {
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
+    "tools/browser_tool/frame_document_unittest.cc",
+    "tools/browser_tool/node_registry_unittest.cc",
     "nexus_installer_channel_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
@@ -1212,6 +1231,7 @@ source_set("unit_tests_lite") {
   deps = [
     ":alarm_schedule",
     ":domain",
+    ":observation_index",
     ":installer_channel",
 
     # nexus_fs_watcher_unittest.cc — the fs.watch core (//base only).
@@ -1317,7 +1337,6 @@ source_set("unit_tests") {
     "nexus_test_support.h",
     "session/nexus_session_tab_tag_unittest.cc",
     "tools/browser_tool/browser_tool_capture_hold_unittest.cc",
-    "tools/browser_tool/node_registry_unittest.cc",
     "tools/browser_tool/observation_slim_unittest.cc",
     "tools/browser_tool/screenshot_shaping_unittest.cc",
     "tools/file_tool/file_tool_unittest.cc",

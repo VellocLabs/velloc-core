@@ -44,6 +44,7 @@
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tag.h"
 #include "custom_browser/browser/nexus/session/nexus_session_tab_tracker.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/frame_document.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "custom_browser/browser/nexus/upload/nexus_pending_agent_notice.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
@@ -1389,18 +1390,22 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
         }
       }
 
+      const bool is_main_document = document_id == walk_main_document_id_;
+      const int index = node_registry_.AssignIndex(tab_id, document_id, node_id,
+                                                   is_main_document);
       NodeRegistry::Entry entry;
       entry.document_id = document_id;
+      entry.content_node_id = node_id;
       entry.tab_id = tab_id;
       entry.type = type_name;
       entry.text = text;
-      node_registry_.Set(node_id, entry);
+      node_registry_.Set(index, entry);
 
       // Rich element payload: index + type required, other keys only when non-empty.
       // `type` is the proto's structural kind, `role` the ARIA-derived interaction
       // role; for form controls they diverge.
       base::DictValue elem;
-      elem.Set("index", node_id);
+      elem.Set("index", index);
       elem.Set("type", type_name);
       if (!text.empty()) {
         elem.Set("text", text);
@@ -1516,12 +1521,15 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
             lbox.Append(lt->second.box[2]);
             lbox.Append(lt->second.box[3]);
             box = base::Value(std::move(lbox));
-            // Register the label node_id too, so a later lookup by the
-            // emitted index resolves to the same entry as the input.
-            node_registry_.Set(label_node_id, entry);
-            // Overwrite the index set earlier with the clickable label's
-            // node_id so a BrowserClick lands on the visible label.
-            elem.Set("index", label_node_id);
+            // Register the label too, targeting the label node, so a
+            // BrowserClick on the emitted index lands on the visible label.
+            NodeRegistry::Entry label_entry = entry;
+            label_entry.content_node_id = label_node_id;
+            const int label_index = node_registry_.AssignIndex(
+                tab_id, document_id, label_node_id, is_main_document);
+            node_registry_.Set(label_index, std::move(label_entry));
+            // Overwrite the index set earlier with the label's.
+            elem.Set("index", label_index);
           }
         }
       }
@@ -1544,8 +1552,10 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
           elem.contains("is_checked");
       if (!has_useful_signal) {
         // Recurse into children below so descendants still surface.
+        const std::string child_document_id =
+            ChildDocumentId(node, document_id);
         for (const apc::ContentNode& child : node.children_nodes()) {
-          WalkContentNode(child, document_id, tab_id, out_elements);
+          WalkContentNode(child, child_document_id, tab_id, out_elements);
         }
         return;
       }
@@ -1604,8 +1614,10 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
       // WalkContentNode's element walk.
     }
   }
+  // Elements inside an iframe live in that frame's document (F-21).
+  const std::string child_document_id = ChildDocumentId(node, document_id);
   for (const apc::ContentNode& child : node.children_nodes()) {
-    WalkContentNode(child, document_id, tab_id, out_elements);
+    WalkContentNode(child, child_document_id, tab_id, out_elements);
   }
 }
 
@@ -1777,6 +1789,7 @@ base::DictValue BrowserTool::BuildObservationDict(
         // Per-tab scope — clear before each walk.
         observation_label_targets_.clear();
         CollectLabelTargets(apc_data.root_node());
+        walk_main_document_id_ = document_id;
         WalkContentNode(apc_data.root_node(), document_id, tab_id_for_registry,
                         elements);
       }

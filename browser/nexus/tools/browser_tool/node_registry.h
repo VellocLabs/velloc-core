@@ -2,7 +2,9 @@
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_NODE_REGISTRY_H_
 
 #include <map>
+#include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 
 namespace nexus {
@@ -29,6 +31,9 @@ class NodeRegistry {
     ~Entry();
 
     std::string document_id;
+    // The node's APC content_node_id within `document_id` — the actor
+    // target's node. Equals the index for main-document nodes.
+    int content_node_id = 0;
     int tab_id = 0;
     std::string type;  // e.g. "button", "link", "form_control"
     std::string text;  // visible label / inner text, truncated
@@ -67,6 +72,27 @@ class NodeRegistry {
   // wired; the registry just accumulates until session OnStop.
   void ClearTab(int tab_id);
 
+  // First index handed to a node outside its tab's main document.
+  static constexpr int kChildDocumentIndexBase = 1 << 30;
+
+  // Model-facing index for `content_node_id` of `document_id` in `tab_id`.
+  // A main-document node keeps its content_node_id. A node of any other
+  // document (an iframe) gets an index from `kChildDocumentIndexBase`
+  // upward, stable for the session: renderer processes number DOM nodes
+  // independently, so a cross-process iframe's ids overlap the main
+  // frame's (F-21).
+  int AssignIndex(int tab_id,
+                  const std::string& document_id,
+                  int content_node_id,
+                  bool is_main_document);
+
+  // The index `AssignIndex` gave that node, without allocating one;
+  // nullopt for a child-document node never assigned.
+  std::optional<int> IndexOf(int tab_id,
+                             const std::string& document_id,
+                             int content_node_id,
+                             bool is_main_document) const;
+
   // Diagnostic accessor.
   std::size_t size() const { return entries_.size(); }
 
@@ -80,6 +106,11 @@ class NodeRegistry {
   // tab) returns a deterministic answer when the same index exists
   // in multiple tabs.
   std::map<int /*node_id*/, int /*last_tab_id*/> last_tab_for_node_;
+
+  // Child-document indexes by (tab_id, document_id, content_node_id).
+  using ChildKey = std::tuple<int, std::string, int>;
+  std::map<ChildKey, int> child_indexes_;
+  int next_child_index_ = kChildDocumentIndexBase;
 };
 
 }  // namespace nexus

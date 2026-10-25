@@ -396,9 +396,10 @@ class BrowserTool : public ToolBase {
 
   // Recursively walks one ContentNode tree. For every node that has
   // an interaction info / actionable role, registers it in
-  // `node_registry_` keyed by `(content_node_id, tab_id)` and
-  // appends a JSON representation (including the LLM-facing
-  // `index`) to `out_elements`.
+  // `node_registry_` under its model-facing index
+  // (`NodeRegistry::AssignIndex`) and appends a JSON representation
+  // (including that `index`) to `out_elements`. `document_id` is the
+  // document `node` belongs to; it changes at iframe boundaries.
   void WalkContentNode(
       const optimization_guide::proto::ContentNode& node,
       const std::string& document_id,
@@ -509,6 +510,9 @@ class BrowserTool : public ToolBase {
   // can carry intent across turns by index; only cleared on
   // `BrowserTool::OnStop`.
   NodeRegistry node_registry_;
+
+  // Main-frame document token of the tab `WalkContentNode` is walking.
+  std::string walk_main_document_id_;
 
   // Last-observation snapshot. Populated by `BuildObservationDict`
   // each time it walks an ActionsResult; read by ToolSessionRegistry when

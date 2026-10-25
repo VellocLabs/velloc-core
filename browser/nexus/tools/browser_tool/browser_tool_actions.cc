@@ -8,6 +8,7 @@
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
@@ -31,6 +32,7 @@
 #include "content/public/browser/web_contents.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_evaluate.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/frame_document.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/download_capture.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/screenshot_shaping.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
@@ -259,8 +261,8 @@ std::string ToLowerAscii(std::string_view in) {
 // plus its nearest actionable ancestor's index / type / text (so
 // the LLM can hand the ancestor's index straight to `click`).
 //
-// The APC content_node_id is the LLM-facing index, so we emit
-// `attrs.common_ancestor_dom_node_id()` directly.
+// The ancestor index is the one the observation walk registered for that
+// node (`NodeRegistry::IndexOf`); -1 when it has none.
 struct FindTextWalker {
   // Owned (not a view) — the walker outlives the temporary returned by
   // ToLowerAscii(query) at construction time, so we copy the lowered
@@ -268,6 +270,11 @@ struct FindTextWalker {
   std::string query_lower;
   int max_results = 5;
   base::ListValue matches;
+  raw_ptr<const NodeRegistry> registry = nullptr;
+  int tab_id = 0;
+  std::string main_document_id;
+  // Document the node being visited belongs to.
+  std::string document_id;
   // Stack of nearest actionable ancestor indexes.
   std::vector<int> ancestor_node_id_stack;
   std::vector<std::string> ancestor_type_stack;
@@ -282,8 +289,10 @@ void FindTextWalk(const apc::ContentNode& node, FindTextWalker& w) {
   if (node.has_content_attributes()) {
     const apc::ContentAttributes& attrs = node.content_attributes();
     if (IsActionable(attrs) && attrs.has_common_ancestor_dom_node_id()) {
-      w.ancestor_node_id_stack.push_back(
-          attrs.common_ancestor_dom_node_id());
+      const std::optional<int> index = w.registry->IndexOf(
+          w.tab_id, w.document_id, attrs.common_ancestor_dom_node_id(),
+          w.document_id == w.main_document_id);
+      w.ancestor_node_id_stack.push_back(index.value_or(-1));
       w.ancestor_type_stack.push_back(
           ContentAttributeTypeName(attrs.attribute_type()));
       w.ancestor_text_stack.push_back(ExtractNodeText(attrs));
@@ -301,7 +310,8 @@ void FindTextWalk(const apc::ContentNode& node, FindTextWalker& w) {
         if (lowered.find(w.query_lower) != std::string::npos) {
           base::DictValue match;
           match.Set("text", raw);
-          if (!w.ancestor_node_id_stack.empty()) {
+          if (!w.ancestor_node_id_stack.empty() &&
+              w.ancestor_node_id_stack.back() >= 0) {
             match.Set("clickable_ancestor_index",
                       w.ancestor_node_id_stack.back());
             match.Set("ancestor_type", w.ancestor_type_stack.back());
@@ -314,12 +324,15 @@ void FindTextWalk(const apc::ContentNode& node, FindTextWalker& w) {
       }
     }
   }
+  const std::string parent_document_id = w.document_id;
+  w.document_id = ChildDocumentId(node, parent_document_id);
   for (const apc::ContentNode& child : node.children_nodes()) {
     if (static_cast<int>(w.matches.size()) >= w.max_results) {
       break;
     }
     FindTextWalk(child, w);
   }
+  w.document_id = parent_document_id;
   if (pushed_ancestor) {
     w.ancestor_node_id_stack.pop_back();
     w.ancestor_type_stack.pop_back();
@@ -770,7 +783,7 @@ void BrowserTool::RunDownloadOnUI(::nexus::generated::BrowserDownloadInput input
 
   apc::Actions actions;
   apc::ClickAction* click = actions.add_actions()->mutable_click();
-  click->mutable_target()->set_content_node_id(*input.index);
+  click->mutable_target()->set_content_node_id(entry->content_node_id);
   click->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -869,7 +882,7 @@ void BrowserTool::RunUploadOnUI(::nexus::generated::BrowserUploadInput input,
 
   apc::Actions actions;
   apc::ClickAction* click = actions.add_actions()->mutable_click();
-  click->mutable_target()->set_content_node_id(input.index);
+  click->mutable_target()->set_content_node_id(entry->content_node_id);
   click->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -1110,7 +1123,7 @@ void BrowserTool::RunClickOnUI(::nexus::generated::BrowserClickInput input,
 
   apc::Actions actions;
   apc::ClickAction* click = actions.add_actions()->mutable_click();
-  click->mutable_target()->set_content_node_id(input.index);
+  click->mutable_target()->set_content_node_id(entry->content_node_id);
   click->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -1133,7 +1146,7 @@ void BrowserTool::RunInputOnUI(::nexus::generated::BrowserInputInput input,
 
   apc::Actions actions;
   apc::TypeAction* type = actions.add_actions()->mutable_type();
-  type->mutable_target()->set_content_node_id(input.index);
+  type->mutable_target()->set_content_node_id(entry->content_node_id);
   type->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -1159,7 +1172,7 @@ void BrowserTool::RunSelectOnUI(::nexus::generated::BrowserSelectInput input,
 
   apc::Actions actions;
   apc::SelectAction* select = actions.add_actions()->mutable_select();
-  select->mutable_target()->set_content_node_id(input.index);
+  select->mutable_target()->set_content_node_id(entry->content_node_id);
   select->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -1179,7 +1192,7 @@ void BrowserTool::RunHoverOnUI(::nexus::generated::BrowserHoverInput input,
   }
   apc::Actions actions;
   apc::MoveMouseAction* move = actions.add_actions()->mutable_move_mouse();
-  move->mutable_target()->set_content_node_id(input.index);
+  move->mutable_target()->set_content_node_id(entry->content_node_id);
   move->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -1221,11 +1234,11 @@ void BrowserTool::RunDragAndDropOnUI(::nexus::generated::BrowserDragAndDropInput
   apc::Actions actions;
   apc::DragAndReleaseAction* drag =
       actions.add_actions()->mutable_drag_and_release();
-  drag->mutable_from_target()->set_content_node_id(input.from_index);
+  drag->mutable_from_target()->set_content_node_id(from_entry->content_node_id);
   drag->mutable_from_target()
       ->mutable_document_identifier()
       ->set_serialized_token(from_entry->document_id);
-  drag->mutable_to_target()->set_content_node_id(input.to_index);
+  drag->mutable_to_target()->set_content_node_id(to_entry->content_node_id);
   drag->mutable_to_target()
       ->mutable_document_identifier()
       ->set_serialized_token(to_entry->document_id);
@@ -1246,7 +1259,7 @@ void BrowserTool::RunScrollToOnUI(::nexus::generated::BrowserScrollToInput input
   apc::Actions actions;
   apc::ScrollToAction* scroll_to =
       actions.add_actions()->mutable_scroll_to();
-  scroll_to->mutable_target()->set_content_node_id(input.index);
+  scroll_to->mutable_target()->set_content_node_id(entry->content_node_id);
   scroll_to->mutable_target()
       ->mutable_document_identifier()
       ->set_serialized_token(entry->document_id);
@@ -1295,7 +1308,7 @@ void BrowserTool::RunScrollOnUI(::nexus::generated::BrowserScrollInput input,
   apc::Actions actions;
   apc::ScrollAction* scroll = actions.add_actions()->mutable_scroll();
   if (entry != nullptr) {
-    scroll->mutable_target()->set_content_node_id(*input.index);
+    scroll->mutable_target()->set_content_node_id(entry->content_node_id);
     scroll->mutable_target()
         ->mutable_document_identifier()
         ->set_serialized_token(entry->document_id);
@@ -1789,6 +1802,15 @@ void BrowserTool::OnFindTextObservationBuilt(
     }
     const apc::AnnotatedPageContent& apc_data = tab_obs.annotated_page_content();
     if (apc_data.has_root_node()) {
+      walker.registry = &node_registry_;
+      walker.tab_id =
+          apc_data.has_tab_id() ? apc_data.tab_id() : tab_obs.id();
+      if (apc_data.has_main_frame_data() &&
+          apc_data.main_frame_data().has_document_identifier()) {
+        walker.main_document_id =
+            apc_data.main_frame_data().document_identifier().serialized_token();
+      }
+      walker.document_id = walker.main_document_id;
       FindTextWalk(apc_data.root_node(), walker);
     }
     break;
@@ -1947,7 +1969,7 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input
     const NodeRegistry::Entry* entry = entries[i];
     if (op.action == "type") {
       apc::TypeAction* type = actions.add_actions()->mutable_type();
-      type->mutable_target()->set_content_node_id(op.index);
+      type->mutable_target()->set_content_node_id(entry->content_node_id);
       type->mutable_target()
           ->mutable_document_identifier()
           ->set_serialized_token(entry->document_id);
@@ -1957,7 +1979,7 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input
       type->set_follow_by_enter(false);
     } else if (op.action == "select") {
       apc::SelectAction* select = actions.add_actions()->mutable_select();
-      select->mutable_target()->set_content_node_id(op.index);
+      select->mutable_target()->set_content_node_id(entry->content_node_id);
       select->mutable_target()
           ->mutable_document_identifier()
           ->set_serialized_token(entry->document_id);
@@ -1970,7 +1992,7 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input
       // enhancement: pre-read the registry's cached checkbox state
       // and skip the click when the state already matches.
       apc::ClickAction* click = actions.add_actions()->mutable_click();
-      click->mutable_target()->set_content_node_id(op.index);
+      click->mutable_target()->set_content_node_id(entry->content_node_id);
       click->mutable_target()
           ->mutable_document_identifier()
           ->set_serialized_token(entry->document_id);
@@ -1983,7 +2005,7 @@ void BrowserTool::RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input
   // Optional final submit click.
   if (submit_entry) {
     apc::ClickAction* click = actions.add_actions()->mutable_click();
-    click->mutable_target()->set_content_node_id(*input.submit_index);
+    click->mutable_target()->set_content_node_id(submit_entry->content_node_id);
     click->mutable_target()
         ->mutable_document_identifier()
         ->set_serialized_token(submit_entry->document_id);

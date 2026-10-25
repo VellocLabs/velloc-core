@@ -57,7 +57,10 @@ void CustomBrowserViewLayout::SetViewBoundAndVisibility(
 
 void CustomBrowserViewLayout::FixViewsParentForCustom() {
   auto fix_view_parent = [](views::View* child, views::View* new_parent) {
-    if (!child || IsParentedTo(child, new_parent)) {
+    // A view with no parent is detached and owned by its creator (the
+    // bookmark bar once hidden): adopting it would give it a second owner
+    // and free it twice when the window is destroyed.
+    if (!child || !child->parent() || IsParentedTo(child, new_parent)) {
       return;
     }
     new_parent->AddChildViewRaw(child);

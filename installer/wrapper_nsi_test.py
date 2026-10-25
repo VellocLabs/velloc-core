@@ -126,6 +126,102 @@ class FirstRunSentinelTest(unittest.TestCase):
     self.assertLess(call, failure)
 
 
+_CHANNEL_NSH = os.path.join(_HERE, 'installer_channel.nsh')
+_CHANNEL_HEADER = os.path.join(_HERE, '..', 'browser', 'nexus',
+                               'nexus_installer_channel.h')
+
+
+def _install_section(source):
+  return re.search(r'^Section "Install"\s*$(.*?)^SectionEnd', source,
+                   re.MULTILINE | re.DOTALL).group(1)
+
+
+class InstallerChannelMarkerTest(unittest.TestCase):
+  """A beta-named installer leaves the marker the browser reads (G-3)."""
+
+  def setUp(self):
+    with open(_WRAPPER, encoding='utf-8') as f:
+      self.source = f.read()
+    self.body = _function_body(self.source, 'RecordInstallerChannel')
+    self.assertIsNotNone(self.body)
+
+  def test_marker_path_matches_the_browser(self):
+    with open(_CHANNEL_HEADER, encoding='utf-8') as f:
+      header = f.read()
+    name = re.search(r'kInstallerChannelFileName\[\]\s*=\s*'
+                     r'FILE_PATH_LITERAL\("([^"]*)"\)', header)
+    self.assertIsNotNone(name)
+    user_data = '$LOCALAPPDATA\\\\Velloc\\\\%s' % _chrome_constant(
+        'kUserDataDirname')
+    self.assertIn('!define INSTALLER_CHANNEL_MARKER "%s\\\\%s"' %
+                  (user_data, name.group(1)), self.source)
+    self.assertIn('FileOpen $R1 "${INSTALLER_CHANNEL_MARKER}" w', self.body)
+
+  def test_channel_comes_from_the_installer_file_name(self):
+    self.assertIn(
+        '!insertmacro INSTALLER_CHANNEL_FROM_NAME $InstallerChannel '
+        '"$EXEFILE"', self.body)
+
+  def test_written_before_the_mini_installer_runs(self):
+    section = _install_section(self.source)
+    record = section.index('Call RecordInstallerChannel')
+    self.assertLess(section.index('Call UninstallLegacySchemeInstall'), record)
+    self.assertLess(record, section.index('ExecWait'))
+
+  def test_removed_when_the_install_fails(self):
+    section = _install_section(self.source)
+    failure = section[section.index('${Else}',
+                                    section.index('${If} $MiniExit == 0')):]
+    self.assertIn('Delete "${INSTALLER_CHANNEL_MARKER}"', failure)
+
+
+@unittest.skipUnless(_find_makensis(), 'makensis not installed')
+class InstallerChannelFromNameTest(unittest.TestCase):
+  """Runs INSTALLER_CHANNEL_FROM_NAME in a probe installer under each name."""
+
+  @classmethod
+  def setUpClass(cls):
+    cls.work = tempfile.mkdtemp()
+    probe = os.path.join(cls.work, 'probe.nsi')
+    with open(probe, 'w', encoding='utf-8') as f:
+      f.write('!include "%s"\n'
+              'OutFile "probe.exe"\n'
+              'SilentInstall silent\n'
+              'RequestExecutionLevel user\n'
+              'Var Channel\n'
+              'Section\n'
+              '  !insertmacro INSTALLER_CHANNEL_FROM_NAME $Channel "$EXEFILE"\n'
+              '  FileOpen $0 "$EXEDIR\\channel.txt" w\n'
+              '  FileWrite $0 "[$Channel]"\n'
+              '  FileClose $0\n'
+              'SectionEnd\n' % _CHANNEL_NSH)
+    result = subprocess.run([_find_makensis(), '/V2', probe], cwd=cls.work,
+                            capture_output=True, text=True, errors='replace')
+    assert result.returncode == 0, result.stdout + result.stderr
+    cls.probe = os.path.join(cls.work, 'probe.exe')
+
+  @classmethod
+  def tearDownClass(cls):
+    shutil.rmtree(cls.work)
+
+  def _channel_for(self, name):
+    run_dir = tempfile.mkdtemp(dir=self.work)
+    exe = os.path.join(run_dir, name)
+    shutil.copy(self.probe, exe)
+    subprocess.run([exe], check=True, timeout=60)
+    with open(os.path.join(run_dir, 'channel.txt'), encoding='utf-8') as f:
+      return f.read()
+
+  def test_beta_in_any_case_selects_beta(self):
+    for name in ('install-beta.exe', 'Velloc Code Setup Beta.exe',
+                 'VELLOC-BETA.exe', 'velloc_beta1.exe'):
+      self.assertEqual(self._channel_for(name), '[beta]', name)
+
+  def test_other_names_select_nothing(self):
+    for name in ('install.exe', 'Velloc Code Setup.exe', 'bet-a.exe'):
+      self.assertEqual(self._channel_for(name), '[]', name)
+
+
 
 def _read_branding():
   values = {}

@@ -8,6 +8,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/nexus_installer_channel.h"
 #include "custom_browser/browser/nexus/nexus_interface_version.h"
 #include "custom_browser/browser/nexus/nexus_webui_config.h"
 #include "url/gurl.h"
@@ -104,6 +105,8 @@ GURL GetResolvedNexusGuestURL(Profile* profile) {
   GURL base = default_url;
   PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
   if (prefs) {
+    // A beta installer's channel marker lands before the first guest load.
+    ApplyPendingInstallerChannel(prefs);
     const std::string custom_url_spec =
         prefs->GetString(prefs::kNexusWebappUrl);
     if (!custom_url_spec.empty()) {

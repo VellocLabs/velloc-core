@@ -513,6 +513,37 @@ source_set("utility_tab_options") {
   ]
 }
 
+# The installer's one-shot channel marker → `nexus.webapp_url` (G-3); base +
+# prefs only, so the lite binary tests it.
+source_set("installer_channel") {
+  sources = [
+    "nexus_installer_channel.cc",
+    "nexus_installer_channel.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [
+    "//components/prefs",
+    "//custom_browser/browser/nexus/api/llm:pref_names",
+  ]
+}
+
+# Reads the installer's channel marker from the user data dir at startup.
+source_set("installer_channel_registration") {
+  sources = [
+    "nexus_installer_channel_registration.cc",
+    "nexus_installer_channel_registration.h",
+  ]
+
+  deps = [
+    ":installer_channel",
+    "//base",
+    "//chrome/common:constants",
+    "//custom_browser/chromium_hooks:hook_api",
+  ]
+}
+
 # The per-Profile alarm clock (KeyedService, created with the profile so
 # missed alarms fire at startup). Wakes a runtime through the launcher
 # delegate — the dependency-free leaf the tray icon uses — so no cycle
@@ -917,6 +948,7 @@ source_set("guest_config") {
   ]
 
   deps = [
+    ":installer_channel",
     "//components/prefs",
     "//net",
   ]
@@ -1165,6 +1197,7 @@ source_set("unit_tests_lite") {
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
+    "nexus_installer_channel_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
     "remote_access/nexus_remote_access_clients_unittest.cc",
@@ -1179,6 +1212,7 @@ source_set("unit_tests_lite") {
   deps = [
     ":alarm_schedule",
     ":domain",
+    ":installer_channel",
 
     # nexus_fs_watcher_unittest.cc — the fs.watch core (//base only).
     ":fs",

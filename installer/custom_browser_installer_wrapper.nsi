@@ -7,6 +7,7 @@
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
 !include "WordFunc.nsh"
+!include "installer_channel.nsh"
 
 ; Signed copies of NSIS's plug-in DLLs (build.sh, velloc_sign_nsis_plugins).
 ; The installer unpacks its plug-ins into $PLUGINSDIR at run time, and the
@@ -114,6 +115,7 @@ AutoCloseWindow true
 Var InstallMode
 Var MiniArgs
 Var MiniExit
+Var InstallerChannel
 
 Function .onInit
   StrCpy $InstallMode "user"
@@ -236,9 +238,35 @@ Function SkipBrowserFirstRun
   DetailPrint "Wrote the first-run sentinel in $R0."
 FunctionEnd
 
+; An installer whose file name contains "beta" (any case) installs onto the
+; beta runtime channel: it writes the channel name to "Installer Channel" in
+; the user data dir, which the browser applies to its runtime URL at its next
+; start and then deletes (G-3). Written before the mini installer runs, so no
+; launch can miss it. Covers the account running the installer only.
+!define INSTALLER_CHANNEL_MARKER "$LOCALAPPDATA\\Velloc\\User Data\\Installer Channel"
+
+Function RecordInstallerChannel
+  !insertmacro INSTALLER_CHANNEL_FROM_NAME $InstallerChannel "$EXEFILE"
+  ${If} $InstallerChannel == ""
+    Return
+  ${EndIf}
+  CreateDirectory "$LOCALAPPDATA\\Velloc\\User Data"
+  ClearErrors
+  FileOpen $R1 "${INSTALLER_CHANNEL_MARKER}" w
+  ${If} ${Errors}
+    DetailPrint "Could not write the channel marker ${INSTALLER_CHANNEL_MARKER}."
+    StrCpy $InstallerChannel ""
+    Return
+  ${EndIf}
+  FileWrite $R1 "$InstallerChannel"
+  FileClose $R1
+  DetailPrint "Installing on the $InstallerChannel channel."
+FunctionEnd
+
 Section "Install"
   Call ClearBreakingInstallerVersionGate
   Call UninstallLegacySchemeInstall
+  Call RecordInstallerChannel
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
   SetCompress off
@@ -261,6 +289,9 @@ Section "Install"
     Call SkipBrowserFirstRun
   ${Else}
     DetailPrint "Mini installer failed with exit code $MiniExit."
+    ${If} $InstallerChannel != ""
+      Delete "${INSTALLER_CHANNEL_MARKER}"
+    ${EndIf}
     MessageBox MB_ICONSTOP "Installation failed (exit code $MiniExit)." /SD IDOK
     SetErrorLevel $MiniExit
     Abort

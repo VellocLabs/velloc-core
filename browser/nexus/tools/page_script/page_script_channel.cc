@@ -104,7 +104,7 @@ PageScriptChannel::~PageScriptChannel() {
     agent_host_->DetachClient(this);
     agent_host_ = nullptr;
   }
-  pending_.clear();
+  FailPending();
 }
 
 bool PageScriptChannel::Start() {
@@ -308,42 +308,56 @@ void PageScriptChannel::OnEvent(std::string_view method,
       LOG(WARNING) << "pageScript: dropped a message above the size limit";
       return;
     }
+    // Security: only a main-frame context may speak for the page. The
+    // bootstrap also starts in same-process subframes; a message from one
+    // would otherwise carry the top frame's origin.
+    std::optional<int> context_id = params.FindInt("executionContextId");
+    auto context = context_id ? contexts_.find(*context_id) : contexts_.end();
+    if (context == contexts_.end() ||
+        context->second.frame_id != MainFrameId()) {
+      return;
+    }
     base::DictValue message;
     message.Set("data", *payload);
     message.Set("world", std::string(PageScriptWorldName(world)));
-    if (content::RenderFrameHost* frame =
-            web_contents() ? web_contents()->GetPrimaryMainFrame() : nullptr) {
-      message.Set("origin", frame->GetLastCommittedOrigin().Serialize());
-      message.Set("frameUrl", frame->GetLastCommittedURL().spec());
-    } else {
-      message.Set("origin", std::string());
-      message.Set("frameUrl", std::string());
-    }
+    message.Set("origin", context->second.origin);
+    content::RenderFrameHost* frame =
+        web_contents() ? web_contents()->GetPrimaryMainFrame() : nullptr;
+    message.Set("frameUrl",
+                frame ? frame->GetLastCommittedURL().spec() : std::string());
     delegate_->OnPageScriptMessage(this, std::move(message));
     return;
   }
   if (method == "Runtime.executionContextCreated") {
     const base::DictValue* context = params.FindDict("context");
-    if (!context) {
+    std::optional<int> id = context ? context->FindInt("id") : std::nullopt;
+    if (!id) {
       return;
     }
     const std::string* name = context->FindString("name");
+    const std::string* origin = context->FindString("origin");
     const base::DictValue* aux = context->FindDict("auxData");
     const std::string* frame_id = aux ? aux->FindString("frameId") : nullptr;
+    contexts_[*id] = ContextInfo{frame_id ? *frame_id : std::string(),
+                                 origin ? *origin : std::string()};
     if (name && *name == kPageScriptWorldName && frame_id &&
         *frame_id == MainFrameId()) {
-      isolated_context_id_ = context->FindInt("id");
+      isolated_context_id_ = id;
     }
     return;
   }
   if (method == "Runtime.executionContextDestroyed") {
-    if (isolated_context_id_ &&
-        params.FindInt("executionContextId") == isolated_context_id_) {
+    std::optional<int> id = params.FindInt("executionContextId");
+    if (id) {
+      contexts_.erase(*id);
+    }
+    if (isolated_context_id_ && id == isolated_context_id_) {
       isolated_context_id_.reset();
     }
     return;
   }
   if (method == "Runtime.executionContextsCleared") {
+    contexts_.clear();
     isolated_context_id_.reset();
   }
 }
@@ -407,12 +421,16 @@ void PageScriptChannel::Detach() {
     agent_host_ = nullptr;
   }
   // Every open request answers before the delegate hears of the loss.
+  FailPending();
+  Observe(nullptr);
+  delegate_->OnPageScriptDetached(this);
+}
+
+void PageScriptChannel::FailPending() {
   std::map<int, ResponseCallback> pending = std::move(pending_);
   for (auto& [id, callback] : pending) {
     std::move(callback).Run(nullptr, nullptr);
   }
-  Observe(nullptr);
-  delegate_->OnPageScriptDetached(this);
 }
 
 std::string PageScriptChannel::MainFrameId() const {

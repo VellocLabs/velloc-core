@@ -44,10 +44,12 @@ bool IsPageScriptPayloadWithinLimit(std::string_view payload) {
 std::string PageScriptBootstrapSource() {
   // Contract: idempotent per world (a second run is a no-op), and the
   // objects it defines cannot be replaced by later scripts of that world.
+  // Security: defines nothing in a subframe, so only the top frame's
+  // scripts hold a way to the host.
   return base::StrCat({
       "(() => {\n"
       "  const g = globalThis;\n"
-      "  if (g.vellocHost) return;\n"
+      "  if (g !== g.top || g.vellocHost) return;\n"
       "  const call = g.",
       kPageScriptBindingName, " || g.", kPageScriptPageBindingName,
       ";\n"

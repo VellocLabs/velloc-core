@@ -41,8 +41,12 @@ namespace nexus {
 // running on the next document.
 //
 // Security: the channel is created by a resolved WebContents only — whoever
-// resolves the target decides what may be reached. Only the main frame is
-// addressed; a page's own scripts cannot call the host unless exposed.
+// resolves the target decides what may be reached. Scripts evaluate in the
+// main frame; the bootstrap and init scripts also start in same-process
+// subframes, but the bootstrap defines nothing outside the top frame and a
+// message is accepted only from a main-frame context (its origin is the
+// context's own, as the page reported it when the context was created).
+// A page's own scripts cannot call the host unless exposed.
 class PageScriptChannel : public content::DevToolsAgentHostClient,
                           public content::WebContentsObserver {
  public:
@@ -138,6 +142,8 @@ class PageScriptChannel : public content::DevToolsAgentHostClient,
 
   // Ends the session and tells the delegate once.
   void Detach();
+  // Answers every open request with no result and no error (`no_document`).
+  void FailPending();
 
   std::string MainFrameId() const;
 
@@ -149,6 +155,13 @@ class PageScriptChannel : public content::DevToolsAgentHostClient,
   std::map<int, ResponseCallback> pending_;
   // The private world's execution context in the main frame, once seen.
   std::optional<int> isolated_context_id_;
+  // Every live execution context of the page: which frame it belongs to and
+  // its origin, from `Runtime.executionContextCreated`.
+  struct ContextInfo {
+    std::string frame_id;
+    std::string origin;
+  };
+  std::map<int, ContextInfo> contexts_;
   // Init-script ids this channel issued (`Page.addScriptToEvaluateOnNewDocument`).
   std::set<std::string> init_scripts_;
   base::WeakPtrFactory<PageScriptChannel> weak_factory_{this};

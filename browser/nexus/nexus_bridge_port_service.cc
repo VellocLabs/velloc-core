@@ -265,7 +265,7 @@ NexusBridgePortService::NexusBridgePortService(Profile* profile,
   web_window_adapter_ =
       std::make_unique<NexusWebWindowBridgeAdapter>(this, profile);
   RegisterCapability("webWindow", web_window_adapter_.get());
-  // Guest `pageScript` capability — script channels to a window the
+  // Guest `pageScript` capability - script channels to a window the
   // connection opened or a tab in this Nexus window (F-29). Window ids
   // resolve through this connection's webWindow adapter, which outlives it.
   page_script_adapter_ = std::make_unique<NexusPageScriptBridgeAdapter>(

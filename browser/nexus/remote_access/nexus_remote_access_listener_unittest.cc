@@ -30,6 +30,7 @@
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_handle.h"
 #include "net/log/net_log_source.h"
 #include "net/server/web_socket_encoder.h"
 #include "net/socket/tcp_client_socket.h"
@@ -115,7 +116,8 @@ class NexusRemoteAccessListenerTest : public testing::Test {
   std::unique_ptr<net::TCPClientSocket> Connect(uint16_t port) {
     auto socket = std::make_unique<net::TCPClientSocket>(
         net::AddressList(net::IPEndPoint(net::IPAddress::IPv4Localhost(), port)),
-        nullptr, nullptr, nullptr, net::NetLogSource());
+        nullptr, nullptr, nullptr, net::NetLogSource(),
+        net::handles::kInvalidNetworkHandle);
     EXPECT_EQ(net::OK, Sync([&](net::CompletionOnceCallback cb) {
                 return socket->Connect(std::move(cb));
               }));

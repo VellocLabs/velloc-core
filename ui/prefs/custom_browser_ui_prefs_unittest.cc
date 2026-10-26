@@ -164,7 +164,7 @@ class CustomBrowserUiPrefsBakedModeTest : public testing::Test {
   std::optional<int> BakedMode(PrefService* prefs) {
     auto source = content::TestWebUIDataSource::Create("custom-browser-test");
     CustomBrowserUiPrefs::InitMainUI(source->GetWebUIDataSource(), prefs);
-    return source->GetLocalizedStrings()->FindInt("kUIMode");
+    return source->GetLocalizedStrings().FindInt("kUIMode");
   }
 
   content::BrowserTaskEnvironment task_environment_;

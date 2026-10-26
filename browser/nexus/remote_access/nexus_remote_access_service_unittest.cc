@@ -33,6 +33,7 @@
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_handle.h"
 #include "net/log/net_log_source.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -277,7 +278,8 @@ TEST_F(NexusRemoteAccessServiceTest, ProxyRequestIsAnsweredNotCrashed) {
 
   net::TCPClientSocket socket(
       net::AddressList(net::IPEndPoint(net::IPAddress::IPv4Localhost(), port)),
-      nullptr, nullptr, nullptr, net::NetLogSource());
+      nullptr, nullptr, nullptr, net::NetLogSource(),
+      net::handles::kInvalidNetworkHandle);
   ASSERT_EQ(net::OK, sync([&](net::CompletionOnceCallback cb) {
               return socket.Connect(std::move(cb));
             }));
@@ -596,7 +598,8 @@ TEST_F(NexusRemoteAccessServiceTest, AConnectedDeviceReachesStatusAndTheTray) {
     auto socket = std::make_unique<net::TCPClientSocket>(
         net::AddressList(
             net::IPEndPoint(net::IPAddress::IPv4Localhost(), port)),
-        nullptr, nullptr, nullptr, net::NetLogSource());
+        nullptr, nullptr, nullptr, net::NetLogSource(),
+        net::handles::kInvalidNetworkHandle);
     EXPECT_EQ(net::OK, sync([&](net::CompletionOnceCallback cb) {
                 return socket->Connect(std::move(cb));
               }));

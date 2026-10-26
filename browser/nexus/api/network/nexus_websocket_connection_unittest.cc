@@ -87,8 +87,8 @@ class FakeNetworkContext : public network::TestNetworkContext {
       mojo::PendingRemote<network::mojom::TrustedHeaderClient>
       /*header_client*/,
       const std::optional<base::UnguessableToken>& /*throttling_profile_id*/,
-      const std::optional<base::UnguessableToken>& /*network_restrictions_id*/)
-      override {
+      const base::UnguessableToken& /*network_restrictions_id*/,
+      network::mojom::IPAddressSpace /*target_address_space*/) override {
     created_url = url;
     protocols = requested_protocols;
     headers = std::move(additional_headers);

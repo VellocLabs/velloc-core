@@ -107,6 +107,10 @@ interface UIViewHandler {
   // than a fire-and-forget push that can race page load.
   GetUIMode() => (UIMode ui_mode);
 
+  // A single-web window's fixed title, set by its creator and never changed
+  // afterwards; empty when the window shows its page's own title.
+  GetSingleWebTitle() => (string title);
+
   // Focuses an existing normal (non-kNexus) browser window for this profile,
   // or opens a new one if none exists. Used by the nexus window to leave
   // toward a browser window WITHOUT changing its own (pinned) UI mode.
@@ -124,4 +128,7 @@ interface UIViewHandler {
 interface UIView {
   CaptureCompleted(int32 id);
   PrefUIModeChanged(UIMode ui_mode);
+  // Sent to a page re-attached to another window: that window's fixed
+  // single-web title (empty when none).
+  SingleWebTitleChanged(string title);
 };

@@ -253,6 +253,9 @@ class CustomBrowserView : public BrowserView,
   // is pinned to kSingleWeb for its whole life, from InitializeCustomBrowser()
   // on, before the mode lands.
   bool IsSingleWebWindow() const { return single_web_window_; }
+  // The single-web window's fixed title, set by its creator; empty when the
+  // window shows the page's own title. Never changes after init.
+  const std::u16string& single_web_title() const { return single_web_title_; }
 
   CustomBrowserUiPrefs* ui_prefs() const { return ui_prefs_.get(); }
   NativeUIContainerView* native_ui_container() { return native_ui_container_.get(); }
@@ -321,6 +324,7 @@ private:
 
   // Set once in InitializeCustomBrowser() from the pending single-web marker.
   bool single_web_window_ = false;
+  std::u16string single_web_title_;
   void MoveTabsToNormalWindow(std::vector<tabs::TabHandle> tabs);
 
   bool custom_layout_allowed_ = false;

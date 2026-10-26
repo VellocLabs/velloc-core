@@ -7,6 +7,9 @@
 #ifndef CUSTOM_BROWSER_UI_VIEW_CUSTOM_BROWSER_WINDOW_UTIL_H_
 #define CUSTOM_BROWSER_UI_VIEW_CUSTOM_BROWSER_WINDOW_UTIL_H_
 
+#include <optional>
+#include <string>
+
 class Browser;
 class BrowserWindowInterface;
 class GURL;
@@ -57,11 +60,14 @@ void SetPendingNexusWindow(Profile* profile);
 bool ConsumePendingNexusWindow(Profile* profile);
 
 // Marks the next CustomBrowserView created for |profile| as a single-web
-// window (kSingleWeb, F-29). The caller sets it immediately before its own
-// synchronous Browser::Create, which consumes it during view init; it takes
-// precedence over every other marker. Transient Profile user-data.
-void SetPendingSingleWebWindow(Profile* profile);
-bool ConsumePendingSingleWebWindow(Profile* profile);
+// window (kSingleWeb, F-29) with the fixed |title| (empty: the page's own
+// title). The caller sets it immediately before its own synchronous
+// Browser::Create, which consumes it during view init; it takes precedence
+// over every other marker. Transient Profile user-data. Consume returns
+// nullopt when no marker was set, otherwise its title.
+void SetPendingSingleWebWindow(Profile* profile,
+                               std::u16string title = std::u16string());
+std::optional<std::u16string> ConsumePendingSingleWebWindow(Profile* profile);
 
 // True when |browser| is a single-web window. Such a window is never returned
 // by FindNexusWindow / FindNormalWindow and never receives external URLs.

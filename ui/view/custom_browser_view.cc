@@ -218,6 +218,12 @@ void CustomBrowserView::SetNexusSessionTitle(const std::u16string& title) {
 }
 
 std::u16string CustomBrowserView::GetWindowTitle() const {
+  if (single_web_window_ && !single_web_title_.empty()) {
+    // The creator's fixed title: the page's document.title never reaches it.
+    return base::StrCat(
+        {single_web_title_, u" - ",
+         base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName)});
+  }
   if (!IsNexusUIMode()) {
     return BrowserView::GetWindowTitle();
   }
@@ -265,7 +271,8 @@ bool CustomBrowserView::ExecuteWindowsCommand(int command_id) {
 }
 
 std::u16string CustomBrowserView::GetAccessibleWindowTitle() const {
-  if (!IsNexusUIMode()) {
+  const bool fixed_title = single_web_window_ && !single_web_title_.empty();
+  if (!fixed_title && !IsNexusUIMode()) {
     return BrowserView::GetAccessibleWindowTitle();
   }
   // Mirrors BrowserView::GetAccessibleWindowTitle: a focused tab-modal
@@ -329,8 +336,12 @@ void CustomBrowserView::InitializeCustomBrowser() {
     // deliberately left in place for the next window.
     // A single-web window (F-29) is decided by its creator, inside the same
     // synchronous Browser::Create, and overrides every other marker.
-    single_web_window_ =
+    std::optional<std::u16string> single_web_title =
         custom_browser::window_util::ConsumePendingSingleWebWindow(profile);
+    single_web_window_ = single_web_title.has_value();
+    if (single_web_title) {
+      single_web_title_ = std::move(*single_web_title);
+    }
     const bool force_normal =
         single_web_window_ ||
         custom_browser::window_util::ConsumePendingExternalUrlWindow(profile);

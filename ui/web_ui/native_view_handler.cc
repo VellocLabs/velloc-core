@@ -1,6 +1,7 @@
 #include "custom_browser/ui/web_ui/native_view_handler.h"
 
 #include "base/functional/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "chrome/browser/ui/browser.h"
@@ -57,6 +58,10 @@ void UIViewHandler::AttachToView(CustomBrowserView* custom_browser_view) {
   if (ui_prefs_ && native_view_.is_bound()) {
     native_view_->PrefUIModeChanged(ui_prefs_->current_mode());
   }
+  if (native_view_.is_bound()) {
+    native_view_->SingleWebTitleChanged(
+        base::UTF16ToUTF8(custom_browser_view->single_web_title()));
+  }
 }
 
 void UIViewHandler::UpsertNativeViewLayouts(
@@ -82,6 +87,13 @@ void UIViewHandler::GetUIMode(GetUIModeCallback callback) {
   // the data source's profile-global baked value.
   std::move(callback).Run(ui_prefs_ ? ui_prefs_->current_mode()
                                      : custom_browser::mojom::UIMode::kSidebar);
+}
+
+void UIViewHandler::GetSingleWebTitle(GetSingleWebTitleCallback callback) {
+  std::move(callback).Run(
+      custom_browser_view_
+          ? base::UTF16ToUTF8(custom_browser_view_->single_web_title())
+          : std::string());
 }
 
 void UIViewHandler::OpenBrowserWindow() {

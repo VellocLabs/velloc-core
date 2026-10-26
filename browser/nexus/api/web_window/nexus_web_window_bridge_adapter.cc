@@ -227,6 +227,21 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
     show_state = *parsed;
   }
 
+  std::u16string fixed_title;
+  if (input.title.has_value()) {
+    std::optional<std::u16string> normalized =
+        NormalizeWebWindowTitle(*input.title);
+    if (!normalized) {
+      base::DictValue params;
+      params.Set("reason", "title must be 1 to 120 characters");
+      std::move(done).Error(errors::kInvalidArgs,
+                            "title must be 1 to 120 characters",
+                            std::move(params));
+      return;
+    }
+    fixed_title = std::move(*normalized);
+  }
+
   const bool has_origin = input.left.has_value() || input.top.has_value();
   const bool has_size = input.width.has_value() || input.height.has_value();
   gfx::Rect initial_bounds;
@@ -263,7 +278,8 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   }
   // The marker is consumed by the CustomBrowserView inside this synchronous
   // Create; the second consume clears it should no view have taken it.
-  custom_browser::window_util::SetPendingSingleWebWindow(profile_);
+  custom_browser::window_util::SetPendingSingleWebWindow(
+      profile_, std::move(fixed_title));
   BrowserWindowInterface* browser = CreateBrowserWindow(std::move(params));
   custom_browser::window_util::ConsumePendingSingleWebWindow(profile_);
   if (!browser || !custom_browser::window_util::IsSingleWebBrowser(browser)) {

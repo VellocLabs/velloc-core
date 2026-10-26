@@ -4,6 +4,8 @@
 
 #include "custom_browser/browser/nexus/api/web_window/web_window_options.h"
 
+#include <string>
+
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -22,6 +24,20 @@ TEST(WebWindowOptionsTest, OnlyWebAndFileUrlsAreAllowed) {
   EXPECT_FALSE(IsAllowedWebWindowUrl(GURL("about:blank")));
   EXPECT_FALSE(IsAllowedWebWindowUrl(GURL("not a url")));
   EXPECT_FALSE(IsAllowedWebWindowUrl(GURL()));
+}
+
+TEST(WebWindowOptionsTest, TitleCollapsesWhitespaceAndKeepsItsLength) {
+  EXPECT_EQ(u"Sign in to Linear",
+            NormalizeWebWindowTitle("  Sign in\n\tto   Linear  "));
+  EXPECT_EQ(u"\u767b\u5f55", NormalizeWebWindowTitle("\xe7\x99\xbb\xe5\xbd\x95"));
+
+  EXPECT_EQ(std::nullopt, NormalizeWebWindowTitle(""));
+  EXPECT_EQ(std::nullopt, NormalizeWebWindowTitle(" \n\t "));
+
+  const std::string longest(kWebWindowMaxTitleLength, 'a');
+  EXPECT_EQ(std::u16string(kWebWindowMaxTitleLength, u'a'),
+            NormalizeWebWindowTitle(longest));
+  EXPECT_EQ(std::nullopt, NormalizeWebWindowTitle(longest + "a"));
 }
 
 TEST(WebWindowOptionsTest, StateNamesRoundTrip) {

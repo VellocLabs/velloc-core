@@ -5,6 +5,7 @@
 #include "custom_browser/browser/nexus/api/web_window/web_window_options.h"
 
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -30,6 +31,16 @@ bool MatchesWebWindowCaptureTarget(const GURL& target, const GURL& url) {
          base::EqualsCaseInsensitiveASCII(url.host(), target.host()) &&
          url.EffectiveIntPort() == target.EffectiveIntPort() &&
          url.path() == target.path();
+}
+
+std::optional<std::u16string> NormalizeWebWindowTitle(std::string_view title) {
+  std::u16string normalized =
+      base::CollapseWhitespace(base::UTF8ToUTF16(title),
+                               /*trim_sequences_with_line_breaks=*/false);
+  if (normalized.empty() || normalized.size() > kWebWindowMaxTitleLength) {
+    return std::nullopt;
+  }
+  return normalized;
 }
 
 std::optional<ui::mojom::WindowShowState> ParseWebWindowState(

@@ -21,6 +21,7 @@ namespace nexus {
 
 inline constexpr int kWebWindowMinWidth = 200;
 inline constexpr int kWebWindowMinHeight = 150;
+inline constexpr size_t kWebWindowMaxTitleLength = 120;
 
 // Security: a single-web window shows http, https and file pages only. Every
 // other scheme (chrome:, devtools:, javascript:, data:, about: …) is refused
@@ -37,6 +38,12 @@ bool IsValidWebWindowCaptureTarget(const GURL& target);
 // scheme, host (case-insensitive), port and path. Query and fragment are
 // ignored — they carry the redirect's result.
 bool MatchesWebWindowCaptureTarget(const GURL& target, const GURL& url);
+
+// The fixed `title` of `webWindow.open`: whitespace runs (line breaks
+// included) collapse to one space and the ends are trimmed. Returns nullopt
+// when the result is empty or longer than kWebWindowMaxTitleLength UTF-16
+// units.
+std::optional<std::u16string> NormalizeWebWindowTitle(std::string_view title);
 
 // 'normal' | 'maximized' | 'minimized' → the show state; anything else is
 // nullopt.

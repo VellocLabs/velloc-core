@@ -1,7 +1,10 @@
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 
 #include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <utility>
 
 #include "base/command_line.h"
 #include "base/supports_user_data.h"
@@ -51,7 +54,12 @@ constexpr char kPendingSingleWebWindowKey[] =
 // Transient marker attached to a Profile to make the next CustomBrowserView
 // created for it a single-web window (F-29). Set and consumed within one
 // synchronous Browser::Create. Never persisted.
-class PendingSingleWebWindowMarker : public base::SupportsUserData::Data {};
+class PendingSingleWebWindowMarker : public base::SupportsUserData::Data {
+ public:
+  explicit PendingSingleWebWindowMarker(std::u16string title)
+      : title(std::move(title)) {}
+  std::u16string title;
+};
 
 // Returns the first normal browser window of |profile| whose CustomBrowserView
 // is in kNexus mode (when |want_nexus|) or in a browser mode (otherwise).
@@ -177,20 +185,27 @@ bool ConsumePendingNexusWindow(Profile* profile) {
   return true;
 }
 
-void SetPendingSingleWebWindow(Profile* profile) {
+void SetPendingSingleWebWindow(Profile* profile, std::u16string title) {
   if (!profile) {
     return;
   }
-  profile->SetUserData(kPendingSingleWebWindowKey,
-                       std::make_unique<PendingSingleWebWindowMarker>());
+  profile->SetUserData(
+      kPendingSingleWebWindowKey,
+      std::make_unique<PendingSingleWebWindowMarker>(std::move(title)));
 }
 
-bool ConsumePendingSingleWebWindow(Profile* profile) {
-  if (!profile || !profile->GetUserData(kPendingSingleWebWindowKey)) {
-    return false;
+std::optional<std::u16string> ConsumePendingSingleWebWindow(Profile* profile) {
+  if (!profile) {
+    return std::nullopt;
   }
+  auto* marker = static_cast<PendingSingleWebWindowMarker*>(
+      profile->GetUserData(kPendingSingleWebWindowKey));
+  if (!marker) {
+    return std::nullopt;
+  }
+  std::u16string title = std::move(marker->title);
   profile->RemoveUserData(kPendingSingleWebWindowKey);
-  return true;
+  return title;
 }
 
 bool IsSingleWebBrowser(BrowserWindowInterface* browser) {

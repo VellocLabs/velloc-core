@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "open",
-  "description": "Open a single-web window: one tab showing `url`, a read-only address, back / forward / reload and the OS caption buttons. The window is pinned to the kSingleWeb UI mode, is never restored by session restore, and belongs to the connection that opened it: its events (onNavigated, onTitleChanged, onClosed) go to that connection only, and it is closed when that connection goes away. Only http, https and file URLs are accepted. With `captureRedirect` (a loopback http URL with an explicit port: localhost, 127.0.0.1 or [::1], no credentials; invalid_args otherwise) a main-frame navigation in the window that starts at, or is redirected to, that URL (scheme, host, port and path equal; query and fragment ignored) is cancelled before any request reaches the port, onRedirectCaptured { windowId, url } (the full URL, query included) goes to the owning connection, and the window is then closed (onClosed reason 'api'). At most one capture per window; `url` itself may not match captureRedirect. Manifest primitive webWindow.captureRedirect. Returns { windowId }.",
+  "description": "Open a single-web window: one tab showing `url`, a read-only address, back / forward / reload and the OS caption buttons. The window is pinned to the kSingleWeb UI mode, is never restored by session restore, and belongs to the connection that opened it: its events (onNavigated, onTitleChanged, onClosed) go to that connection only, and it is closed when that connection goes away. Only http, https and file URLs are accepted. With `captureRedirect` (a loopback http URL with an explicit port: localhost, 127.0.0.1 or [::1], no credentials; invalid_args otherwise) a main-frame navigation in the window that starts at, or is redirected to, that URL (scheme, host, port and path equal; query and fragment ignored) is cancelled before any request reaches the port, onRedirectCaptured { windowId, url } (the full URL, query included) goes to the owning connection, and the window is then closed (onClosed reason 'api'). At most one capture per window; `url` itself may not match captureRedirect. Manifest primitive webWindow.captureRedirect. With `title` (1–120 characters after whitespace runs collapse; invalid_args otherwise) the window's title row and its OS window title show that text for the window's whole life, whatever the page sets as document.title; onTitleChanged and list still report the page's own title. Manifest primitive webWindow.title. Returns { windowId }.",
   "struct_name": "WebWindowOpen",
   "inputs": [
     {
@@ -51,6 +51,12 @@
       "type": "string",
       "required": false,
       "description": "A loopback http URL (localhost, 127.0.0.1 or [::1], explicit port, no credentials) whose navigation is captured and reported as onRedirectCaptured instead of sent."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": false,
+      "description": "A fixed window title, shown in the title row and as the OS window title instead of the page's title; the page cannot change it."
     }
   ],
   "errors": [

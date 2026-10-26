@@ -123,6 +123,9 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // reported as onRedirectCaptured (an older host would ignore the input
     // and let the request reach the port).
     "webWindow.captureRedirect",
+    // webWindow.open title: a fixed window title the page cannot change (an
+    // older host would ignore the input and show the page's title).
+    "webWindow.title",
     // Memory-pressure purge of the guest / GPU / agent-tab processes' caches.
     "appInfo.purgeRenderCaches",
 });

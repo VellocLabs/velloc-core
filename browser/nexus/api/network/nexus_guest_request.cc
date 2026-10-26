@@ -23,6 +23,22 @@ std::optional<std::string> InvalidGuestHeader(std::string_view name,
   return std::nullopt;
 }
 
+std::string EncodeGuestFormBody(const base::DictValue& params) {
+  std::string body;
+  for (const auto [name, value] : params) {
+    if (!value.is_string()) {
+      continue;
+    }
+    if (!body.empty()) {
+      body += '&';
+    }
+    body += base::EscapeQueryParamValue(name, /*use_plus=*/true);
+    body += '=';
+    body += base::EscapeQueryParamValue(value.GetString(), /*use_plus=*/true);
+  }
+  return body;
+}
+
 GuestVisibleUrl::GuestVisibleUrl() = default;
 GuestVisibleUrl::GuestVisibleUrl(const GuestVisibleUrl&) = default;
 GuestVisibleUrl& GuestVisibleUrl::operator=(const GuestVisibleUrl&) = default;

@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/api/web_window/web_window_options.h"
 
+#include "base/strings/string_util.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -13,6 +14,22 @@ bool IsAllowedWebWindowUrl(const GURL& url) {
   return url.is_valid() &&
          (url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme) ||
           url.SchemeIs(url::kFileScheme));
+}
+
+bool IsValidWebWindowCaptureTarget(const GURL& target) {
+  if (!target.is_valid() || !target.SchemeIs(url::kHttpScheme) ||
+      !target.has_port() || target.has_username() || target.has_password()) {
+    return false;
+  }
+  const std::string_view host = target.host();
+  return host == "localhost" || host == "127.0.0.1" || host == "[::1]";
+}
+
+bool MatchesWebWindowCaptureTarget(const GURL& target, const GURL& url) {
+  return url.is_valid() && url.scheme() == target.scheme() &&
+         base::EqualsCaseInsensitiveASCII(url.host(), target.host()) &&
+         url.EffectiveIntPort() == target.EffectiveIntPort() &&
+         url.path() == target.path();
 }
 
 std::optional<ui::mojom::WindowShowState> ParseWebWindowState(

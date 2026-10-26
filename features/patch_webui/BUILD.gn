@@ -61,6 +61,7 @@ source_set("feature") {
     "//custom_browser/browser/nexus/api/llm",
     "//custom_browser/browser/nexus/api/llm:broker",
     "//custom_browser/browser/nexus/api/llm:oauth",
+    "//custom_browser/browser/nexus:web_window_redirect_capture",
     "//custom_browser/browser/nexus/mojom",
     "//net",
     "//custom_browser/chromium_hooks:hook_api",

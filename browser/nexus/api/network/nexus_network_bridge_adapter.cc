@@ -401,7 +401,8 @@ void NexusNetworkBridgeAdapter::HandleHttpRequestOnUI(
     ::nexus::generated::HttpRequestInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
-  if (!NeedsOAuth(input.headers) && !NeedsOAuth(input.queryParams)) {
+  if (!NeedsOAuth(input.headers) && !NeedsOAuth(input.queryParams) &&
+      !NeedsOAuth(input.formParams)) {
     StartHttpRequest(std::move(input), std::move(done), std::nullopt);
     return;
   }
@@ -499,6 +500,21 @@ void NexusNetworkBridgeAdapter::StartHttpRequest(
       return;
     }
   }
+  if (input.formParams.has_value()) {
+    if (!input.body.empty() || method == "GET" || method == "HEAD") {
+      std::move(done).Error(
+          "INVALID_REQUEST",
+          "formParams cannot be combined with a body or a GET / HEAD.");
+      return;
+    }
+    for (const auto [name, value] : *input.formParams) {
+      if (!value.is_string()) {
+        std::move(done).InvalidArgs("formParams values must be strings: " +
+                                    name);
+        return;
+      }
+    }
+  }
   // A reserved header is dropped by the host on this surface (its
   // pre-existing contract), refused on streamOpen / wsOpen.
   PreparedGuestRequest prepared;
@@ -508,8 +524,48 @@ void NexusNetworkBridgeAdapter::StartHttpRequest(
                            &prepared)) {
     return;
   }
+  // The form body: values expanded for the request's origin like query
+  // values, then encoded host-side.
+  std::optional<std::string> form_body;
+  if (input.formParams.has_value()) {
+    std::vector<std::string> expanded_fields;
+    if (!ExpandSecretsInValues(prefs_, GURL(input.url), /*are_headers=*/false,
+                               *input.formParams, &expanded_fields, done,
+                               oauth ? &*oauth : nullptr)) {
+      return;
+    }
+    // Security: a redirect may lead anywhere; a body carrying a secret is
+    // never re-sent to wherever it points.
+    if (!expanded_fields.empty() && input.followRedirects.value_or(false)) {
+      std::move(done).InvalidArgs(
+          "A form body carrying a secret is never re-sent on a redirect; "
+          "followRedirects must be false.");
+      return;
+    }
+    form_body = EncodeGuestFormBody(*input.formParams);
+    input.formParams.reset();
+  }
   NexusHttpRequestSpec spec =
       NexusHttpRequestSpec::FromHttpRequest(std::move(input));
+  if (form_body.has_value()) {
+    spec.body = std::vector<uint8_t>(form_body->begin(), form_body->end());
+    bool has_content_type = false;
+    if (spec.headers.has_value()) {
+      for (const auto [name, value] : *spec.headers) {
+        if (base::EqualsCaseInsensitiveASCII(
+                name, net::HttpRequestHeaders::kContentType)) {
+          has_content_type = true;
+          break;
+        }
+      }
+    } else {
+      spec.headers.emplace();
+    }
+    if (!has_content_type) {
+      spec.headers->Set(net::HttpRequestHeaders::kContentType,
+                        "application/x-www-form-urlencoded");
+    }
+  }
   spec.url = prepared.url.spec();
   spec.visible_url = std::move(prepared.visible_url);
   if (!prepared.secret_headers.empty()) {

@@ -529,6 +529,42 @@ source_set("utility_tab_options") {
   ]
 }
 
+# The `webWindow` input checks and the captureRedirect match rule, free of
+# browser state so the lite test binary covers them.
+source_set("web_window_options") {
+  sources = [
+    "api/web_window/web_window_options.cc",
+    "api/web_window/web_window_options.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//ui/base/mojom:ui_base_types",
+    "//ui/gfx/geometry",
+    "//url",
+  ]
+}
+
+# The per-WebContents captureRedirect marker. A leaf (no //chrome/browser/ui)
+# so both `:bridge`, which arms it, and the patch_webui navigation throttle,
+# which fires it, can depend on it.
+source_set("web_window_redirect_capture") {
+  sources = [
+    "api/web_window/web_window_redirect_capture.cc",
+    "api/web_window/web_window_redirect_capture.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//url",
+  ]
+
+  deps = [
+    ":web_window_options",
+    "//content/public/browser",
+  ]
+}
+
 # The installer's one-shot channel marker → `nexus.webapp_url` (G-3); base +
 # prefs only, so the lite binary tests it.
 source_set("installer_channel") {
@@ -691,8 +727,6 @@ source_set("bridge") {
     "api/ui/nexus_ui_bridge_adapter.h",
     "api/web_window/nexus_web_window_bridge_adapter.cc",
     "api/web_window/nexus_web_window_bridge_adapter.h",
-    "api/web_window/web_window_options.cc",
-    "api/web_window/web_window_options.h",
     "api/page_script/nexus_page_script_bridge_adapter.cc",
     "api/page_script/nexus_page_script_bridge_adapter.h",
     "tools/page_script/page_script_channel.cc",
@@ -817,6 +851,8 @@ source_set("bridge") {
     ":network_egress_policy",
     ":page_script_options",
     ":utility_tab_options",
+    ":web_window_options",
+    ":web_window_redirect_capture",
 
     # The remoteAccess bridge adapter forwards onto the per-Profile
     # NexusRemoteAccessService (listener start/stop, proxy, LNA grant).
@@ -1211,6 +1247,7 @@ source_set("unit_tests_lite") {
     "api/network/nexus_guest_request_unittest.cc",
     "api/page_script/page_script_options_unittest.cc",
     "api/ui/utility_tab_options_unittest.cc",
+    "api/web_window/web_window_options_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
@@ -1240,6 +1277,7 @@ source_set("unit_tests_lite") {
     ":network_egress_policy",
     ":page_script_options",
     ":utility_tab_options",
+    ":web_window_options",
     # Pure routing logic for remote access; a leaf (//base only) so it links
     # into the lite binary without dragging in the listener's net::HttpServer.
     ":remote_access",
@@ -1298,7 +1336,6 @@ source_set("unit_tests") {
     "api/network/nexus_http_byte_stream_unittest.cc",
     "api/network/nexus_network_bridge_adapter_unittest.cc",
     "api/network/nexus_websocket_connection_unittest.cc",
-    "api/web_window/web_window_options_unittest.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter_unittest.cc",
     "api/secrets/nexus_secrets_bridge_adapter_unittest.cc",
     "api/shell/nexus_persistent_shells_unittest.cc",
@@ -1368,6 +1405,10 @@ source_set("unit_tests") {
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/test:test_support",
     "//components/keep_alive_registry",
+
+    # MessagePortDescriptorPair / WebMessageArrayBufferPayload: a body sent
+    # over a transferred port (nexus_network_bridge_adapter_unittest.cc).
+    "//third_party/blink/public/common",
 
     # ui::TestClipboard (nexus_ui_bridge_adapter_unittest.cc).
     "//ui/base/clipboard:clipboard_test_support",

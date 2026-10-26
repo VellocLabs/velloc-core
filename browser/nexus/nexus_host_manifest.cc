@@ -115,6 +115,14 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // An empty {{oauth:account_id}} omits its header / query parameter
     // instead of refusing the request (an older host refuses it).
     "model.rawStreamOpen.oauthOptional",
+    // httpRequest formParams: an x-www-form-urlencoded body whose values may
+    // carry {{secret:NAME}} (an older host would ignore the input and send no
+    // body).
+    "network.secretFormBody",
+    // webWindow.open captureRedirect: a loopback redirect is cancelled and
+    // reported as onRedirectCaptured (an older host would ignore the input
+    // and let the request reach the port).
+    "webWindow.captureRedirect",
     // Memory-pressure purge of the guest / GPU / agent-tab processes' caches.
     "appInfo.purgeRenderCaches",
 });

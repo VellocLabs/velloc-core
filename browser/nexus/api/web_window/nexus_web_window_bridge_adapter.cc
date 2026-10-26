@@ -24,6 +24,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "custom_browser/browser/nexus/api/web_window/web_window_options.h"
+#include "custom_browser/browser/nexus/api/web_window/web_window_redirect_capture.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -193,6 +194,25 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
     return;
   }
 
+  std::optional<GURL> capture_target;
+  if (input.captureRedirect.has_value()) {
+    GURL target(*input.captureRedirect);
+    std::string_view reason;
+    if (!IsValidWebWindowCaptureTarget(target)) {
+      reason = "captureRedirect must be a loopback http URL";
+    } else if (MatchesWebWindowCaptureTarget(target, url)) {
+      reason = "url must not match captureRedirect";
+    }
+    if (!reason.empty()) {
+      base::DictValue params;
+      params.Set("reason", reason);
+      std::move(done).Error(errors::kInvalidArgs, std::string(reason),
+                            std::move(params));
+      return;
+    }
+    capture_target = std::move(target);
+  }
+
   ui::mojom::WindowShowState show_state = ui::mojom::WindowShowState::kNormal;
   if (input.state.has_value()) {
     std::optional<ui::mojom::WindowShowState> parsed =
@@ -266,6 +286,20 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
 
   auto window = std::make_unique<Window>(this, browser);
   const int32_t window_id = window->id();
+  if (capture_target) {
+    // Security: an unarmed window would let the redirect reach the port.
+    content::WebContents* web_contents = window->contents();
+    if (!web_contents) {
+      window->CloseSilently();
+      std::move(done).Error(errors::kWindowCreateFailed,
+                            "the window has no tab");
+      return;
+    }
+    WebWindowRedirectCapture::Attach(
+        web_contents, std::move(*capture_target),
+        base::BindOnce(&NexusWebWindowBridgeAdapter::OnWindowRedirectCaptured,
+                       weak_factory_.GetWeakPtr(), window_id));
+  }
   windows_[window_id] = std::move(window);
 
   base::DictValue result;
@@ -485,6 +519,19 @@ void NexusWebWindowBridgeAdapter::OnWindowTitleChanged(
     base::DictValue payload) {
   payload.Set("windowId", window_id);
   PushEvent("onTitleChanged", std::move(payload));
+}
+
+void NexusWebWindowBridgeAdapter::OnWindowRedirectCaptured(int32_t window_id,
+                                                           const GURL& url) {
+  auto it = windows_.find(window_id);
+  if (it == windows_.end() || !it->second->is_open()) {
+    return;
+  }
+  base::DictValue payload;
+  payload.Set("windowId", window_id);
+  payload.Set("url", url.spec());
+  PushEvent("onRedirectCaptured", std::move(payload));
+  it->second->CloseByApi();
 }
 
 void NexusWebWindowBridgeAdapter::OnWindowClosed(int32_t window_id,

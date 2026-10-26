@@ -18,6 +18,7 @@
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
+#include "custom_browser/browser/nexus/api/web_window/web_window_redirect_capture.h"
 #include "net/base/url_util.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -109,6 +110,8 @@ GURL MakeOAuthResultPage(bool ok) {
 }
 
 // Captures the OAuth loopback redirect and forwards the code to the manager.
+// A single-web window armed with `captureRedirect` is checked first: its
+// target is reported to the window's owner instead.
 class NexusOAuthRedirectThrottle : public content::NavigationThrottle {
  public:
   explicit NexusOAuthRedirectThrottle(
@@ -126,6 +129,9 @@ class NexusOAuthRedirectThrottle : public content::NavigationThrottle {
  private:
   ThrottleCheckResult MaybeCapture() {
     content::NavigationHandle* handle = navigation_handle();
+    if (nexus::WebWindowRedirectCapture::MaybeCapture(handle)) {
+      return CANCEL_AND_IGNORE;
+    }
     if (!handle->IsInMainFrame() || handle->IsSameDocument()) {
       return PROCEED;
     }

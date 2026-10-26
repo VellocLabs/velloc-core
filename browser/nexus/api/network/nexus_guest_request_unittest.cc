@@ -11,6 +11,23 @@
 namespace nexus {
 namespace {
 
+TEST(NexusGuestRequestTest, FormBodyIsUrlEncodedFormData) {
+  base::DictValue params;
+  params.Set("grant_type", "authorization_code");
+  params.Set("code", "a b&c=d/\xC3\xA9");
+  params.Set("redirect_uri", "http://localhost:33418/callback");
+  // A DictValue iterates in key order.
+  EXPECT_EQ(EncodeGuestFormBody(params),
+            "code=a+b%26c%3Dd%2F%C3%A9&grant_type=authorization_code&"
+            "redirect_uri=http%3A%2F%2Flocalhost%3A33418%2Fcallback");
+
+  base::DictValue odd;
+  odd.Set("key with space", "");
+  odd.Set("n", 1);
+  EXPECT_EQ(EncodeGuestFormBody(odd), "key+with+space=");
+  EXPECT_EQ(EncodeGuestFormBody(base::DictValue()), "");
+}
+
 TEST(NexusGuestRequestTest, HeadersSetHeaderWouldCrashOnAreRefused) {
   EXPECT_FALSE(InvalidGuestHeader("X-Api-Key", "abc").has_value());
   EXPECT_FALSE(InvalidGuestHeader("X-Empty", "").has_value());

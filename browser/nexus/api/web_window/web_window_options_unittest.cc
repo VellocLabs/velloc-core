@@ -74,5 +74,44 @@ TEST(WebWindowOptionsTest, SizesBelowTheMinimumAreRefused) {
   EXPECT_EQ(current, out);
 }
 
+TEST(WebWindowOptionsTest, CaptureTargetsAreLoopbackHttpWithAPort) {
+  EXPECT_TRUE(IsValidWebWindowCaptureTarget(
+      GURL("http://localhost:33418/callback")));
+  EXPECT_TRUE(IsValidWebWindowCaptureTarget(GURL("http://127.0.0.1:8080/")));
+  EXPECT_TRUE(IsValidWebWindowCaptureTarget(GURL("http://[::1]:9000/cb")));
+  EXPECT_TRUE(IsValidWebWindowCaptureTarget(GURL("http://LOCALHOST:5000/")));
+
+  EXPECT_FALSE(IsValidWebWindowCaptureTarget(GURL("https://localhost:443/")));
+  EXPECT_FALSE(IsValidWebWindowCaptureTarget(GURL("http://localhost/cb")));
+  EXPECT_FALSE(
+      IsValidWebWindowCaptureTarget(GURL("http://example.com:8080/cb")));
+  EXPECT_FALSE(IsValidWebWindowCaptureTarget(GURL("http://127.0.0.2:8080/")));
+  EXPECT_FALSE(
+      IsValidWebWindowCaptureTarget(GURL("http://user:pw@localhost:8080/")));
+  EXPECT_FALSE(IsValidWebWindowCaptureTarget(GURL("http://u@localhost:8080/")));
+  EXPECT_FALSE(IsValidWebWindowCaptureTarget(GURL("file:///C:/cb")));
+  EXPECT_FALSE(IsValidWebWindowCaptureTarget(GURL("not a url")));
+}
+
+TEST(WebWindowOptionsTest, CaptureMatchIgnoresQueryAndFragmentOnly) {
+  const GURL target("http://localhost:33418/callback");
+
+  EXPECT_TRUE(MatchesWebWindowCaptureTarget(target, target));
+  EXPECT_TRUE(MatchesWebWindowCaptureTarget(
+      target, GURL("http://localhost:33418/callback?code=abc&state=x")));
+  EXPECT_TRUE(MatchesWebWindowCaptureTarget(
+      target, GURL("http://LocalHost:33418/callback#frag")));
+
+  EXPECT_FALSE(MatchesWebWindowCaptureTarget(
+      target, GURL("http://localhost:33419/callback?code=abc")));
+  EXPECT_FALSE(MatchesWebWindowCaptureTarget(
+      target, GURL("http://localhost:33418/callback/extra")));
+  EXPECT_FALSE(MatchesWebWindowCaptureTarget(
+      target, GURL("http://127.0.0.1:33418/callback")));
+  EXPECT_FALSE(MatchesWebWindowCaptureTarget(
+      target, GURL("https://localhost:33418/callback")));
+  EXPECT_FALSE(MatchesWebWindowCaptureTarget(target, GURL()));
+}
+
 }  // namespace
 }  // namespace nexus

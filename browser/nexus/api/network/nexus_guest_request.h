@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/values.h"
 #include "url/gurl.h"
 
 namespace nexus {
@@ -26,6 +27,12 @@ namespace nexus {
 // i.e. after `{{secret:NAME}}` / `{{oauth:NAME}}` expansion.
 std::optional<std::string> InvalidGuestHeader(std::string_view name,
                                               std::string_view value);
+
+// The application/x-www-form-urlencoded body of `params` (`formParams`):
+// `key=value` pairs in the dict's iteration order, joined by '&', each side
+// escaped as form data (space -> '+'). Non-string values are skipped; the
+// adapter refuses them first.
+std::string EncodeGuestFormBody(const base::DictValue& params);
 
 // The request URL as the guest may see it. A `{{secret:NAME}}` or
 // `{{oauth:NAME}}` placeholder in a query value is expanded into the URL that

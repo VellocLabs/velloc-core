@@ -27,6 +27,17 @@ inline constexpr int kWebWindowMinHeight = 150;
 // before anything is created or navigated.
 bool IsAllowedWebWindowUrl(const GURL& url);
 
+// Security: the `captureRedirect` target of `webWindow.open` — an http URL on
+// localhost, 127.0.0.1 or [::1] with an explicit port and no credentials.
+// Anything else is refused, so a capture can never swallow a navigation to a
+// real site.
+bool IsValidWebWindowCaptureTarget(const GURL& target);
+
+// Whether `url` is a navigation to `target` (a valid capture target): same
+// scheme, host (case-insensitive), port and path. Query and fragment are
+// ignored — they carry the redirect's result.
+bool MatchesWebWindowCaptureTarget(const GURL& target, const GURL& url);
+
 // 'normal' | 'maximized' | 'minimized' → the show state; anything else is
 // nullopt.
 std::optional<ui::mojom::WindowShowState> ParseWebWindowState(

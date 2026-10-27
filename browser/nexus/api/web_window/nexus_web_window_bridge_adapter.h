@@ -71,7 +71,8 @@ class NexusWebWindowBridgeAdapter
                        ::nexus::BridgeResponseCallback done) override;
   // Contract: only after a capture of an awaitSignInResult window, once.
   // ok shows the success page and closes the window kSignInSuccessHold
-  // after that page loaded; not ok shows the failure page and leaves the window open.
+  // after that page loaded; not ok shows the failure page and leaves the
+  // window open.
   void HandleShowSignInResultOnUI(
       ::nexus::generated::WebWindowShowSignInResultInput input,
       std::vector<blink::MessagePortDescriptor> ports,

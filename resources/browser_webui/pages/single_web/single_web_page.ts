@@ -17,6 +17,14 @@ import {
 } from '../../controller/tabs_controller.js';
 
 /**
+ * The address row's text for `url`: empty for a data: URL — the host's own
+ * pages (the sign-in status pages) have no address worth showing.
+ */
+function shownAddress(url: string): string {
+  return url.startsWith('data:') ? '' : url;
+}
+
+/**
  * Single-web window (kSingleWeb, F-29): a title row (product logo, the
  * window title, the OS caption buttons) over one tab with a read-only
  * address and the native back / forward / reload buttons. The title is the
@@ -54,7 +62,7 @@ export class SingleWebPage extends CrLitElement {
 
   private readonly tabObserver_: TabObserver = {
     onTabDataUpdated: (tab: Tab) => {
-      this.url_ = tab.url;
+      this.url_ = shownAddress(tab.url);
       this.pageTitle_ = tab.title;
     },
     onTabExtrasUpdated: () => {},
@@ -192,7 +200,7 @@ export class SingleWebPage extends CrLitElement {
     tabsController.addTabObserver(tabId, this.tabObserver_);
     const tab = tabsController.getTab(tabId);
     if (tab) {
-      this.url_ = tab.url;
+      this.url_ = shownAddress(tab.url);
       this.pageTitle_ = tab.title;
     }
   }

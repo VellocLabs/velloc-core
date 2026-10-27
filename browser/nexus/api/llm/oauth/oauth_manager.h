@@ -81,13 +81,26 @@ class NexusOAuthManager {
   };
   using DeviceCodeCallback =
       base::OnceCallback<void(bool ok, DeviceCodeInfo info, std::string error)>;
+  // The end of a device-code login: `ok` once the tokens are saved; not ok
+  // when the token endpoint refused it (`error` = its OAuth error code, e.g.
+  // "access_denied" or "expired_token") or the code ran out (`error` empty).
+  using DeviceCodeDoneCallback =
+      base::OnceCallback<void(bool ok, std::string error)>;
 
   // Begins a device-code login for `provider_id`: requests a device code and
   // returns the user code + verification URL via `callback`, then polls the
   // token endpoint in the background until the user authorizes (tokens are
-  // saved + on_tokens_saved fired) or the code expires.
+  // saved + on_tokens_saved fired) or the code expires; `done` reports which.
+  // A new login for the same provider stops the earlier one's polling, whose
+  // `done` then never runs. `done` does not run when `callback` reports a
+  // failure.
   void StartDeviceCodeFlow(const std::string& provider_id,
-                           DeviceCodeCallback callback);
+                           DeviceCodeCallback callback,
+                           DeviceCodeDoneCallback done = {});
+
+  // Stops polling `provider_id`'s running device-code login, if any; its
+  // `done` never runs.
+  void CancelDeviceCodeFlow(const std::string& provider_id);
 
   // Exchanges an authorization `code` for tokens, matching the pending flow by
   // `state`. Called by the navigation throttle that captures the loopback
@@ -161,6 +174,19 @@ class NexusOAuthManager {
     std::string code_verifier;  // empty unless the provider requires PKCE
     base::TimeTicks deadline;
     base::TimeDelta interval;
+    // Matches device_flows_[provider_id] while this login is the current one.
+    uint64_t generation = 0;
+  };
+
+  // The current device-code login of a provider.
+  struct DeviceFlowSlot {
+    DeviceFlowSlot();
+    DeviceFlowSlot(DeviceFlowSlot&&);
+    DeviceFlowSlot& operator=(DeviceFlowSlot&&);
+    ~DeviceFlowSlot();
+
+    uint64_t generation = 0;
+    DeviceCodeDoneCallback done;
   };
 
   // Generic POST that returns the parsed JSON object (or nullopt on network /
@@ -198,11 +224,17 @@ class NexusOAuthManager {
 
   void OnDeviceCodeStarted(const std::string& provider_id,
                            const std::string& code_verifier,
+                           uint64_t generation,
                            DeviceCodeCallback callback,
                            std::optional<base::DictValue> response);
   void PollDeviceCode(DeviceFlowState state);
   void OnDeviceCodePoll(DeviceFlowState state,
                         std::optional<base::DictValue> response);
+  bool IsCurrentDeviceFlow(const DeviceFlowState& state) const;
+  // Ends the current login `state`: drops its slot and runs its `done`.
+  void FinishDeviceFlow(const DeviceFlowState& state,
+                        bool ok,
+                        std::string error);
 
   void OnAuthCodeExchanged(const std::string& provider_id,
                            AuthCodeCallback callback,
@@ -224,6 +256,9 @@ class NexusOAuthManager {
   OAuthTokenStore store_;
 
   std::map<std::string, PendingFlow> pending_flows_;  // keyed by state
+  // Keyed by provider id.
+  std::map<std::string, DeviceFlowSlot> device_flows_;
+  uint64_t next_device_flow_generation_ = 1;
   std::map<std::string, std::unique_ptr<network::SimpleURLLoader>> loaders_;
   // Callbacks waiting on an in-flight refresh, keyed by provider id.
   std::map<std::string, std::vector<EnsureTokenCallback>> refresh_waiters_;

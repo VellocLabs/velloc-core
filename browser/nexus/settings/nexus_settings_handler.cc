@@ -32,7 +32,6 @@
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
-#include "custom_browser/browser/nexus/api/llm/oauth/oauth_url_opener.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
 #include "custom_browser/browser/nexus/launcher/nexus_launcher_prefs.h"

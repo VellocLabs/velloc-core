@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "showSignInResult",
+  "description": "Report the outcome of a sign-in whose redirect a window opened with awaitSignInResult has captured. ok: the window shows the host's 'You're signed in' page, closes itself 1.5 s later and fires onClosed { windowId, reason: 'api' }. Not ok: the window shows the host's 'Couldn't sign in' page with `message` (whitespace collapsed, cut to 300 characters, shown as plain text) and stays open until the person or close closes it. At most once per capture; invalid_args when the window has no captured sign-in waiting. The pages are in the browser's UI language; `message` is shown as given. Manifest primitive webWindow.signInResult. Returns { ok: true }.",
+  "struct_name": "WebWindowShowSignInResult",
+  "inputs": [
+    {
+      "name": "windowId",
+      "type": "integer",
+      "required": true,
+      "description": "A window this connection opened with awaitSignInResult, after its onRedirectCaptured."
+    },
+    {
+      "name": "ok",
+      "type": "boolean",
+      "required": true,
+      "description": "Whether the sign-in completed."
+    },
+    {
+      "name": "message",
+      "type": "string",
+      "required": false,
+      "description": "Not ok only: the failure reason to show, e.g. the server's error. Absent: no reason line."
+    }
+  ],
+  "errors": [
+    {
+      "code": "window_not_found",
+      "params": [
+        "window_id"
+      ]
+    },
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

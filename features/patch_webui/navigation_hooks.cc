@@ -3,9 +3,8 @@
 #include <memory>
 #include <string>
 
-#include "base/functional/callback_helpers.h"
+#include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
-#include "base/strings/escape.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
@@ -14,12 +13,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/web_contents.h"
-#include "custom_browser/browser/nexus/api/llm/llm_broker.h"
-#include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
-#include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
-#include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
 #include "custom_browser/browser/nexus/api/web_window/web_window_redirect_capture.h"
-#include "net/base/url_util.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 
@@ -95,23 +89,9 @@ class SearchRedirectThrottle : public content::NavigationThrottle {
   }
 };
 
-GURL MakeOAuthResultPage(bool ok) {
-  const char* body =
-      ok ? "<!doctype html><meta charset=utf-8>"
-           "<body style=\"font-family:system-ui;text-align:center;"
-           "padding-top:80px\"><h2>Signed in</h2>"
-           "<p>You can close this tab and return to settings.</p></body>"
-         : "<!doctype html><meta charset=utf-8>"
-           "<body style=\"font-family:system-ui;text-align:center;"
-           "padding-top:80px\"><h2>Sign-in failed</h2>"
-           "<p>Close this tab and try again.</p></body>";
-  return GURL("data:text/html;charset=utf-8," +
-              base::EscapeUrlEncodedData(body, /*use_plus=*/false));
-}
-
-// Captures the OAuth loopback redirect and forwards the code to the manager.
-// A single-web window armed with `captureRedirect` is checked first: its
-// target is reported to the window's owner instead.
+// Cancels a single-web window's armed `captureRedirect` navigation (F-29)
+// before any request reaches the loopback port; the capture is reported to
+// whoever armed the window.
 class NexusOAuthRedirectThrottle : public content::NavigationThrottle {
  public:
   explicit NexusOAuthRedirectThrottle(
@@ -128,53 +108,9 @@ class NexusOAuthRedirectThrottle : public content::NavigationThrottle {
 
  private:
   ThrottleCheckResult MaybeCapture() {
-    content::NavigationHandle* handle = navigation_handle();
-    if (nexus::WebWindowRedirectCapture::MaybeCapture(handle)) {
-      return CANCEL_AND_IGNORE;
-    }
-    if (!handle->IsInMainFrame() || handle->IsSameDocument()) {
-      return PROCEED;
-    }
-
-    const GURL& url = handle->GetURL();
-    if (!url.SchemeIs("http") ||
-        url.EffectiveIntPort() != nexus::kNexusOAuthCallbackPort ||
-        (url.host() != "localhost" && url.host() != "127.0.0.1") ||
-        url.path() != nexus::kNexusOAuthCallbackPath) {
-      return PROCEED;
-    }
-
-    content::WebContents* web_contents = handle->GetWebContents();
-    if (!web_contents) {
-      return CANCEL_AND_IGNORE;
-    }
-    Profile* profile =
-        Profile::FromBrowserContext(web_contents->GetBrowserContext());
-    nexus::LlmBroker* broker =
-        profile ? nexus::LlmBrokerFactory::GetForProfile(profile) : nullptr;
-    nexus::NexusOAuthManager* manager =
-        broker ? broker->oauth_manager() : nullptr;
-
-    std::string code;
-    std::string state;
-    std::string error;
-    net::GetValueForKeyInQuery(url, "code", &code);
-    net::GetValueForKeyInQuery(url, "state", &state);
-    net::GetValueForKeyInQuery(url, "error", &error);
-
-    const bool ok =
-        manager && error.empty() && !code.empty() && !state.empty();
-    if (ok) {
-      manager->HandleAuthCode(code, state, base::DoNothing());
-    }
-
-    // Replace the dead loopback navigation with a friendly result page.
-    base::WeakPtr<content::WebContents> weak_contents =
-        web_contents->GetWeakPtr();
-    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(&NavigateToNewTab, std::move(weak_contents),
-                                  MakeOAuthResultPage(ok)));
-    return CANCEL_AND_IGNORE;
+    return nexus::WebWindowRedirectCapture::MaybeCapture(navigation_handle())
+               ? CANCEL_AND_IGNORE
+               : PROCEED;
   }
 };
 

@@ -122,9 +122,11 @@ class NexusProvidersBridgeAdapter
       ::nexus::BridgeResponseCallback done) override;
 
   // Device-code flow continuation: returns the user code + verification
-  // URI to the WebUI and opens the verification URL in a normal window.
+  // URI to the WebUI and opens the verification URL in the provider's
+  // sign-in window.
   void OnDeviceCodeStartedForOAuth(
       ::nexus::BridgeResponseCallback done,
+      std::string provider_id,
       bool ok,
       nexus::NexusOAuthManager::DeviceCodeInfo info,
       std::string error);

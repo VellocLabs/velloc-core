@@ -220,4 +220,11 @@
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">페이지 주소</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">앱 표시</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">종료</translation>
+  <translation id="IDS_SIGN_IN_WINDOW_TITLE"><ph name="SERVICE_NAME"/>에 로그인</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FINISHING">로그인을 마무리하는 중…</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">로그인되었습니다</translation>
+  <translation id="IDS_SIGN_IN_STATUS_CLOSING">이 창은 자동으로 닫힙니다.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FAILED">로그인할 수 없습니다</translation>
+  <translation id="IDS_SIGN_IN_STATUS_EXPIRED">로그인 코드가 만료되었습니다.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">이 창을 닫고 <ph name="PRODUCT_NAME"/>에서 다시 시도하세요.</translation>
 </translationbundle>

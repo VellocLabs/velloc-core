@@ -222,4 +222,11 @@
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">পৃষ্ঠার ঠিকানা</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">অ্যাপ দেখান</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">প্রস্থান করুন</translation>
+  <translation id="IDS_SIGN_IN_WINDOW_TITLE"><ph name="SERVICE_NAME"/>-এ সাইন ইন করুন</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FINISHING">সাইন-ইন শেষ হচ্ছে…</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">আপনি সাইন ইন করেছেন</translation>
+  <translation id="IDS_SIGN_IN_STATUS_CLOSING">এই উইন্ডোটি নিজে থেকে বন্ধ হয়ে যাবে।</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FAILED">সাইন ইন করা যায়নি</translation>
+  <translation id="IDS_SIGN_IN_STATUS_EXPIRED">সাইন-ইন কোডের মেয়াদ শেষ হয়ে গেছে।</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">এই উইন্ডোটি বন্ধ করে <ph name="PRODUCT_NAME"/>-এ আবার চেষ্টা করুন।</translation>
 </translationbundle>

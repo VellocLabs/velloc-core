@@ -11,21 +11,21 @@
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
-#include "chrome/browser/ui/navigator/browser_navigator.h"
-#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "custom_browser/browser/nexus/api/web_window/sign_in_status_page.h"
+#include "custom_browser/browser/nexus/api/web_window/sign_in_window.h"
+#include "custom_browser/browser/nexus/api/web_window/single_web_window.h"
 #include "custom_browser/browser/nexus/api/web_window/web_window_options.h"
 #include "custom_browser/browser/nexus/api/web_window/web_window_redirect_capture.h"
-#include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 
@@ -88,6 +88,30 @@ class NexusWebWindowBridgeAdapter::Window
     BrowserWindow::FromBrowser(browser_)->Close();
   }
 
+  // awaitSignInResult: the captured sign-in waits for showSignInResult.
+  void set_awaits_sign_in() { awaits_sign_in_ = true; }
+  bool awaits_sign_in() const { return awaits_sign_in_; }
+  bool sign_in_pending() const { return sign_in_pending_; }
+
+  // The capture fired: the host's "Finishing sign-in" page until the result.
+  void ShowSignInFinishing() {
+    sign_in_pending_ = true;
+    ShowSignInStatus(contents(), SignInStatus::kFinishing);
+  }
+
+  // Success closes the window after kSignInSuccessHold; failure stays open.
+  void ShowSignInResult(bool ok, std::u16string_view message) {
+    sign_in_pending_ = false;
+    ShowSignInStatus(contents(),
+                     ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
+                     ok ? std::u16string_view() : message);
+    if (ok) {
+      close_timer_.Start(FROM_HERE, kSignInSuccessHold,
+                         base::BindOnce(&Window::CloseByApi,
+                                        base::Unretained(this)));
+    }
+  }
+
   // Close without an event: the owning connection is going away.
   void CloseSilently() {
     if (browser_) {
@@ -113,6 +137,7 @@ class NexusWebWindowBridgeAdapter::Window
  private:
   void OnBrowserDidClose(BrowserWindowInterface* /*browser*/) {
     browser_ = nullptr;
+    close_timer_.Stop();
     Observe(nullptr);
     // Last: the owner may schedule this object's deletion.
     owner_->OnWindowClosed(id_, closing_by_api_ ? "api" : "user");
@@ -163,6 +188,9 @@ class NexusWebWindowBridgeAdapter::Window
   raw_ptr<BrowserWindowInterface> browser_;
   const int32_t id_;
   bool closing_by_api_ = false;
+  bool awaits_sign_in_ = false;
+  bool sign_in_pending_ = false;
+  base::OneShotTimer close_timer_;
   base::CallbackListSubscription did_close_;
   base::CallbackListSubscription close_cancelled_;
   base::CallbackListSubscription active_tab_;
@@ -212,6 +240,15 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
     }
     capture_target = std::move(target);
   }
+  const bool await_sign_in = input.awaitSignInResult.value_or(false);
+  if (await_sign_in && !capture_target) {
+    base::DictValue params;
+    params.Set("reason", "awaitSignInResult requires captureRedirect");
+    std::move(done).Error(errors::kInvalidArgs,
+                          "awaitSignInResult requires captureRedirect",
+                          std::move(params));
+    return;
+  }
 
   ui::mojom::WindowShowState show_state = ui::mojom::WindowShowState::kNormal;
   if (input.state.has_value()) {
@@ -258,47 +295,20 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
     }
   }
 
-  if (!profile_ || GetBrowserWindowCreationStatusForProfile(*profile_) !=
-                       BrowserWindowInterface::CreationStatus::kOk) {
-    std::move(done).Error(errors::kWindowCreateFailed,
-                          "a window cannot be created now");
-    return;
-  }
-
-  BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
-                                   profile_, /*from_user_gesture=*/true);
-  params.omit_from_session_restore = true;
-  params.should_trigger_session_restore = false;
-  params.initial_show_state = show_state;
+  SingleWebWindowParams params;
+  params.title = std::move(fixed_title);
   if (has_origin || has_size) {
-    params.initial_bounds = initial_bounds;
-    params.initial_origin_specified =
-        has_origin ? BrowserWindowCreateParams::ValueSpecified::kSpecified
-                   : BrowserWindowCreateParams::ValueSpecified::kUnspecified;
+    params.bounds = initial_bounds;
+    params.origin_specified = has_origin;
   }
-  // The marker is consumed by the CustomBrowserView inside this synchronous
-  // Create; the second consume clears it should no view have taken it.
-  custom_browser::window_util::SetPendingSingleWebWindow(
-      profile_, std::move(fixed_title));
-  BrowserWindowInterface* browser = CreateBrowserWindow(std::move(params));
-  custom_browser::window_util::ConsumePendingSingleWebWindow(profile_);
-  if (!browser || !custom_browser::window_util::IsSingleWebBrowser(browser)) {
-    if (browser) {
-      BrowserWindow::FromBrowser(browser)->Close();
-    }
+  params.show_state = show_state;
+  params.focus = input.focus.value_or(true);
+  BrowserWindowInterface* browser = OpenSingleWebWindow(profile_, url, params);
+  if (!browser) {
     std::move(done).Error(errors::kWindowCreateFailed,
                           "the window could not be created");
     return;
   }
-
-  NavigateParams navigate(browser, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
-  navigate.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  const bool focus = input.focus.value_or(true) &&
-                     show_state != ui::mojom::WindowShowState::kMinimized;
-  navigate.window_action = focus
-                               ? NavigateParams::WindowAction::kShowWindow
-                               : NavigateParams::WindowAction::kShowWindowInactive;
-  Navigate(&navigate);
 
   auto window = std::make_unique<Window>(this, browser);
   const int32_t window_id = window->id();
@@ -310,6 +320,9 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
       std::move(done).Error(errors::kWindowCreateFailed,
                             "the window has no tab");
       return;
+    }
+    if (await_sign_in) {
+      window->set_awaits_sign_in();
     }
     WebWindowRedirectCapture::Attach(
         web_contents, std::move(*capture_target),
@@ -332,6 +345,27 @@ void NexusWebWindowBridgeAdapter::HandleCloseOnUI(
     return;
   }
   window->CloseByApi();
+  std::move(done).Success(OkResult(true));
+}
+
+void NexusWebWindowBridgeAdapter::HandleShowSignInResultOnUI(
+    ::nexus::generated::WebWindowShowSignInResultInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  Window* window = FindOrReject(input.windowId, done);
+  if (!window) {
+    return;
+  }
+  if (!window->sign_in_pending()) {
+    base::DictValue params;
+    params.Set("reason", "no captured sign-in is waiting for a result");
+    std::move(done).Error(errors::kInvalidArgs,
+                          "no captured sign-in is waiting for a result",
+                          std::move(params));
+    return;
+  }
+  window->ShowSignInResult(
+      input.ok, base::UTF8ToUTF16(input.message.value_or(std::string())));
   std::move(done).Success(OkResult(true));
 }
 
@@ -547,7 +581,11 @@ void NexusWebWindowBridgeAdapter::OnWindowRedirectCaptured(int32_t window_id,
   payload.Set("windowId", window_id);
   payload.Set("url", url.spec());
   PushEvent("onRedirectCaptured", std::move(payload));
-  it->second->CloseByApi();
+  if (it->second->awaits_sign_in()) {
+    it->second->ShowSignInFinishing();
+  } else {
+    it->second->CloseByApi();
+  }
 }
 
 void NexusWebWindowBridgeAdapter::OnWindowClosed(int32_t window_id,

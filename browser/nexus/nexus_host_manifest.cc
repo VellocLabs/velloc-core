@@ -126,6 +126,10 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // webWindow.open title: a fixed window title the page cannot change (an
     // older host would ignore the input and show the page's title).
     "webWindow.title",
+    // webWindow.open awaitSignInResult + webWindow.showSignInResult: the
+    // host's sign-in status pages (an older host would close the window on
+    // capture and reject the action as unknown).
+    "webWindow.signInResult",
     // Memory-pressure purge of the guest / GPU / agent-tab processes' caches.
     "appInfo.purgeRenderCaches",
 });

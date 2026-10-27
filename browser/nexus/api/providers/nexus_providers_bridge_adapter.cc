@@ -17,9 +17,9 @@
 #include "custom_browser/browser/nexus/api/llm/llm_types.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_manager.h"
 #include "custom_browser/browser/nexus/api/llm/oauth/oauth_providers.h"
-#include "custom_browser/browser/nexus/api/llm/oauth/oauth_url_opener.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
+#include "custom_browser/browser/nexus/api/providers/provider_sign_in_windows.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "url/gurl.h"
 
@@ -599,10 +599,15 @@ void NexusProvidersBridgeAdapter::HandleBeginOAuthOnUI(
     return;
   }
 
+  // A new login replaces the provider's earlier sign-in window.
+  ProviderSignInWindows* windows =
+      ProviderSignInWindows::GetForProfile(profile_);
+  windows->Discard(input.providerId);
+
   // Device-code providers (GitHub Copilot, Qwen Code) don't use a
   // redirect: request a device code and return userCode +
   // verificationUri for the UI to display. Background poll runs on
-  // the OAuth manager.
+  // the OAuth manager; its end is shown in the sign-in window.
   const OAuthProviderConfig* oauth_config =
       GetOAuthProviderConfig(input.providerId);
   if (oauth_config && oauth_config->flow == OAuthFlow::kDeviceCode) {
@@ -610,13 +615,14 @@ void NexusProvidersBridgeAdapter::HandleBeginOAuthOnUI(
         input.providerId,
         base::BindOnce(
             &NexusProvidersBridgeAdapter::OnDeviceCodeStartedForOAuth,
-            weak_factory_.GetWeakPtr(), std::move(done)));
+            weak_factory_.GetWeakPtr(), std::move(done), input.providerId),
+        base::BindOnce(&ProviderSignInWindows::OnDeviceCodeDone,
+                       windows->GetWeakPtr(), input.providerId));
     return;
   }
 
-  // PKCE / redirect flow: get the auth URL and open it in a normal
-  // browser window so OAuthRedirectThrottle catches the loopback
-  // callback. Identical to the legacy handler.
+  // PKCE / redirect flow: the sign-in window captures the loopback
+  // callback and finishes the login itself.
   const std::string auth_url =
       broker->oauth_manager()->BeginLogin(input.providerId);
   if (auth_url.empty()) {
@@ -625,7 +631,10 @@ void NexusProvidersBridgeAdapter::HandleBeginOAuthOnUI(
     return;
   }
 
-  OpenNexusAuthUrl(profile_, GURL(auth_url));
+  if (!windows->OpenForRedirect(input.providerId, GURL(auth_url))) {
+    std::move(done).Error("LLM_ERROR", "The sign-in window could not open");
+    return;
+  }
 
   base::DictValue result;
   // The wire contract (providerAuth.beginOAuth result, protocol/providerAuth.ts)
@@ -640,6 +649,7 @@ void NexusProvidersBridgeAdapter::HandleBeginOAuthOnUI(
 
 void NexusProvidersBridgeAdapter::OnDeviceCodeStartedForOAuth(
     ::nexus::BridgeResponseCallback done,
+    std::string provider_id,
     bool ok,
     nexus::NexusOAuthManager::DeviceCodeInfo info,
     std::string error) {
@@ -649,10 +659,13 @@ void NexusProvidersBridgeAdapter::OnDeviceCodeStartedForOAuth(
     return;
   }
 
-  // Open verification URI in a normal window so the user can authorize
-  // without leaving the device code behind.
-  if (profile_ && !info.verification_uri.empty()) {
-    OpenNexusAuthUrl(profile_, GURL(info.verification_uri));
+  // The verification page opens in the provider's sign-in window; the
+  // settings page keeps showing the code beside it.
+  if (!info.verification_uri.empty()) {
+    if (ProviderSignInWindows* windows =
+            ProviderSignInWindows::GetForProfile(profile_)) {
+      windows->OpenForDeviceCode(provider_id, GURL(info.verification_uri));
+    }
   }
 
   base::DictValue result;

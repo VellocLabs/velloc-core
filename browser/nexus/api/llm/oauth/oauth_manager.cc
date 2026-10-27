@@ -197,6 +197,12 @@ NexusOAuthManager::DeviceFlowState& NexusOAuthManager::DeviceFlowState::
 operator=(const DeviceFlowState&) = default;
 NexusOAuthManager::DeviceFlowState::~DeviceFlowState() = default;
 
+NexusOAuthManager::DeviceFlowSlot::DeviceFlowSlot() = default;
+NexusOAuthManager::DeviceFlowSlot::DeviceFlowSlot(DeviceFlowSlot&&) = default;
+NexusOAuthManager::DeviceFlowSlot& NexusOAuthManager::DeviceFlowSlot::operator=(
+    DeviceFlowSlot&&) = default;
+NexusOAuthManager::DeviceFlowSlot::~DeviceFlowSlot() = default;
+
 NexusOAuthManager::NexusOAuthManager(
     PrefService* prefs,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
@@ -286,13 +292,17 @@ void NexusOAuthManager::HandleAuthCode(const std::string& code,
 }
 
 void NexusOAuthManager::StartDeviceCodeFlow(const std::string& provider_id,
-                                            DeviceCodeCallback callback) {
+                                            DeviceCodeCallback callback,
+                                            DeviceCodeDoneCallback done) {
   const OAuthProviderConfig* config = GetOAuthProviderConfig(provider_id);
   if (!config || config->flow != OAuthFlow::kDeviceCode) {
     std::move(callback).Run(false, DeviceCodeInfo(),
                             "Unknown device-code provider");
     return;
   }
+  DeviceFlowSlot& slot = device_flows_[provider_id];
+  slot.generation = next_device_flow_generation_++;
+  slot.done = std::move(done);
 
   std::string scope;
   for (const std::string& s : config->scopes) {
@@ -318,17 +328,55 @@ void NexusOAuthManager::StartDeviceCodeFlow(const std::string& provider_id,
       BuildBody(params, config->device_code_use_form),
       base::BindOnce(&NexusOAuthManager::OnDeviceCodeStarted,
                      weak_factory_.GetWeakPtr(), provider_id, code_verifier,
-                     std::move(callback)));
+                     slot.generation, std::move(callback)));
+}
+
+void NexusOAuthManager::CancelDeviceCodeFlow(const std::string& provider_id) {
+  device_flows_.erase(provider_id);
+}
+
+bool NexusOAuthManager::IsCurrentDeviceFlow(
+    const DeviceFlowState& state) const {
+  auto it = device_flows_.find(state.provider_id);
+  return it != device_flows_.end() &&
+         it->second.generation == state.generation;
+}
+
+void NexusOAuthManager::FinishDeviceFlow(const DeviceFlowState& state,
+                                         bool ok,
+                                         std::string error) {
+  auto it = device_flows_.find(state.provider_id);
+  if (it == device_flows_.end() || it->second.generation != state.generation) {
+    return;
+  }
+  DeviceCodeDoneCallback done = std::move(it->second.done);
+  device_flows_.erase(it);
+  if (done) {
+    std::move(done).Run(ok, std::move(error));
+  }
 }
 
 void NexusOAuthManager::OnDeviceCodeStarted(
     const std::string& provider_id,
     const std::string& code_verifier,
+    uint64_t generation,
     DeviceCodeCallback callback,
     std::optional<base::DictValue> response) {
-  if (!response) {
+  DeviceFlowState state;
+  state.provider_id = provider_id;
+  state.generation = generation;
+  if (!IsCurrentDeviceFlow(state)) {
     std::move(callback).Run(false, DeviceCodeInfo(),
-                            "Failed to start device authorization");
+                            "Sign-in was cancelled");
+    return;
+  }
+  // A failed start reports through `callback` only; the slot goes with it.
+  auto fail = [&](std::string error) {
+    device_flows_.erase(provider_id);
+    std::move(callback).Run(false, DeviceCodeInfo(), std::move(error));
+  };
+  if (!response) {
+    fail("Failed to start device authorization");
     return;
   }
 
@@ -336,9 +384,7 @@ void NexusOAuthManager::OnDeviceCodeStarted(
   const std::string* user_code = response->FindString("user_code");
   if (!device_code || !user_code) {
     const std::string* error = response->FindString("error");
-    std::move(callback).Run(
-        false, DeviceCodeInfo(),
-        error ? *error : "Invalid device authorization response");
+    fail(error ? *error : "Invalid device authorization response");
     return;
   }
 
@@ -355,8 +401,6 @@ void NexusOAuthManager::OnDeviceCodeStarted(
   std::move(callback).Run(true, info, std::string());
 
   // Begin background polling for the token.
-  DeviceFlowState state;
-  state.provider_id = provider_id;
   state.device_code = *device_code;
   state.code_verifier = code_verifier;
   const int interval = response->FindInt("interval").value_or(5);
@@ -372,12 +416,16 @@ void NexusOAuthManager::OnDeviceCodeStarted(
 }
 
 void NexusOAuthManager::PollDeviceCode(DeviceFlowState state) {
+  if (!IsCurrentDeviceFlow(state)) {
+    return;
+  }
   if (base::TimeTicks::Now() > state.deadline) {
-    DLOG(WARNING) << "Device code flow timed out for " << state.provider_id;
+    FinishDeviceFlow(state, false, std::string());
     return;
   }
   const OAuthProviderConfig* config = GetOAuthProviderConfig(state.provider_id);
   if (!config) {
+    FinishDeviceFlow(state, false, std::string());
     return;
   }
 
@@ -399,6 +447,9 @@ void NexusOAuthManager::PollDeviceCode(DeviceFlowState state) {
 void NexusOAuthManager::OnDeviceCodePoll(
     DeviceFlowState state,
     std::optional<base::DictValue> response) {
+  if (!IsCurrentDeviceFlow(state)) {
+    return;
+  }
   auto reschedule = [&]() {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
@@ -437,6 +488,7 @@ void NexusOAuthManager::OnDeviceCodePoll(
     if (on_tokens_saved_) {
       on_tokens_saved_.Run(state.provider_id);
     }
+    FinishDeviceFlow(state, true, std::string());
     return;
   }
 
@@ -451,8 +503,7 @@ void NexusOAuthManager::OnDeviceCodePoll(
     return;
   }
   // expired_token / access_denied / anything else — stop polling.
-  DLOG(WARNING) << "Device code flow ended for " << state.provider_id << ": "
-                << (error ? *error : "unknown");
+  FinishDeviceFlow(state, false, error ? *error : std::string());
 }
 
 void NexusOAuthManager::PostForJson(const std::string& url,

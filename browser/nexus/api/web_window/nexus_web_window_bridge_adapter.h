@@ -61,13 +61,21 @@ class NexusWebWindowBridgeAdapter
   // Contract: with `captureRedirect` (IsValidWebWindowCaptureTarget) the tab
   // is armed with a WebWindowRedirectCapture; the first navigation to that URL
   // is cancelled unsent, `onRedirectCaptured { windowId, url }` (full URL) is
-  // pushed, and the window closes (`onClosed` reason 'api').
+  // pushed, and the window closes (`onClosed` reason 'api') — or, with
+  // `awaitSignInResult`, shows the Finishing page until showSignInResult.
   void HandleOpenOnUI(::nexus::generated::WebWindowOpenInput input,
                       std::vector<blink::MessagePortDescriptor> ports,
                       ::nexus::BridgeResponseCallback done) override;
   void HandleCloseOnUI(::nexus::generated::WebWindowCloseInput input,
                        std::vector<blink::MessagePortDescriptor> ports,
                        ::nexus::BridgeResponseCallback done) override;
+  // Contract: only after a capture of an awaitSignInResult window, once.
+  // ok shows the success page and closes the window kSignInSuccessHold
+  // later; not ok shows the failure page and leaves the window open.
+  void HandleShowSignInResultOnUI(
+      ::nexus::generated::WebWindowShowSignInResultInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   void HandleListOnUI(::nexus::generated::WebWindowListInput input,
                       std::vector<blink::MessagePortDescriptor> ports,
                       ::nexus::BridgeResponseCallback done) override;
@@ -102,7 +110,8 @@ class NexusWebWindowBridgeAdapter
   void OnWindowNavigated(int32_t window_id, base::DictValue payload);
   void OnWindowTitleChanged(int32_t window_id, base::DictValue payload);
   void OnWindowClosed(int32_t window_id, std::string_view reason);
-  // The armed capture fired: one `onRedirectCaptured`, then an API close.
+  // The armed capture fired: one `onRedirectCaptured`, then an API close
+  // or, with awaitSignInResult, the Finishing page.
   void OnWindowRedirectCaptured(int32_t window_id, const GURL& url);
 
   void PushEvent(std::string_view action, base::DictValue payload);

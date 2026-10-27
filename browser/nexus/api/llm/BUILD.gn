@@ -115,8 +115,6 @@ source_set("oauth") {
     "oauth/oauth_providers.h",
     "oauth/oauth_token_store.cc",
     "oauth/oauth_token_store.h",
-    "oauth/oauth_url_opener.cc",
-    "oauth/oauth_url_opener.h",
   ]
 
   public_deps = [ "//base" ]

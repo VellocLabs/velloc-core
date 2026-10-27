@@ -708,6 +708,27 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_SINGLE_WEB_ADDRESS_LABEL" desc="Accessible name of the read-only web address shown at the top of a single-page web window (a window that shows one web page and no tabs). Screen readers announce it before the address." use_name_for_id="true">
         Page address
       </message>
+      <message name="IDS_SIGN_IN_WINDOW_TITLE" desc="Title of the small window in which the user signs in to an online service (for example a model provider). SERVICE_NAME is the service's name." use_name_for_id="true">
+        Sign in to <ph name="SERVICE_NAME">$1<ex>Example AI</ex></ph>
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_FINISHING" desc="Shown with a spinner in the sign-in window after the user approved the sign-in on the service's page, while the app finishes signing in. Ends with an ellipsis." use_name_for_id="true">
+        Finishing sign-in…
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_SUCCEEDED" desc="Heading shown with a check mark in the sign-in window once the sign-in has completed." use_name_for_id="true">
+        You’re signed in
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_CLOSING" desc="Shown under the 'You're signed in' heading, above a short progress bar; the window closes by itself a moment later." use_name_for_id="true">
+        This window will close automatically.
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_FAILED" desc="Heading shown with a cross in the sign-in window when the sign-in failed. The window stays open." use_name_for_id="true">
+        Couldn’t sign in
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_EXPIRED" desc="Failure reason shown under the 'Couldn't sign in' heading when the user did not approve the sign-in on the service's page before its one-time code expired." use_name_for_id="true">
+        The sign-in code expired.
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_FAILED_HINT" desc="Shown under the 'Couldn't sign in' heading (and the failure reason, when known). Tells the user to close the sign-in window and start the sign-in again from the app. PRODUCT_NAME is the product name." use_name_for_id="true">
+        Close this window and try again in <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph>.
+      </message>
     </messages>
   </release>
 </grit>

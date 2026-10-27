@@ -229,6 +229,7 @@ action("nexus_tools_codegen") {
     "api/declarations/web_window/reload.api.json",
     "api/declarations/web_window/setBounds.api.json",
     "api/declarations/web_window/setState.api.json",
+    "api/declarations/web_window/showSignInResult.api.json",
     "api/declarations/page_script/addInitScript.api.json",
     "api/declarations/page_script/attach.api.json",
     "api/declarations/page_script/detach.api.json",
@@ -577,6 +578,20 @@ source_set("web_window_redirect_capture") {
   ]
 }
 
+# The host's sign-in status pages (Finishing / signed in / failed) shown in a
+# single-web window. //base + //url only, so the lite test binary covers them.
+source_set("sign_in_status_page") {
+  sources = [
+    "api/web_window/sign_in_status_page.cc",
+    "api/web_window/sign_in_status_page.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//url",
+  ]
+}
+
 # The installer's one-shot channel marker → `nexus.webapp_url` (G-3); base +
 # prefs only, so the lite binary tests it.
 source_set("installer_channel") {
@@ -719,6 +734,8 @@ source_set("bridge") {
     "api/network/nexus_network_host.h",
     "api/providers/nexus_providers_bridge_adapter.cc",
     "api/providers/nexus_providers_bridge_adapter.h",
+    "api/providers/provider_sign_in_windows.cc",
+    "api/providers/provider_sign_in_windows.h",
     "api/remote_access/nexus_remote_access_bridge_adapter.cc",
     "api/remote_access/nexus_remote_access_bridge_adapter.h",
     "api/search/nexus_search_bridge_adapter.cc",
@@ -739,6 +756,10 @@ source_set("bridge") {
     "api/ui/nexus_ui_bridge_adapter.h",
     "api/web_window/nexus_web_window_bridge_adapter.cc",
     "api/web_window/nexus_web_window_bridge_adapter.h",
+    "api/web_window/sign_in_window.cc",
+    "api/web_window/sign_in_window.h",
+    "api/web_window/single_web_window.cc",
+    "api/web_window/single_web_window.h",
     "api/page_script/nexus_page_script_bridge_adapter.cc",
     "api/page_script/nexus_page_script_bridge_adapter.h",
     "tools/page_script/page_script_channel.cc",
@@ -866,8 +887,12 @@ source_set("bridge") {
     ":network_egress_policy",
     ":page_script_options",
     ":utility_tab_options",
+    ":sign_in_status_page",
     ":web_window_options",
     ":web_window_redirect_capture",
+
+    # IDS_SIGN_IN_* — the sign-in window's title and status pages.
+    "//custom_browser/resources:custom_browser_strings",
 
     # The remoteAccess bridge adapter forwards onto the per-Profile
     # NexusRemoteAccessService (listener start/stop, proxy, LNA grant).
@@ -1254,6 +1279,7 @@ source_set("unit_tests_lite") {
     "api/alarms/alarm_schedule_unittest.cc",
     "api/llm/llm_provider_factory_unittest.cc",
     "api/llm/llm_raw_stream_policy_unittest.cc",
+    "api/llm/oauth/oauth_manager_unittest.cc",
     "api/llm/oauth/oauth_providers_unittest.cc",
     "api/llm/oauth/oauth_token_store_unittest.cc",
     "api/llm/provider_config_unittest.cc",
@@ -1262,6 +1288,7 @@ source_set("unit_tests_lite") {
     "api/network/nexus_guest_request_unittest.cc",
     "api/page_script/page_script_options_unittest.cc",
     "api/ui/utility_tab_options_unittest.cc",
+    "api/web_window/sign_in_status_page_unittest.cc",
     "api/web_window/web_window_options_unittest.cc",
     "api/secrets/nexus_secret_store_unittest.cc",
     "api/shell/host_shell_unittest.cc",
@@ -1293,6 +1320,7 @@ source_set("unit_tests_lite") {
     ":host_shell",
     ":network_egress_policy",
     ":page_script_options",
+    ":sign_in_status_page",
     ":utility_tab_options",
     ":web_window_options",
     # Pure routing logic for remote access; a leaf (//base only) so it links
@@ -1328,6 +1356,11 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:raw_stream_policy",
     "//custom_browser/browser/nexus/api/llm:types",
     "//custom_browser/log:bridge_audit_log",
+
+    # oauth_manager_unittest.cc: SimpleURLLoader against a
+    # TestURLLoaderFactory, over Mojo.
+    "//mojo/core/embedder",
+    "//services/network:test_support",
     "//services/network/public/cpp",
     "//testing/gtest",
     "//url",

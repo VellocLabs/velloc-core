@@ -222,4 +222,11 @@
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">页面地址</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">显示应用</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">退出</translation>
+  <translation id="IDS_SIGN_IN_WINDOW_TITLE">登录 <ph name="SERVICE_NAME"/></translation>
+  <translation id="IDS_SIGN_IN_STATUS_FINISHING">正在完成登录…</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">已登录</translation>
+  <translation id="IDS_SIGN_IN_STATUS_CLOSING">此窗口将自动关闭。</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FAILED">无法登录</translation>
+  <translation id="IDS_SIGN_IN_STATUS_EXPIRED">登录代码已过期。</translation>
+  <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">请关闭此窗口，然后在 <ph name="PRODUCT_NAME"/> 中重试。</translation>
 </translationbundle>

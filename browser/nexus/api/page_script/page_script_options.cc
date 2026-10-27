@@ -45,54 +45,42 @@ std::string PageScriptBootstrapSource(PageScriptWorld world) {
   // Contract: idempotent per world (a second run is a no-op), and the
   // objects it defines cannot be replaced by later scripts of that world.
   // Security: defines nothing in a subframe, so only the top frame's
-  // scripts hold a way to the host.
-  const bool isolated = world == PageScriptWorld::kIsolated;
-  std::string source = base::StrCat({
+  // scripts hold a way to the host. Each world calls the host through its
+  // own binding, so the page's world never holds the private one.
+  return base::StrCat({
       "(() => {\n"
       "  const g = globalThis;\n"
       "  if (g !== g.top || g.vellocHost) return;\n"
       "  const call = g.",
-      isolated ? kPageScriptBindingName : kPageScriptPageBindingName,
+      world == PageScriptWorld::kIsolated ? kPageScriptBindingName
+                                          : kPageScriptPageBindingName,
       ";\n"
-      "  const send = (data) => {\n"
-      "    if (typeof call !== 'function') {\n"
-      "      throw new Error('vellocHost is not connected');\n"
-      "    }\n"
-      "    call(JSON.stringify(data === undefined ? null : data));\n"
-      "  };\n"});
-  if (!isolated) {
-    // The page's own world only sends: the host's messages are for the
-    // private world.
-    base::StrAppend(&source,
-                    {"  Object.defineProperty(g, 'vellocHost',\n"
-                     "      {value: Object.freeze({send})});\n"
-                     "})();\n"});
-    return source;
-  }
-  base::StrAppend(
-      &source,
-      {"  const listeners = new Set();\n"
-       "  const host = Object.freeze({\n"
-       "    send,\n"
-       "    onMessage(listener) {\n"
-       "      listeners.add(listener);\n"
-       "      return () => listeners.delete(listener);\n"
-       "    },\n"
-       "  });\n"
-       "  Object.defineProperty(g, 'vellocHost', {value: host});\n"
-       "  Object.defineProperty(g, '",
-       kPageScriptDispatchName,
-       "', {\n"
-       "    value(json) {\n"
-       "      const data = JSON.parse(json);\n"
-       "      for (const listener of [...listeners]) {\n"
-       "        try { listener(data); } catch (e) { console.error(e); }\n"
-       "      }\n"
-       "      return listeners.size;\n"
-       "    },\n"
-       "  });\n"
-       "})();\n"});
-  return source;
+      "  const listeners = new Set();\n"
+      "  const host = Object.freeze({\n"
+      "    send(data) {\n"
+      "      if (typeof call !== 'function') {\n"
+      "        throw new Error('vellocHost is not connected');\n"
+      "      }\n"
+      "      call(JSON.stringify(data === undefined ? null : data));\n"
+      "    },\n"
+      "    onMessage(listener) {\n"
+      "      listeners.add(listener);\n"
+      "      return () => listeners.delete(listener);\n"
+      "    },\n"
+      "  });\n"
+      "  Object.defineProperty(g, 'vellocHost', {value: host});\n"
+      "  Object.defineProperty(g, '",
+      kPageScriptDispatchName,
+      "', {\n"
+      "    value(json) {\n"
+      "      const data = JSON.parse(json);\n"
+      "      for (const listener of [...listeners]) {\n"
+      "        try { listener(data); } catch (e) { console.error(e); }\n"
+      "      }\n"
+      "      return listeners.size;\n"
+      "    },\n"
+      "  });\n"
+      "})();\n"});
 }
 
 std::string PageScriptDispatchExpression(std::string_view json) {

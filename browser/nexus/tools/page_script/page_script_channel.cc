@@ -4,12 +4,14 @@
 
 #include "custom_browser/browser/nexus/tools/page_script/page_script_channel.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/numerics/clamped_math.h"
 #include "base/strings/string_view_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -65,6 +67,24 @@ PageScriptChannel::Outcome OutcomeFromEvaluate(const base::DictValue& result) {
     }
   }
   return out;
+}
+
+// Completes an exposed postMessage: the listener count over both worlds, -1
+// when neither has run the bootstrap. A page-world failure leaves the
+// private world's answer as it was. Security: the page's count is whatever
+// the page's scripts make it, so the sum saturates.
+void SumListenerCounts(PageScriptChannel::Outcome isolated,
+                       PageScriptChannel::OutcomeCallback done,
+                       PageScriptChannel::Outcome page) {
+  const int private_count = isolated.value.GetIfInt().value_or(-1);
+  const int page_count = page.error_code.empty() && !page.exception
+                             ? page.value.GetIfInt().value_or(-1)
+                             : -1;
+  if (private_count >= 0 || page_count >= 0) {
+    isolated.value = base::Value(static_cast<int>(
+        base::ClampAdd(std::max(private_count, 0), std::max(page_count, 0))));
+  }
+  std::move(done).Run(std::move(isolated));
 }
 
 }  // namespace
@@ -172,8 +192,30 @@ void PageScriptChannel::ExecuteScript(const std::string& code,
 
 void PageScriptChannel::PostMessage(const std::string& json,
                                     OutcomeCallback done) {
-  ExecuteScript(PageScriptDispatchExpression(json), PageScriptWorld::kIsolated,
-                std::move(done));
+  std::string dispatch = PageScriptDispatchExpression(json);
+  if (!expose_to_page_) {
+    ExecuteScript(dispatch, PageScriptWorld::kIsolated, std::move(done));
+    return;
+  }
+  // An exposed page hears the message too, after the private world. The
+  // callback binds its own copy: argument order is unspecified, so a move
+  // here could empty `dispatch` before the first call reads it.
+  OutcomeCallback then_page =
+      base::BindOnce(
+          [](base::WeakPtr<PageScriptChannel> self, std::string dispatch,
+             OutcomeCallback done, Outcome isolated) {
+            if (!self || !isolated.error_code.empty() ||
+                isolated.exception) {
+              std::move(done).Run(std::move(isolated));
+              return;
+            }
+            self->ExecuteScript(
+                dispatch, PageScriptWorld::kMain,
+                base::BindOnce(&SumListenerCounts, std::move(isolated),
+                               std::move(done)));
+          },
+          weak_factory_.GetWeakPtr(), dispatch, std::move(done));
+  ExecuteScript(dispatch, PageScriptWorld::kIsolated, std::move(then_page));
 }
 
 void PageScriptChannel::AddInitScript(const std::string& source,

@@ -50,11 +50,10 @@ std::optional<std::string> ValidatePageScriptTarget(
 
 bool IsPageScriptPayloadWithinLimit(std::string_view payload);
 
-// The source the channel runs in `world` at the start of every document. In
-// the private world it defines `vellocHost` (send / onMessage) over the
-// private host call, and the dispatcher the host's postMessage calls; in the
-// page's own world (an exposed channel) `vellocHost` has `send` only, over
-// the page's host call — the host's messages never reach the page.
+// The source the channel runs in `world` at the start of every document: it
+// defines `vellocHost` (send / onMessage) over that world's own host call,
+// and the dispatcher the host's postMessage calls. The page's own world runs
+// it only on an exposed channel.
 std::string PageScriptBootstrapSource(PageScriptWorld world);
 
 // The expression that hands `json` (JSON text) to the dispatcher. `json` is

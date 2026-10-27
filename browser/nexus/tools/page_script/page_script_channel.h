@@ -46,7 +46,8 @@ namespace nexus {
 // subframes, but the bootstrap defines nothing outside the top frame and a
 // message is accepted only from a main-frame context (its origin is the
 // context's own, as the page reported it when the context was created).
-// A page's own scripts cannot call the host unless exposed.
+// A page's own scripts cannot call the host, nor hear its messages, unless
+// exposed; exposed, every script of the page can read what the host posts.
 class PageScriptChannel : public content::DevToolsAgentHostClient,
                           public content::WebContentsObserver {
  public:
@@ -96,9 +97,9 @@ class PageScriptChannel : public content::DevToolsAgentHostClient,
   void ExecuteScript(const std::string& code,
                      PageScriptWorld world,
                      OutcomeCallback done);
-  // Hands `json` to the listeners the private world's scripts registered
-  // (an exposed page's own scripts cannot listen); `value` is their count,
-  // -1 when no document has run the bootstrap yet.
+  // Hands `json` to the listeners the private world's scripts registered,
+  // then, on an exposed channel, to those the page's own scripts registered;
+  // `value` is their count, -1 when no document has run the bootstrap yet.
   void PostMessage(const std::string& json, OutcomeCallback done);
   // Registers `source` to run in the private world at every new document;
   // `value` is the script id.

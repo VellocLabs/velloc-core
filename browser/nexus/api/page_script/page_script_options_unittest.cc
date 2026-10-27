@@ -58,15 +58,15 @@ TEST(PageScriptOptionsTest, PrivateBootstrapSendsReceivesAndDispatches) {
   EXPECT_NE(std::string::npos, source.find(kPageScriptDispatchName));
 }
 
-TEST(PageScriptOptionsTest, PageBootstrapOnlySends) {
+TEST(PageScriptOptionsTest, PageBootstrapSendsAndReceivesOverThePageCall) {
   const std::string source = PageScriptBootstrapSource(PageScriptWorld::kMain);
   EXPECT_NE(std::string::npos, source.find("vellocHost"));
   EXPECT_NE(std::string::npos, source.find(kPageScriptPageBindingName));
-  // No way to the private host call, no listener API and no dispatcher.
+  // No way to the private host call.
   EXPECT_EQ(std::string::npos,
             source.find(base::StrCat({kPageScriptBindingName, ";"})));
-  EXPECT_EQ(std::string::npos, source.find("onMessage"));
-  EXPECT_EQ(std::string::npos, source.find(kPageScriptDispatchName));
+  EXPECT_NE(std::string::npos, source.find("onMessage"));
+  EXPECT_NE(std::string::npos, source.find(kPageScriptDispatchName));
 }
 
 TEST(PageScriptOptionsTest, DispatchExpressionEmbedsTheMessageAsAString) {

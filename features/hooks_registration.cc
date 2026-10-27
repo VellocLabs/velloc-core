@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "components/variations/service/buildflags.h"
 #include "custom_browser/browser/nexus/boot_bundle/boot_bundle_registration.h"
 #include "custom_browser/browser/nexus/launcher/nexus_background_mode_manager.h"
 #include "custom_browser/browser/nexus/nexus_installer_channel_registration.h"
@@ -9,6 +10,12 @@
 #include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "custom_browser/features/nexus_keyed_service_registration.h"
 #include "custom_browser/features/patch_webui/register_hooks.h"
+
+// A non-Google-branded build otherwise applies Chromium's field-trial testing
+// config on every launch, enabling experimental features (incl. Windows sandbox
+// experiments) in shipped binaries. Set disable_fieldtrial_testing_config.
+static_assert(!BUILDFLAG(FIELDTRIAL_TESTING_ENABLED),
+              "Velloc must build with disable_fieldtrial_testing_config = true");
 
 namespace custom_browser::features {
 

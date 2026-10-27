@@ -28,6 +28,7 @@ source_set("hooks_registration") {
 
   deps = [
     ":nexus_keyed_service_registration",
+    "//components/variations/service:buildflags",
     "//custom_browser/browser/nexus:installer_channel_registration",
     "//custom_browser/browser/nexus/boot_bundle",
     "//custom_browser/browser/nexus/launcher:launcher",

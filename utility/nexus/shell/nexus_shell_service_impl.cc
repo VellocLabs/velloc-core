@@ -329,10 +329,13 @@ void NexusShellServiceImpl::GetCapabilities(
         missing.push_back(tool.id);
       }
     }
-    if (missing.empty()) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    if (missing.empty() ||
+        now - last_capabilities_probe_ < kCapabilitiesReprobeInterval) {
       RespondFromCache(std::move(callback));
       return;
     }
+    last_capabilities_probe_ = now;
     RefreshTools(std::move(missing),
                  base::BindOnce(&NexusShellServiceImpl::RespondFromCache,
                                 weak_factory_.GetWeakPtr(),
@@ -417,6 +420,7 @@ void NexusShellServiceImpl::EnsureResolveStarted() {
 void NexusShellServiceImpl::OnResolved(ResolvedCapabilities capabilities) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   cached_capabilities_ = std::move(capabilities);
+  last_capabilities_probe_ = base::TimeTicks::Now();
   resolve_in_flight_ = false;
 
   std::vector<GetCapabilitiesCallback> drained_caps;

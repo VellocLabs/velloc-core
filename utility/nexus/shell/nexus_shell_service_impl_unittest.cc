@@ -883,5 +883,54 @@ TEST(NexusShellServiceImplTest, ExecAndStreamSpawnReprobeAToolCachedAsMissing) {
   ShellResolver::SetRegistryPathsForTesting(std::nullopt);
 }
 
+// A cached GetCapabilities re-probes the missing tools at most once per
+// kCapabilitiesReprobeInterval: a tool installed meanwhile shows up once the
+// interval has passed, not on every call.
+TEST(NexusShellServiceImplTest, GetCapabilitiesReprobesMissingToolsAtMostOncePerInterval) {
+  base::test::TaskEnvironment task_environment(
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
+  base::ScopedTempDir home;
+  ASSERT_TRUE(home.CreateUniqueTempDir());
+  const std::string home_path = home.GetPath().AsUTF8Unsafe();
+  base::ScopedEnvironmentVariableOverride home_env("HOME", home_path);
+  base::ScopedEnvironmentVariableOverride userprofile_env("USERPROFILE",
+                                                          home_path);
+  base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
+                                                             home_path);
+  base::ScopedEnvironmentVariableOverride path_env("PATH", "");
+  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+  auto uvx_available = [&] {
+    const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+    const auto it = std::ranges::find_if(
+        caps.tools,
+        [](const mojom::ShellResolvedToolPtr& t) { return t->id == "uvx"; });
+    CHECK(it != caps.tools.end());
+    return (*it)->available;
+  };
+  ASSERT_FALSE(uvx_available());
+
+  const base::FilePath bin_dir =
+      home.GetPath().AppendASCII(".local").AppendASCII("bin");
+  ASSERT_TRUE(base::CreateDirectory(bin_dir));
+#if BUILDFLAG(IS_WIN)
+  ASSERT_TRUE(base::WriteFile(bin_dir.AppendASCII("uvx.exe"), "fake"));
+#else
+  ASSERT_TRUE(base::WriteFile(bin_dir.AppendASCII("uvx"), "fake"));
+#endif
+
+  // Within the interval of the first probe: answered from the cache.
+  EXPECT_FALSE(uvx_available());
+  EXPECT_FALSE(uvx_available());
+
+  task_environment.FastForwardBy(
+      NexusShellServiceImpl::kCapabilitiesReprobeInterval);
+  EXPECT_TRUE(uvx_available());
+
+  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
+}
+
 }  // namespace
 }  // namespace nexus

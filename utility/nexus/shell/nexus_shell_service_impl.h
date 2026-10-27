@@ -40,6 +40,12 @@ namespace nexus {
 // and requests before the first probe are queued.
 class NexusShellServiceImpl : public mojom::NexusShellService {
  public:
+  // A GetCapabilities answered from the cache re-probes the tools cached as
+  // missing at most this often; Exec / Spawn / StreamSpawn re-probe a missing
+  // tool they name on every call.
+  static constexpr base::TimeDelta kCapabilitiesReprobeInterval =
+      base::Seconds(10);
+
   // For self-owned bindings (the production path used from
   // `services::RunNexusShellService`).
   explicit NexusShellServiceImpl(
@@ -242,6 +248,8 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   // signal; the cache is never invalidated, only missing tools are
   // re-probed (`RefreshTools`).
   std::optional<ResolvedCapabilities> cached_capabilities_;
+  // When the full probe finished, or GetCapabilities last re-probed.
+  base::TimeTicks last_capabilities_probe_;
 
   // Callbacks waiting for the in-flight probe to finish. Drained by
   // `OnResolved` in FIFO order.

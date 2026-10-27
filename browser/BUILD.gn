@@ -7,6 +7,8 @@ source_set("browser") {
     "//custom_browser/chromium_overrides/feature_list_override.h",
   ]
 
+  public_deps = [ ":feature_list_names" ]
+
   deps = [
     "//base",
     "//chrome/browser:main_extra_parts",
@@ -23,4 +25,12 @@ source_set("browser") {
   ]
 
   visibility = [ "//chrome/browser/*" ]
+}
+
+# Exact feature-name matching over an --enable-features /
+# --disable-features value; //base only, so the lite test binary covers it.
+source_set("feature_list_names") {
+  sources = [ "//custom_browser/chromium_overrides/feature_list_names.h" ]
+
+  public_deps = [ "//base" ]
 }

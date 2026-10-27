@@ -12,6 +12,7 @@
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/actor/core/actor_features.h"
+#include "custom_browser/chromium_overrides/feature_list_names.h"
 
 namespace custom_browser {
 
@@ -71,9 +72,14 @@ inline void AppendFeatureListOverrides(
   overrides->emplace_back(std::cref(actor::kGlicCrossOriginNavigationGating),
                           base::FeatureList::OVERRIDE_DISABLE_FEATURE);
 
-  // Keep page actions on localhost auto-allowed. Upstream treats localhost
-  // as a sensitive origin and routes actions there through a confirmation
-  // the agent tab cannot answer; the agent's own dev servers live there.
+  // Keep page actions on loopback URLs auto-allowed. With this feature on,
+  // upstream auto-allows localhost for navigation requests only and treats
+  // a localhost page as a sensitive origin: a click, type or scroll there
+  // runs only after the actor task's delegate gets the user's confirmation.
+  // An agent task has no such prompt, so the action is refused (kUrlBlocked).
+  // Pinned off, page actions are allowed on every URL net::IsLocalhost()
+  // accepts (localhost, *.localhost, 127.0.0.0/8, [::1]) — any local
+  // service, not only the agent's own dev servers.
   overrides->emplace_back(std::cref(actor::kGlicActorLocalhostIsSensitive),
                           base::FeatureList::OVERRIDE_DISABLE_FEATURE);
 
@@ -99,7 +105,7 @@ inline void AppendFeatureListOverrides(
         command_line->GetSwitchValueASCII(::switches::kDisableFeatures);
     bool changed = false;
     for (const char* feature : kPinnedOffFeatures) {
-      if (disable_features.find(feature) != std::string::npos) {
+      if (FeatureListNamesFeature(disable_features, feature)) {
         continue;
       }
       disable_features = disable_features.empty()

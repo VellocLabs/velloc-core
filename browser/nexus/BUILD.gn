@@ -1308,6 +1308,7 @@ source_set("unit_tests_lite") {
     "search/transcript_span_index_file_unittest.cc",
     "search/transcript_span_index_unittest.cc",
     "session/nexus_session_tab_counts_unittest.cc",
+    "//custom_browser/chromium_overrides/feature_list_names_unittest.cc",
     "//custom_browser/log/bridge_audit_log_unittest.cc",
   ]
 
@@ -1351,6 +1352,7 @@ source_set("unit_tests_lite") {
     "//components/os_crypt/async/browser:test_support",
     "//components/prefs",
     "//components/prefs:test_support",
+    "//custom_browser/browser:feature_list_names",
     "//custom_browser/browser/nexus/api/llm:oauth",
     "//custom_browser/browser/nexus/api/llm:pref_names",
     "//custom_browser/browser/nexus/api/llm:provider",

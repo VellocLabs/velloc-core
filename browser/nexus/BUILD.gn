@@ -492,6 +492,18 @@ source_set("observation_index") {
   ]
 }
 
+# Native JS dialogs as the browser tool presents them: CDP parsing, the
+# model-facing `dialog` block, the reserved answer indexes. //base only, so
+# the lite binary tests it.
+source_set("js_dialog") {
+  sources = [
+    "tools/browser_tool/js_dialog.cc",
+    "tools/browser_tool/js_dialog.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
 # The `alarms` capability's schedule rules (due / catch-up / grid / prefs
 # form) as pure functions — //base only, so the lite binary tests them.
 source_set("alarm_schedule") {
@@ -758,6 +770,8 @@ source_set("bridge") {
     "tools/browser_tool/browser_tool_internal.h",
     "tools/browser_tool/download_capture.cc",
     "tools/browser_tool/download_capture.h",
+    "tools/browser_tool/js_dialog_watcher.cc",
+    "tools/browser_tool/js_dialog_watcher.h",
     "tools/browser_tool/screenshot_shaping.cc",
     "tools/browser_tool/screenshot_shaping.h",
     "tools/file_tool/file_tool.cc",
@@ -826,7 +840,8 @@ source_set("bridge") {
     # At-rest secret encryption (NexusSecretCrypt) appears in bridge headers.
     ":secret_crypt",
 
-    # NodeRegistry appears in browser_tool.h.
+    # NodeRegistry and OpenJsDialog appear in browser_tool.h.
+    ":js_dialog",
     ":observation_index",
 
   ]
@@ -1252,6 +1267,7 @@ source_set("unit_tests_lite") {
     "api/shell/host_shell_unittest.cc",
     "domain/domain_sandbox_manager_unittest.cc",
     "tools/browser_tool/frame_document_unittest.cc",
+    "tools/browser_tool/js_dialog_unittest.cc",
     "tools/browser_tool/node_registry_unittest.cc",
     "nexus_installer_channel_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
@@ -1268,6 +1284,7 @@ source_set("unit_tests_lite") {
   deps = [
     ":alarm_schedule",
     ":domain",
+    ":js_dialog",
     ":observation_index",
     ":installer_channel",
 

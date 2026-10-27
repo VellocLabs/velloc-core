@@ -154,6 +154,47 @@ void PausableToolCallbackHolder::OnTimeout() {
   std::move(inner_).Reject("tool_action_timeout", ActionParams(action_name_));
 }
 
+InFlightAction::InFlightAction(::nexus::ToolCallback done,
+                               std::string action_name,
+                               int32_t tab_id)
+    : target_(std::move(done)),
+      action_name_(std::move(action_name)),
+      tab_id_(tab_id) {}
+
+InFlightAction::~InFlightAction() = default;
+
+void InFlightAction::Resolve(base::Value value) {
+  completed_ = true;
+  if (!has_target_) {
+    return;
+  }
+  has_target_ = false;
+  std::move(target_).Resolve(std::move(value));
+}
+
+void InFlightAction::Reject(std::string code, base::DictValue params) {
+  completed_ = true;
+  if (!has_target_) {
+    return;
+  }
+  has_target_ = false;
+  std::move(target_).Reject(std::move(code), std::move(params));
+}
+
+bool InFlightAction::ResolveEarly(base::Value value) {
+  if (!has_target_ || completed_) {
+    return false;
+  }
+  has_target_ = false;
+  std::move(target_).Resolve(std::move(value));
+  return true;
+}
+
+void InFlightAction::SetSuccessor(::nexus::ToolCallback successor) {
+  target_ = std::move(successor);
+  has_target_ = true;
+}
+
 const actor::EnterprisePolicyChecker* GetPolicyChecker(Profile* profile) {
   if (!profile) {
     return nullptr;

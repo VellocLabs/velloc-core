@@ -32,6 +32,7 @@
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/tab_interface.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/js_dialog_watcher.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/node_registry.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
@@ -58,7 +59,7 @@ class ToolSession;  // for CategoryAccessor specialization below
 // Per-LLM-session class owning the browser-actor task and hosting every
 // `browser_*` tool, a member of `ToolSession`. `EnsureTaskCreated` mints
 // `task_id_` on the first actor call; `OnStop` stops and resets it.
-class BrowserTool : public ToolBase {
+class BrowserTool : public ToolBase, public JsDialogWatcher::Delegate {
  public:
   BrowserTool(ToolSession* session, Profile* profile,
               const std::string& session_key);
@@ -452,6 +453,34 @@ class BrowserTool : public ToolBase {
   // default" for the next tab-less call.
   void RecordWorkTab(tabs::TabHandle handle);
 
+  // Native JS dialogs (F-21). A watcher per acted-on tab reports dialogs;
+  // while one is open the tab's renderer is frozen, so actions on it are
+  // refused with the `dialog` block and BrowserClick / BrowserType on the
+  // reserved dialog indexes answer it.
+  void WatchJsDialogs(int32_t tab_id);
+  // The tab whose open dialog the reserved indexes address: the work tab's,
+  // else any watched tab's. Null when none is open.
+  JsDialogWatcher* FindOpenJsDialog();
+  // Resolves `done` with the `dialog` block and returns true when `tab_id`
+  // shows a dialog.
+  bool RefuseWhileJsDialogOpen(int32_t tab_id,
+                               std::string_view action_name,
+                               ToolCallback& done);
+  // Routes `done` through `in_flight_` so a dialog can answer it early.
+  ToolCallback TrackInFlight(ToolCallback done,
+                             std::string_view action_name,
+                             int32_t tab_id);
+  void AnswerJsDialog(JsDialogWatcher* watcher, bool accept, ToolCallback done);
+  void OnJsDialogAnswered(int32_t tab_id,
+                          base::DictValue answered,
+                          ToolCallback done,
+                          bool ok);
+  void StageJsDialogText(std::string text, ToolCallback done);
+
+  // JsDialogWatcher::Delegate:
+  void OnJsDialogOpened(int32_t tab_id) override;
+  void OnJsDialogClosed(int32_t tab_id) override;
+
   // Session tab bookkeeping. `tab_group_id_` is unset until the first bind.
   // `session_tabs_` is reconciled with `NexusSessionTabTag` at shutdown so
   // dragged-out tabs still close. `last_work_tab_` is set only when a tool
@@ -555,6 +584,11 @@ class BrowserTool : public ToolBase {
   // action is in flight per session at a time (the agent loop serializes
   // tool calls), which is what makes a plain member a safe carrier.
   bool nav_settle_observation_retried_ = false;
+
+  // Dialog watchers by tab id; detached ones are pruned on the next watch.
+  base::flat_map<int32_t, std::unique_ptr<JsDialogWatcher>> dialog_watchers_;
+  // The browser action whose caller a dialog may answer early.
+  scoped_refptr<browser_tool_internal::InFlightAction> in_flight_;
 
   base::WeakPtrFactory<BrowserTool> weak_ptr_factory_{this};
 };

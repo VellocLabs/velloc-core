@@ -34,6 +34,7 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/frame_document.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/download_capture.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/js_dialog.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/screenshot_shaping.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "custom_browser/browser/nexus/upload/nexus_file_chooser_interceptor.h"
@@ -512,12 +513,17 @@ void BrowserTool::RunTabObservation(int32_t tab_id_value,
   // can default to it via `LastWorkTab()` when Chrome's foreground
   // tab isn't session-owned. Mirrors `RunActorAction`.
   RecordWorkTab(tabs::TabHandle(tab_id_value));
+  WatchJsDialogs(tab_id_value);
+  if (RefuseWhileJsDialogOpen(tab_id_value, action_name, done)) {
+    return;
+  }
 
   // Same per-action budget the actor-driven path uses — observation-
   // only actions (screenshot, read_page, find_text) also dispatch
   // through the actor framework and can hang on a stalled APC fetch.
   done = PausableBudgetWrap(std::move(done), action_timeout_,
                             std::string(action_name));
+  done = TrackInFlight(std::move(done), action_name, tab_id_value);
 
   Profile* profile = GetProfile();
   if (!profile) {
@@ -1011,6 +1017,11 @@ void BrowserTool::RunEvaluateOnUI(::nexus::generated::BrowserEvaluateInput input
   // returnByValue=true), and self-destructs on completion. Captured
   // `tab_id` and `done` are moved through to the reply closure.
   const int32_t tab_id = *resolved_tab_id;
+  WatchJsDialogs(tab_id);
+  if (RefuseWhileJsDialogOpen(tab_id, "evaluate", done)) {
+    return;
+  }
+  done = TrackInFlight(std::move(done), "evaluate", tab_id);
   BrowserEvaluateSession::Start(
       contents, input.code,
       base::BindOnce(
@@ -1115,6 +1126,17 @@ void BrowserTool::RunClickOnUI(::nexus::generated::BrowserClickInput input,
   // (always LEFT), and click_count (always SINGLE). Right-click /
   // double/triple click were so rarely used by LLMs that the surface
   // was net-negative; dedicated tools can ship later if needed.
+  if (JsDialogWatcher* watcher =
+          IsJsDialogIndex(input.index) ? FindOpenJsDialog() : nullptr) {
+    std::optional<bool> accept =
+        JsDialogAcceptForIndex(*watcher->open_dialog(), input.index);
+    if (accept.has_value()) {
+      AnswerJsDialog(watcher, *accept, std::move(done));
+    } else {
+      RefuseWhileJsDialogOpen(watcher->tab_id(), "click", done);
+    }
+    return;
+  }
   const NodeRegistry::Entry* entry =
       LookupNode(input.index, std::nullopt, done, "click");
   if (!entry) {
@@ -1138,6 +1160,18 @@ void BrowserTool::RunInputOnUI(::nexus::generated::BrowserInputInput input,
                                ToolCallback done) {
   // Phase 13: dropped tab_id. The index's home tab is the implicit
   // target — if it's not the active tab, BrowserActivateTab(N) first.
+  if (input.index == kJsDialogTextIndex) {
+    JsDialogWatcher* watcher = FindOpenJsDialog();
+    if (watcher && watcher->open_dialog()->type == "prompt") {
+      if (input.submit.value_or(false)) {
+        watcher->open_dialog()->prompt_text = std::move(input.text);
+        AnswerJsDialog(watcher, /*accept=*/true, std::move(done));
+      } else {
+        StageJsDialogText(std::move(input.text), std::move(done));
+      }
+      return;
+    }
+  }
   const NodeRegistry::Entry* entry =
       LookupNode(input.index, std::nullopt, done, "input");
   if (!entry) {

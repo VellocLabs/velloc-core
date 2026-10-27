@@ -97,6 +97,41 @@ class PausableToolCallbackHolder
   scoped_refptr<PausableTimeout> timeout_;
 };
 
+// The caller of the browser action in flight on `tab_id`. A JS dialog that
+// freezes the tab answers the caller early (`ResolveEarly`); the action's own
+// completion, which arrives once the dialog is answered, then goes to the
+// call that answered it (`SetSuccessor`), or nowhere.
+class InFlightAction : public base::RefCounted<InFlightAction> {
+ public:
+  InFlightAction(::nexus::ToolCallback done,
+                 std::string action_name,
+                 int32_t tab_id);
+
+  const std::string& action_name() const { return action_name_; }
+  int32_t tab_id() const { return tab_id_; }
+  bool completed() const { return completed_; }
+  // True while nobody waits for the completion.
+  bool awaiting_successor() const { return !has_target_ && !completed_; }
+
+  // Completion of the underlying action.
+  void Resolve(base::Value value);
+  void Reject(std::string code, base::DictValue params);
+
+  // Answers the waiting caller now with `value`. False when nobody waits.
+  bool ResolveEarly(base::Value value);
+  void SetSuccessor(::nexus::ToolCallback successor);
+
+ private:
+  friend class base::RefCounted<InFlightAction>;
+  ~InFlightAction();
+
+  ::nexus::ToolCallback target_;
+  bool has_target_ = true;
+  bool completed_ = false;
+  const std::string action_name_;
+  const int32_t tab_id_;
+};
+
 // =============================================================================
 // Cross-cutting free helpers. Functions only used inside one split .cc
 // stay in that file's anonymous namespace; this header captures the

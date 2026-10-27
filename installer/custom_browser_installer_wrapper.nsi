@@ -220,8 +220,11 @@ FunctionEnd
 ; run while "First Run" (chrome::kFirstRunSentinel) is missing from the user
 ; data dir (%LOCALAPPDATA%\<kProductPathName>\User Data), and then opens its
 ; welcome window and first-run tabs. Writing the sentinel here skips both.
-; It covers the account running the installer only; an existing sentinel is
-; left untouched.
+; It is written before the mini installer runs: a first install launches the
+; browser from inside it unless do_not_launch_chrome is set, and that launch
+; must already find the sentinel. A failed install leaves it in place, which
+; only skips a first run Velloc never shows. It covers the account running
+; the installer only; an existing sentinel is left untouched.
 Function SkipBrowserFirstRun
   StrCpy $R0 "$LOCALAPPDATA\\Velloc\\User Data"
   ${If} ${FileExists} "$R0\\First Run"
@@ -267,6 +270,7 @@ Section "Install"
   Call ClearBreakingInstallerVersionGate
   Call UninstallLegacySchemeInstall
   Call RecordInstallerChannel
+  Call SkipBrowserFirstRun
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
   SetCompress off
@@ -286,7 +290,6 @@ Section "Install"
 
   ${If} $MiniExit == 0
     DetailPrint "Mini installer completed successfully."
-    Call SkipBrowserFirstRun
   ${Else}
     DetailPrint "Mini installer failed with exit code $MiniExit."
     ${If} $InstallerChannel != ""
@@ -350,8 +353,9 @@ Function LaunchInstalledChrome
   Call ResolveInstalledChromeExe
   ${If} $R7 != ""
     DetailPrint "Launching ${PRODUCT_NAME}..."
-    ; "--from-installer" marks the launch as installer-driven (parity with
-    ; setup.exe's own post-first-install launch).
+    ; "--from-installer" marks the launch as installer-driven. setup.exe's
+    ; own first-install launch is off (do_not_launch_chrome in
+    ; master_preferences), so this is the only post-install launch.
     Exec '"$R7" --from-installer'
   ${Else}
     DetailPrint "Could not locate installed ${BROWSER_EXE}; skipping launch."

@@ -10,6 +10,7 @@ the browser exe), so these tests compile it and check its structure instead.
 Run: python custom_browser/installer/wrapper_nsi_test.py
 """
 
+import json
 import os
 import re
 import shutil
@@ -116,14 +117,28 @@ class FirstRunSentinelTest(unittest.TestCase):
     self.assertIsNotNone(guard, 'no FileExists guard returning early')
     self.assertLess(guard.start(), self.body.index('FileOpen'))
 
-  def test_written_only_after_a_successful_install(self):
+  def test_written_before_the_mini_installer_runs(self):
+    # setup.exe may launch the browser from inside the mini installer; that
+    # launch must already find the sentinel.
     section = re.search(r'^Section "Install"\s*$(.*?)^SectionEnd',
                         self.source, re.MULTILINE | re.DOTALL).group(1)
-    success = section.index('${If} $MiniExit == 0')
-    failure = section.index('${Else}', success)
-    call = section.index('Call SkipBrowserFirstRun')
-    self.assertLess(success, call)
-    self.assertLess(call, failure)
+    self.assertEqual(section.count('Call SkipBrowserFirstRun'), 1)
+    self.assertLess(section.index('Call SkipBrowserFirstRun'),
+                    section.index('ExecWait'))
+
+
+class MasterPreferencesTest(unittest.TestCase):
+  """The initial preferences handed to the mini installer."""
+
+  def setUp(self):
+    with open(os.path.join(_HERE, 'master_preferences'),
+              encoding='utf-8') as f:
+      self.prefs = json.load(f)
+
+  def test_setup_does_not_launch_the_browser(self):
+    # The wrapper's own launch (LaunchInstalledChrome) is the only one.
+    self.assertIs(
+        self.prefs.get('distribution', {}).get('do_not_launch_chrome'), True)
 
 
 _CHANNEL_NSH = os.path.join(_HERE, 'installer_channel.nsh')

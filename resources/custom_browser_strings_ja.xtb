@@ -220,11 +220,14 @@
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">ページのアドレス</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">アプリを表示</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">終了</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE"><ph name="SERVICE_NAME"/> にログイン</translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">ログインを完了しています…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">ログインしました</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">このウィンドウは自動的に閉じます。</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">ログインできませんでした</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">ログインコードの有効期限が切れました。</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">ログインは承認されませんでした。</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">サービスがログインを完了できませんでした。</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">このウィンドウを閉じて、<ph name="PRODUCT_NAME"/> でもう一度お試しください。</translation>
 </translationbundle>

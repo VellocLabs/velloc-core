@@ -569,13 +569,11 @@ source_set("web_window_redirect_capture") {
 
   public_deps = [
     "//base",
+    "//content/public/browser",
     "//url",
   ]
 
-  deps = [
-    ":web_window_options",
-    "//content/public/browser",
-  ]
+  deps = [ ":web_window_options" ]
 }
 
 # The host's sign-in status pages (Finishing / signed in / failed) shown in a

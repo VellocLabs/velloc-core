@@ -708,6 +708,9 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_SINGLE_WEB_ADDRESS_LABEL" desc="Accessible name of the read-only web address shown at the top of a single-page web window (a window that shows one web page and no tabs). Screen readers announce it before the address." use_name_for_id="true">
         Page address
       </message>
+      <message name="IDS_SINGLE_WEB_WINDOW_OS_TITLE" desc="Title the operating system shows (taskbar, window switcher) for a single-page web window that its opener gave a fixed title. WINDOW_TITLE is that title, for example 'Sign in to Example AI'; PRODUCT_NAME is the product name. Keep the separator unless your language writes window titles differently." use_name_for_id="true">
+        <ph name="WINDOW_TITLE">$1<ex>Sign in to Example AI</ex></ph> - <ph name="PRODUCT_NAME">$2<ex>Velloc</ex></ph>
+      </message>
       <message name="IDS_SIGN_IN_WINDOW_TITLE" desc="Title of the small window in which the user signs in to an online service (for example a model provider). SERVICE_NAME is the service's name." use_name_for_id="true">
         Sign in to <ph name="SERVICE_NAME">$1<ex>Example AI</ex></ph>
       </message>
@@ -725,6 +728,12 @@ This removes the stored provider, saved endpoint, and saved model selections.
       </message>
       <message name="IDS_SIGN_IN_STATUS_EXPIRED" desc="Failure reason shown under the 'Couldn't sign in' heading when the user did not approve the sign-in on the service's page before its one-time code expired." use_name_for_id="true">
         The sign-in code expired.
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_DENIED" desc="Failure reason shown under the 'Couldn't sign in' heading when the service reports that the sign-in was not approved (the user declined it on the service's page, or the service refused it)." use_name_for_id="true">
+        The sign-in was not approved.
+      </message>
+      <message name="IDS_SIGN_IN_STATUS_SERVICE_ERROR" desc="Failure reason shown under the 'Couldn't sign in' heading when the service reports any other error during the sign-in." use_name_for_id="true">
+        The service couldn’t complete the sign-in.
       </message>
       <message name="IDS_SIGN_IN_STATUS_FAILED_HINT" desc="Shown under the 'Couldn't sign in' heading (and the failure reason, when known). Tells the user to close the sign-in window and start the sign-in again from the app. PRODUCT_NAME is the product name." use_name_for_id="true">
         Close this window and try again in <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph>.

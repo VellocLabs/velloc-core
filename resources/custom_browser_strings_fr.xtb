@@ -222,11 +222,14 @@ Cela supprime le fournisseur mémorisé, le point de terminaison enregistré et 
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Adresse de la page</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">Afficher l’application</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">Quitter</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE">Se connecter à <ph name="SERVICE_NAME"/></translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">Finalisation de la connexion…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">Vous êtes connecté</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">Cette fenêtre va se fermer automatiquement.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">Impossible de se connecter</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">Le code de connexion a expiré.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">La connexion n’a pas été approuvée.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">Le service n’a pas pu finaliser la connexion.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">Fermez cette fenêtre et réessayez dans <ph name="PRODUCT_NAME"/>.</translation>
 </translationbundle>

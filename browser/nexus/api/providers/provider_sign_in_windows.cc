@@ -10,6 +10,8 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
+#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
@@ -46,13 +48,23 @@ NexusOAuthManager* OAuthManagerFor(Profile* profile) {
   return broker ? broker->oauth_manager() : nullptr;
 }
 
-// What the failure page says about a device-code login's end: the OAuth
-// error code as the server sent it, or the localized "expired" line.
-std::u16string DeviceCodeFailureReason(std::string_view error) {
-  if (error.empty() || error == "expired_token") {
-    return l10n_util::GetStringUTF16(IDS_SIGN_IN_STATUS_EXPIRED);
+// The failure page's reason line for an OAuth `error` code: a localized
+// line per kind, never the code.
+std::u16string OAuthFailureReason(std::string_view error) {
+  switch (ClassifyOAuthSignInError(error)) {
+    case SignInFailureKind::kDenied:
+      return l10n_util::GetStringUTF16(IDS_SIGN_IN_STATUS_DENIED);
+    case SignInFailureKind::kExpired:
+      return l10n_util::GetStringUTF16(IDS_SIGN_IN_STATUS_EXPIRED);
+    case SignInFailureKind::kServiceError:
+      return l10n_util::GetStringUTF16(IDS_SIGN_IN_STATUS_SERVICE_ERROR);
   }
-  return base::UTF8ToUTF16(error);
+  NOTREACHED();
+}
+
+// A device-code login that ends without an error code ran out of time.
+std::u16string DeviceCodeFailureReason(std::string_view error) {
+  return OAuthFailureReason(error.empty() ? "expired_token" : error);
 }
 
 }  // namespace
@@ -69,6 +81,10 @@ class ProviderSignInWindows::Window {
         serial_(serial),
         device_code_(device_code),
         on_closed_(std::move(on_closed)) {
+    if (content::WebContents* first =
+            browser->tab_strip_model()->GetActiveWebContents()) {
+      sign_in_contents_ = first->GetWeakPtr();
+    }
     did_close_ = browser->RegisterBrowserDidClose(base::BindRepeating(
         &Window::OnBrowserDidClose, base::Unretained(this)));
   }
@@ -89,18 +105,18 @@ class ProviderSignInWindows::Window {
   // Whether the login this window shows has not reported its end yet.
   bool running() const { return running_; }
 
+  // The tab the sign-in opened in, wherever the page went later; null once
+  // it is gone.
   content::WebContents* contents() const {
-    return browser_ ? browser_->tab_strip_model()->GetActiveWebContents()
-                    : nullptr;
+    return browser_ ? sign_in_contents_.get() : nullptr;
   }
 
-  void ShowFinishing() { ShowSignInStatus(contents(), SignInStatus::kFinishing); }
+  void ShowFinishing() { ShowStatus(SignInStatus::kFinishing); }
 
   void ShowResult(bool ok, std::u16string_view reason) {
     running_ = false;
-    ShowSignInStatus(contents(),
-                     ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
-                     ok ? std::u16string_view() : reason);
+    ShowStatus(ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
+               ok ? std::u16string_view() : reason);
     if (ok) {
       close_timer_.Start(FROM_HERE, kSignInSuccessHold,
                          base::BindOnce(&Window::Close, base::Unretained(this)));
@@ -108,6 +124,21 @@ class ProviderSignInWindows::Window {
   }
 
  private:
+  // Status pages go to the sign-in's own tab, brought to the front should the
+  // service have opened another tab in this window.
+  void ShowStatus(SignInStatus status, std::u16string_view reason = {}) {
+    content::WebContents* web_contents = contents();
+    if (!web_contents) {
+      return;
+    }
+    TabStripModel* strip = browser_->tab_strip_model();
+    const int index = strip->GetIndexOfWebContents(web_contents);
+    if (index != TabStripModel::kNoTab && index != strip->active_index()) {
+      strip->ActivateTabAt(index);
+    }
+    ShowSignInStatus(web_contents, status, reason);
+  }
+
   void Close() {
     if (browser_) {
       BrowserWindow::FromBrowser(browser_)->Close();
@@ -122,6 +153,7 @@ class ProviderSignInWindows::Window {
   }
 
   raw_ptr<BrowserWindowInterface> browser_;
+  base::WeakPtr<content::WebContents> sign_in_contents_;
   const uint64_t serial_;
   const bool device_code_;
   bool running_ = true;
@@ -161,7 +193,8 @@ bool ProviderSignInWindows::OpenForRedirect(const std::string& provider_id,
     windows_.erase(provider_id);
     return false;
   }
-  // Security: an unarmed window would let the redirect reach the port.
+  // Security: an unarmed window would let the redirect reach the port. The
+  // capture also arms every page the sign-in opens (popup or new tab).
   WebWindowRedirectCapture::Attach(
       contents, GURL(kNexusOAuthRedirectUri),
       base::BindOnce(&ProviderSignInWindows::OnRedirectCaptured,
@@ -246,10 +279,14 @@ void ProviderSignInWindows::OnRedirectCaptured(const std::string& provider_id,
 
   NexusOAuthManager* manager = OAuthManagerFor(profile_);
   if (!error.empty() || code.empty() || state.empty() || !manager) {
-    // The provider's own words when it sent some; else no reason line.
-    window->ShowResult(false, base::UTF8ToUTF16(!error_description.empty()
-                                                    ? error_description
-                                                    : error));
+    // The page shows a localized reason only; the service's code and text
+    // go to the log.
+    if (!error.empty()) {
+      LOG(WARNING) << "provider sign-in for " << provider_id
+                   << " failed: " << error << " " << error_description;
+    }
+    window->ShowResult(false, error.empty() ? std::u16string()
+                                            : OAuthFailureReason(error));
     return;
   }
   window->ShowFinishing();

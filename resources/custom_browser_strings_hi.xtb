@@ -222,11 +222,14 @@
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">पेज का पता</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">ऐप दिखाएं</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">बाहर निकलें</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE"><ph name="SERVICE_NAME"/> में साइन इन करें</translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">साइन-इन पूरा हो रहा है…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">आपने साइन इन कर लिया है</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">यह विंडो अपने-आप बंद हो जाएगी।</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">साइन इन नहीं हो सका</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">साइन-इन कोड की समय-सीमा खत्म हो गई।</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">साइन-इन को स्वीकृति नहीं मिली।</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">सेवा साइन-इन पूरा नहीं कर सकी।</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">यह विंडो बंद करें और <ph name="PRODUCT_NAME"/> में फिर से कोशिश करें।</translation>
 </translationbundle>

@@ -82,5 +82,18 @@ TEST(SignInStatusPageTest, AnEmptyReasonShowsNoReasonLine) {
   EXPECT_EQ(std::string::npos, html.find("class=reason"));
 }
 
+TEST(SignInStatusPageTest, OAuthErrorCodesMapToAKindNotToText) {
+  EXPECT_EQ(SignInFailureKind::kDenied,
+            ClassifyOAuthSignInError("access_denied"));
+  EXPECT_EQ(SignInFailureKind::kExpired,
+            ClassifyOAuthSignInError("expired_token"));
+  EXPECT_EQ(SignInFailureKind::kServiceError,
+            ClassifyOAuthSignInError("server_error"));
+  EXPECT_EQ(SignInFailureKind::kServiceError,
+            ClassifyOAuthSignInError("invalid_request"));
+  EXPECT_EQ(SignInFailureKind::kServiceError,
+            ClassifyOAuthSignInError("Access_Denied"));
+}
+
 }  // namespace
 }  // namespace nexus

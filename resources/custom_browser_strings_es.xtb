@@ -222,11 +222,14 @@ Esto elimina el proveedor almacenado, el endpoint guardado y los modelos selecci
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Dirección de la página</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">Mostrar la aplicación</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">Salir</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE">Iniciar sesión en <ph name="SERVICE_NAME"/></translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">Completando el inicio de sesión…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">Has iniciado sesión</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">Esta ventana se cerrará automáticamente.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">No se pudo iniciar sesión</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">El código de inicio de sesión ha caducado.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">No se aprobó el inicio de sesión.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">El servicio no pudo completar el inicio de sesión.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">Cierra esta ventana y vuelve a intentarlo en <ph name="PRODUCT_NAME"/>.</translation>
 </translationbundle>

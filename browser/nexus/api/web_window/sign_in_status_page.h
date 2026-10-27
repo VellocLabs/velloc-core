@@ -51,6 +51,19 @@ GURL MakeSignInStatusPage(SignInStatus status,
                           const SignInStatusText& text,
                           std::u16string_view reason = {});
 
+// What a failed OAuth sign-in's `error` code means to the user. The page
+// shows a localized line per kind, never the code itself.
+enum class SignInFailureKind {
+  // The user declined, or the service refused the grant (`access_denied`).
+  kDenied,
+  // A device code ran out before it was approved (`expired_token`).
+  kExpired,
+  // Any other code.
+  kServiceError,
+};
+
+SignInFailureKind ClassifyOAuthSignInError(std::string_view error);
+
 // `reason` as the kFailed page shows it: whitespace runs collapsed, trimmed,
 // cut to kSignInFailureReasonMaxLength (an ellipsis marks the cut).
 std::u16string NormalizeSignInFailureReason(std::u16string_view reason);

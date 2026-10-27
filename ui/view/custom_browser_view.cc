@@ -12,6 +12,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "custom_browser/common/branding_constants.h"
 #include "custom_browser/common/custom_browser_switches.h"
+#include "custom_browser/resources/grit/custom_browser_strings.h"
 #include "ui/views/accessibility/view_accessibility_utils.h"
 #include "ui/events/event.h"            // ui::MouseEvent
 #include "ui/events/types/event_type.h"            // ui::EventType
@@ -43,6 +44,7 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "chrome/browser/ui/sad_tab_helper.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/aura/window.h"
 #include "chrome/browser/ui/views/side_panel/side_panel.h"
@@ -220,9 +222,9 @@ void CustomBrowserView::SetNexusSessionTitle(const std::u16string& title) {
 std::u16string CustomBrowserView::GetWindowTitle() const {
   if (single_web_window_ && !single_web_title_.empty()) {
     // The creator's fixed title: the page's document.title never reaches it.
-    return base::StrCat(
-        {single_web_title_, u" - ",
-         base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName)});
+    return l10n_util::GetStringFUTF16(
+        IDS_SINGLE_WEB_WINDOW_OS_TITLE, single_web_title_,
+        base::ASCIIToUTF16(custom_browser::kCustomBrowserProductName));
   }
   if (!IsNexusUIMode()) {
     return BrowserView::GetWindowTitle();

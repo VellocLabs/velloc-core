@@ -222,11 +222,14 @@ Isso remove o provedor armazenado, o endpoint salvo e os modelos selecionados qu
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Endereço da página</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">Mostrar app</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">Sair</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE">Fazer login em <ph name="SERVICE_NAME"/></translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">Concluindo o login…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">Você fez login</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">Esta janela será fechada automaticamente.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">Não foi possível fazer login</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">O código de login expirou.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">O login não foi aprovado.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">O serviço não conseguiu concluir o login.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">Feche esta janela e tente novamente no <ph name="PRODUCT_NAME"/>.</translation>
 </translationbundle>

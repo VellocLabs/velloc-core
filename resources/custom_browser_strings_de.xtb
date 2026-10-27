@@ -222,11 +222,14 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Seitenadresse</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">App anzeigen</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">Beenden</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE">Bei <ph name="SERVICE_NAME"/> anmelden</translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">Anmeldung wird abgeschlossen…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">Sie sind angemeldet</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">Dieses Fenster wird automatisch geschlossen.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">Anmeldung fehlgeschlagen</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">Der Anmeldecode ist abgelaufen.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">Die Anmeldung wurde nicht genehmigt.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">Der Dienst konnte die Anmeldung nicht abschließen.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">Schließen Sie dieses Fenster und versuchen Sie es in <ph name="PRODUCT_NAME"/> erneut.</translation>
 </translationbundle>

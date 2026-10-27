@@ -222,11 +222,14 @@
   <translation id="IDS_SINGLE_WEB_ADDRESS_LABEL">Адрес страницы</translation>
   <translation id="IDS_NEXUS_TRAY_SHOW_APP">Показать приложение</translation>
   <translation id="IDS_NEXUS_TRAY_QUIT">Выйти</translation>
+  <translation id="IDS_SINGLE_WEB_WINDOW_OS_TITLE"><ph name="WINDOW_TITLE"/> - <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_SIGN_IN_WINDOW_TITLE">Вход в <ph name="SERVICE_NAME"/></translation>
   <translation id="IDS_SIGN_IN_STATUS_FINISHING">Завершение входа…</translation>
   <translation id="IDS_SIGN_IN_STATUS_SUCCEEDED">Вы вошли в аккаунт</translation>
   <translation id="IDS_SIGN_IN_STATUS_CLOSING">Это окно закроется автоматически.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED">Не удалось войти</translation>
   <translation id="IDS_SIGN_IN_STATUS_EXPIRED">Срок действия кода для входа истёк.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_DENIED">Вход не был подтверждён.</translation>
+  <translation id="IDS_SIGN_IN_STATUS_SERVICE_ERROR">Сервису не удалось завершить вход.</translation>
   <translation id="IDS_SIGN_IN_STATUS_FAILED_HINT">Закройте это окно и повторите попытку в <ph name="PRODUCT_NAME"/>.</translation>
 </translationbundle>

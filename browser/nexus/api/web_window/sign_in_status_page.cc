@@ -62,6 +62,16 @@ std::string Escape(std::u16string_view text) {
 
 }  // namespace
 
+SignInFailureKind ClassifyOAuthSignInError(std::string_view error) {
+  if (error == "access_denied") {
+    return SignInFailureKind::kDenied;
+  }
+  if (error == "expired_token") {
+    return SignInFailureKind::kExpired;
+  }
+  return SignInFailureKind::kServiceError;
+}
+
 std::u16string NormalizeSignInFailureReason(std::u16string_view reason) {
   std::u16string collapsed =
       base::CollapseWhitespace(std::u16string(reason),

@@ -14,7 +14,6 @@
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -115,28 +114,30 @@ class ProviderSignInWindows::Window {
 
   void ShowResult(bool ok, std::u16string_view reason) {
     running_ = false;
-    ShowStatus(ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
-               ok ? std::u16string_view() : reason);
-    if (ok) {
-      close_timer_.Start(FROM_HERE, kSignInSuccessHold,
-                         base::BindOnce(&Window::Close, base::Unretained(this)));
+    GURL page = ShowStatus(ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
+                           ok ? std::u16string_view() : reason);
+    if (ok && contents()) {
+      success_closer_ = std::make_unique<SignInSuccessCloser>(
+          contents(), std::move(page),
+          base::BindOnce(&Window::Close, base::Unretained(this)));
     }
   }
 
  private:
   // Status pages go to the sign-in's own tab, brought to the front should the
-  // service have opened another tab in this window.
-  void ShowStatus(SignInStatus status, std::u16string_view reason = {}) {
+  // service have opened another tab in this window. Returns the page's URL,
+  // empty when the tab is gone.
+  GURL ShowStatus(SignInStatus status, std::u16string_view reason = {}) {
     content::WebContents* web_contents = contents();
     if (!web_contents) {
-      return;
+      return GURL();
     }
     TabStripModel* strip = browser_->tab_strip_model();
     const int index = strip->GetIndexOfWebContents(web_contents);
     if (index != TabStripModel::kNoTab && index != strip->active_index()) {
       strip->ActivateTabAt(index);
     }
-    ShowSignInStatus(web_contents, status, reason);
+    return ShowSignInStatus(web_contents, status, reason);
   }
 
   void Close() {
@@ -147,7 +148,7 @@ class ProviderSignInWindows::Window {
 
   void OnBrowserDidClose(BrowserWindowInterface* /*browser*/) {
     browser_ = nullptr;
-    close_timer_.Stop();
+    success_closer_.reset();
     // Last: the owner schedules this object's deletion.
     std::move(on_closed_).Run();
   }
@@ -158,7 +159,7 @@ class ProviderSignInWindows::Window {
   const bool device_code_;
   bool running_ = true;
   base::OnceClosure on_closed_;
-  base::OneShotTimer close_timer_;
+  std::unique_ptr<SignInSuccessCloser> success_closer_;
   base::CallbackListSubscription did_close_;
 };
 

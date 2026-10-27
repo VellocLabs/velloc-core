@@ -26,8 +26,8 @@ enum class SignInStatus {
   kFailed,
 };
 
-// How long the success page shows before its window closes. The page's
-// countdown bar runs for the same time.
+// How long the success page shows, counted from its load, before its window
+// closes. The page's countdown bar runs for the same time.
 inline constexpr base::TimeDelta kSignInSuccessHold = base::Milliseconds(1500);
 
 // The longest failure reason a page shows, in UTF-16 units.

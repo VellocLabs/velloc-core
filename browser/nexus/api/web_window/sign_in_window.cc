@@ -4,8 +4,12 @@
 
 #include "custom_browser/browser/nexus/api/web_window/sign_in_window.h"
 
+#include <utility>
+
+#include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "custom_browser/common/branding_constants.h"
 #include "custom_browser/resources/grit/custom_browser_strings.h"
@@ -31,17 +35,56 @@ std::u16string SignInWindowTitle(std::u16string_view service_name) {
                                     std::u16string(service_name));
 }
 
-void ShowSignInStatus(content::WebContents* contents,
+GURL ShowSignInStatus(content::WebContents* contents,
                       SignInStatus status,
                       std::u16string_view reason) {
   if (!contents) {
-    return;
+    return GURL();
   }
-  content::NavigationController::LoadURLParams load(
-      MakeSignInStatusPage(status, LocalizedSignInStatusText(), reason));
+  GURL page = MakeSignInStatusPage(status, LocalizedSignInStatusText(), reason);
+  content::NavigationController::LoadURLParams load(page);
   load.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
   load.should_replace_current_entry = true;
   contents->GetController().LoadURLWithParams(load);
+  return page;
+}
+
+SignInSuccessCloser::SignInSuccessCloser(content::WebContents* contents,
+                                         GURL page,
+                                         base::OnceClosure close)
+    : content::WebContentsObserver(contents),
+      page_(std::move(page)),
+      close_(std::move(close)) {}
+
+SignInSuccessCloser::~SignInSuccessCloser() = default;
+
+void SignInSuccessCloser::DidFinishLoad(
+    content::RenderFrameHost* render_frame_host,
+    const GURL& validated_url) {
+  StartHold(render_frame_host, validated_url);
+}
+
+void SignInSuccessCloser::DidFailLoad(
+    content::RenderFrameHost* render_frame_host,
+    const GURL& validated_url,
+    int /*error_code*/) {
+  StartHold(render_frame_host, validated_url);
+}
+
+void SignInSuccessCloser::WebContentsDestroyed() {
+  hold_.Stop();
+  close_.Reset();
+}
+
+void SignInSuccessCloser::StartHold(content::RenderFrameHost* render_frame_host,
+                                    const GURL& url) {
+  // Only the success page's own load counts: a status page still loading
+  // when the result came finishes first and must not start the hold.
+  if (!close_ || hold_.IsRunning() || url != page_ ||
+      !render_frame_host->IsInPrimaryMainFrame()) {
+    return;
+  }
+  hold_.Start(FROM_HERE, kSignInSuccessHold, std::move(close_));
 }
 
 }  // namespace nexus

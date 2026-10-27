@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/api/web_window/nexus_web_window_bridge_adapter.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -11,7 +12,6 @@
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -99,16 +99,18 @@ class NexusWebWindowBridgeAdapter::Window
     ShowSignInStatus(contents(), SignInStatus::kFinishing);
   }
 
-  // Success closes the window after kSignInSuccessHold; failure stays open.
+  // Success closes the window kSignInSuccessHold after its page loaded;
+  // failure stays open.
   void ShowSignInResult(bool ok, std::u16string_view message) {
     sign_in_pending_ = false;
-    ShowSignInStatus(contents(),
-                     ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
-                     ok ? std::u16string_view() : message);
-    if (ok) {
-      close_timer_.Start(FROM_HERE, kSignInSuccessHold,
-                         base::BindOnce(&Window::CloseByApi,
-                                        base::Unretained(this)));
+    content::WebContents* web_contents = contents();
+    GURL page = ShowSignInStatus(
+        web_contents, ok ? SignInStatus::kSucceeded : SignInStatus::kFailed,
+        ok ? std::u16string_view() : message);
+    if (ok && web_contents) {
+      success_closer_ = std::make_unique<SignInSuccessCloser>(
+          web_contents, std::move(page),
+          base::BindOnce(&Window::CloseByApi, base::Unretained(this)));
     }
   }
 
@@ -137,7 +139,7 @@ class NexusWebWindowBridgeAdapter::Window
  private:
   void OnBrowserDidClose(BrowserWindowInterface* /*browser*/) {
     browser_ = nullptr;
-    close_timer_.Stop();
+    success_closer_.reset();
     Observe(nullptr);
     // Last: the owner may schedule this object's deletion.
     owner_->OnWindowClosed(id_, closing_by_api_ ? "api" : "user");
@@ -190,7 +192,7 @@ class NexusWebWindowBridgeAdapter::Window
   bool closing_by_api_ = false;
   bool awaits_sign_in_ = false;
   bool sign_in_pending_ = false;
-  base::OneShotTimer close_timer_;
+  std::unique_ptr<SignInSuccessCloser> success_closer_;
   base::CallbackListSubscription did_close_;
   base::CallbackListSubscription close_cancelled_;
   base::CallbackListSubscription active_tab_;

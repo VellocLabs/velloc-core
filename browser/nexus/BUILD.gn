@@ -1398,6 +1398,7 @@ source_set("unit_tests") {
     "api/sqlite/nexus_sqlite_bridge_adapter_unittest.cc",
     "api/sqlite/nexus_sqlite_connection_unittest.cc",
     "api/ui/nexus_ui_bridge_adapter_unittest.cc",
+    "api/web_window/sign_in_window_unittest.cc",
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_bridge_bootstrap_host_unittest.cc",
     "nexus_guest_config_unittest.cc",

@@ -482,13 +482,16 @@ export class NexusViewElement extends CrLitElement {
     // <webview#nexusPane> stays mounted and full-bleed; <main-contents-view> is
     // an overlay tracking the guest's reports. While the boot welcome is up the
     // webview keeps its layout size but is hidden (`tiny-corner`), so reveal is
-    // a pure visibility flip.
+    // a pure visibility flip. The guest draws the pane's own frame, so the
+    // native view reports no background colour and no radius: the host then
+    // paints no corner overlay over the tab.
     return html`
       <webview id="nexusPane"
                class=${this.bootWelcomeDismissed_ ? '' : 'tiny-corner'}
                partition="persist:nexus" allowtransparency="on">
       </webview>
-      <main-contents-view></main-contents-view>
+      <main-contents-view background-color="" corner-radius="0">
+      </main-contents-view>
       ${this.bootWelcomeDismissed_ ? nothing : html`
         <nexus-welcome class="welcome-overlay"
             .buildTime=${this.buildTime_}

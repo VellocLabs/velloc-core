@@ -13,7 +13,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -74,6 +76,17 @@ void CustomBrowserUiPrefs::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(kCustomNewTabShowSearchPrefPath, true);
   registry->RegisterBooleanPref(kCustomNewTabShowLogoPrefPath, true);
   registry->RegisterBooleanPref(kCustomNewTabShowShortcutsPrefPath, true);
+}
+
+// static
+void CustomBrowserUiPrefs::SetVellocProfilePrefDefaults(
+    PrefRegistrySimple* registry) {
+  DCHECK(registry);
+  // Startup opens the New Tab page, never the previous session, whatever a
+  // field trial makes upstream's default.
+  registry->SetDefaultPrefValue(
+      prefs::kRestoreOnStartup,
+      base::Value(SessionStartupPref::kPrefValueNewTab));
 }
 
 CustomBrowserUiPrefs::CustomBrowserUiPrefs(PrefService* prefs)

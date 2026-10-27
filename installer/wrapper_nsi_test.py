@@ -140,6 +140,13 @@ class MasterPreferencesTest(unittest.TestCase):
     self.assertIs(
         self.prefs.get('distribution', {}).get('do_not_launch_chrome'), True)
 
+  def test_holds_no_profile_prefs(self):
+    # The browser applies profile prefs from this file on its first run only,
+    # and the wrapper's "First Run" sentinel means it never has one; Velloc's
+    # profile defaults are registered by the browser instead. Only setup's
+    # `distribution` keys belong here.
+    self.assertEqual(list(self.prefs), ['distribution'])
+
 
 _CHANNEL_NSH = os.path.join(_HERE, 'installer_channel.nsh')
 _CHANNEL_HEADER = os.path.join(_HERE, '..', 'browser', 'nexus',

@@ -59,6 +59,10 @@ class CustomBrowserUiPrefs {
   void RemoveObserver(Observer* obs);
   // Registers the dictionary preference for profile prefs.
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
+  // Replaces upstream's registered default of the profile prefs whose
+  // default Velloc sets itself. Runs after upstream has registered them, on
+  // every profile, independent of first run.
+  static void SetVellocProfilePrefDefaults(PrefRegistrySimple* registry);
 
   explicit CustomBrowserUiPrefs(PrefService* prefs);
   CustomBrowserUiPrefs(const CustomBrowserUiPrefs&) = delete;

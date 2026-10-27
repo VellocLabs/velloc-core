@@ -7,11 +7,14 @@
 #include <string>
 #include <vector>
 
+#include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/prefs/testing_pref_service.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_web_ui_data_source.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/common/pref_names.h"
 #include "custom_browser/common/pref_names.h"
 #include "custom_browser/common/url_constants.h"
 #include "custom_browser/ui/mojom/ui_view_controller.mojom.h"
@@ -108,6 +111,23 @@ TEST_F(CustomBrowserUiPrefsLayoutTest, SilentWindowDoesNotEraseStoredLayouts) {
         RunWindow(/*page_pushes_layouts=*/false);
     EXPECT_EQ(2u, restored.size()) << "layouts lost after cycle " << cycle;
   }
+}
+
+// Velloc's default replaces upstream's, so startup opens the New Tab page on
+// a profile whose first run never applied the installer's initial prefs.
+TEST(CustomBrowserUiPrefsDefaultsTest, StartupDefaultsToTheNewTabPage) {
+  TestingPrefServiceSimple prefs;
+  prefs.registry()->RegisterIntegerPref(prefs::kRestoreOnStartup,
+                                        SessionStartupPref::kPrefValueLast);
+  CustomBrowserUiPrefs::SetVellocProfilePrefDefaults(prefs.registry());
+
+  EXPECT_EQ(SessionStartupPref::kPrefValueNewTab,
+            prefs.GetInteger(prefs::kRestoreOnStartup));
+  EXPECT_TRUE(prefs.FindPreference(prefs::kRestoreOnStartup)->IsDefaultValue());
+  // A value the user chose still wins.
+  prefs.SetInteger(prefs::kRestoreOnStartup, SessionStartupPref::kPrefValueLast);
+  EXPECT_EQ(SessionStartupPref::kPrefValueLast,
+            prefs.GetInteger(prefs::kRestoreOnStartup));
 }
 
 // The per-window modes are never read back as the shared current mode (F-29).

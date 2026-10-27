@@ -19,10 +19,13 @@ _SRC = os.path.normpath(os.path.join(_HERE, '..', '..'))
 _RELEASE = os.path.join(_SRC, 'chrome', 'installer', 'mini_installer',
                         'chrome.release')
 _LOCALES_GNI = os.path.join(_SRC, 'build', 'config', 'locales.gni')
+_STRINGS_GRD = os.path.join(_HERE, '..', 'resources',
+                            'custom_browser_strings.grd')
 
-# The Velloc UI languages, plus Traditional Chinese; every other system
-# language gets the en-US browser UI.
-_SHIPPED_LOCALES = {'en-US', 'de', 'es', 'fr', 'ja', 'ko', 'zh-CN', 'zh-TW'}
+# The languages Velloc's own strings ship in (pt as pt-BR), plus Traditional
+# Chinese; every other system language gets the en-US browser UI.
+_SHIPPED_LOCALES = {'en-US', 'bn', 'de', 'es', 'fr', 'hi', 'ja', 'ko',
+                    'pt-BR', 'ru', 'zh-CN', 'zh-TW'}
 
 
 def _general_options():
@@ -39,6 +42,15 @@ def _chromium_locales():
   block = re.search(r'^all_chrome_locales =\s*\[(.*?)\]', gni,
                     re.MULTILINE | re.DOTALL).group(1)
   return set(re.findall(r'"([^"]+)"', block))
+
+
+def _custom_string_paks():
+  # Every data pack the strings .grd builds.
+  with open(_STRINGS_GRD, encoding='utf-8') as f:
+    grd = f.read()
+  return set(re.findall(
+      r'<output filename="(custom_browser_strings_[^"]+\.pak)"\s+'
+      r'type="data_package"', grd))
 
 
 class ChromeReleaseTest(unittest.TestCase):
@@ -61,6 +73,22 @@ class ChromeReleaseTest(unittest.TestCase):
   def test_every_shipped_locale_is_a_chromium_locale(self):
     self.assertTrue(_SHIPPED_LOCALES <= _chromium_locales(),
                     _SHIPPED_LOCALES - _chromium_locales())
+
+  def test_ships_every_custom_string_pak(self):
+    paks = _custom_string_paks()
+    self.assertIn('custom_browser_strings_en-US.pak', paks)
+    self.assertGreater(len(paks), 1)
+    shipped = {o for o in self.options
+               if o.startswith('custom_browser_strings_')}
+    self.assertEqual(shipped, {p.lower() for p in paks})
+
+  def test_every_custom_string_language_has_a_browser_locale(self):
+    # A custom pak is picked by the browser's locale (custom_browser_strings
+    # hook), so a language without a shipped browser pak never shows.
+    shipped = {l.split('-')[0] for l in _SHIPPED_LOCALES}
+    for pak in _custom_string_paks():
+      lang = pak[len('custom_browser_strings_'):-len('.pak')].split('-')[0]
+      self.assertIn(lang, shipped, pak)
 
   def test_no_component_extension_payload(self):
     # No bundled extension is listed in extensions/extensions.json, so a

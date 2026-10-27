@@ -96,8 +96,9 @@ class PageScriptChannel : public content::DevToolsAgentHostClient,
   void ExecuteScript(const std::string& code,
                      PageScriptWorld world,
                      OutcomeCallback done);
-  // Hands `json` to the listeners the channel's scripts registered; `value`
-  // is their count, -1 when no document has run the bootstrap yet.
+  // Hands `json` to the listeners the private world's scripts registered
+  // (an exposed page's own scripts cannot listen); `value` is their count,
+  // -1 when no document has run the bootstrap yet.
   void PostMessage(const std::string& json, OutcomeCallback done);
   // Registers `source` to run in the private world at every new document;
   // `value` is the script id.

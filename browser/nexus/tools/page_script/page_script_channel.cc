@@ -122,7 +122,8 @@ bool PageScriptChannel::Start() {
   Send("Runtime.addBinding", std::move(binding), base::DoNothing());
 
   base::DictValue bootstrap;
-  bootstrap.Set("source", PageScriptBootstrapSource());
+  bootstrap.Set("source",
+                PageScriptBootstrapSource(PageScriptWorld::kIsolated));
   bootstrap.Set("worldName", kPageScriptWorldName);
   bootstrap.Set("runImmediately", true);
   Send("Page.addScriptToEvaluateOnNewDocument", std::move(bootstrap),
@@ -133,7 +134,8 @@ bool PageScriptChannel::Start() {
     page_binding.Set("name", kPageScriptPageBindingName);
     Send("Runtime.addBinding", std::move(page_binding), base::DoNothing());
     base::DictValue page_bootstrap;
-    page_bootstrap.Set("source", PageScriptBootstrapSource());
+    page_bootstrap.Set("source",
+                       PageScriptBootstrapSource(PageScriptWorld::kMain));
     page_bootstrap.Set("runImmediately", true);
     Send("Page.addScriptToEvaluateOnNewDocument", std::move(page_bootstrap),
          base::DoNothing());

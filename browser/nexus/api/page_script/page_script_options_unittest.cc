@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/strings/strcat.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
@@ -47,12 +48,25 @@ TEST(PageScriptOptionsTest, PayloadLimitIsOneMegabyte) {
       std::string(kPageScriptMaxPayloadBytes + 1, 'x')));
 }
 
-TEST(PageScriptOptionsTest, BootstrapDefinesTheHostObjectAndDispatcher) {
-  const std::string source = PageScriptBootstrapSource();
+TEST(PageScriptOptionsTest, PrivateBootstrapSendsReceivesAndDispatches) {
+  const std::string source =
+      PageScriptBootstrapSource(PageScriptWorld::kIsolated);
   EXPECT_NE(std::string::npos, source.find("vellocHost"));
   EXPECT_NE(std::string::npos, source.find(kPageScriptBindingName));
-  EXPECT_NE(std::string::npos, source.find(kPageScriptPageBindingName));
+  EXPECT_EQ(std::string::npos, source.find(kPageScriptPageBindingName));
+  EXPECT_NE(std::string::npos, source.find("onMessage"));
   EXPECT_NE(std::string::npos, source.find(kPageScriptDispatchName));
+}
+
+TEST(PageScriptOptionsTest, PageBootstrapOnlySends) {
+  const std::string source = PageScriptBootstrapSource(PageScriptWorld::kMain);
+  EXPECT_NE(std::string::npos, source.find("vellocHost"));
+  EXPECT_NE(std::string::npos, source.find(kPageScriptPageBindingName));
+  // No way to the private host call, no listener API and no dispatcher.
+  EXPECT_EQ(std::string::npos,
+            source.find(base::StrCat({kPageScriptBindingName, ";"})));
+  EXPECT_EQ(std::string::npos, source.find("onMessage"));
+  EXPECT_EQ(std::string::npos, source.find(kPageScriptDispatchName));
 }
 
 TEST(PageScriptOptionsTest, DispatchExpressionEmbedsTheMessageAsAString) {

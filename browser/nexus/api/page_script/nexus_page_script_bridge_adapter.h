@@ -41,7 +41,9 @@ class NexusBridgeResponseDelegate;
 // connection that attached it; its events (`onMessage`, `onDetached`) go
 // to that connection only, and another connection's channelId answers
 // `channel_not_found`. Destroying the adapter ends every channel without
-// events. UI thread only.
+// events; a request still open answers `no_document`, a reply that is posted
+// and then dropped, since it reaches the connection through a weak handle
+// the adapter's destruction has invalidated. UI thread only.
 //
 // Security: `webWindowId` resolves through the connection's own webWindow
 // adapter, so only its windows are reachable; `tabId` must name a tab that

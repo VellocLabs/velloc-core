@@ -1325,40 +1325,6 @@ std::optional<base::Value> ExtractBoundingBox(
 
 }  // namespace
 
-void BrowserTool::CollectLabelTargets(const apc::ContentNode& node) {
-  // Map each visible `<label for=X>` to X's dom_node_id so `WalkContentNode` can
-  // retarget a hidden checkbox/radio to its visible label; first visible wins.
-  if (node.has_content_attributes()) {
-    const apc::ContentAttributes& attrs = node.content_attributes();
-    if (attrs.has_label_for_dom_node_id() &&
-        attrs.has_common_ancestor_dom_node_id() && attrs.has_geometry() &&
-        attrs.geometry().has_visible_bounding_box()) {
-      const apc::BoundingRect& r = attrs.geometry().visible_bounding_box();
-      if (r.width() > 0 || r.height() > 0) {
-        const int input_id = attrs.label_for_dom_node_id();
-        // First label with a visible box wins — keep it if already set.
-        if (observation_label_targets_.find(input_id) ==
-            observation_label_targets_.end()) {
-          // Capture the label's visible text ("Honda") so WalkContentNode can
-          // surface it on an otherwise-unlabeled control. The text may be on
-          // the label node itself or nested in a child span.
-          std::string label_text = ExtractNodeText(attrs);
-          if (label_text.empty()) {
-            label_text = ExtractDescendantTextSnippet(node);
-          }
-          observation_label_targets_.insert_or_assign(
-              input_id, LabelTarget{attrs.common_ancestor_dom_node_id(),
-                                    {r.x(), r.y(), r.width(), r.height()},
-                                    std::move(label_text)});
-        }
-      }
-    }
-  }
-  for (const apc::ContentNode& child : node.children_nodes()) {
-    CollectLabelTargets(child);
-  }
-}
-
 void BrowserTool::WalkContentNode(const apc::ContentNode& node,
                                    const std::string& document_id,
                                    int tab_id,
@@ -1391,13 +1357,13 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
       // `{index, input_type:checkbox}` — so on a filter list of identical
       // checkboxes the model can't tell which is "Honda" and resorts to
       // guessing by position. Surfacing the label text lets it target the
-      // control by name. (Keyed by node_id: APC guarantees the label's
+      // control by name. (Keyed by document + node_id: APC guarantees the label's
       // `label_for_dom_node_id` equals the input's `common_ancestor_dom_node_id`.)
       if (text.empty()) {
-        auto lt = observation_label_targets_.find(node_id);
-        if (lt != observation_label_targets_.end() &&
-            !lt->second.text.empty()) {
-          text = lt->second.text;
+        const LabelTarget* label =
+            observation_label_targets_.Find(document_id, node_id);
+        if (label && !label->text.empty()) {
+          text = label->text;
         }
       }
 
@@ -1523,14 +1489,15 @@ void BrowserTool::WalkContentNode(const apc::ContentNode& node,
             attrs.form_control_data().form_control_type();
         if (fct == apc::FORM_CONTROL_TYPE_INPUT_CHECKBOX ||
             fct == apc::FORM_CONTROL_TYPE_INPUT_RADIO) {
-          auto lt = observation_label_targets_.find(node_id);
-          if (lt != observation_label_targets_.end()) {
-            const int label_node_id = lt->second.node_id;
+          const LabelTarget* label =
+              observation_label_targets_.Find(document_id, node_id);
+          if (label) {
+            const int label_node_id = label->node_id;
             base::ListValue lbox;
-            lbox.Append(lt->second.box[0]);
-            lbox.Append(lt->second.box[1]);
-            lbox.Append(lt->second.box[2]);
-            lbox.Append(lt->second.box[3]);
+            lbox.Append(label->box[0]);
+            lbox.Append(label->box[1]);
+            lbox.Append(label->box[2]);
+            lbox.Append(label->box[3]);
             box = base::Value(std::move(lbox));
             // Register the label too, targeting the label node, so a
             // BrowserClick on the emitted index lands on the visible label.
@@ -1797,9 +1764,14 @@ base::DictValue BrowserTool::BuildObservationDict(
 
         // Pre-pass: index `<label for=...>` → control so `WalkContentNode`
         // can retarget hidden checkboxes/radios to their visible label.
-        // Per-tab scope — clear before each walk.
-        observation_label_targets_.clear();
-        CollectLabelTargets(apc_data.root_node());
+        // The label's text may sit on the label node or in a child span.
+        observation_label_targets_.Build(
+            apc_data.root_node(), document_id,
+            [](const apc::ContentNode& label) {
+              std::string text = ExtractNodeText(label.content_attributes());
+              return text.empty() ? ExtractDescendantTextSnippet(label)
+                                  : text;
+            });
         walk_main_document_id_ = document_id;
         WalkContentNode(apc_data.root_node(), document_id, tab_id_for_registry,
                         elements);

@@ -10,7 +10,9 @@
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/location.h"
 #include "base/strings/string_view_util.h"
+#include "base/task/sequenced_task_runner.h"
 #include "content/public/browser/web_contents.h"
 
 namespace nexus {
@@ -27,8 +29,12 @@ JsDialogWatcher::~JsDialogWatcher() {
     agent_host_->DetachClient(this);
     agent_host_ = nullptr;
   }
-  for (auto& [id, callback] : pending_) {
-    std::move(callback).Run(false);
+  // Answered in a later task: the owner may be erasing this watcher from the
+  // container an answer's follow-up prunes.
+  std::map<int, AnswerCallback> pending = std::move(pending_);
+  for (auto& [id, callback] : pending) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback), false));
   }
 }
 
@@ -139,21 +145,22 @@ void JsDialogWatcher::Send(std::string_view method,
   agent_host_->DispatchProtocolMessage(this, base::as_byte_span(serialized));
 }
 
-// The delegate may not destroy the watcher from inside this call; it prunes
-// detached watchers later.
+// An open request's answer can lead the delegate to prune detached watchers,
+// this one included, so the answers run last and touch no member.
 void JsDialogWatcher::Detach() {
   if (agent_host_) {
     agent_host_->DetachClient(this);
     agent_host_ = nullptr;
   }
   Observe(nullptr);
-  for (auto& [id, callback] : pending_) {
-    std::move(callback).Run(false);
-  }
-  pending_.clear();
   if (open_dialog_) {
     open_dialog_.reset();
     delegate_->OnJsDialogClosed(tab_id_);
+  }
+  std::map<int, AnswerCallback> pending = std::move(pending_);
+  pending_.clear();
+  for (auto& [id, callback] : pending) {
+    std::move(callback).Run(false);
   }
 }
 

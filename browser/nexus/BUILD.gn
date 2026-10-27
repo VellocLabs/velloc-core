@@ -484,11 +484,14 @@ source_set("observation_index") {
   sources = [
     "tools/browser_tool/frame_document.cc",
     "tools/browser_tool/frame_document.h",
+    "tools/browser_tool/label_targets.cc",
+    "tools/browser_tool/label_targets.h",
     "tools/browser_tool/node_registry.cc",
     "tools/browser_tool/node_registry.h",
   ]
 
   public_deps = [
+    "//base",
     "//components/optimization_guide/proto:optimization_guide_proto",
   ]
 }
@@ -859,7 +862,8 @@ source_set("bridge") {
     # At-rest secret encryption (NexusSecretCrypt) appears in bridge headers.
     ":secret_crypt",
 
-    # NodeRegistry and OpenJsDialog appear in browser_tool.h.
+    # NodeRegistry, LabelTargetIndex and OpenJsDialog appear in
+    # browser_tool.h.
     ":js_dialog",
     ":observation_index",
 
@@ -1293,6 +1297,7 @@ source_set("unit_tests_lite") {
     "domain/domain_sandbox_manager_unittest.cc",
     "tools/browser_tool/frame_document_unittest.cc",
     "tools/browser_tool/js_dialog_unittest.cc",
+    "tools/browser_tool/label_targets_unittest.cc",
     "tools/browser_tool/node_registry_unittest.cc",
     "nexus_installer_channel_unittest.cc",
     "nexus_secret_crypt_unittest.cc",

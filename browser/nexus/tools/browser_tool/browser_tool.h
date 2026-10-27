@@ -33,6 +33,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/js_dialog_watcher.h"
+#include "custom_browser/browser/nexus/tools/browser_tool/label_targets.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/node_registry.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/tool_base.h"
@@ -407,14 +408,6 @@ class BrowserTool : public ToolBase, public JsDialogWatcher::Delegate {
       int tab_id,
       base::ListValue& out_elements);
 
-  // Pre-pass over the APC tree that fills `observation_label_targets_`
-  // from every `<label for=...>` node (APC's `label_for_dom_node_id`).
-  // Run once per working-tab walk in `BuildObservationDict`, before
-  // `WalkContentNode`, so the walk can retarget hidden checkboxes/radios
-  // to their visible label. See `observation_label_targets_`.
-  void CollectLabelTargets(
-      const optimization_guide::proto::ContentNode& node);
-
   // Builds the observation JSON. The working tab (`LastWorkTab()`) gets the full
   // payload (`elements[]`, registry and `last_observation_*` updates, plus
   // `screenshot: {mime, data_base64}` when `include_screenshot_image`); other
@@ -509,27 +502,13 @@ class BrowserTool : public ToolBase, public JsDialogWatcher::Delegate {
   std::vector<scoped_refptr<browser_tool_internal::PausableTimeout>>
       active_timeouts_;
 
-  // A visible <label> that drives a form control, resolved from APC's
-  // `label_for_dom_node_id`. `node_id` is the label's own DOM
-  // content_node_id; `box` is its `[x, y, w, h]` viewport rect; `text` is the
-  // label's visible text (e.g. "Honda") — surfaced as the control's `text`
-  // when the control carries no accessible name of its own, so the model can
-  // target "the checkbox labeled Honda" instead of guessing its position in
-  // an unlabeled list.
-  struct LabelTarget {
-    int node_id = 0;
-    std::array<int, 4> box{};
-    std::string text;
-  };
-  // Per-observation index: hidden form control's node_id → its visible
-  // label. Built by a pre-pass over the APC tree in `BuildObservationDict`
-  // (before `WalkContentNode`), then read during the walk so a checkbox /
-  // radio whose own rect is empty (custom "sr-only" input behind a styled
-  // <label for=...>) is RE-TARGETED to the label: clicking the label
-  // toggles the input via native HTML, so the LLM gets a working,
-  // box-bearing element instead of an un-clickable offscreen one. Cleared
-  // and repopulated per working-tab walk; never persisted across actions.
-  base::flat_map<int, LabelTarget> observation_label_targets_;
+  // Per-observation index: a form control (document, node id) → its
+  // visible `<label for=...>` (LabelTarget: the label's node id, box and
+  // text). Rebuilt per working-tab walk in `BuildObservationDict`, before
+  // `WalkContentNode`, which uses it to name an unlabelled control and to
+  // retarget a hidden checkbox / radio to its clickable label. Never
+  // persisted across actions.
+  LabelTargetIndex observation_label_targets_;
 
   // Maps `(index, tab_id)` (the LLM-facing identifier pair) → the
   // actor proto's `(document_identifier, tab_id)` plus diagnostic

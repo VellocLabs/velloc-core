@@ -211,8 +211,8 @@ Esto elimina el proveedor almacenado, el endpoint guardado y los modelos selecci
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">¿Salir de <ph name="PRODUCT_NAME"/>?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {Hay # dispositivo conectado mediante el acceso remoto. Si sale, se desconectará.} other {Hay # dispositivos conectados mediante el acceso remoto. Si sale, se desconectarán.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Eliminar también todos los datos (caché + <ph name="DATA_DIR"/>)</translation>
-  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> se está ejecutando. Debe cerrarse para poder desinstalarlo. Las sesiones de agente en curso se interrumpirán y podrás reanudarlas más tarde; tus datos no se eliminan.</translation>
-  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">La instalación no pudo cerrar <ph name="PRODUCT_NAME"/>. Puede estar ejecutándose en otra sesión de usuario de Windows o con privilegios elevados. Ciérralo tú mismo y vuelve a intentarlo.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> se está ejecutando. Debe cerrarse para poder desinstalarlo. Las sesiones de agente en curso se interrumpirán y podrá reanudarlas más tarde; sus datos no se eliminan.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">La instalación no pudo cerrar <ph name="PRODUCT_NAME"/>. Puede estar ejecutándose en otra sesión de usuario de Windows o con privilegios elevados. Ciérrelo usted mismo y vuelva a intentarlo.</translation>
   <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">Cerrar y continuar</translation>
   <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">Reintentar</translation>
   <translation id="IDS_VELLOC_UNINSTALL_CANCEL">Cancelar</translation>

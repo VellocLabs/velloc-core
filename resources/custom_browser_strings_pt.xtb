@@ -211,6 +211,11 @@ Isso remove o provedor armazenado, o endpoint salvo e os modelos selecionados qu
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Sair do <ph name="PRODUCT_NAME"/>?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {# dispositivo está conectado pelo acesso remoto. Sair vai desconectá-lo.} other {# dispositivos estão conectados pelo acesso remoto. Sair vai desconectá-los.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Excluir também todos os dados (cache + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> está em execução e precisa ser fechado antes de ser desinstalado. As sessões de agente em andamento serão interrompidas e poderão ser retomadas depois; seus dados não serão excluídos.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">A instalação não conseguiu fechar <ph name="PRODUCT_NAME"/>. Ele pode estar em execução em outra sessão de usuário do Windows ou com privilégios elevados. Feche-o você mesmo e tente novamente.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">Fechar e continuar</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">Tentar novamente</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">Cancelar</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">Não foi possível carregar o runtime do <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">O painel não conseguiu iniciar o runtime. Normalmente isso significa que a origem configurada está inacessível ou não fornece a versão exigida por esta compilação.</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Tentado:</translation>

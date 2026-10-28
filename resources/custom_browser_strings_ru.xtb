@@ -211,6 +211,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">Выйти из <ph name="PRODUCT_NAME"/>?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, one {Через удалённый доступ подключено # устройство. При выходе оно будет отключено.} few {Через удалённый доступ подключено # устройства. При выходе они будут отключены.} many {Через удалённый доступ подключено # устройств. При выходе они будут отключены.} other {Через удалённый доступ подключено # устройства. При выходе они будут отключены.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Также удалить все данные (кеш + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> запущен. Перед удалением его нужно закрыть. Выполняющиеся сеансы агента будут прерваны, их можно будет возобновить позже; ваши данные не удаляются.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">Программе установки не удалось закрыть <ph name="PRODUCT_NAME"/>. Возможно, он запущен в другом сеансе пользователя Windows или с повышенными правами. Закройте его самостоятельно и повторите попытку.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">Закрыть и продолжить</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">Повторить</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">Отмена</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE">Не удалось загрузить среду выполнения <ph name="PRODUCT_NAME"/></translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Панели не удалось запустить среду выполнения. Обычно это значит, что настроенный источник недоступен или не предоставляет версию, нужную этой сборке.</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Адрес:</translation>

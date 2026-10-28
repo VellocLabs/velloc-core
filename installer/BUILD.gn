@@ -48,6 +48,16 @@ source_set("uninstall_data") {
   ]
 }
 
+# The messages setup.exe and chrome.exe --uninstall exchange (header only).
+source_set("uninstall_protocol") {
+  sources = [ "uninstall_protocol.h" ]
+  visibility = [
+    ":*",
+    "//chrome/browser:*",
+    "//chrome/installer/setup:*",
+  ]
+}
+
 test("custom_browser_installer_unittests") {
   sources = [ "uninstall_data_unittest.cc" ]
   deps = [

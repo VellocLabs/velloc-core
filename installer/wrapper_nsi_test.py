@@ -91,6 +91,35 @@ def _chrome_constant(name):
   return match.group(1)
 
 
+class CloseRunningProductTest(unittest.TestCase):
+  """Setup closes a running browser before it replaces files."""
+
+  def setUp(self):
+    with open(_WRAPPER, encoding='utf-8') as f:
+      self.source = f.read()
+    self.body = _function_body(self.source, 'CloseRunningProduct')
+
+  def test_runs_first_in_the_install_section(self):
+    section = self.source.split('Section "Install"', 1)[1]
+    calls = re.findall(r'^\s*Call (\w+)', section, re.MULTILINE)
+    self.assertEqual(calls[0], 'CloseRunningProduct')
+
+  def test_asks_before_closing_unless_silent(self):
+    self.assertIsNotNone(self.body)
+    self.assertLess(self.body.index('${IfNot} ${Silent}'),
+                    self.body.index('MB_YESNO'))
+    self.assertLess(self.body.index('MB_YESNO'),
+                    self.body.index('taskkill /IM'))
+
+  def test_closes_normally_before_forcing(self):
+    self.assertLess(self.body.index('taskkill /IM'),
+                    self.body.index('taskkill /F'))
+
+  def test_offers_retry_and_aborts_on_cancel(self):
+    self.assertIn('MB_RETRYCANCEL', self.body)
+    self.assertRegex(self.body, r'(?s)cancelled:.*SetErrorLevel 1602.*Abort')
+
+
 class FirstRunSentinelTest(unittest.TestCase):
   """The wrapper writes the sentinel Chromium reads to skip its first run."""
 

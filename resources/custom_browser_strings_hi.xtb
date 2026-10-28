@@ -211,6 +211,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> से बाहर निकलें?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {रिमोट एक्सेस के ज़रिए # डिवाइस कनेक्ट है। बाहर निकलने पर यह डिस्कनेक्ट हो जाएगा।} other {रिमोट एक्सेस के ज़रिए # डिवाइस कनेक्ट हैं। बाहर निकलने पर ये डिस्कनेक्ट हो जाएंगे।}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">सारा डेटा भी हटाएं (कैश + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> चल रहा है। अनइंस्टॉल करने से पहले इसे बंद करना होगा। चल रहे एजेंट सत्र बाधित होंगे और बाद में फिर शुरू किए जा सकते हैं; आपका डेटा नहीं हटाया जाएगा।</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">सेटअप <ph name="PRODUCT_NAME"/> को बंद नहीं कर सका। हो सकता है यह किसी अन्य Windows उपयोगकर्ता सत्र में या उच्च अनुमतियों के साथ चल रहा हो। इसे स्वयं बंद करें, फिर पुनः प्रयास करें।</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">बंद करें और जारी रखें</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">पुनः प्रयास करें</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">रद्द करें</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> रनटाइम लोड नहीं हुआ</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">पैनल अपना रनटाइम शुरू नहीं कर सका। आम तौर पर इसका मतलब है कि कॉन्फ़िगर किया गया रनटाइम स्रोत पहुंच से बाहर है, या वह इस बिल्ड के लिए ज़रूरी वर्शन उपलब्ध नहीं कराता।</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">आज़माया गया:</translation>

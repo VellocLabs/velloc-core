@@ -211,6 +211,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> থেকে প্রস্থান করবেন?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {রিমোট অ্যাক্সেসের মাধ্যমে #টি ডিভাইস সংযুক্ত আছে। প্রস্থান করলে এটি বিচ্ছিন্ন হয়ে যাবে।} other {রিমোট অ্যাক্সেসের মাধ্যমে #টি ডিভাইস সংযুক্ত আছে। প্রস্থান করলে সেগুলি বিচ্ছিন্ন হয়ে যাবে।}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">সব ডেটাও মুছে ফেলুন (ক্যাশে + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> চলছে। আনইনস্টল করার আগে এটি বন্ধ করতে হবে। চলমান এজেন্ট সেশন বাধাপ্রাপ্ত হবে এবং পরে আবার শুরু করা যাবে; আপনার ডেটা মুছে ফেলা হবে না।</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">সেটআপ <ph name="PRODUCT_NAME"/> বন্ধ করতে পারেনি। এটি অন্য Windows ব্যবহারকারী সেশনে বা উচ্চতর অনুমতিসহ চলতে পারে। নিজে বন্ধ করে আবার চেষ্টা করুন।</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">বন্ধ করে চালিয়ে যান</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">আবার চেষ্টা করুন</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">বাতিল করুন</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> রানটাইম লোড হয়নি</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">প্যানেলটি তার রানটাইম চালু করতে পারেনি। সাধারণত এর মানে কনফিগার করা রানটাইম উৎসে পৌঁছানো যাচ্ছে না, অথবা এই বিল্ডের প্রয়োজনীয় সংস্করণটি সেখানে নেই।</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">চেষ্টা করা হয়েছে:</translation>

@@ -211,6 +211,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE">退出 <ph name="PRODUCT_NAME"/>？</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, other {有 # 台设备正通过远程访问连接。退出后它们会断开连接。}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">同时删除全部数据（缓存 + <ph name="DATA_DIR"/>）</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/>正在运行，需先关闭才能卸载。正在运行的智能体会话将被中断，之后可以继续；你的数据不会被删除。</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">安装程序无法关闭<ph name="PRODUCT_NAME"/>。它可能运行在其他 Windows 用户会话中，或具有更高权限。请自行关闭后重试。</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">关闭并继续</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">重试</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">取消</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> 运行时未能加载</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">面板无法启动运行时。通常是配置的运行时来源无法访问，或它不提供当前版本所需的接口版本。</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">已尝试：</translation>

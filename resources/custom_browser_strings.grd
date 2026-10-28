@@ -681,6 +681,21 @@ This removes the stored provider, saved endpoint, and saved model selections.
       <message name="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA" desc="Checkbox in the uninstall confirmation dialog, unchecked by default. Ticking it deletes the browser profile (the cache, history and every other browser setting) and the product's own data directory ~/.velloc (sessions, settings, plugins, skills). Leaving it unticked uninstalls the program and keeps all data. Keep the path exactly as written." use_name_for_id="true">
         Also delete all data (cache + <ph name="DATA_DIR">~/.velloc<ex>~/.velloc</ex></ph>)
       </message>
+      <message name="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING" desc="Body of the dialog shown when the user starts the uninstall while the product is still running. PRODUCT_NAME is the product name. The two buttons are Close and continue / Cancel." use_name_for_id="true">
+        <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph> is running. It must be closed before it can be uninstalled. Running agent sessions will be interrupted and can be resumed later; your data is not deleted.
+      </message>
+      <message name="IDS_VELLOC_UNINSTALL_CLOSE_FAILED" desc="Body of the dialog shown when the uninstall tried to close the running product and it is still running. PRODUCT_NAME is the product name. The buttons are Try again / Cancel." use_name_for_id="true">
+        Setup could not close <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph>. It may be running in another Windows user session or with higher privileges. Close it yourself, then try again.
+      </message>
+      <message name="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE" desc="Button in the uninstall dialog shown while the product is running: closes the running product and continues the uninstall." use_name_for_id="true">
+        Close and continue
+      </message>
+      <message name="IDS_VELLOC_UNINSTALL_TRY_AGAIN" desc="Button in the uninstall dialog shown when the running product could not be closed: tries to close it again." use_name_for_id="true">
+        Try again
+      </message>
+      <message name="IDS_VELLOC_UNINSTALL_CANCEL" desc="Button in the uninstall dialog shown while the product is running: stops the uninstall and leaves everything as it is." use_name_for_id="true">
+        Cancel
+      </message>
       <message name="IDS_NEXUS_GUEST_RECOVERY_TITLE" desc="Title of the overlay shown in the agent panel when its runtime (the web app the panel loads) failed to start. PRODUCT_NAME is the product name." use_name_for_id="true">
         The <ph name="PRODUCT_NAME">$1<ex>Velloc</ex></ph> runtime didn’t load
       </message>

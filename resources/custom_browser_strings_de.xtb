@@ -211,6 +211,11 @@ Damit werden der gespeicherte Anbieter, der gespeicherte Endpunkt und die gespei
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> beenden?</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, =1 {Über den Remote-Zugriff ist # Gerät verbunden. Beim Beenden wird die Verbindung getrennt.} other {Über den Remote-Zugriff sind # Geräte verbunden. Beim Beenden werden die Verbindungen getrennt.}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">Auch alle Daten löschen (Cache + <ph name="DATA_DIR"/>)</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/> wird gerade ausgeführt und muss vor der Deinstallation geschlossen werden. Laufende Agent-Sitzungen werden unterbrochen und können später fortgesetzt werden; deine Daten werden nicht gelöscht.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">Das Setup konnte <ph name="PRODUCT_NAME"/> nicht schließen. Es läuft möglicherweise in einer anderen Windows-Benutzersitzung oder mit höheren Rechten. Schließe es selbst und versuche es dann erneut.</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">Schließen und fortfahren</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">Erneut versuchen</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">Abbrechen</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/>-Runtime konnte nicht geladen werden</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">Das Panel konnte seine Runtime nicht starten. Meist ist die konfigurierte Quelle nicht erreichbar oder liefert nicht die von diesem Build benötigte Version.</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">Versucht:</translation>

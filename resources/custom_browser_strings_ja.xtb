@@ -209,6 +209,11 @@
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_TITLE"><ph name="PRODUCT_NAME"/> を終了しますか？</translation>
   <translation id="IDS_NEXUS_QUIT_REMOTE_DEVICES_BODY">{COUNT, plural, other {リモートアクセスで # 台のデバイスが接続中です。終了すると切断されます。}}</translation>
   <translation id="IDS_VELLOC_UNINSTALL_DELETE_ALL_DATA">すべてのデータも削除する（キャッシュ + <ph name="DATA_DIR"/>）</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_RUNNING"><ph name="PRODUCT_NAME"/>は実行中です。アンインストールするには閉じる必要があります。実行中のエージェントセッションは中断されますが、後で再開できます。データは削除されません。</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_FAILED">セットアップは<ph name="PRODUCT_NAME"/>を閉じられませんでした。別の Windows ユーザーセッションで、またはより高い権限で実行されている可能性があります。ご自身で閉じてから、もう一度お試しください。</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CLOSE_AND_CONTINUE">閉じて続行</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_TRY_AGAIN">再試行</translation>
+  <translation id="IDS_VELLOC_UNINSTALL_CANCEL">キャンセル</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_TITLE"><ph name="PRODUCT_NAME"/> ランタイムを読み込めませんでした</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_BODY">パネルのランタイムを起動できませんでした。通常、設定されたランタイムのソースにアクセスできないか、このビルドに必要なバージョンが提供されていないことが原因です。</translation>
   <translation id="IDS_NEXUS_GUEST_RECOVERY_URL_LABEL">試行した URL：</translation>

@@ -266,7 +266,83 @@ Function RecordInstallerChannel
   DetailPrint "Installing on the $InstallerChannel channel."
 FunctionEnd
 
+; Running-instance handling. The mini installer replaces files side by side,
+; so no reboot is needed, but the post-install launch only routes to a running
+; old instance: the user would keep seeing the old version. Setup therefore
+; closes every running ${BROWSER_EXE} first: it asks (interactive installs),
+; requests a normal close, waits, force-ends what is left, and offers Retry /
+; Cancel when something will not go (another user's session, an elevated
+; process) instead of failing. A silent install closes without asking.
+
+; Sets $R0 to 1 when a ${BROWSER_EXE} process exists, else 0.
+Function IsProductRunning
+  StrCpy $R0 0
+  nsExec::ExecToStack 'tasklist /NH /FI "IMAGENAME eq ${BROWSER_EXE}"'
+  Pop $R1
+  Pop $R2
+  ${WordFind} "$R2" "${BROWSER_EXE}" "E+1" $R3
+  ${IfNot} ${Errors}
+    StrCpy $R0 1
+  ${EndIf}
+  ClearErrors
+FunctionEnd
+
+; Waits up to ~6 s for the processes to exit; leaves $R0 = 1 if any remain.
+Function WaitProductExit
+  StrCpy $R9 0
+  ${Do}
+    Call IsProductRunning
+    ${If} $R0 == 0
+      ${Break}
+    ${EndIf}
+    ${If} $R9 >= 12
+      ${Break}
+    ${EndIf}
+    Sleep 500
+    IntOp $R9 $R9 + 1
+  ${Loop}
+FunctionEnd
+
+Function CloseRunningProduct
+  ${Do}
+    Call IsProductRunning
+    ${If} $R0 == 0
+      Return
+    ${EndIf}
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONQUESTION|MB_YESNO "${PRODUCT_NAME} is running. Setup has to close it to continue; running agent sessions will be interrupted and can be resumed from the session list. Close ${PRODUCT_NAME} and continue?" IDYES +2
+      Goto cancelled
+    ${EndIf}
+    DetailPrint "Closing ${PRODUCT_NAME}..."
+    nsExec::Exec 'taskkill /IM "${BROWSER_EXE}"'
+    Pop $R1
+    Call WaitProductExit
+    ${If} $R0 == 1
+      DetailPrint "${PRODUCT_NAME} did not close in time; ending it."
+      nsExec::Exec 'taskkill /F /T /IM "${BROWSER_EXE}"'
+      Pop $R1
+      Call WaitProductExit
+    ${EndIf}
+    ${If} $R0 == 0
+      DetailPrint "${PRODUCT_NAME} closed."
+      Return
+    ${EndIf}
+    ${If} ${Silent}
+      DetailPrint "${PRODUCT_NAME} is still running; continuing."
+      Return
+    ${EndIf}
+    MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "Setup could not close ${PRODUCT_NAME}. It may be running in another user session or with higher privileges. Close it yourself, then choose Retry." IDRETRY retry
+    Goto cancelled
+    retry:
+  ${Loop}
+  cancelled:
+  DetailPrint "Cancelled: ${PRODUCT_NAME} is still running."
+  SetErrorLevel 1602
+  Abort
+FunctionEnd
+
 Section "Install"
+  Call CloseRunningProduct
   Call ClearBreakingInstallerVersionGate
   Call UninstallLegacySchemeInstall
   Call RecordInstallerChannel

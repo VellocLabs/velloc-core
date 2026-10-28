@@ -23,6 +23,7 @@
 !ifndef BROWSER_EXE
   !error "BROWSER_EXE is required, e.g. /DBROWSER_EXE=velloc.exe"
 !endif
+!include "running_product.nsh"
 
 !ifndef PRODUCT_NAME
   !define PRODUCT_NAME "Velloc Code"
@@ -116,6 +117,13 @@ Var InstallMode
 Var MiniArgs
 Var MiniExit
 Var InstallerChannel
+Var ProductDir
+Var RunningPids
+
+; The Uninstall registry subkey is named after the install path component
+; (kProductPathName = "Velloc"), not the display name ${PRODUCT_NAME} ("Velloc
+; Code") — confirmed against the registered install.
+!define PRODUCT_UNINSTALL_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Velloc"
 
 Function .onInit
   StrCpy $InstallMode "user"
@@ -269,25 +277,44 @@ FunctionEnd
 ; Running-instance handling. The mini installer replaces files side by side,
 ; so no reboot is needed, but the post-install launch only routes to a running
 ; old instance: the user would keep seeing the old version. Setup therefore
-; closes every running ${BROWSER_EXE} first: it asks (interactive installs),
-; requests a normal close, waits, force-ends what is left, and offers Retry /
-; Cancel when something will not go (another user's session, an elevated
-; process) instead of failing. A silent install closes without asking.
+; closes the ${BROWSER_EXE} processes running from the directory it installs
+; into first: it asks (interactive installs), requests a normal close, waits,
+; force-ends what is left, and offers Retry / Cancel when something will not
+; go (another user's session, an elevated process) instead of failing. A
+; silent install closes without asking. A ${BROWSER_EXE} elsewhere (a
+; developer build, a test run) is left alone.
 
-; Sets $R0 to 1 when a ${BROWSER_EXE} process exists, else 0.
-Function IsProductRunning
-  StrCpy $R0 0
-  nsExec::ExecToStack 'tasklist /NH /FI "IMAGENAME eq ${BROWSER_EXE}"'
-  Pop $R1
-  Pop $R2
-  ${WordFind} "$R2" "${BROWSER_EXE}" "E+1" $R3
-  ${IfNot} ${Errors}
-    StrCpy $R0 1
+; Sets $ProductDir to the directory this install writes to: the registry
+; InstallLocation setup.exe recorded for the install mode, else that mode's
+; default directory.
+Function ResolveProductDir
+  ${If} $InstallMode == "system"
+    ReadRegStr $ProductDir HKLM "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
+    ${If} $ProductDir == ""
+      StrCpy $ProductDir "$PROGRAMFILES64\\Velloc\\Application"
+    ${EndIf}
+  ${Else}
+    ReadRegStr $ProductDir HKCU "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
+    ${If} $ProductDir == ""
+      StrCpy $ProductDir "$LOCALAPPDATA\\Velloc\\Application"
+    ${EndIf}
   ${EndIf}
-  ClearErrors
 FunctionEnd
 
-; Waits up to ~6 s for the processes to exit; leaves $R0 = 1 if any remain.
+; Sets $R0 to 1 when a ${BROWSER_EXE} runs from $ProductDir, else 0;
+; $RunningPids holds the taskkill arguments that name them.
+Function IsProductRunning
+  StrCpy $R0 0
+  Push $ProductDir
+  Call FindProductPids
+  Pop $RunningPids
+  ${If} $RunningPids != ""
+    StrCpy $R0 1
+  ${EndIf}
+FunctionEnd
+
+; Checks up to 12 more times, half a second apart, for the processes to exit;
+; leaves $R0 = 1 if any remain.
 Function WaitProductExit
   StrCpy $R9 0
   ${Do}
@@ -304,6 +331,7 @@ Function WaitProductExit
 FunctionEnd
 
 Function CloseRunningProduct
+  Call ResolveProductDir
   ${Do}
     Call IsProductRunning
     ${If} $R0 == 0
@@ -314,12 +342,12 @@ Function CloseRunningProduct
       Goto cancelled
     ${EndIf}
     DetailPrint "Closing ${PRODUCT_NAME}..."
-    nsExec::Exec 'taskkill /IM "${BROWSER_EXE}"'
+    nsExec::Exec 'taskkill $RunningPids'
     Pop $R1
     Call WaitProductExit
     ${If} $R0 == 1
       DetailPrint "${PRODUCT_NAME} did not close in time; ending it."
-      nsExec::Exec 'taskkill /F /T /IM "${BROWSER_EXE}"'
+      nsExec::Exec 'taskkill /F /T $RunningPids'
       Pop $R1
       Call WaitProductExit
     ${EndIf}
@@ -377,28 +405,11 @@ Section "Install"
   ${EndIf}
 SectionEnd
 
-; The Uninstall registry subkey is named after the install path component
-; (kProductPathName = "Velloc"), not the display name ${PRODUCT_NAME} ("Velloc
-; Code") — confirmed against the registered install.
-!define PRODUCT_UNINSTALL_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Velloc"
-
-; Resolves the installed ${BROWSER_EXE} path into $R7. Prefers the registry
-; InstallLocation written by setup.exe under the Uninstall key (covers both
-; per-user and system-level installs and any custom install dir), falling back
-; to the default per-user dir under %LOCALAPPDATA%. Sets $R7 to "" if the exe
-; cannot be found.
+; Resolves the installed ${BROWSER_EXE} path into $R7 from ResolveProductDir.
+; Sets $R7 to "" if the exe cannot be found.
 Function ResolveInstalledChromeExe
-  StrCpy $R7 ""
-  ${If} $InstallMode == "system"
-    ReadRegStr $R0 HKLM "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
-  ${Else}
-    ReadRegStr $R0 HKCU "${PRODUCT_UNINSTALL_KEY}" "InstallLocation"
-  ${EndIf}
-  ${If} $R0 == ""
-    ; Fallback: default per-user install dir.
-    StrCpy $R0 "$LOCALAPPDATA\\Velloc\\Application"
-  ${EndIf}
-  StrCpy $R7 "$R0\\${BROWSER_EXE}"
+  Call ResolveProductDir
+  StrCpy $R7 "$ProductDir\\${BROWSER_EXE}"
   ${IfNot} ${FileExists} "$R7"
     StrCpy $R7 ""
   ${EndIf}

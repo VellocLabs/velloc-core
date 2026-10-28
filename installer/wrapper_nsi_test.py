@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -109,11 +110,31 @@ class CloseRunningProductTest(unittest.TestCase):
     self.assertLess(self.body.index('${IfNot} ${Silent}'),
                     self.body.index('MB_YESNO'))
     self.assertLess(self.body.index('MB_YESNO'),
-                    self.body.index('taskkill /IM'))
+                    self.body.index('taskkill $RunningPids'))
 
   def test_closes_normally_before_forcing(self):
-    self.assertLess(self.body.index('taskkill /IM'),
-                    self.body.index('taskkill /F'))
+    self.assertLess(self.body.index('taskkill $RunningPids'),
+                    self.body.index('taskkill /F /T $RunningPids'))
+
+  def test_only_processes_of_the_install_dir_are_closed(self):
+    # Matching by image name alone also caught (and could not end) a
+    # developer build's velloc.exe outside the install.
+    running = _function_body(self.source, 'IsProductRunning')
+    self.assertIn('Push $ProductDir', running)
+    self.assertIn('Call FindProductPids', running)
+    for body in (running, self.body):
+      self.assertNotIn('IMAGENAME', body)
+      self.assertNotIn('/IM', body)
+    self.assertLess(self.body.index('Call ResolveProductDir'),
+                    self.body.index('Call IsProductRunning'))
+
+  def test_product_dir_follows_the_install_mode(self):
+    body = _function_body(self.source, 'ResolveProductDir')
+    system, user = body.split('${Else}', 1)
+    self.assertIn('ReadRegStr $ProductDir HKLM', system)
+    self.assertIn('"$PROGRAMFILES64\\\\Velloc\\\\Application"', system)
+    self.assertIn('ReadRegStr $ProductDir HKCU', user)
+    self.assertIn('"$LOCALAPPDATA\\\\Velloc\\\\Application"', user)
 
   def test_offers_retry_and_aborts_on_cancel(self):
     self.assertIn('MB_RETRYCANCEL', self.body)
@@ -271,6 +292,168 @@ class InstallerChannelFromNameTest(unittest.TestCase):
   def test_other_names_select_nothing(self):
     for name in ('install.exe', 'Velloc Code Setup.exe', 'bet-a.exe'):
       self.assertEqual(self._channel_for(name), '[]', name)
+
+
+_RUNNING_NSH = os.path.join(_HERE, 'running_product.nsh')
+
+
+@unittest.skipUnless(_find_makensis(), 'makensis not installed')
+class IsPidArgListTest(unittest.TestCase):
+  """Only a list FindProductPids could have built reaches taskkill."""
+
+  VALID = ('', '/PID 12', '/PID 12 /PID 345')
+  INVALID = ('Get-CimInstance : Invalid namespace', '/PID', '/PID 12 ',
+             ' /PID 12', '/PID  12', '/PID 12x', '/PID -5', '/pid 12',
+             '/PID 12 /PID', '/PID 0x1A', '/PID 12 12', '/PID 12$\\r$\\n')
+
+  @classmethod
+  def setUpClass(cls):
+    cls.work = tempfile.mkdtemp()
+    cases = ''.join(
+        '  Push "%s"\n'
+        '  Call IsPidArgList\n'
+        '  Pop $0\n'
+        '  FileWrite $1 "$0$\\n"\n' % case
+        for case in cls.VALID + cls.INVALID)
+    probe = os.path.join(cls.work, 'probe.nsi')
+    with open(probe, 'w', encoding='utf-8') as f:
+      f.write('!define BROWSER_EXE "velloc.exe"\n'
+              '!include "%s"\n'
+              'OutFile "probe.exe"\n'
+              'SilentInstall silent\n'
+              'RequestExecutionLevel user\n'
+              'Section\n'
+              '  FileOpen $1 "$EXEDIR\\results.txt" w\n'
+              '%s'
+              '  FileClose $1\n'
+              'SectionEnd\n' % (_RUNNING_NSH, cases))
+    result = subprocess.run([_find_makensis(), '/V2', probe], cwd=cls.work,
+                            capture_output=True, text=True, errors='replace')
+    assert result.returncode == 0, result.stdout + result.stderr
+    subprocess.run([os.path.join(cls.work, 'probe.exe')], check=True,
+                   timeout=60)
+    with open(os.path.join(cls.work, 'results.txt'), encoding='utf-8') as f:
+      cls.results = f.read().split('\n')
+
+  @classmethod
+  def tearDownClass(cls):
+    shutil.rmtree(cls.work)
+
+  def test_lists_built_here_are_accepted(self):
+    for i, case in enumerate(self.VALID):
+      self.assertEqual(self.results[i], '1', repr(case))
+
+  def test_anything_else_is_rejected(self):
+    for i, case in enumerate(self.INVALID, len(self.VALID)):
+      self.assertEqual(self.results[i], '0', repr(case))
+
+
+@unittest.skipUnless(_find_makensis(), 'makensis not installed')
+class FindProductPidsTest(unittest.TestCase):
+  """Runs FindProductPids against live stand-in velloc.exe processes."""
+
+  @classmethod
+  def setUpClass(cls):
+    cls.work = tempfile.mkdtemp()
+    # A stand-in browser: with "spawn" it starts one child copy of itself
+    # (a renderer), writes spawned.txt, then sleeps.
+    stub = os.path.join(cls.work, 'stub.nsi')
+    with open(stub, 'w', encoding='utf-8') as f:
+      f.write('!include "FileFunc.nsh"\n'
+              'OutFile "velloc.exe"\n'
+              'SilentInstall silent\n'
+              'RequestExecutionLevel user\n'
+              'Section\n'
+              '  ${GetParameters} $0\n'
+              '  StrCmp $0 "spawn" 0 +5\n'
+              '  Exec \'"$EXEPATH"\'\n'
+              '  FileOpen $1 "$EXEDIR\\spawned.txt" w\n'
+              '  FileWrite $1 "1"\n'
+              '  FileClose $1\n'
+              '  Sleep 60000\n'
+              'SectionEnd\n')
+    cls._makensis(stub)
+    cls.stub = os.path.join(cls.work, 'velloc.exe')
+    cls.procs = []
+
+  @classmethod
+  def tearDownClass(cls):
+    for proc in cls.procs:
+      subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                     capture_output=True)
+      proc.wait(timeout=30)
+    shutil.rmtree(cls.work, ignore_errors=True)
+
+  @classmethod
+  def _makensis(cls, script, *defines):
+    result = subprocess.run([_find_makensis(), '/V2', *defines, script],
+                            cwd=cls.work, capture_output=True, text=True,
+                            errors='replace')
+    assert result.returncode == 0, result.stdout + result.stderr
+
+  def _start_browser(self, dir_name):
+    run_dir = os.path.join(self.work, dir_name)
+    os.makedirs(run_dir)
+    exe = os.path.join(run_dir, 'velloc.exe')
+    shutil.copy(self.stub, exe)
+    proc = subprocess.Popen([exe, 'spawn'])
+    self.procs.append(proc)
+    marker = os.path.join(run_dir, 'spawned.txt')
+    for _ in range(100):
+      if os.path.isfile(marker):
+        break
+      time.sleep(0.1)
+    self.assertTrue(os.path.isfile(marker), 'stub never spawned its child')
+    return run_dir, proc.pid
+
+  def _pids_for(self, product_dir, *defines):
+    probe_dir = tempfile.mkdtemp(dir=self.work)
+    probe = os.path.join(probe_dir, 'probe.nsi')
+    with open(probe, 'w', encoding='utf-8') as f:
+      f.write('!define BROWSER_EXE "velloc.exe"\n'
+              '!include "%s"\n'
+              'OutFile "probe.exe"\n'
+              'SilentInstall silent\n'
+              'RequestExecutionLevel user\n'
+              'Section\n'
+              '  Push "%s"\n'
+              '  Call FindProductPids\n'
+              '  Pop $0\n'
+              '  FileOpen $1 "$EXEDIR\\pids.txt" w\n'
+              '  FileWrite $1 "[$0]"\n'
+              '  FileClose $1\n'
+              'SectionEnd\n' % (_RUNNING_NSH, product_dir))
+    result = subprocess.run([_find_makensis(), '/V2', *defines, probe],
+                            cwd=probe_dir, capture_output=True, text=True,
+                            errors='replace')
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    subprocess.run([os.path.join(probe_dir, 'probe.exe')], check=True,
+                   timeout=120)
+    with open(os.path.join(probe_dir, 'pids.txt'), encoding='utf-8') as f:
+      return f.read()
+
+  def test_a_failed_query_falls_back_to_the_image_name(self):
+    # A query error is non-terminating in PowerShell; it must still fail the
+    # run, or its message would be handed to taskkill.
+    self.assertEqual(
+        self._pids_for(self.work, '/DRUNNING_PRODUCT_QUERY='
+                       'Get-CimInstance -Namespace root/nope Win32_Process'),
+        '[/IM "velloc.exe"]')
+
+  def test_lists_only_the_root_of_the_install_dir(self):
+    # The quote checks the directory reaches PowerShell intact; the sibling
+    # whose name extends the install dir's checks the match is by directory.
+    product_dir, root = self._start_browser("Velloc's App")
+    self._start_browser("Velloc's App2")
+    self._start_browser('dev-build')
+    self.assertEqual(self._pids_for(product_dir), '[/PID %d]' % root)
+    self.assertEqual(self._pids_for(product_dir + '\\'), '[/PID %d]' % root)
+
+  def test_nothing_running_there_lists_nothing(self):
+    self._start_browser('elsewhere')
+    empty = os.path.join(self.work, 'not-running')
+    os.makedirs(empty)
+    self.assertEqual(self._pids_for(empty), '[]')
 
 
 

@@ -26,6 +26,10 @@ The console host (Windows Terminal's ConPTY package) is MIT — see
 `conpty-LICENSE-MIT`. Both of its files are Authenticode-signed by Microsoft
 as shipped (file version 1.25.2609.30003), x64 only.
 
+Both licence files are copied and listed in `chrome.release` like the
+binaries, so they are installed into `Application\<version>\` beside them;
+`chrome_release_test.py` fails if a bundled binary ships without its licence.
+
 `conpty.dll` and `OpenConsole.exe` must stay in one directory: the DLL
 starts the host from its own. Unlike `rg.exe`, they are also copied into a
 dev build's out dir (`console_host` is a `data_deps` of the loader), so the

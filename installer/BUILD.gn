@@ -11,9 +11,13 @@ assert(is_win)
 # %(VersionDir)s, so setup.exe installs it into Application\<version>\ next
 # to chrome.dll (custom_browser::GetBundledBinaryPath), removes it with the
 # old version on upgrade, and build.sh's payload signing signs it like every
-# other .exe the manifest lists. Provenance: bundled/README.md.
+# other .exe the manifest lists. Each binary's licence file is listed and
+# installed beside it. Provenance: bundled/README.md.
 copy("bundled_binaries") {
-  sources = [ "bundled/rg.exe" ]
+  sources = [
+    "bundled/rg-LICENSE-MIT",
+    "bundled/rg.exe",
+  ]
   outputs = [ "$root_out_dir/{{source_file_part}}" ]
   deps = [ ":console_host" ]
 }
@@ -25,6 +29,7 @@ copy("bundled_binaries") {
 copy("console_host") {
   sources = [
     "bundled/OpenConsole.exe",
+    "bundled/conpty-LICENSE-MIT",
     "bundled/conpty.dll",
   ]
   outputs = [ "$root_out_dir/{{source_file_part}}" ]

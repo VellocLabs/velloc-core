@@ -21,6 +21,16 @@ _RELEASE = os.path.join(_SRC, 'chrome', 'installer', 'mini_installer',
 _LOCALES_GNI = os.path.join(_SRC, 'build', 'config', 'locales.gni')
 _STRINGS_GRD = os.path.join(_HERE, '..', 'resources',
                             'custom_browser_strings.grd')
+_INSTALLER_BUILD_GN = os.path.join(_HERE, 'BUILD.gn')
+_BUNDLED = os.path.join(_HERE, 'bundled')
+
+# Each third-party binary the installer ships, and the licence text that
+# must be installed beside it.
+_BUNDLED_LICENCES = {
+    'rg.exe': 'rg-LICENSE-MIT',
+    'conpty.dll': 'conpty-LICENSE-MIT',
+    'OpenConsole.exe': 'conpty-LICENSE-MIT',
+}
 
 # The languages Velloc's own strings ship in (pt as pt-BR), plus Traditional
 # Chinese; every other system language gets the en-US browser UI.
@@ -94,6 +104,17 @@ class ChromeReleaseTest(unittest.TestCase):
     # No bundled extension is listed in extensions/extensions.json, so a
     # resources\custom_extensions dir in the out dir is stale.
     self.assertFalse([o for o in self.options if 'custom_extensions' in o])
+
+  def test_ships_the_licence_of_every_bundled_binary(self):
+    # The archive skips an entry with no file in the out dir, so each licence
+    # must also be copied there by installer/BUILD.gn.
+    with open(_INSTALLER_BUILD_GN, encoding='utf-8') as f:
+      copied = set(re.findall(r'"bundled/([^"]+)"', f.read()))
+    for binary, licence in _BUNDLED_LICENCES.items():
+      self.assertIn(binary.lower(), self.options, binary)
+      self.assertIn(licence.lower(), self.options, licence)
+      self.assertIn(licence, copied, licence)
+      self.assertTrue(os.path.isfile(os.path.join(_BUNDLED, licence)), licence)
 
 
 if __name__ == '__main__':

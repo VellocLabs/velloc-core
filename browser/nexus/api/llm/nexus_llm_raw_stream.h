@@ -1,6 +1,6 @@
-// Copyright 2026 The Chromium Authors
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2026 VellocLabs
+// Use of this source code is governed by the Apache License, Version 2.0,
+// which can be found in the LICENSE file.
 
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_NEXUS_LLM_RAW_STREAM_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_NEXUS_LLM_RAW_STREAM_H_

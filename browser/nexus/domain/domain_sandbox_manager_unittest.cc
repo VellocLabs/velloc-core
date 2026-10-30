@@ -1,6 +1,6 @@
-// Copyright 2026 The Chromium Authors
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2026 VellocLabs
+// Use of this source code is governed by the Apache License, Version 2.0,
+// which can be found in the LICENSE file.
 
 #include "custom_browser/browser/nexus/domain/domain_sandbox_manager.h"
 

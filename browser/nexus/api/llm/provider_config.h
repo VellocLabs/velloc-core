@@ -9,6 +9,7 @@
 
 #include "base/containers/flat_map.h"
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 
 class PrefService;
 
@@ -51,6 +52,14 @@ bool StoredApiKeysDiffer(const std::string& stored_a,
 // These are the names `{{secret:NAME}}` placeholders resolve against.
 void MergeStoredSecrets(const base::DictValue* settings_secrets,
                         base::DictValue& config);
+
+// Resolves a `{{secret:NAME}}` against a stored provider config (null when
+// the provider has none): `api_key` reads the config's API key, any other
+// name an entry of its `secrets`. Decrypts host-side. No value: kMissing when
+// nothing non-empty is stored, kKeystoreNotReady while the OS keystore is
+// not acquired, kUnreadable when the keystore will not open a sealed value.
+SecretLookupOutcome LookupStoredProviderSecret(const base::DictValue* config,
+                                               const std::string& name);
 
 // Stores |user_agent| as the provider config's pinned User-Agent (the
 // `user_agent` key `LlmProvider::ConfigureUserAgent` reads). Null or empty

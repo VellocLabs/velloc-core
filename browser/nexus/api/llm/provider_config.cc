@@ -84,6 +84,32 @@ void MergeStoredSecrets(const base::DictValue* settings_secrets,
   }
 }
 
+SecretLookupOutcome LookupStoredProviderSecret(const base::DictValue* config,
+                                               const std::string& name) {
+  if (!config) {
+    return {};
+  }
+  const std::string* stored = nullptr;
+  if (name == "api_key") {
+    stored = config->FindString("api_key");
+  } else if (const base::DictValue* secrets = config->FindDict("secrets")) {
+    stored = secrets->FindString(name);
+  }
+  if (!stored || stored->empty()) {
+    return {};
+  }
+  NexusSecretCrypt* crypt = NexusSecretCrypt::GetInstance();
+  if (NexusSecretCrypt::IsEncrypted(*stored) && !crypt->ready()) {
+    return {std::nullopt, SecretProblem::kKeystoreNotReady};
+  }
+  std::string plaintext = crypt->Decrypt(*stored);
+  if (plaintext.empty()) {
+    // Sealed (an unmarked value is non-empty here), but will not open.
+    return {std::nullopt, SecretProblem::kUnreadable};
+  }
+  return {std::move(plaintext)};
+}
+
 void SetStoredUserAgent(const std::string* user_agent,
                         base::DictValue& config) {
   if (user_agent && !user_agent->empty()) {

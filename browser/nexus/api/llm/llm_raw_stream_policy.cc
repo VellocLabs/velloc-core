@@ -116,9 +116,22 @@ bool IsValidSecretName(std::string_view name) {
   return true;
 }
 
-std::optional<std::string> ExpandSecretTemplates(std::string_view text,
-                                                 const SecretLookup& lookup,
-                                                 std::string* out) {
+const char* SecretProblemWireName(SecretProblem problem) {
+  switch (problem) {
+    case SecretProblem::kMissing:
+      return "missing";
+    case SecretProblem::kUnreadable:
+      return "unreadable";
+    case SecretProblem::kKeystoreNotReady:
+      return "keystore_not_ready";
+  }
+  return "missing";
+}
+
+std::optional<SecretTemplateError> ExpandSecretTemplates(
+    std::string_view text,
+    const SecretLookup& lookup,
+    std::string* out) {
   out->clear();
   size_t pos = 0;
   while (true) {
@@ -131,17 +144,35 @@ std::optional<std::string> ExpandSecretTemplates(std::string_view text,
     const size_t name_start = open + kSecretOpen.size();
     const size_t close = text.find(kSecretClose, name_start);
     if (close == std::string_view::npos) {
-      return "Unterminated {{secret:...}} placeholder.";
+      return SecretTemplateError{"Unterminated {{secret:...}} placeholder."};
     }
     const std::string name(text.substr(name_start, close - name_start));
     if (!IsValidSecretName(name)) {
-      return "Invalid secret name in placeholder: " + name;
+      return SecretTemplateError{"Invalid secret name in placeholder: " +
+                                 name};
     }
-    std::optional<std::string> value = lookup.Run(name);
-    if (!value || value->empty()) {
-      return "Provider has no secret named " + name + ".";
+    const SecretLookupOutcome found = lookup.Run(name);
+    if (!found.value || found.value->empty()) {
+      const SecretProblem problem =
+          found.value ? SecretProblem::kMissing : found.problem;
+      std::string message;
+      switch (problem) {
+        case SecretProblem::kMissing:
+          message = "Provider has no secret named " + name + ".";
+          break;
+        case SecretProblem::kUnreadable:
+          message = "Provider's stored secret " + name +
+                    " cannot be decrypted by this OS keystore; enter it "
+                    "again.";
+          break;
+        case SecretProblem::kKeystoreNotReady:
+          message = "The OS keystore is not ready; cannot read secret " +
+                    name + ".";
+          break;
+      }
+      return SecretTemplateError{std::move(message), name, problem};
     }
-    out->append(*value);
+    out->append(*found.value);
     pos = close + kSecretClose.size();
   }
 }

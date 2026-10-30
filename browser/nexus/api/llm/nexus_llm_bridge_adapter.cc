@@ -50,6 +50,21 @@ constexpr size_t kMaxCaptureResponseBytes = 1024 * 1024;
 constexpr char kApiKeySecretName[] = "api_key";
 constexpr int kDefaultRawStreamReadMaxBytes = 1024 * 1024;
 
+// Refuses a request whose secret placeholder could not be filled. The code
+// stays SECRET_UNAVAILABLE for every cause; `error.data` = { secret, reason }
+// names the cause when a stored secret was at fault.
+void RefuseSecretTemplate(::nexus::BridgeResponseCallback done,
+                          const SecretTemplateError& error) {
+  if (!error.problem) {
+    std::move(done).Error("SECRET_UNAVAILABLE", error.message);
+    return;
+  }
+  Dict data;
+  data.Set("secret", error.secret);
+  data.Set("reason", SecretProblemWireName(*error.problem));
+  std::move(done).Error("SECRET_UNAVAILABLE", error.message, std::move(data));
+}
+
 }  // namespace
 
 NexusLlmBridgeAdapter::NexusLlmBridgeAdapter(
@@ -348,24 +363,7 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
   // Secrets are read and decrypted here, host-side, and only ever written
   // into the outgoing request — never returned to the guest.
   const SecretLookup lookup = base::BindRepeating(
-      [](const base::DictValue* config,
-         const std::string& name) -> std::optional<std::string> {
-        if (!config) {
-          return std::nullopt;
-        }
-        const std::string* stored = nullptr;
-        if (name == kApiKeySecretName) {
-          stored = config->FindString("api_key");
-        } else if (const base::DictValue* secrets =
-                       config->FindDict("secrets")) {
-          stored = secrets->FindString(name);
-        }
-        if (!stored) {
-          return std::nullopt;
-        }
-        return NexusSecretCrypt::GetInstance()->Decrypt(*stored);
-      },
-      base::Unretained(config));
+      &LookupStoredProviderSecret, base::Unretained(config));
 
   // Query parameters are appended AFTER the domain check, so a template can
   // only ever add to the query of an already-approved URL.
@@ -381,9 +379,9 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
         return;
       }
       std::string expanded;
-      if (std::optional<std::string> error =
+      if (std::optional<SecretTemplateError> error =
               ExpandSecretTemplates(with_oauth, lookup, &expanded)) {
-        std::move(done).Error("SECRET_UNAVAILABLE", *error);
+        RefuseSecretTemplate(std::move(done), *error);
         return;
       }
       if (IsOmittedOAuthValue(value.GetString(), expanded)) {
@@ -418,9 +416,9 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
         return;
       }
       std::string expanded;
-      if (std::optional<std::string> error =
+      if (std::optional<SecretTemplateError> error =
               ExpandSecretTemplates(with_oauth, lookup, &expanded)) {
-        std::move(done).Error("SECRET_UNAVAILABLE", *error);
+        RefuseSecretTemplate(std::move(done), *error);
         return;
       }
       if (IsOmittedOAuthValue(value.GetString(), expanded)) {

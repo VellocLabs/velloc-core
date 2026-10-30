@@ -51,20 +51,47 @@ bool IsForbiddenRawStreamHeader(std::string_view name);
 // (`Bearer {{secret:api_key}}`), so any auth scheme is expressible without a
 // host change, and the secret itself never reaches the guest.
 
-// Looks a secret up by name; nullopt when the provider has none by that name.
+// Why a provider secret has no usable value. The wire names travel to the
+// guest as `error.data.reason` of a SECRET_UNAVAILABLE refusal.
+enum class SecretProblem {
+  kMissing,           // "missing": not stored, or stored empty.
+  kUnreadable,        // "unreadable": stored sealed; this OS keystore will
+                      // not open it. Only re-entering the secret helps.
+  kKeystoreNotReady,  // "keystore_not_ready": the OS keystore is not
+                      // acquired yet; a later request can succeed.
+};
+
+const char* SecretProblemWireName(SecretProblem problem);
+
+// A secret looked up by name: its value, or why there is none.
+struct SecretLookupOutcome {
+  std::optional<std::string> value;
+  SecretProblem problem = SecretProblem::kMissing;
+};
+
 using SecretLookup =
-    base::RepeatingCallback<std::optional<std::string>(const std::string&)>;
+    base::RepeatingCallback<SecretLookupOutcome(const std::string&)>;
 
 // A secret name: 1-64 chars of [A-Za-z0-9_.-].
 bool IsValidSecretName(std::string_view name);
 
+// A placeholder ExpandSecretTemplates could not fill. |secret| and |problem|
+// are set only when a well-formed placeholder named a secret with no usable
+// value; a malformed placeholder carries just the message.
+struct SecretTemplateError {
+  std::string message;
+  std::string secret;
+  std::optional<SecretProblem> problem;
+};
+
 // Expands every `{{secret:NAME}}` in |text| into |out|. Returns an error
-// message (and leaves |out| unspecified) on a malformed placeholder, an
-// invalid name, or a secret the provider does not have. Text without
-// placeholders is copied verbatim.
-std::optional<std::string> ExpandSecretTemplates(std::string_view text,
-                                                 const SecretLookup& lookup,
-                                                 std::string* out);
+// (and leaves |out| unspecified) on a malformed placeholder, an invalid
+// name, or a secret with no usable value. Text without placeholders is
+// copied verbatim.
+std::optional<SecretTemplateError> ExpandSecretTemplates(
+    std::string_view text,
+    const SecretLookup& lookup,
+    std::string* out);
 
 // ---- OAuth templates -------------------------------------------------------
 // `{{oauth:access_token}}` / `{{oauth:account_id}}` in a header or query value

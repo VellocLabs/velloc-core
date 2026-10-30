@@ -29,6 +29,7 @@ source_set("provider_config") {
     "provider_config.h",
   ]
 
+  public_deps = [ ":raw_stream_policy" ]
   deps = [
     ":pref_names",
     "//base",

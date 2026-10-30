@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
 
+#include "base/base64.h"
 #include "base/values.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -163,6 +164,56 @@ TEST_F(ProviderConfigSealTest, StoredApiKeysDifferFallsBackToBytesWhenNotReady) 
   EXPECT_FALSE(StoredApiKeysDiffer(sealed_a, sealed_a));
   // Not ready: sealing is a passthrough (the broker re-applies via WhenReady).
   EXPECT_EQ(SealApiKeyForPref("sk-plain"), "sk-plain");
+}
+
+// ---- secret lookup ----------------------------------------------------------
+// The lookup behind `{{secret:NAME}}` names why a secret has no value, so a
+// key this keystore cannot open is not reported as a key never entered.
+
+TEST_F(ProviderConfigSealTest, LookupStoredProviderSecretOpensSealedValues) {
+  base::DictValue config;
+  config.Set("api_key", SealApiKeyForPref("sk-api"));
+  base::DictValue secrets;
+  secrets.Set("management_key", SealApiKeyForPref("mk-1"));
+  config.Set("secrets", std::move(secrets));
+
+  EXPECT_EQ(LookupStoredProviderSecret(&config, "api_key").value, "sk-api");
+  EXPECT_EQ(LookupStoredProviderSecret(&config, "management_key").value,
+            "mk-1");
+}
+
+TEST_F(ProviderConfigSealTest, LookupStoredProviderSecretReportsMissing) {
+  base::DictValue config;
+  config.Set("api_key", "");
+  for (const char* name : {"api_key", "management_key"}) {
+    const SecretLookupOutcome found =
+        LookupStoredProviderSecret(&config, name);
+    EXPECT_FALSE(found.value) << name;
+    EXPECT_EQ(found.problem, SecretProblem::kMissing) << name;
+  }
+  EXPECT_EQ(LookupStoredProviderSecret(nullptr, "api_key").problem,
+            SecretProblem::kMissing);
+}
+
+// A value sealed by another machine, OS user or profile keystore carries the
+// marker but will not open here.
+TEST_F(ProviderConfigSealTest, LookupStoredProviderSecretReportsUnreadable) {
+  base::DictValue config;
+  config.Set("api_key", "NEXUSENC1:" + base::Base64Encode("not-a-ciphertext"));
+  const SecretLookupOutcome found =
+      LookupStoredProviderSecret(&config, "api_key");
+  EXPECT_FALSE(found.value);
+  EXPECT_EQ(found.problem, SecretProblem::kUnreadable);
+}
+
+TEST_F(ProviderConfigSealTest, LookupStoredProviderSecretWaitsOnKeystore) {
+  base::DictValue config;
+  config.Set("api_key", SealApiKeyForPref("sk-api"));
+  NexusSecretCrypt::GetInstance()->ClearEncryptorForTesting();
+  const SecretLookupOutcome found =
+      LookupStoredProviderSecret(&config, "api_key");
+  EXPECT_FALSE(found.value);
+  EXPECT_EQ(found.problem, SecretProblem::kKeystoreNotReady);
 }
 
 // ---- preset User-Agent ------------------------------------------------------

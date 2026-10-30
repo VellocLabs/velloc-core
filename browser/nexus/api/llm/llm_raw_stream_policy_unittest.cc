@@ -62,17 +62,23 @@ TEST(LlmRawStreamPolicyTest, ForbiddenHeaders) {
 
 SecretLookup FakeSecrets() {
   return base::BindRepeating(
-      [](const std::string& name) -> std::optional<std::string> {
+      [](const std::string& name) -> SecretLookupOutcome {
         if (name == "api_key") {
-          return "sk-123";
+          return {"sk-123"};
         }
         if (name == "access_token") {
-          return "at-456";
+          return {"at-456"};
         }
         if (name == "empty") {
-          return "";
+          return {""};
         }
-        return std::nullopt;
+        if (name == "sealed_elsewhere") {
+          return {std::nullopt, SecretProblem::kUnreadable};
+        }
+        if (name == "not_yet") {
+          return {std::nullopt, SecretProblem::kKeystoreNotReady};
+        }
+        return {};
       });
 }
 
@@ -103,6 +109,43 @@ TEST(LlmRawStreamPolicyTest, RefusesUnknownMalformedOrEmptySecrets) {
   EXPECT_TRUE(ExpandSecretTemplates("{{secret:}}", FakeSecrets(), &out));
   EXPECT_FALSE(IsValidSecretName(std::string(65, 'a')));
   EXPECT_TRUE(IsValidSecretName("refresh_token.v2-x"));
+}
+
+// The refusal names the secret and why it has no value; a malformed
+// placeholder names neither.
+TEST(LlmRawStreamPolicyTest, SecretRefusalCarriesNameAndProblem) {
+  std::string out;
+  struct Case {
+    const char* text;
+    SecretProblem problem;
+    const char* wire;
+  };
+  for (const Case& c : {
+           Case{"Bearer {{secret:nope}}", SecretProblem::kMissing, "missing"},
+           Case{"{{secret:empty}}", SecretProblem::kMissing, "missing"},
+           Case{"Bearer {{secret:sealed_elsewhere}}",
+                SecretProblem::kUnreadable, "unreadable"},
+           Case{"{{secret:not_yet}}", SecretProblem::kKeystoreNotReady,
+                "keystore_not_ready"},
+       }) {
+    const std::optional<SecretTemplateError> error =
+        ExpandSecretTemplates(c.text, FakeSecrets(), &out);
+    ASSERT_TRUE(error) << c.text;
+    ASSERT_TRUE(error->problem) << c.text;
+    EXPECT_EQ(*error->problem, c.problem) << c.text;
+    EXPECT_STREQ(SecretProblemWireName(*error->problem), c.wire);
+    EXPECT_FALSE(error->secret.empty()) << c.text;
+  }
+  const std::optional<SecretTemplateError> unreadable = ExpandSecretTemplates(
+      "{{secret:sealed_elsewhere}}", FakeSecrets(), &out);
+  EXPECT_EQ(unreadable->secret, "sealed_elsewhere");
+  EXPECT_NE(unreadable->message.find("cannot be decrypted"), std::string::npos);
+
+  const std::optional<SecretTemplateError> malformed =
+      ExpandSecretTemplates("{{secret:api_key", FakeSecrets(), &out);
+  ASSERT_TRUE(malformed);
+  EXPECT_FALSE(malformed->problem);
+  EXPECT_TRUE(malformed->secret.empty());
 }
 
 TEST(LlmRawStreamPolicyTest, CapturesAndRedactsJsonSecrets) {

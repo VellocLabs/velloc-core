@@ -25,7 +25,7 @@
       "name": "headers",
       "type": "object",
       "required": false,
-      "description": "Request headers, string -> string, values may contain `{{secret:NAME}}`. User-Agent and auth headers are the caller's; Cookie, Host, Content-Length and Proxy-Authorization are rejected (INVALID_ARGS). Without a User-Agent the provider's preset (if any) is sent."
+      "description": "Request headers, string -> string, values may contain `{{secret:NAME}}`; one with no usable value refuses the open with SECRET_UNAVAILABLE and `error.data` = {secret, reason}, reason `missing` (nothing stored), `unreadable` (stored sealed, but this OS keystore will not open it; enter it again) or `keystore_not_ready` (a later open can succeed) — a malformed placeholder, or an older host, sends no data. User-Agent and auth headers are the caller's; Cookie, Host, Content-Length and Proxy-Authorization are rejected (INVALID_ARGS). Without a User-Agent the provider's preset (if any) is sent."
     },
     {
       "name": "queryParams",

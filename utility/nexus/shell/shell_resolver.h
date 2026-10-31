@@ -71,6 +71,10 @@ class ShellResolver {
   // Performs the full probe and returns the populated capabilities.
   static ResolvedCapabilities Resolve();
 
+  // `Resolve()` without the `--version` runs: every tool is found by path
+  // only and its `version` left empty. Disk lookups only, no child process.
+  static ResolvedCapabilities ResolvePaths();
+
   // Probes only `tool_ids`, in order. Blocking, like `Resolve()`.
   static std::vector<ResolvedTool> ResolveTools(
       const std::vector<std::string>& tool_ids);
@@ -112,6 +116,11 @@ class ShellResolver {
   // and caps the length. Returns the empty string on any failure (e.g.
   // tool does not implement `--version`). Exposed for unit testing.
   static std::string ProbeVersion(const base::FilePath& exe);
+
+ private:
+  static std::vector<ResolvedTool> ResolveToolPaths(
+      const std::vector<std::string>& tool_ids,
+      bool probe_versions);
 };
 
 }  // namespace nexus

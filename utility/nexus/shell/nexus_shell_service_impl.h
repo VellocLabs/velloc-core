@@ -93,12 +93,14 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
 #endif
 
  private:
-  // Posts the `ShellResolver::Resolve()` probe to the thread pool the
-  // first time it is needed, then drains any queued capability /
-  // exec requests once the probe completes. Subsequent calls reply
-  // synchronously from the cached `cached_capabilities_`.
+  // Posts the `ShellResolver::ResolvePaths()` lookup to the thread pool the
+  // first time it is needed, then drains the queued exec / spawn requests
+  // once it completes; the `--version` probe follows on the thread pool and
+  // capability requests wait for it. Subsequent calls reply from the cached
+  // `cached_capabilities_`.
   void EnsureResolveStarted();
   void OnResolved(ResolvedCapabilities capabilities);
+  void OnVersionsProbed();
   void RespondFromCache(GetCapabilitiesCallback callback) const;
 
   // Re-probes `tool_ids` on the thread pool, folds the result into
@@ -252,7 +254,7 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
   base::TimeTicks last_capabilities_probe_;
 
   // Callbacks waiting for the in-flight probe to finish. Drained by
-  // `OnResolved` in FIFO order.
+  // `OnVersionsProbed` in FIFO order.
   std::vector<GetCapabilitiesCallback> pending_callbacks_;
   std::vector<PendingExec> pending_execs_;
   std::vector<PendingSpawn> pending_spawns_;
@@ -276,6 +278,9 @@ class NexusShellServiceImpl : public mojom::NexusShellService {
 #endif
 
   bool resolve_in_flight_ = false;
+  // Set from `OnResolved` until the first `--version` probe has been folded
+  // into the cache; GetCapabilities queues meanwhile.
+  bool versions_pending_ = false;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<NexusShellServiceImpl> weak_factory_{this};

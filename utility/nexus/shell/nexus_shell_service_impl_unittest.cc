@@ -19,6 +19,7 @@
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
 #include "custom_browser/utility/nexus/shell/pty_console_host.h"
@@ -931,6 +932,53 @@ TEST(NexusShellServiceImplTest, GetCapabilitiesReprobesMissingToolsAtMostOncePer
 
   ShellResolver::SetRegistryPathsForTesting(std::nullopt);
 }
+
+#if BUILDFLAG(IS_WIN)
+// The first launch of a session waits for the PATH lookup only, never for the
+// `--version` runs: a tool whose `--version` hangs to the probe's timeout
+// delays the capabilities reply, not an Exec queued with it.
+TEST(NexusShellServiceImplTest, ExecDoesNotWaitForTheVersionProbe) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir home;
+  ASSERT_TRUE(home.CreateUniqueTempDir());
+  base::ScopedTempDir cwd;
+  ASSERT_TRUE(cwd.CreateUniqueTempDir());
+  const std::string home_path = home.GetPath().AsUTF8Unsafe();
+  base::ScopedEnvironmentVariableOverride home_env("HOME", home_path);
+  base::ScopedEnvironmentVariableOverride userprofile_env("USERPROFILE",
+                                                          home_path);
+  base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
+                                                             home_path);
+  const base::FilePath bin_dir = home.GetPath().AppendASCII("bin");
+  ASSERT_TRUE(base::CreateDirectory(bin_dir));
+  ASSERT_TRUE(base::WriteFile(
+      bin_dir.AppendASCII("node.cmd"),
+      "@\"%SystemRoot%\\System32\\ping.exe\" -n 20 127.0.0.1 >nul\r\n"));
+  base::ScopedEnvironmentVariableOverride path_env("PATH",
+                                                   bin_dir.AsUTF8Unsafe());
+  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+  auto options = mojom::ShellSpawnOptions::New();
+  options->command = "uvx";
+  options->cwd = cwd.GetPath();
+  options->timeout_ms = 5000;
+  const base::ElapsedTimer exec_timer;
+  EXPECT_EQ(RunExec(remote, std::move(options)).error_code.value_or(""),
+            "BINARY_NOT_FOUND");
+  EXPECT_LT(exec_timer.Elapsed(), base::Seconds(4));
+
+  const CapabilitiesSnapshot caps = WaitForCapabilities(remote);
+  const auto node = std::ranges::find_if(
+      caps.tools,
+      [](const mojom::ShellResolvedToolPtr& t) { return t->id == "node"; });
+  ASSERT_NE(node, caps.tools.end());
+  EXPECT_TRUE((*node)->available);
+
+  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace
 }  // namespace nexus

@@ -564,8 +564,25 @@ ResolvedCapabilities ShellResolver::Resolve() {
 }
 
 // static
+ResolvedCapabilities ShellResolver::ResolvePaths() {
+  ResolvedCapabilities caps;
+  caps.platform = DetectPlatform();
+
+  caps.tools = ResolveToolPaths(KnownToolIds(), /*probe_versions=*/false);
+  DeriveShellAndAllowlist(&caps);
+  return caps;
+}
+
+// static
 std::vector<ResolvedTool> ShellResolver::ResolveTools(
     const std::vector<std::string>& tool_ids) {
+  return ResolveToolPaths(tool_ids, /*probe_versions=*/true);
+}
+
+// static
+std::vector<ResolvedTool> ShellResolver::ResolveToolPaths(
+    const std::vector<std::string>& tool_ids,
+    bool probe_versions) {
   std::vector<ResolvedTool> tools;
   tools.reserve(tool_ids.size());
   for (const std::string& tool_id : tool_ids) {
@@ -574,7 +591,7 @@ std::vector<ResolvedTool> ShellResolver::ResolveTools(
     std::optional<base::FilePath> path = FindOnPath(tool_id);
     if (path.has_value()) {
       tool.path = *path;
-      if (!SkipsVersionProbe(tool_id)) {
+      if (probe_versions && !SkipsVersionProbe(tool_id)) {
         tool.version = ProbeVersion(*path);
       }
       tool.available = true;

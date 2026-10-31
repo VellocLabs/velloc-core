@@ -322,6 +322,10 @@ void NexusShellServiceImpl::GetCapabilities(
     GetCapabilitiesCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  if (versions_pending_) {
+    pending_callbacks_.push_back(std::move(callback));
+    return;
+  }
   if (cached_capabilities_.has_value()) {
     std::vector<std::string> missing;
     for (const ResolvedTool& tool : cached_capabilities_->tools) {
@@ -411,7 +415,7 @@ void NexusShellServiceImpl::EnsureResolveStarted() {
         // The console-host lookup may load a DLL, so it is settled here, on
         // the worker, and read from the cache on the binding sequence.
         PtyConsoleHost::Get();
-        return ShellResolver::Resolve();
+        return ShellResolver::ResolvePaths();
       }),
       base::BindOnce(&NexusShellServiceImpl::OnResolved,
                      weak_factory_.GetWeakPtr()));
@@ -423,11 +427,19 @@ void NexusShellServiceImpl::OnResolved(ResolvedCapabilities capabilities) {
   last_capabilities_probe_ = base::TimeTicks::Now();
   resolve_in_flight_ = false;
 
-  std::vector<GetCapabilitiesCallback> drained_caps;
-  drained_caps.swap(pending_callbacks_);
-  for (auto& cb : drained_caps) {
-    RespondFromCache(std::move(cb));
+  // A launch needs only the paths. The `--version` runs start a child per
+  // tool, one after another, and on a loaded machine they add up to tens of
+  // seconds that the first command of a session would otherwise wait out.
+  versions_pending_ = true;
+  std::vector<std::string> found;
+  for (const ResolvedTool& tool : cached_capabilities_->tools) {
+    if (tool.available) {
+      found.push_back(tool.id);
+    }
   }
+  RefreshTools(std::move(found),
+               base::BindOnce(&NexusShellServiceImpl::OnVersionsProbed,
+                              weak_factory_.GetWeakPtr()));
 
   std::vector<PendingExec> drained_execs;
   drained_execs.swap(pending_execs_);
@@ -447,6 +459,17 @@ void NexusShellServiceImpl::OnResolved(ResolvedCapabilities capabilities) {
     RunStreamSpawn(std::move(pending.options), std::move(pending.pty_size),
                    std::move(pending.controller), std::move(pending.client),
                    std::move(pending.callback));
+  }
+}
+
+void NexusShellServiceImpl::OnVersionsProbed() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  versions_pending_ = false;
+  last_capabilities_probe_ = base::TimeTicks::Now();
+  std::vector<GetCapabilitiesCallback> drained_caps;
+  drained_caps.swap(pending_callbacks_);
+  for (auto& cb : drained_caps) {
+    RespondFromCache(std::move(cb));
   }
 }
 

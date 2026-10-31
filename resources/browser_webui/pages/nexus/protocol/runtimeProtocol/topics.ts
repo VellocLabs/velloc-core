@@ -60,6 +60,8 @@ export const topic = {
   terminals: (): TopicId => 'terminals',
   /** One terminal: size, state, scrollback snapshot, then output / resize / title / state deltas. */
   terminal: (terminalId: string): TopicId => `terminal/${segment(terminalId, 'terminalId')}`,
+  /** One `terminal.run`: its command, status and output, the whole state in the snapshot and every delta. */
+  terminalRun: (runId: string): TopicId => `terminal-run/${segment(runId, 'runId')}`,
 } as const
 
 export type ParsedTopic =
@@ -77,6 +79,7 @@ export type ParsedTopic =
   | { family: 'modsUi'; sessionId: string }
   | { family: 'terminals' }
   | { family: 'terminal'; terminalId: string }
+  | { family: 'terminalRun'; runId: string }
 
 function isSessionTopicKind(value: string): value is SessionTopicKind {
   return (SESSION_TOPIC_KINDS as readonly string[]).includes(value)
@@ -121,6 +124,9 @@ export function parseTopic(id: string): ParsedTopic | null {
   }
   if (head === 'terminal' && parts.length === 2 && second) {
     return { family: 'terminal', terminalId: second }
+  }
+  if (head === 'terminal-run' && parts.length === 2 && second) {
+    return { family: 'terminalRun', runId: second }
   }
   return null
 }

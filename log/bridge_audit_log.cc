@@ -99,10 +99,12 @@ void BridgeAuditWriter::Append(std::string line) {
   // A queued drain blocks shutdown, so a drain posted before shutdown completes
   // always runs (posting after it completes is a caller ordering bug the pool
   // DCHECKs). A post the pool refuses drains here, still holding scheduling.
+  // USER_VISIBLE: a best-effort drain can be fenced or starved for tens of
+  // seconds under load, leaving the trail behind the requests it logs.
   if (base::ThreadPoolInstance::Get() &&
       base::ThreadPool::PostTask(
           FROM_HERE,
-          {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+          {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
            base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
           base::BindOnce(&BridgeAuditWriter::Drain, base::Unretained(this)))) {
     return;

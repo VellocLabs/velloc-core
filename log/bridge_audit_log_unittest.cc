@@ -15,6 +15,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/strcat.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/execution_fence.h"
 #include "base/task/thread_pool.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/test/task_environment.h"
@@ -110,6 +111,22 @@ TEST_F(BridgeAuditLogTest, AppendsWhileReaderHoldsFile) {
   ASSERT_EQ(lines.size(), 51u);
   EXPECT_EQ(lines.front(), "first");
   EXPECT_EQ(lines.back(), "n=49");
+}
+
+// A line lands while best-effort pool work is held back.
+TEST_F(BridgeAuditLogTest, AppendsLandWhileBestEffortTasksAreFenced) {
+  base::ScopedBestEffortExecutionFence fence;
+  AppendBridgeAuditLine("fenced");
+  bool written = false;
+  for (int attempt = 0; attempt < 500 && !written; ++attempt) {
+    std::string contents;
+    written = base::ReadFileToString(log_file_, &contents) &&
+              contents == "fenced\n";
+    if (!written) {
+      base::PlatformThread::Sleep(base::Milliseconds(10));
+    }
+  }
+  EXPECT_TRUE(written);
 }
 
 #if BUILDFLAG(IS_WIN)

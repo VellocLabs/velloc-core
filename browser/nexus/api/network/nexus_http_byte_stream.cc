@@ -256,6 +256,7 @@ void NexusHttpByteStream::OnComplete(bool success) {
     extra_ = std::move(transformed.extra);
   }
   finished_ = true;
+  finished_at_ = base::TimeTicks::Now();
   idle_timer_.Stop();
   AnswerPendingRead();
 }
@@ -319,6 +320,7 @@ void NexusHttpByteStream::Fail(std::string code, std::string message) {
     return;
   }
   finished_ = true;
+  finished_at_ = base::TimeTicks::Now();
   idle_timer_.Stop();
   resume_.Reset();
   // A buffered body never reaches the guest on failure: it may hold a

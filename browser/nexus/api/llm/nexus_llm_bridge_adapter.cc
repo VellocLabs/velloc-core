@@ -39,7 +39,6 @@ using Dict = base::DictValue;
 
 // Raw provider streams (`model.rawStream*`). A session drives one at a time;
 // the cap only bounds a runaway or hostile guest.
-constexpr size_t kMaxRawStreams = 16;
 constexpr size_t kMaxRawStreamUrlChars = 8192;
 constexpr int kDefaultRawStreamIdleTimeoutMs = 90'000;
 constexpr size_t kDefaultRawStreamMaxResponseBytes = 200'000'000;
@@ -302,6 +301,9 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
     ::nexus::BridgeResponseCallback done,
     std::optional<OAuthValues> oauth) {
   if (raw_streams_.size() >= kMaxRawStreams) {
+    ReclaimAbandonedRawStreams();
+  }
+  if (raw_streams_.size() >= kMaxRawStreams) {
     std::move(done).Error("TOO_MANY_STREAMS",
                           "Too many raw streams are open.");
     return;
@@ -496,8 +498,10 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
   }
 
   auto stream = std::make_unique<NexusLlmRawStream>(
-      profile_->GetDefaultStoragePartition()
-          ->GetURLLoaderFactoryForBrowserProcess(),
+      url_loader_factory_for_testing_
+          ? url_loader_factory_for_testing_
+          : profile_->GetDefaultStoragePartition()
+                ->GetURLLoaderFactoryForBrowserProcess(),
       std::move(request), std::string(input.body.begin(), input.body.end()),
       std::move(content_type), max_bytes, base::Milliseconds(idle_ms),
       base::BindRepeating(
@@ -640,6 +644,21 @@ void NexusLlmBridgeAdapter::HandleRawStreamCancelOnUI(
     }
   }  // `node` (and the stream) dies here.
   std::move(done).SuccessVoid();
+}
+
+void NexusLlmBridgeAdapter::OnBridgeConnectionClosed() {
+  // Deleting a stream cancels its request (and answers a pending open or a
+  // held read, whose callbacks the gone connection drops anyway).
+  raw_streams_.clear();
+}
+
+void NexusLlmBridgeAdapter::ReclaimAbandonedRawStreams() {
+  const base::TimeTicks cutoff =
+      base::TimeTicks::Now() - kAbandonedRawStreamGrace;
+  std::erase_if(raw_streams_, [cutoff](const auto& entry) {
+    const NexusLlmRawStream& stream = *entry.second;
+    return stream.finished() && stream.finished_at() <= cutoff;
+  });
 }
 
 void NexusLlmBridgeAdapter::EraseRawStreamSoon(const std::string& stream_id) {

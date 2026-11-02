@@ -144,6 +144,8 @@ class NexusHttpByteStream : public network::SimpleURLLoaderStreamConsumer {
   void Read(base::TimeDelta wait, size_t max_bytes, ReadCallback callback);
 
   bool finished() const { return finished_; }
+  // When the response ended (normally or not); null while it still runs.
+  base::TimeTicks finished_at() const { return finished_at_; }
 
   // network::SimpleURLLoaderStreamConsumer:
   void OnDataReceived(std::string_view data, base::OnceClosure resume) override;
@@ -193,6 +195,7 @@ class NexusHttpByteStream : public network::SimpleURLLoaderStreamConsumer {
   // The response ended (normally or not). The stream is `done` for the
   // guest once this is set AND the queue is drained.
   bool finished_ = false;
+  base::TimeTicks finished_at_;
   std::string error_code_;
   std::string error_message_;
 

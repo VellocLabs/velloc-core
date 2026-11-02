@@ -1387,6 +1387,7 @@ source_set("unit_tests") {
     "api/files/nexus_files_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_host_unittest.cc",
+    "api/llm/nexus_llm_bridge_adapter_unittest.cc",
     "api/llm/nexus_llm_raw_stream_unittest.cc",
     "api/network/nexus_http_byte_stream_unittest.cc",
     "api/network/nexus_network_bridge_adapter_unittest.cc",

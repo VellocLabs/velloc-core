@@ -8,12 +8,15 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "custom_browser/browser/nexus/api/llm/llm_api.gen.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_bridge_support.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_raw_stream.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 class Profile;
 
@@ -33,6 +36,22 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
 
   NexusLlmBridgeAdapter(const NexusLlmBridgeAdapter&) = delete;
   NexusLlmBridgeAdapter& operator=(const NexusLlmBridgeAdapter&) = delete;
+
+  // The guest connection ended: every open raw stream is cancelled.
+  void OnBridgeConnectionClosed() override;
+
+  // Most raw streams one connection may hold open.
+  static constexpr size_t kMaxRawStreams = 16;
+  // How long an ended stream waits for the guest's final read before its
+  // slot is reclaimed. A live reader polls far more often than this.
+  static constexpr base::TimeDelta kAbandonedRawStreamGrace =
+      base::Seconds(60);
+
+  size_t raw_stream_count_for_testing() const { return raw_streams_.size(); }
+  void SetURLLoaderFactoryForTesting(
+      scoped_refptr<network::SharedURLLoaderFactory> factory) {
+    url_loader_factory_for_testing_ = std::move(factory);
+  }
 
   // Pushes a `session.applySelection` event to nexus_web. Registered as a
   // `LlmBroker` pick-event pusher; runs on every
@@ -111,6 +130,10 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
   // Deferred erase: a stream may report its end from inside its own
   // callbacks, so it is never deleted synchronously from them.
   void EraseRawStreamSoon(const std::string& stream_id);
+  // Drops streams that ended more than kAbandonedRawStreamGrace ago with
+  // their final read never taken: their reader is gone (a cancel that could
+  // not reach the host), and they would otherwise hold a slot for good.
+  void ReclaimAbandonedRawStreams();
 
   raw_ptr<Profile> profile_;
   std::unique_ptr<NexusLlmHost> llm_host_;
@@ -118,6 +141,8 @@ class NexusLlmBridgeAdapter : public ::nexus::generated::LlmApiBase {
   std::map<std::string, std::unique_ptr<NexusLlmRawStream>> raw_streams_;
   // Ids a rawStreamCancel named before their rawStreamOpen was handled.
   RecentIdSet cancelled_raw_stream_ids_;
+  scoped_refptr<network::SharedURLLoaderFactory>
+      url_loader_factory_for_testing_;
   // Token returned by `LlmBroker::AddPickEventPusher`. Stored so we
   // can remove our pusher in the destructor without leaving a dangling
   // entry in the broker's fan-out map.

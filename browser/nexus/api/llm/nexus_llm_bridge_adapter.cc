@@ -650,6 +650,7 @@ void NexusLlmBridgeAdapter::OnBridgeConnectionClosed() {
   // Deleting a stream cancels its request (and answers a pending open or a
   // held read, whose callbacks the gone connection drops anyway).
   raw_streams_.clear();
+  cancelled_raw_stream_ids_.Clear();
 }
 
 void NexusLlmBridgeAdapter::ReclaimAbandonedRawStreams() {
@@ -662,15 +663,25 @@ void NexusLlmBridgeAdapter::ReclaimAbandonedRawStreams() {
 }
 
 void NexusLlmBridgeAdapter::EraseRawStreamSoon(const std::string& stream_id) {
+  const auto it = raw_streams_.find(stream_id);
+  if (it == raw_streams_.end()) {
+    return;
+  }
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
-          [](base::WeakPtr<NexusLlmBridgeAdapter> self, std::string id) {
-            if (self) {
-              self->raw_streams_.erase(id);
+          [](base::WeakPtr<NexusLlmBridgeAdapter> self, std::string id,
+             base::WeakPtr<NexusLlmRawStream> stream) {
+            if (!self || !stream) {
+              return;
+            }
+            const auto current = self->raw_streams_.find(id);
+            if (current != self->raw_streams_.end() &&
+                current->second.get() == stream.get()) {
+              self->raw_streams_.erase(current);
             }
           },
-          weak_factory_.GetWeakPtr(), stream_id));
+          weak_factory_.GetWeakPtr(), stream_id, it->second->GetWeakPtr()));
 }
 
 }  // namespace nexus

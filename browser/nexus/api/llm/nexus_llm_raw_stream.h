@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "custom_browser/browser/nexus/api/network/nexus_http_byte_stream.h"
 
@@ -39,8 +40,15 @@ class NexusLlmRawStream : public NexusHttpByteStream {
       BodyTransform body_transform);
   ~NexusLlmRawStream() override;
 
+  base::WeakPtr<NexusLlmRawStream> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
   NexusLlmRawStream(const NexusLlmRawStream&) = delete;
   NexusLlmRawStream& operator=(const NexusLlmRawStream&) = delete;
+
+ private:
+  base::WeakPtrFactory<NexusLlmRawStream> weak_factory_{this};
 };
 
 }  // namespace nexus

@@ -177,6 +177,7 @@ class RecentIdSet {
   void Insert(std::string_view id);
   // Removes |id|; true when it was present.
   bool Take(std::string_view id);
+  void Clear() { ids_.clear(); }
   size_t size() const { return ids_.size(); }
 
  private:

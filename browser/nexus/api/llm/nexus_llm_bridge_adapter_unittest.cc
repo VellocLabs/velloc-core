@@ -100,14 +100,17 @@ class NexusLlmRawStreamSlotsTest : public testing::Test {
     profile_.reset();
   }
 
-  void Dispatch(std::string_view action, base::DictValue payload) {
+  void Dispatch(std::string_view action, base::DictValue payload,
+                bool run_tasks = true) {
     EXPECT_TRUE(
         adapter_->Dispatch(action, "req", ModelRoute(action), payload, {}));
-    task_environment_.RunUntilIdle();
+    if (run_tasks) {
+      task_environment_.RunUntilIdle();
+    }
   }
 
   // An open whose response is answered at once (`with_response`) or never.
-  void Open(int n, bool with_response) {
+  void Open(int n, bool with_response, bool run_tasks = true) {
     const std::string url = std::string(kStreamUrl) + "?n=" +
                             base::NumberToString(n);
     if (with_response) {
@@ -120,7 +123,7 @@ class NexusLlmRawStreamSlotsTest : public testing::Test {
     body.Append(123);
     payload.Set("body", std::move(body));
     payload.Set("streamId", "stream-" + base::NumberToString(1000 + n));
-    Dispatch("rawStreamOpen", std::move(payload));
+    Dispatch("rawStreamOpen", std::move(payload), run_tasks);
   }
 
   content::BrowserTaskEnvironment task_environment_{
@@ -138,6 +141,49 @@ TEST_F(NexusLlmRawStreamSlotsTest, ClosingTheConnectionReleasesEverySlot) {
   EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 3u);
   adapter_->OnBridgeConnectionClosed();
   EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 0u);
+}
+
+TEST_F(NexusLlmRawStreamSlotsTest, ClosingTheConnectionForgetsEarlyCancels) {
+  base::DictValue cancel;
+  cancel.Set("streamId", "stream-1000");
+  Dispatch("rawStreamCancel", std::move(cancel));
+  adapter_->OnBridgeConnectionClosed();
+  Open(0, /*with_response=*/true);
+  EXPECT_EQ(delegate_.error_count, 0);
+  EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 1u);
+}
+
+TEST_F(NexusLlmRawStreamSlotsTest, PostedEraseCannotRemoveReconnectedStream) {
+  Open(0, /*with_response=*/true);
+  base::DictValue read;
+  read.Set("streamId", "stream-1000");
+  Dispatch("rawStreamRead", std::move(read), /*run_tasks=*/false);
+  ASSERT_EQ(adapter_->raw_stream_count_for_testing(), 1u);
+  adapter_->OnBridgeConnectionClosed();
+  Open(0, /*with_response=*/false, /*run_tasks=*/false);
+  ASSERT_EQ(adapter_->raw_stream_count_for_testing(), 1u);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 1u);
+  base::DictValue next_read;
+  next_read.Set("streamId", "stream-1000");
+  Dispatch("rawStreamRead", std::move(next_read));
+  EXPECT_EQ(delegate_.error_count, 0);
+}
+
+TEST_F(NexusLlmRawStreamSlotsTest, PostedEraseCannotRemoveReclaimedReplacement) {
+  for (size_t n = 0; n < NexusLlmBridgeAdapter::kMaxRawStreams; ++n) {
+    Open(static_cast<int>(n), /*with_response=*/true);
+  }
+  task_environment_.FastForwardBy(
+      NexusLlmBridgeAdapter::kAbandonedRawStreamGrace + base::Seconds(1));
+  base::DictValue read;
+  read.Set("streamId", "stream-1000");
+  Dispatch("rawStreamRead", std::move(read), /*run_tasks=*/false);
+  Open(0, /*with_response=*/false, /*run_tasks=*/false);
+  ASSERT_EQ(adapter_->raw_stream_count_for_testing(), 1u);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 1u);
+  EXPECT_EQ(delegate_.error_count, 0);
 }
 
 // The guest's runtime was torn down mid-response, so neither the final read

@@ -980,5 +980,90 @@ TEST(NexusShellServiceImplTest, ExecDoesNotWaitForTheVersionProbe) {
 }
 #endif  // BUILDFLAG(IS_WIN)
 
+#if BUILDFLAG(IS_WIN)
+// A `.cmd` wrapper runs through cmd.exe, which rewrites `^`, `&`, `|`, `<`,
+// `>`, `%` and quotes. A direct request carrying one is refused before
+// launch; a plain argv still reaches the wrapper, and the shell form keeps
+// cmd.exe's own parsing.
+TEST(NexusShellServiceImplTest, ExecRefusesWrapperArgsCmdWouldRewrite) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir home;
+  ASSERT_TRUE(home.CreateUniqueTempDir());
+  base::ScopedTempDir cwd;
+  ASSERT_TRUE(cwd.CreateUniqueTempDir());
+  const std::string home_path = home.GetPath().AsUTF8Unsafe();
+  base::ScopedEnvironmentVariableOverride home_env("HOME", home_path);
+  base::ScopedEnvironmentVariableOverride userprofile_env("USERPROFILE",
+                                                          home_path);
+  base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
+                                                             home_path);
+  const base::FilePath bin_dir = home.GetPath().AppendASCII("bin");
+  ASSERT_TRUE(base::CreateDirectory(bin_dir));
+  ASSERT_TRUE(base::WriteFile(bin_dir.AppendASCII("node.cmd"),
+                              "@echo wrapper-args=%*\r\n"));
+  base::ScopedEnvironmentVariableOverride path_env("PATH",
+                                                   bin_dir.AsUTF8Unsafe());
+  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+
+  mojo::Remote<mojom::NexusShellService> remote;
+  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
+  auto make_options = [&](std::vector<std::string> args) {
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = "node";
+    options->args = std::move(args);
+    options->cwd = cwd.GetPath();
+    options->use_shell = false;
+    options->timeout_ms = 10000;
+    options->max_output_bytes = 4096;
+    return options;
+  };
+  auto stdout_of = [](const ExecResponse& response) {
+    const base::span<const uint8_t> bytes(response.result->stdout_buffer);
+    return std::string(bytes.begin(), bytes.end());
+  };
+
+  const ExecResponse plain =
+      RunExec(remote, make_options({"rev-parse", "--verify", "HEAD"}));
+  ASSERT_TRUE(plain.ok) << plain.error_code.value_or("") << " "
+                        << plain.error_message.value_or("");
+  ASSERT_TRUE(plain.result);
+  EXPECT_NE(stdout_of(plain).find("wrapper-args=rev-parse --verify HEAD"),
+            std::string::npos)
+      << stdout_of(plain);
+
+  for (const char* arg :
+       {"HEAD^{commit}", "a&b", "x|y", "<in", ">out", "%PATH%", "say \"hi\"",
+        "line\nbreak", "line\rbreak"}) {
+    const ExecResponse refused =
+        RunExec(remote, make_options({"rev-parse", arg}));
+    EXPECT_FALSE(refused.ok) << arg;
+    EXPECT_FALSE(refused.result) << arg;
+    EXPECT_EQ(refused.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM")
+        << arg;
+    EXPECT_NE(refused.error_message.value_or("").find("node.cmd"),
+              std::string::npos)
+        << arg;
+  }
+
+  // The shell form: the default shell on this PATH is cmd (System32
+  // fallback), and its command line is parsed by cmd.exe as before.
+  auto shell_options = mojom::ShellSpawnOptions::New();
+  shell_options->command = "echo nexus-shell-form^&still-runs";
+  shell_options->cwd = cwd.GetPath();
+  shell_options->use_shell = true;
+  shell_options->timeout_ms = 10000;
+  shell_options->max_output_bytes = 4096;
+  const ExecResponse shell_form = RunExec(remote, std::move(shell_options));
+  ASSERT_TRUE(shell_form.ok) << shell_form.error_code.value_or("") << " "
+                             << shell_form.error_message.value_or("");
+  ASSERT_TRUE(shell_form.result);
+  EXPECT_NE(stdout_of(shell_form).find("nexus-shell-form&still-runs"),
+            std::string::npos)
+      << stdout_of(shell_form);
+
+  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
+}
+#endif  // BUILDFLAG(IS_WIN)
+
 }  // namespace
 }  // namespace nexus

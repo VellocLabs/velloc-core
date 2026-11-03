@@ -155,6 +155,19 @@ base::FilePath FindCmdExe(const ResolvedCapabilities& caps) {
   }
   return base::FilePath();
 }
+
+bool IsBatchWrapper(const base::FilePath& exe) {
+  return exe.MatchesFinalExtension(FILE_PATH_LITERAL(".cmd")) ||
+         exe.MatchesFinalExtension(FILE_PATH_LITERAL(".bat"));
+}
+
+// Security: cmd.exe parses the command line a batch wrapper receives, so an
+// argument holding one of these reaches the wrapper changed (a caret dropped,
+// `%NAME%` expanded) or starts a second command. A request that promised a
+// verbatim argv is refused instead of run with a different one.
+bool CmdWouldRewrite(const std::string& arg) {
+  return arg.find_first_of("&|<>^%\"\r\n") != std::string::npos;
+}
 #endif  // BUILDFLAG(IS_WIN)
 
 // With `full_environment` (a pseudoconsole child the person types into) the
@@ -219,10 +232,23 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
 
 #if BUILDFLAG(IS_WIN)
   // CreateProcess cannot run `.cmd` / `.bat` wrappers, so route them through
-  // `cmd.exe /C`; the allowlist already passed. The command comes from user
-  // settings; args with spaces or cmd metacharacters are not robustly quoted.
-  if (request.exe.MatchesFinalExtension(FILE_PATH_LITERAL(".cmd")) ||
-      request.exe.MatchesFinalExtension(FILE_PATH_LITERAL(".bat"))) {
+  // `cmd.exe /C`; the allowlist already passed. A direct (no-shell) request
+  // keeps its argv verbatim or is refused; the shell form hands cmd.exe a
+  // command line that is the shell's to parse.
+  if (IsBatchWrapper(request.exe)) {
+    if (!options.use_shell) {
+      for (const std::string& arg : request.args) {
+        if (CmdWouldRewrite(arg)) {
+          prep.error_code = "WRAPPER_ARGS_NOT_VERBATIM";
+          prep.error_message =
+              "'" + request.exe.AsUTF8Unsafe() +
+              "' is a batch wrapper that runs through cmd.exe, which would "
+              "rewrite the argument '" +
+              arg + "' (one of & | < > ^ % \" or a line break)";
+          return prep;
+        }
+      }
+    }
     base::FilePath cmd_exe = FindCmdExe(caps);
     if (cmd_exe.empty()) {
       prep.error_code = "NO_COMMAND_INTERPRETER";

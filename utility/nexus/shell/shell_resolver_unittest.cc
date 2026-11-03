@@ -192,6 +192,35 @@ TEST(ShellResolverTest, EffectivePathSkipsTheRegistryUnderTheE2eSeam) {
   EXPECT_EQ(ShellResolver::EffectivePath(), "C:\\process");
 }
 
+// depot_tools puts a git.bat ahead of Git for Windows' git.exe; the wrapper
+// only runs through cmd.exe, so a native image anywhere on the path wins.
+TEST(ShellResolverTest, FindOnPathPrefersANativeImageOverAnEarlierWrapper) {
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  const base::FilePath wrapper_dir = tmp.GetPath().AppendASCII("depot_tools");
+  const base::FilePath native_dir = tmp.GetPath().AppendASCII("git-cmd");
+  ASSERT_TRUE(base::CreateDirectory(wrapper_dir));
+  const base::FilePath git_bat = wrapper_dir.AppendASCII("git.bat");
+  ASSERT_TRUE(base::WriteFile(git_bat, "@echo off\r\n"));
+  const base::FilePath git_exe = WriteFakeTool(native_dir, "git");
+  base::ScopedEnvironmentVariableOverride path_env(
+      "PATH", wrapper_dir.AsUTF8Unsafe() + ";" + native_dir.AsUTF8Unsafe());
+  ScopedRegistryPaths registry({});
+
+  EXPECT_EQ(ShellResolver::FindOnPath("git"), git_exe);
+
+  // A native image only on the registry Path still wins over the wrapper.
+  base::ScopedEnvironmentVariableOverride process_path_env(
+      "PATH", wrapper_dir.AsUTF8Unsafe());
+  ScopedRegistryPaths native_on_registry({native_dir.AsUTF8Unsafe()});
+  EXPECT_EQ(ShellResolver::FindOnPath("git"), git_exe);
+
+  // A tool that ships only as a wrapper (npm's npx.cmd) is still found.
+  const base::FilePath npx_cmd = wrapper_dir.AppendASCII("npx.cmd");
+  ASSERT_TRUE(base::WriteFile(npx_cmd, "@echo off\r\n"));
+  EXPECT_EQ(ShellResolver::FindOnPath("npx"), npx_cmd);
+}
+
 TEST(ShellResolverTest, FindOnPathFindsToolOnlyOnTheRegistryPath) {
   // An installer that ran after launch updated only the registry Path.
   base::ScopedTempDir tmp;

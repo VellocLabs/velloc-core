@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/span.h"
 #include "base/environment.h"
 #include "base/files/file_util.h"
 #include "base/no_destructor.h"
@@ -47,11 +48,18 @@ constexpr uint32_t kVersionProbeMaxOutputBytes = 64 * 1024;
 
 #if BUILDFLAG(IS_WIN)
 constexpr char kPathSeparator = ';';
-const char* const kExecutableExtensions[] = {".exe", ".com", ".cmd",
-                                              ".bat", ".ps1", ""};
+// Searched a group at a time across the whole path: a native image in any
+// directory wins over a script wrapper in an earlier one, because a `.cmd` /
+// `.bat` only runs through cmd.exe, which rewrites its arguments (P-7).
+constexpr const char* const kNativeExtensions[] = {".exe", ".com"};
+constexpr const char* const kScriptExtensions[] = {".cmd", ".bat", ".ps1", ""};
+constexpr base::span<const char* const> kExecutableExtensionGroups[] = {
+    kNativeExtensions, kScriptExtensions};
 #else
 constexpr char kPathSeparator = ':';
-const char* const kExecutableExtensions[] = {""};
+constexpr const char* const kNativeExtensions[] = {""};
+constexpr base::span<const char* const> kExecutableExtensionGroups[] = {
+    kNativeExtensions};
 #endif
 
 std::string DetectPlatform() {
@@ -192,11 +200,14 @@ std::optional<base::FilePath> FindInDirectories(
     const std::string& tool_id,
     const std::vector<base::FilePath>& dirs,
     bool (*rejects)(const base::FilePath&) = nullptr) {
-  for (const base::FilePath& dir : dirs) {
-    for (const char* ext : kExecutableExtensions) {
-      base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
-      if (IsCandidateUsable(candidate) && !(rejects && rejects(candidate))) {
-        return candidate;
+  for (base::span<const char* const> extensions : kExecutableExtensionGroups) {
+    for (const base::FilePath& dir : dirs) {
+      for (const char* ext : extensions) {
+        base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
+        if (IsCandidateUsable(candidate) &&
+            !(rejects && rejects(candidate))) {
+          return candidate;
+        }
       }
     }
   }

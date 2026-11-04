@@ -20,7 +20,7 @@ namespace {
 #if BUILDFLAG(IS_WIN)
 constexpr char kPathSeparator = ';';
 const char* const kExecutableExtensions[] = {".exe", ".com", ".cmd",
-                                             ".bat", ".ps1", ""};
+                                             ".bat", ""};
 #else
 constexpr char kPathSeparator = ':';
 const char* const kExecutableExtensions[] = {""};

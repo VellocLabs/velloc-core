@@ -25,7 +25,6 @@
 
 namespace nexus {
 
-
 // One-shot child-process invocation request. All fields are pre-validated
 // and pre-sanitised by `SafeCommandPolicy` before they reach the runner;
 // the runner does no policy checks of its own.

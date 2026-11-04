@@ -298,6 +298,18 @@ void EmitOutputSnapshot(const base::FilePath& stdout_path,
 
 ChildProcessRequest::ChildProcessRequest() = default;
 
+ChildProcessRequest::~ChildProcessRequest() = default;
+
+ChildProcessRequest::ChildProcessRequest(const ChildProcessRequest&) = default;
+
+ChildProcessRequest& ChildProcessRequest::operator=(
+    const ChildProcessRequest&) = default;
+
+ChildProcessRequest::ChildProcessRequest(ChildProcessRequest&&) = default;
+
+ChildProcessRequest& ChildProcessRequest::operator=(ChildProcessRequest&&) =
+    default;
+
 #if BUILDFLAG(IS_WIN)
 std::wstring WindowsCommandLineFor(const ChildProcessRequest& request) {
   if (!request.command_line.empty()) {
@@ -310,18 +322,6 @@ std::wstring WindowsCommandLineFor(const ChildProcessRequest& request) {
   return cmdline.GetCommandLineString();
 }
 #endif
-
-ChildProcessRequest::~ChildProcessRequest() = default;
-
-ChildProcessRequest::ChildProcessRequest(const ChildProcessRequest&) = default;
-
-ChildProcessRequest& ChildProcessRequest::operator=(
-    const ChildProcessRequest&) = default;
-
-ChildProcessRequest::ChildProcessRequest(ChildProcessRequest&&) = default;
-
-ChildProcessRequest& ChildProcessRequest::operator=(ChildProcessRequest&&) =
-    default;
 
 ChildProcessKillHandle::ChildProcessKillHandle() = default;
 

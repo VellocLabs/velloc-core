@@ -25,19 +25,26 @@ TEST(WrapperCommandLineTest, RecognisesWrappersInAnyCaseAndTrailingDots) {
   }
 }
 
-TEST(WrapperCommandLineTest, RefusesEachCharacterCmdChangesInsideQuotes) {
+TEST(WrapperCommandLineTest, RefusesEachCharacterAWrapperCouldExecuteOrChange) {
   const base::FilePath wrapper(FILE_PATH_LITERAL("C:\\bin\\npx.cmd"));
-  for (const char* arg : {"a%b", "a!b", "a^b", "a\"b", "a\nb", "a\rb",
-                          "a\tb", "a\x1b" "b", "a\x7f" "b"}) {
+  for (const char* arg : {"a&b", "a|b", "<a", ">a", "a%b", "a!b", "a^b",
+                          "a\"b", "a\nb", "a\rb", "a\tb", "a\x1b" "b",
+                          "a\x7f" "b"}) {
     const std::optional<WrapperArgProblem> problem =
         FindWrapperArgProblem(wrapper, {"ok", arg});
     ASSERT_TRUE(problem.has_value()) << arg;
     EXPECT_EQ(problem->index, 1u) << arg;
   }
-  for (const char* arg : {"a&b", "a|b", "<a", ">a", "(a)", "a,b", "a;b",
-                          "a=b", "a b", "", "C:\\x\\", "@s/p", "a'b", "a`b"}) {
+  for (const char* arg : {"(a)", "a,b", "a;b", "a=b", "a b", "", "C:\\x\\",
+                          "@s/p", "a'b", "a`b", "a?b=c#d"}) {
     EXPECT_FALSE(FindWrapperArgProblem(wrapper, {arg}).has_value()) << arg;
   }
+  // The wrapper path is the host's: an operator in a directory name is kept
+  // literal by the quotes and is not a caller's to exploit.
+  EXPECT_FALSE(FindWrapperArgProblem(
+                   base::FilePath(FILE_PATH_LITERAL("C:\\a&b (x86)\\npx.cmd")),
+                   {"ok"})
+                   .has_value());
   const std::optional<WrapperArgProblem> in_path = FindWrapperArgProblem(
       base::FilePath(FILE_PATH_LITERAL("C:\\100%\\npx.cmd")), {"ok"});
   ASSERT_TRUE(in_path.has_value());

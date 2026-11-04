@@ -1077,24 +1077,51 @@ constexpr char kEchoArgs[] =
 }  // namespace
 
 // An argv handed to a `.cmd` wrapper reaches it verbatim: spaces, backslashes,
-// an empty argument and the characters cmd.exe treats as operators outside
-// quotes, through a wrapper path with spaces and `&`.
+// an empty argument, parentheses and `; = ,`, through a wrapper path with
+// spaces, parentheses and `&`.
 TEST(NexusShellServiceImplTest, ExecPassesAWrapperItsArgvVerbatim) {
   WrapperHost host;
   host.Write(host.spaced(), "node.CMD", kEchoArgs);
 
   const ExecResponse run = host.Run(
       "node", {"rev-parse", "C:\\Users\\me\\repo", "a b", "", "C:\\dir\\",
-               "a&b", "x|y", "<in", ">out", "p(q)", "x;y=z,w", "@scope/pkg"});
+               "p(q)", "x;y=z,w", "@scope/pkg", "https://h/x?a=1#f"});
   ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
                       << run.error_message.value_or("");
   EXPECT_EQ(StdoutOf(run),
             "arg=[rev-parse]\r\narg=[C:\\Users\\me\\repo]\r\n"
             "arg=[\"a b\"]\r\narg=[\"\"]\r\narg=[C:\\dir\\]\r\n"
-            "arg=[\"a&b\"]\r\narg=[\"x|y\"]\r\narg=[\"<in\"]\r\n"
-            "arg=[\">out\"]\r\narg=[\"p(q)\"]\r\narg=[\"x;y=z,w\"]\r\n"
-            "arg=[@scope/pkg]\r\n");
-  EXPECT_FALSE(host.Exists("out"));
+            "arg=[\"p(q)\"]\r\narg=[\"x;y=z,w\"]\r\narg=[@scope/pkg]\r\n"
+            "arg=[\"https://h/x?a=1#f\"]\r\n");
+}
+
+// A wrapper that drops the quotes (`%~1`) would run `& | < >` as operators,
+// so an argument holding one is refused before anything is spawned.
+TEST(NexusShellServiceImplTest, ExecRefusesOperatorsAQuoteStrippingWrapperWouldRun) {
+  WrapperHost host;
+  host.Write(host.bin(), "node.cmd",
+             "@echo off\r\nset A=%~1\r\necho wrapper-arg=%A%\r\n"
+             "if defined PATH ( echo block-arg=%~1 )\r\n");
+
+  const ExecResponse plain = host.Run("node", {"q x;y=z"});
+  ASSERT_TRUE(plain.ok) << plain.error_code.value_or("") << " "
+                        << plain.error_message.value_or("");
+  EXPECT_NE(StdoutOf(plain).find("wrapper-arg=q x;y=z"), std::string::npos)
+      << StdoutOf(plain);
+
+  for (const char* arg : {"a&type,nul>amp-ran", "a|type,nul>pipe-ran",
+                          "a>gt-created", "a<lt-read"}) {
+    const ExecResponse refused = host.Run("node", {arg});
+    EXPECT_FALSE(refused.ok) << arg;
+    EXPECT_FALSE(refused.result) << arg;
+    EXPECT_EQ(refused.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM")
+        << arg;
+    EXPECT_EQ(refused.error_message.value_or("").find(arg), std::string::npos)
+        << refused.error_message.value_or("");
+  }
+  for (const char* file : {"amp-ran", "pipe-ran", "gt-created"}) {
+    EXPECT_FALSE(host.Exists(file)) << file;
+  }
 }
 
 // A wrapper that expands `%*` inside a parenthesised block: `)` used to end
@@ -1105,10 +1132,10 @@ TEST(NexusShellServiceImplTest, ExecKeepsAParenthesisInsideABlockWrapper) {
              "@if not defined NEXUS_UNSET_FOR_TEST (echo wrapper-args=%*)\r\n");
 
   const ExecResponse run =
-      host.Run("node", {"x),else,(type,nul>injected-one-token"});
+      host.Run("node", {"x),else,(md,injected-one-token"});
   ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
                       << run.error_message.value_or("");
-  EXPECT_NE(StdoutOf(run).find("x),else,(type,nul>injected-one-token"),
+  EXPECT_NE(StdoutOf(run).find("x),else,(md,injected-one-token"),
             std::string::npos)
       << StdoutOf(run);
   EXPECT_FALSE(host.Exists("injected-one-token"));
@@ -1131,7 +1158,8 @@ TEST(NexusShellServiceImplTest, ExecRefusesWrapperArgsCmdWouldRewrite) {
 
   for (const char* arg :
        {"HEAD^{commit}", "%PATH%", "HEAD!SECRET!x", "lone!", "say \"hi\"",
-        "line\nbreak", "line\rbreak", "tab\there", "token%2Fsecret"}) {
+        "line\nbreak", "line\rbreak", "tab\there", "token%2Fsecret",
+        "a&b", "x|y", "<in", ">out"}) {
     const ExecResponse refused = host.Run("node", {"rev-parse", arg});
     EXPECT_FALSE(refused.ok) << arg;
     EXPECT_FALSE(refused.result) << arg;
@@ -1169,8 +1197,8 @@ TEST(NexusShellServiceImplTest, ExecTreatsATrailingDotWrapperAsAWrapper) {
       << refused.error_message.value_or("");
 
   const ExecResponse run = host.Run(dotted, {"x&type,nul>direct-injected"});
-  ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
-                      << run.error_message.value_or("");
+  EXPECT_EQ(run.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM")
+      << run.error_message.value_or("");
   EXPECT_FALSE(host.Exists("direct-injected"));
 }
 #endif  // BUILDFLAG(IS_WIN)

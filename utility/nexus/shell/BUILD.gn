@@ -43,10 +43,10 @@ source_set("install_hints") {
 # The cmd.exe command line for a `.cmd` / `.bat` wrapper launched from an
 # argv, and the argument check that keeps it verbatim (P-7).
 source_set("wrapper_command_line") {
-  sources = [
-    "wrapper_command_line.cc",
-    "wrapper_command_line.h",
-  ]
+  sources = [ "wrapper_command_line.h" ]
+  if (is_win) {
+    sources += [ "wrapper_command_line.cc" ]
+  }
 
   public_deps = [ "//base" ]
 }
@@ -247,10 +247,12 @@ source_set("unit_tests") {
     "pty_console_host_unittest.cc",
     "safe_command_policy_unittest.cc",
     "shell_resolver_unittest.cc",
-    "wrapper_command_line_unittest.cc",
   ]
   if (is_win) {
-    sources += [ "pty_child_process_unittest.cc" ]
+    sources += [
+      "pty_child_process_unittest.cc",
+      "wrapper_command_line_unittest.cc",
+    ]
   }
 
   deps = [

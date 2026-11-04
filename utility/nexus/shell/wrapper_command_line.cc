@@ -36,6 +36,25 @@ const char* CmdChangeIn(std::string_view value) {
   return nullptr;
 }
 
+// Operators a wrapper runs when it expands an argument without its quotes
+// (`%~1`, `set A=%~1` then `%A%`). `( )` alone cannot start a command.
+const char* OperatorIn(std::string_view value) {
+  for (const char c : value) {
+    switch (c) {
+      case '&':
+        return "an ampersand";
+      case '|':
+        return "a vertical bar";
+      case '<':
+      case '>':
+        return "a redirection sign";
+      default:
+        break;
+    }
+  }
+  return nullptr;
+}
+
 // Left bare only when cmd.exe has nothing to parse in it.
 bool NeedsQuotes(std::string_view arg) {
   if (arg.empty()) {
@@ -83,6 +102,9 @@ std::optional<WrapperArgProblem> FindWrapperArgProblem(
   }
   for (size_t i = 0; i < args.size(); ++i) {
     if (const char* what = CmdChangeIn(args[i])) {
+      return WrapperArgProblem{i, what};
+    }
+    if (const char* what = OperatorIn(args[i])) {
       return WrapperArgProblem{i, what};
     }
   }

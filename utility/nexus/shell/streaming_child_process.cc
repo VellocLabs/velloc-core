@@ -164,10 +164,12 @@ StreamingChildProcess::LaunchResult StreamingChildProcess::LaunchOnWorker(
     ChildProcessRequest request) {
   LaunchResult result;
 
+#if !BUILDFLAG(IS_WIN)
   base::CommandLine cmdline(request.exe);
   for (const std::string& arg : request.args) {
     cmdline.AppendArg(arg);
   }
+#endif
 
   base::LaunchOptions options;
   options.current_directory = request.cwd;
@@ -233,7 +235,8 @@ StreamingChildProcess::LaunchResult StreamingChildProcess::LaunchOnWorker(
   // long-lived background MCP server. If flicker proves a problem, factor
   // child_process_runner.cc's LaunchChildWithoutWindow into a shared
   // helper and reuse it here.
-  base::Process process = base::LaunchProcess(cmdline, options);
+  base::Process process =
+      base::LaunchProcess(WindowsCommandLineFor(request), options);
   // Child owns its dups; drop our copies of the child ends.
   in_child.Close();
   out_child.Close();

@@ -128,7 +128,7 @@ base::win::ScopedHandle OpenWindowsFileForChildRead(
 // creation flags; SW_HIDE still flickers) by reproducing base's CreateProcess
 // path. `env` is the whole environment unless `inherit_environment`. Returns
 // an invalid Process on failure; the caller keeps the stdio handles.
-base::Process LaunchChildWithoutWindow(const base::CommandLine& cmdline,
+base::Process LaunchChildWithoutWindow(std::wstring writable_cmdline,
                                        const base::FilePath& cwd,
                                        const base::EnvironmentMap& env,
                                        bool inherit_environment,
@@ -179,9 +179,7 @@ base::Process LaunchChildWithoutWindow(const base::CommandLine& cmdline,
     flags |= CREATE_UNICODE_ENVIRONMENT;
   }
 
-  // CreateProcessW may write to lpCommandLine, so hand it a mutable buffer.
-  std::wstring writable_cmdline = cmdline.GetCommandLineString();
-
+  // CreateProcessW may write to lpCommandLine: `writable_cmdline` is a copy.
   LPCWSTR current_directory = cwd.empty() ? nullptr : cwd.value().c_str();
 
   PROCESS_INFORMATION temp_process_info = {};
@@ -300,6 +298,19 @@ void EmitOutputSnapshot(const base::FilePath& stdout_path,
 
 ChildProcessRequest::ChildProcessRequest() = default;
 
+#if BUILDFLAG(IS_WIN)
+std::wstring WindowsCommandLineFor(const ChildProcessRequest& request) {
+  if (!request.command_line.empty()) {
+    return request.command_line;
+  }
+  base::CommandLine cmdline(request.exe);
+  for (const std::string& arg : request.args) {
+    cmdline.AppendArg(arg);
+  }
+  return cmdline.GetCommandLineString();
+}
+#endif
+
 ChildProcessRequest::~ChildProcessRequest() = default;
 
 ChildProcessRequest::ChildProcessRequest(const ChildProcessRequest&) = default;
@@ -391,10 +402,12 @@ ChildProcessOutcome RunChildProcessWithOutput(
     }
   }
 
+#if !BUILDFLAG(IS_WIN)
   base::CommandLine cmdline(request.exe);
   for (const std::string& arg : request.args) {
     cmdline.AppendArg(arg);
   }
+#endif
 
   base::LaunchOptions options;
   options.current_directory = request.cwd;
@@ -477,8 +490,9 @@ ChildProcessOutcome RunChildProcessWithOutput(
   // unused on this path but left intact to document the intended stdio wiring
   // and keep the POSIX branch (which does use `options`) unchanged.
   base::Process process = LaunchChildWithoutWindow(
-      cmdline, request.cwd, request.env, request.inherit_environment,
-      stdin_handle.get(), stdout_handle.get(), stderr_handle.get());
+      WindowsCommandLineFor(request), request.cwd, request.env,
+      request.inherit_environment, stdin_handle.get(), stdout_handle.get(),
+      stderr_handle.get());
 #else
   base::Process process = base::LaunchProcess(cmdline, options);
 #endif

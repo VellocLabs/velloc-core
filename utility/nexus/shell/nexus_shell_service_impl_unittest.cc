@@ -22,6 +22,7 @@
 #include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
 #include "custom_browser/browser/nexus/mojom/nexus_shell.mojom.h"
+#include "custom_browser/common/nexus_runtime_paths.h"
 #include "custom_browser/utility/nexus/shell/pty_console_host.h"
 #include "custom_browser/utility/nexus/shell/shell_resolver.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -128,6 +129,17 @@ TEST(NexusShellServiceImplTest, ConcurrentCallsShareSingleProbe) {
 // ---------------------------------------------------------------------
 
 namespace {
+
+// No registry `Path` values for the scope, restored even when an ASSERT fails.
+class ScopedNoRegistryPaths {
+ public:
+  ScopedNoRegistryPaths() {
+    ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+  }
+  ~ScopedNoRegistryPaths() {
+    ShellResolver::SetRegistryPathsForTesting(std::nullopt);
+  }
+};
 
 struct ExecResponse {
   bool ok = false;
@@ -821,7 +833,7 @@ TEST(NexusShellServiceImplTest, ExecAndStreamSpawnReprobeAToolCachedAsMissing) {
   base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
                                                              home_path);
   base::ScopedEnvironmentVariableOverride path_env("PATH", "");
-  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+  ScopedNoRegistryPaths no_registry_paths;
 
   mojo::Remote<mojom::NexusShellService> remote;
   NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
@@ -881,7 +893,6 @@ TEST(NexusShellServiceImplTest, ExecAndStreamSpawnReprobeAToolCachedAsMissing) {
   EXPECT_TRUE(cached->available);
   EXPECT_EQ(cached->path, uvx);
 
-  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
 }
 
 // A cached GetCapabilities re-probes the missing tools at most once per
@@ -899,7 +910,7 @@ TEST(NexusShellServiceImplTest, GetCapabilitiesReprobesMissingToolsAtMostOncePer
   base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
                                                              home_path);
   base::ScopedEnvironmentVariableOverride path_env("PATH", "");
-  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+  ScopedNoRegistryPaths no_registry_paths;
 
   mojo::Remote<mojom::NexusShellService> remote;
   NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
@@ -930,7 +941,6 @@ TEST(NexusShellServiceImplTest, GetCapabilitiesReprobesMissingToolsAtMostOncePer
       NexusShellServiceImpl::kCapabilitiesReprobeInterval);
   EXPECT_TRUE(uvx_available());
 
-  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
 }
 
 #if BUILDFLAG(IS_WIN)
@@ -956,7 +966,7 @@ TEST(NexusShellServiceImplTest, ExecDoesNotWaitForTheVersionProbe) {
       "@\"%SystemRoot%\\System32\\ping.exe\" -n 20 127.0.0.1 >nul\r\n"));
   base::ScopedEnvironmentVariableOverride path_env("PATH",
                                                    bin_dir.AsUTF8Unsafe());
-  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+  ScopedNoRegistryPaths no_registry_paths;
 
   mojo::Remote<mojom::NexusShellService> remote;
   NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
@@ -976,92 +986,192 @@ TEST(NexusShellServiceImplTest, ExecDoesNotWaitForTheVersionProbe) {
   ASSERT_NE(node, caps.tools.end());
   EXPECT_TRUE((*node)->available);
 
-  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
 }
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_WIN)
-// A `.cmd` wrapper runs through cmd.exe, which rewrites `^`, `&`, `|`, `<`,
-// `>`, `%` and quotes. A direct request carrying one is refused before
-// launch; a plain argv still reaches the wrapper, and the shell form keeps
-// cmd.exe's own parsing.
-TEST(NexusShellServiceImplTest, ExecRefusesWrapperArgsCmdWouldRewrite) {
-  base::test::TaskEnvironment task_environment;
-  base::ScopedTempDir home;
-  ASSERT_TRUE(home.CreateUniqueTempDir());
-  base::ScopedTempDir cwd;
-  ASSERT_TRUE(cwd.CreateUniqueTempDir());
-  const std::string home_path = home.GetPath().AsUTF8Unsafe();
-  base::ScopedEnvironmentVariableOverride home_env("HOME", home_path);
-  base::ScopedEnvironmentVariableOverride userprofile_env("USERPROFILE",
-                                                          home_path);
-  base::ScopedEnvironmentVariableOverride local_app_data_env("LOCALAPPDATA",
-                                                             home_path);
-  const base::FilePath bin_dir = home.GetPath().AppendASCII("bin");
-  ASSERT_TRUE(base::CreateDirectory(bin_dir));
-  ASSERT_TRUE(base::WriteFile(bin_dir.AppendASCII("node.cmd"),
-                              "@echo wrapper-args=%*\r\n"));
-  base::ScopedEnvironmentVariableOverride path_env("PATH",
-                                                   bin_dir.AsUTF8Unsafe());
-  ShellResolver::SetRegistryPathsForTesting(std::vector<std::string>());
+namespace {
 
-  mojo::Remote<mojom::NexusShellService> remote;
-  NexusShellServiceImpl service(remote.BindNewPipeAndPassReceiver());
-  auto make_options = [&](std::vector<std::string> args) {
+// A home with a `bin` on PATH holding wrappers, no registry Path, and a
+// shell service: what the wrapper tests below need.
+class WrapperHost {
+ public:
+  WrapperHost() {
+    CHECK(home_.CreateUniqueTempDir());
+    CHECK(cwd_.CreateUniqueTempDir());
+    const std::string home_path = home_.GetPath().AsUTF8Unsafe();
+    home_env_.emplace("HOME", home_path);
+    userprofile_env_.emplace("USERPROFILE", home_path);
+    local_app_data_env_.emplace("LOCALAPPDATA", home_path);
+    bin_dir_ = home_.GetPath().AppendASCII("bin");
+    spaced_dir_ = home_.GetPath().AppendASCII("Program Files (x86)").AppendASCII("a&b");
+    CHECK(base::CreateDirectory(bin_dir_));
+    CHECK(base::CreateDirectory(spaced_dir_));
+    path_env_.emplace("PATH", bin_dir_.AsUTF8Unsafe() + ";" +
+                                  spaced_dir_.AsUTF8Unsafe());
+  }
+
+  void Write(const base::FilePath& dir, const std::string& name,
+             const std::string& body) {
+    CHECK(base::WriteFile(dir.AppendASCII(name), body));
+  }
+  const base::FilePath& bin() const { return bin_dir_; }
+  const base::FilePath& spaced() const { return spaced_dir_; }
+
+  ExecResponse Run(const std::string& command, std::vector<std::string> args) {
     auto options = mojom::ShellSpawnOptions::New();
-    options->command = "node";
+    options->command = command;
     options->args = std::move(args);
-    options->cwd = cwd.GetPath();
+    options->cwd = cwd_.GetPath();
     options->use_shell = false;
     options->timeout_ms = 10000;
     options->max_output_bytes = 4096;
-    return options;
-  };
-  auto stdout_of = [](const ExecResponse& response) {
-    const base::span<const uint8_t> bytes(response.result->stdout_buffer);
-    return std::string(bytes.begin(), bytes.end());
-  };
+    return RunExec(remote_, std::move(options));
+  }
+  ExecResponse RunShell(const std::string& line) {
+    auto options = mojom::ShellSpawnOptions::New();
+    options->command = line;
+    options->cwd = cwd_.GetPath();
+    options->use_shell = true;
+    options->timeout_ms = 10000;
+    options->max_output_bytes = 4096;
+    return RunExec(remote_, std::move(options));
+  }
+  bool Exists(const std::string& name) const {
+    return base::PathExists(cwd_.GetPath().AppendASCII(name));
+  }
 
-  const ExecResponse plain =
-      RunExec(remote, make_options({"rev-parse", "--verify", "HEAD"}));
+ private:
+  base::test::TaskEnvironment task_environment_;
+  base::ScopedTempDir home_;
+  base::ScopedTempDir cwd_;
+  std::optional<base::ScopedEnvironmentVariableOverride> home_env_;
+  std::optional<base::ScopedEnvironmentVariableOverride> userprofile_env_;
+  std::optional<base::ScopedEnvironmentVariableOverride> local_app_data_env_;
+  std::optional<base::ScopedEnvironmentVariableOverride> path_env_;
+  ScopedNoRegistryPaths no_registry_paths_;
+  base::FilePath bin_dir_;
+  base::FilePath spaced_dir_;
+  mojo::Remote<mojom::NexusShellService> remote_;
+  NexusShellServiceImpl service_{remote_.BindNewPipeAndPassReceiver()};
+};
+
+std::string StdoutOf(const ExecResponse& response) {
+  if (!response.result) {
+    return std::string();
+  }
+  const base::span<const uint8_t> bytes(response.result->stdout_buffer);
+  return std::string(bytes.begin(), bytes.end());
+}
+
+// Each argument token on its own line, bracketed, as cmd.exe handed it to
+// the wrapper (quotes kept, so an operator inside stays inert).
+constexpr char kEchoArgs[] =
+    "@echo off\r\n"
+    ":next\r\n"
+    "if [%1]==[] goto :eof\r\n"
+    "echo arg=[%1]\r\n"
+    "shift\r\n"
+    "goto next\r\n";
+
+}  // namespace
+
+// An argv handed to a `.cmd` wrapper reaches it verbatim: spaces, backslashes,
+// an empty argument and the characters cmd.exe treats as operators outside
+// quotes, through a wrapper path with spaces and `&`.
+TEST(NexusShellServiceImplTest, ExecPassesAWrapperItsArgvVerbatim) {
+  WrapperHost host;
+  host.Write(host.spaced(), "node.CMD", kEchoArgs);
+
+  const ExecResponse run = host.Run(
+      "node", {"rev-parse", "C:\\Users\\me\\repo", "a b", "", "C:\\dir\\",
+               "a&b", "x|y", "<in", ">out", "p(q)", "x;y=z,w", "@scope/pkg"});
+  ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
+                      << run.error_message.value_or("");
+  EXPECT_EQ(StdoutOf(run),
+            "arg=[rev-parse]\r\narg=[C:\\Users\\me\\repo]\r\n"
+            "arg=[\"a b\"]\r\narg=[\"\"]\r\narg=[C:\\dir\\]\r\n"
+            "arg=[\"a&b\"]\r\narg=[\"x|y\"]\r\narg=[\"<in\"]\r\n"
+            "arg=[\">out\"]\r\narg=[\"p(q)\"]\r\narg=[\"x;y=z,w\"]\r\n"
+            "arg=[@scope/pkg]\r\n");
+  EXPECT_FALSE(host.Exists("out"));
+}
+
+// A wrapper that expands `%*` inside a parenthesised block: `)` used to end
+// the block and run what followed as a second command.
+TEST(NexusShellServiceImplTest, ExecKeepsAParenthesisInsideABlockWrapper) {
+  WrapperHost host;
+  host.Write(host.bin(), "node.cmd",
+             "@if not defined NEXUS_UNSET_FOR_TEST (echo wrapper-args=%*)\r\n");
+
+  const ExecResponse run =
+      host.Run("node", {"x),else,(type,nul>injected-one-token"});
+  ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
+                      << run.error_message.value_or("");
+  EXPECT_NE(StdoutOf(run).find("x),else,(type,nul>injected-one-token"),
+            std::string::npos)
+      << StdoutOf(run);
+  EXPECT_FALSE(host.Exists("injected-one-token"));
+}
+
+// What cmd.exe changes even inside quotes is refused before launch, with the
+// argument's position and the character class, never its value.
+TEST(NexusShellServiceImplTest, ExecRefusesWrapperArgsCmdWouldRewrite) {
+  WrapperHost host;
+  host.Write(host.bin(), "node.cmd",
+             "@echo off\r\nsetlocal EnableDelayedExpansion\r\n"
+             "echo wrapper-args=%*\r\n");
+
+  const ExecResponse plain = host.Run("node", {"rev-parse", "--verify", "HEAD"});
   ASSERT_TRUE(plain.ok) << plain.error_code.value_or("") << " "
                         << plain.error_message.value_or("");
-  ASSERT_TRUE(plain.result);
-  EXPECT_NE(stdout_of(plain).find("wrapper-args=rev-parse --verify HEAD"),
+  EXPECT_NE(StdoutOf(plain).find("wrapper-args=rev-parse --verify HEAD"),
             std::string::npos)
-      << stdout_of(plain);
+      << StdoutOf(plain);
 
   for (const char* arg :
-       {"HEAD^{commit}", "a&b", "x|y", "<in", ">out", "%PATH%", "say \"hi\"",
-        "line\nbreak", "line\rbreak"}) {
-    const ExecResponse refused =
-        RunExec(remote, make_options({"rev-parse", arg}));
+       {"HEAD^{commit}", "%PATH%", "HEAD!SECRET!x", "lone!", "say \"hi\"",
+        "line\nbreak", "line\rbreak", "tab\there", "token%2Fsecret"}) {
+    const ExecResponse refused = host.Run("node", {"rev-parse", arg});
     EXPECT_FALSE(refused.ok) << arg;
     EXPECT_FALSE(refused.result) << arg;
     EXPECT_EQ(refused.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM")
         << arg;
-    EXPECT_NE(refused.error_message.value_or("").find("node.cmd"),
-              std::string::npos)
-        << arg;
+    const std::string message = refused.error_message.value_or("");
+    EXPECT_NE(message.find("node.cmd"), std::string::npos) << message;
+    EXPECT_NE(message.find("argument 2"), std::string::npos) << message;
+    EXPECT_EQ(message.find(arg), std::string::npos) << message;
   }
 
   // The shell form: the default shell on this PATH is cmd (System32
   // fallback), and its command line is parsed by cmd.exe as before.
-  auto shell_options = mojom::ShellSpawnOptions::New();
-  shell_options->command = "echo nexus-shell-form^&still-runs";
-  shell_options->cwd = cwd.GetPath();
-  shell_options->use_shell = true;
-  shell_options->timeout_ms = 10000;
-  shell_options->max_output_bytes = 4096;
-  const ExecResponse shell_form = RunExec(remote, std::move(shell_options));
+  const ExecResponse shell_form =
+      host.RunShell("echo nexus-shell-form^&still-runs");
   ASSERT_TRUE(shell_form.ok) << shell_form.error_code.value_or("") << " "
                              << shell_form.error_message.value_or("");
-  ASSERT_TRUE(shell_form.result);
-  EXPECT_NE(stdout_of(shell_form).find("nexus-shell-form&still-runs"),
+  EXPECT_NE(StdoutOf(shell_form).find("nexus-shell-form&still-runs"),
             std::string::npos)
-      << stdout_of(shell_form);
+      << StdoutOf(shell_form);
+}
 
-  ShellResolver::SetRegistryPathsForTesting(std::nullopt);
+// Windows ignores trailing dots and spaces in a file name, so `x.bat.` is
+// still a batch file that CreateProcess hands to cmd.exe.
+TEST(NexusShellServiceImplTest, ExecTreatsATrailingDotWrapperAsAWrapper) {
+  WrapperHost host;
+  const base::FilePath wrapper =
+      custom_browser::GetNexusManagedBinDir().AppendASCII("nexus-tool.bat");
+  ASSERT_TRUE(base::CreateDirectory(wrapper.DirName()));
+  ASSERT_TRUE(base::WriteFile(wrapper, "@echo wrapper-args=%*\r\n"));
+  const std::string dotted = wrapper.AsUTF8Unsafe() + ".";
+
+  const ExecResponse refused = host.Run(dotted, {"a%PATH%"});
+  EXPECT_EQ(refused.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM")
+      << refused.error_message.value_or("");
+
+  const ExecResponse run = host.Run(dotted, {"x&type,nul>direct-injected"});
+  ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
+                      << run.error_message.value_or("");
+  EXPECT_FALSE(host.Exists("direct-injected"));
 }
 #endif  // BUILDFLAG(IS_WIN)
 

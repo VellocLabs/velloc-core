@@ -235,11 +235,7 @@ PtyChildProcess::LaunchResult PtyChildProcess::LaunchOnWorker(
   base::NativeEnvironmentString env_block =
       base::internal::AlterEnvironment(kEmptyEnvironment, request.env);
 
-  base::CommandLine cmdline(request.exe);
-  for (const std::string& arg : request.args) {
-    cmdline.AppendArg(arg);
-  }
-  std::wstring writable_cmdline = cmdline.GetCommandLineString();
+  std::wstring writable_cmdline = WindowsCommandLineFor(request);
   LPCWSTR current_directory =
       request.cwd.empty() ? nullptr : request.cwd.value().c_str();
 

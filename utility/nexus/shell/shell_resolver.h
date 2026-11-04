@@ -102,10 +102,10 @@ class ShellResolver {
       std::optional<std::vector<std::string>> paths);
 
   // Locates `tool_id` on `EffectivePath()` (on Windows a native `.exe` /
-  // `.com` anywhere on the path before a `.cmd` / `.bat` / `.ps1` wrapper in
-  // any directory), plus curated host-specific fallbacks such as Git for
-  // Windows' bash.exe and sh.exe and uv's install dirs. Exposed for unit
-  // testing.
+  // `.com` anywhere on the path before a `.cmd` / `.bat` wrapper in any
+  // directory, and an App Execution Alias stub only when nothing else
+  // matches), plus curated host-specific fallbacks such as Git for Windows'
+  // bash.exe and sh.exe and uv's install dirs. Exposed for unit testing.
   static std::optional<base::FilePath> FindOnPath(const std::string& tool_id);
 
   // Windows-only Git-for-Windows discovery. On non-Windows returns nullopt.

@@ -25,6 +25,7 @@
 
 namespace nexus {
 
+
 // One-shot child-process invocation request. All fields are pre-validated
 // and pre-sanitised by `SafeCommandPolicy` before they reach the runner;
 // the runner does no policy checks of its own.
@@ -68,7 +69,20 @@ struct ChildProcessRequest {
 
   // Per-stream output cap. Already clamped by `SafeCommandPolicy`.
   uint32_t max_output_bytes = 0;
+
+#if BUILDFLAG(IS_WIN)
+  // Contract: when non-empty, the whole command line handed to CreateProcess
+  // instead of `exe` and `args` quoted by base::CommandLine; its first token
+  // must be `exe`. For a line cmd.exe parses, which base's quoting does not
+  // fit.
+  std::wstring command_line;
+#endif
 };
+
+#if BUILDFLAG(IS_WIN)
+// The command line CreateProcess receives for `request`.
+std::wstring WindowsCommandLineFor(const ChildProcessRequest& request);
+#endif
 
 // Fully-formed result of a `RunChildProcess` call. The runner never
 // returns a "couldn't even launch" failure mid-result: callers that need

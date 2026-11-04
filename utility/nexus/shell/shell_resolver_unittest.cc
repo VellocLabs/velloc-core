@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -220,6 +221,78 @@ TEST(ShellResolverTest, FindOnPathPrefersANativeImageOverAnEarlierWrapper) {
   ASSERT_TRUE(base::WriteFile(npx_cmd, "@echo off\r\n"));
   EXPECT_EQ(ShellResolver::FindOnPath("npx"), npx_cmd);
 }
+
+#if BUILDFLAG(IS_WIN)
+// pyenv-win style shims come before the Store's App Execution Alias stubs on
+// PATH; a stub must not outrank them just for being an `.exe`.
+TEST(ShellResolverTest, FindOnPathPrefersAWrapperOverAnAppExecutionAlias) {
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  const base::FilePath shim_dir = tmp.GetPath().AppendASCII("shims");
+  ASSERT_TRUE(base::CreateDirectory(shim_dir));
+
+  // A real App Execution Alias is the only kind of path that carries the
+  // reparse tag; the host's own WindowsApps directory has them.
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  const std::optional<std::string> local = env->GetVar("LOCALAPPDATA");
+  if (!local.has_value()) {
+    GTEST_SKIP() << "no LOCALAPPDATA";
+  }
+  const base::FilePath apps_dir = base::FilePath::FromUTF8Unsafe(*local)
+                                      .AppendASCII("Microsoft")
+                                      .AppendASCII("WindowsApps");
+  std::string alias_id;
+  for (const char* id : {"python", "python3", "winget", "wt"}) {
+    if (base::PathExists(apps_dir.AppendASCII(std::string(id) + ".exe"))) {
+      alias_id = id;
+      break;
+    }
+  }
+  if (alias_id.empty()) {
+    GTEST_SKIP() << "no App Execution Alias on this host";
+  }
+  const base::FilePath alias_shim =
+      shim_dir.AppendASCII(alias_id + ".cmd");
+  ASSERT_TRUE(base::WriteFile(alias_shim, "@echo off\r\n"));
+  base::ScopedEnvironmentVariableOverride path_env(
+      "PATH", apps_dir.AsUTF8Unsafe() + ";" + shim_dir.AsUTF8Unsafe());
+  ScopedRegistryPaths registry({});
+
+  // The alias comes first on PATH and is an `.exe`; the later shim wins.
+  EXPECT_EQ(ShellResolver::FindOnPath(alias_id), alias_shim);
+
+  // With no shim the alias is still found: it may be the real tool.
+  ASSERT_TRUE(base::DeleteFile(alias_shim));
+  EXPECT_EQ(ShellResolver::FindOnPath(alias_id),
+            apps_dir.AppendASCII(alias_id + ".exe"));
+
+  // A plain native image keeps its precedence over a shim.
+  ASSERT_TRUE(base::WriteFile(shim_dir.AppendASCII("nexus-py.bat"), "@echo off\r\n"));
+  const base::FilePath native =
+      WriteFakeTool(tmp.GetPath().AppendASCII("py"), "nexus-py");
+  base::ScopedEnvironmentVariableOverride native_path_env(
+      "PATH", shim_dir.AsUTF8Unsafe() + ";" + native.DirName().AsUTF8Unsafe());
+  EXPECT_EQ(ShellResolver::FindOnPath("nexus-py"), native);
+}
+
+// `.ps1` is not launchable by CreateProcess, so it never shadows a later
+// directory's wrapper.
+TEST(ShellResolverTest, FindOnPathSkipsPowerShellScripts) {
+  base::ScopedTempDir tmp;
+  ASSERT_TRUE(tmp.CreateUniqueTempDir());
+  const base::FilePath ps_dir = tmp.GetPath().AppendASCII("ps");
+  const base::FilePath cmd_dir = tmp.GetPath().AppendASCII("cmd");
+  ASSERT_TRUE(base::CreateDirectory(ps_dir));
+  ASSERT_TRUE(base::CreateDirectory(cmd_dir));
+  ASSERT_TRUE(base::WriteFile(ps_dir.AppendASCII("nexus-ps-tool.ps1"), ""));
+  const base::FilePath wrapper = cmd_dir.AppendASCII("nexus-ps-tool.cmd");
+  ASSERT_TRUE(base::WriteFile(wrapper, "@echo off\r\n"));
+  base::ScopedEnvironmentVariableOverride path_env(
+      "PATH", ps_dir.AsUTF8Unsafe() + ";" + cmd_dir.AsUTF8Unsafe());
+  ScopedRegistryPaths registry({});
+  EXPECT_EQ(ShellResolver::FindOnPath("nexus-ps-tool"), wrapper);
+}
+#endif
 
 TEST(ShellResolverTest, FindOnPathFindsToolOnlyOnTheRegistryPath) {
   // An installer that ran after launch updated only the registry Path.

@@ -50,16 +50,34 @@ constexpr uint32_t kVersionProbeMaxOutputBytes = 64 * 1024;
 constexpr char kPathSeparator = ';';
 // Searched a group at a time across the whole path: a native image in any
 // directory wins over a script wrapper in an earlier one, because a `.cmd` /
-// `.bat` only runs through cmd.exe, which rewrites its arguments (P-7).
+// `.bat` only runs through cmd.exe, which rewrites its arguments (P-7). An
+// App Execution Alias (a Store stub) is the last resort, after every wrapper.
 constexpr const char* const kNativeExtensions[] = {".exe", ".com"};
-constexpr const char* const kScriptExtensions[] = {".cmd", ".bat", ".ps1", ""};
+constexpr const char* const kScriptExtensions[] = {".cmd", ".bat", ""};
 constexpr base::span<const char* const> kExecutableExtensionGroups[] = {
     kNativeExtensions, kScriptExtensions};
+
+// A zero-byte App Execution Alias reparse point (`WindowsApps\python.exe`):
+// often only a Store installer stub, so a user's own shim outranks it.
+bool IsAppExecutionAlias(const base::FilePath& candidate) {
+  WIN32_FIND_DATAW data = {};
+  HANDLE find = ::FindFirstFileW(candidate.value().c_str(), &data);
+  if (find == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  ::FindClose(find);
+  return (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+         data.dwReserved0 == IO_REPARSE_TAG_APPEXECLINK;
+}
 #else
 constexpr char kPathSeparator = ':';
 constexpr const char* const kNativeExtensions[] = {""};
 constexpr base::span<const char* const> kExecutableExtensionGroups[] = {
     kNativeExtensions};
+
+bool IsAppExecutionAlias(const base::FilePath&) {
+  return false;
+}
 #endif
 
 std::string DetectPlatform() {
@@ -195,23 +213,30 @@ bool SkipsVersionProbe(const std::string& tool_id) {
 }
 
 // `rejects`, when set, skips a usable candidate so the walk goes on to the
-// next one.
+// next one. An App Execution Alias is taken only when nothing else matches.
 std::optional<base::FilePath> FindInDirectories(
     const std::string& tool_id,
     const std::vector<base::FilePath>& dirs,
     bool (*rejects)(const base::FilePath&) = nullptr) {
+  std::optional<base::FilePath> alias;
   for (base::span<const char* const> extensions : kExecutableExtensionGroups) {
     for (const base::FilePath& dir : dirs) {
       for (const char* ext : extensions) {
         base::FilePath candidate = dir.AppendASCII(tool_id + std::string(ext));
-        if (IsCandidateUsable(candidate) &&
-            !(rejects && rejects(candidate))) {
-          return candidate;
+        if (!IsCandidateUsable(candidate) || (rejects && rejects(candidate))) {
+          continue;
         }
+        if (IsAppExecutionAlias(candidate)) {
+          if (!alias) {
+            alias = std::move(candidate);
+          }
+          continue;
+        }
+        return candidate;
       }
     }
   }
-  return std::nullopt;
+  return alias;
 }
 
 // uv's installers write uv / uvx to ~/.local/bin (standalone installer),

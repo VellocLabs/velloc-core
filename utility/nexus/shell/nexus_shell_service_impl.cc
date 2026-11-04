@@ -15,6 +15,7 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
@@ -25,6 +26,7 @@
 #include "custom_browser/utility/nexus/shell/child_process_runner.h"
 #include "custom_browser/utility/nexus/shell/pty_console_host.h"
 #include "custom_browser/utility/nexus/shell/safe_command_policy.h"
+#include "custom_browser/utility/nexus/shell/wrapper_command_line.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -156,18 +158,6 @@ base::FilePath FindCmdExe(const ResolvedCapabilities& caps) {
   return base::FilePath();
 }
 
-bool IsBatchWrapper(const base::FilePath& exe) {
-  return exe.MatchesFinalExtension(FILE_PATH_LITERAL(".cmd")) ||
-         exe.MatchesFinalExtension(FILE_PATH_LITERAL(".bat"));
-}
-
-// Security: cmd.exe parses the command line a batch wrapper receives, so an
-// argument holding one of these reaches the wrapper changed (a caret dropped,
-// `%NAME%` expanded) or starts a second command. A request that promised a
-// verbatim argv is refused instead of run with a different one.
-bool CmdWouldRewrite(const std::string& arg) {
-  return arg.find_first_of("&|<>^%\"\r\n") != std::string::npos;
-}
 #endif  // BUILDFLAG(IS_WIN)
 
 // With `full_environment` (a pseudoconsole child the person types into) the
@@ -232,21 +222,23 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
 
 #if BUILDFLAG(IS_WIN)
   // CreateProcess cannot run `.cmd` / `.bat` wrappers, so route them through
-  // `cmd.exe /C`; the allowlist already passed. A direct (no-shell) request
-  // keeps its argv verbatim or is refused; the shell form hands cmd.exe a
-  // command line that is the shell's to parse.
+  // cmd.exe; the allowlist already passed. Security: a direct (no-shell)
+  // request keeps its argv verbatim or is refused (P-7); the shell form hands
+  // cmd.exe a command line that is the shell's to parse.
   if (IsBatchWrapper(request.exe)) {
     if (!options.use_shell) {
-      for (const std::string& arg : request.args) {
-        if (CmdWouldRewrite(arg)) {
-          prep.error_code = "WRAPPER_ARGS_NOT_VERBATIM";
-          prep.error_message =
-              "'" + request.exe.AsUTF8Unsafe() +
-              "' is a batch wrapper that runs through cmd.exe, which would "
-              "rewrite the argument '" +
-              arg + "' (one of & | < > ^ % \" or a line break)";
-          return prep;
-        }
+      if (std::optional<WrapperArgProblem> problem =
+              FindWrapperArgProblem(request.exe, request.args)) {
+        prep.error_code = "WRAPPER_ARGS_NOT_VERBATIM";
+        prep.error_message =
+            "'" + request.exe.BaseName().AsUTF8Unsafe() +
+            "' is a batch wrapper that runs through cmd.exe, which would "
+            "change " +
+            (problem->index.has_value()
+                 ? "argument " + base::NumberToString(*problem->index + 1)
+                 : std::string("its path")) +
+            ": it holds " + problem->what;
+        return prep;
       }
     }
     base::FilePath cmd_exe = FindCmdExe(caps);
@@ -257,15 +249,21 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
           "' but could not be located on this host";
       return prep;
     }
-    std::vector<std::string> wrapped;
-    wrapped.reserve(request.args.size() + 2);
-    wrapped.push_back("/C");
-    wrapped.push_back(request.exe.AsUTF8Unsafe());
-    for (std::string& arg : request.args) {
-      wrapped.push_back(std::move(arg));
+    if (options.use_shell) {
+      std::vector<std::string> wrapped;
+      wrapped.reserve(request.args.size() + 2);
+      wrapped.push_back("/C");
+      wrapped.push_back(request.exe.AsUTF8Unsafe());
+      for (std::string& arg : request.args) {
+        wrapped.push_back(std::move(arg));
+      }
+      request.args = std::move(wrapped);
+    } else {
+      request.command_line =
+          BuildWrapperCommandLine(cmd_exe, request.exe, request.args);
+      request.args = {"/D", "/V:OFF", "/S", "/C", request.exe.AsUTF8Unsafe()};
     }
     request.exe = std::move(cmd_exe);
-    request.args = std::move(wrapped);
   }
 #endif  // BUILDFLAG(IS_WIN)
 

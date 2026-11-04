@@ -25,13 +25,14 @@ struct WrapperArgProblem {
   const char* what;
 };
 
-// Security: the first problem with launching `wrapper` on `args`. In an
-// argument: `& | < >`, which a wrapper that drops the quotes (`%~1`) would
-// run as an operator, and `%`, `!`, `^`, `"` or a control character, which
-// cmd.exe changes even inside quotes. In the wrapper path (resolved by the
-// host, never by a caller): only the second set. Every other character
-// reaches the wrapper verbatim on the line BuildWrapperCommandLine builds
-// (P-7).
+// Security: the first problem with launching `wrapper` on `args`; fails
+// closed. An argument is accepted only when it is non-empty and made of
+// ASCII letters, digits and `- _ . / \ : @ + ~ { }`: a wrapper may expand it
+// unquoted (`%~1`, even as an `if` operand), and such a token can neither
+// start a command nor be changed by cmd.exe. Spaces, `=`, `,`, `;`, non-ASCII
+// text and an empty argument are refused. The wrapper path is resolved by
+// the host, never by a caller, and is refused only for `%`, `!`, `^`, `"` or
+// a control character, which cmd.exe changes even inside quotes (P-7).
 std::optional<WrapperArgProblem> FindWrapperArgProblem(
     const base::FilePath& wrapper,
     const std::vector<std::string>& args);
@@ -39,9 +40,8 @@ std::optional<WrapperArgProblem> FindWrapperArgProblem(
 // Contract: `"<cmd_exe>" /D /V:OFF /S /C ""<wrapper>" <args>"`. /D skips
 // AutoRun, /V:OFF keeps delayed expansion off, /S strips exactly the outer
 // quotes. The wrapper path is always quoted; an argument is quoted unless it
-// is non-empty and only letters, digits and `- _ . / \ : @ +`, so spaces,
-// `( ) , ; =` and an empty argument stay literal. Only for arguments
-// FindWrapperArgProblem accepted.
+// is non-empty and only characters FindWrapperArgProblem accepts. Only for
+// arguments FindWrapperArgProblem accepted.
 std::wstring BuildWrapperCommandLine(const base::FilePath& cmd_exe,
                                      const base::FilePath& wrapper,
                                      const std::vector<std::string>& args);

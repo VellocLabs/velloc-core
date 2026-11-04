@@ -232,12 +232,13 @@ PreparedExec PrepareExec(const mojom::ShellSpawnOptions& options,
         prep.error_code = "WRAPPER_ARGS_NOT_VERBATIM";
         prep.error_message =
             "'" + request.exe.BaseName().AsUTF8Unsafe() +
-            "' is a batch wrapper that runs through cmd.exe, which would "
-            "change " +
+            "' is a batch wrapper that runs through cmd.exe, which "
+            "takes only arguments made of letters, digits and "
+            "- _ . / \\ : @ + ~ { }; " +
             (problem->index.has_value()
                  ? "argument " + base::NumberToString(*problem->index + 1)
                  : std::string("its path")) +
-            ": it holds " + problem->what;
+            " holds " + problem->what;
         return prep;
       }
     }

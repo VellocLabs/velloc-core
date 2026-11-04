@@ -25,19 +25,54 @@ TEST(WrapperCommandLineTest, RecognisesWrappersInAnyCaseAndTrailingDots) {
   }
 }
 
-TEST(WrapperCommandLineTest, RefusesEachCharacterAWrapperCouldExecuteOrChange) {
-  const base::FilePath wrapper(FILE_PATH_LITERAL("C:\\bin\\npx.cmd"));
-  for (const char* arg : {"a&b", "a|b", "<a", ">a", "a%b", "a!b", "a^b",
-                          "a\"b", "a\nb", "a\rb", "a\tb", "a\x1b" "b",
-                          "a\x7f" "b"}) {
-    const std::optional<WrapperArgProblem> problem =
-        FindWrapperArgProblem(wrapper, {"ok", arg});
-    ASSERT_TRUE(problem.has_value()) << arg;
-    EXPECT_EQ(problem->index, 1u) << arg;
-  }
-  for (const char* arg : {"(a)", "a,b", "a;b", "a=b", "a b", "", "C:\\x\\",
-                          "@s/p", "a'b", "a`b", "a?b=c#d"}) {
+TEST(WrapperCommandLineTest, AcceptsOnlyArgumentsFromTheSafeSet) {
+  const base::FilePath wrapper(FILE_PATH_LITERAL("C:\\bin\\git.cmd"));
+  for (const char* arg :
+       {"rev-parse", "--verify", "--end-of-options", "HEAD~0",
+        "HEAD@{upstream}~0", "refs/heads/feature/a.b_c-d",
+        "0123456789abcdef0123456789abcdef01234567", "C:\\Users\\me\\repo",
+        "C:\\dir\\", "src/a+b.ts", "@scope/pkg", "-y", "x:y"}) {
     EXPECT_FALSE(FindWrapperArgProblem(wrapper, {arg}).has_value()) << arg;
+  }
+}
+
+TEST(WrapperCommandLineTest, RefusesEveryArgumentOutsideTheSafeSet) {
+  const base::FilePath wrapper(FILE_PATH_LITERAL("C:\\bin\\npx.cmd"));
+  // `a==a md x` runs `md x` through `if %~1 == help ...`; it needs only a
+  // space or `=`.
+  const struct {
+    const char* arg;
+    const char* what;
+  } kRefused[] = {
+      {"a==a md x", "an equals sign"},
+      {"a==a", "an equals sign"},
+      {"a b", "a space"},
+      {"--format=%H", "an equals sign"},
+      {"x;y", "a separator (, or ;)"},
+      {"x,y", "a separator (, or ;)"},
+      {"a&b", "an ampersand"},
+      {"a|b", "a vertical bar"},
+      {"<a", "a redirection sign"},
+      {">a", "a redirection sign"},
+      {"a%b", "a percent sign"},
+      {"a!b", "an exclamation mark"},
+      {"HEAD^{commit}", "a caret"},
+      {"a\"b", "a double quote"},
+      {"a\tb", "a control character"},
+      {"a\nb", "a control character"},
+      {"a\x7f" "b", "a control character"},
+      {"", "nothing (an empty argument)"},
+  };
+  for (const auto& refused : kRefused) {
+    const std::optional<WrapperArgProblem> problem =
+        FindWrapperArgProblem(wrapper, {"ok", refused.arg});
+    ASSERT_TRUE(problem.has_value()) << refused.arg;
+    EXPECT_EQ(problem->index, 1u) << refused.arg;
+    EXPECT_STREQ(problem->what, refused.what) << refused.arg;
+  }
+  for (const char* arg : {"(a)", "a?b", "a#b", "a'b", "a`b", "a*", "a[b]",
+                          "caf\xc3\xa9", "\xef\xbc\x82"}) {
+    EXPECT_TRUE(FindWrapperArgProblem(wrapper, {arg}).has_value()) << arg;
   }
   // The wrapper path is the host's: an operator in a directory name is kept
   // literal by the quotes and is not a caller's to exploit.
@@ -61,13 +96,10 @@ TEST(WrapperCommandLineTest, QuotesTheLineForCmdWithSlashS) {
   EXPECT_EQ(
       BuildWrapperCommandLine(cmd, wrapper,
                               {"-y", "@scope/server", "C:\\Users\\me\\repo",
-                               "a b", "", "x),else,(echo", "C:\\dir\\"}),
+                               "HEAD@{upstream}~0", "C:\\dir\\"}),
       L"\"C:\\Windows\\System32\\cmd.exe\" /D /V:OFF /S /C "
       L"\"\"C:\\Program Files\\nodejs\\npx.cmd\" -y @scope/server "
-      L"C:\\Users\\me\\repo \"a b\" \"\" \"x),else,(echo\" C:\\dir\\\"");
-  EXPECT_EQ(BuildWrapperCommandLine(cmd, wrapper, {"a b\\"}),
-            L"\"C:\\Windows\\System32\\cmd.exe\" /D /V:OFF /S /C "
-            L"\"\"C:\\Program Files\\nodejs\\npx.cmd\" \"a b\\\\\"\"");
+      L"C:\\Users\\me\\repo HEAD@{upstream}~0 C:\\dir\\\"");
 }
 
 }  // namespace

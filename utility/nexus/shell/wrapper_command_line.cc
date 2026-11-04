@@ -36,11 +36,48 @@ const char* CmdChangeIn(std::string_view value) {
   return nullptr;
 }
 
-// Operators a wrapper runs when it expands an argument without its quotes
-// (`%~1`, `set A=%~1` then `%A%`). `( )` alone cannot start a command.
-const char* OperatorIn(std::string_view value) {
+// Characters a wrapper argument may hold. A wrapper may expand an argument
+// without its quotes (`%~1`) anywhere in its own script, including as an
+// `if` operand, so an argument must stay one inert token there: no token
+// separator (space, tab, `,` `;` `=`), no operator and nothing cmd.exe
+// expands or escapes.
+bool IsSafeWrapperArgChar(char c) {
+  if (base::IsAsciiAlphaNumeric(c)) {
+    return true;
+  }
+  switch (c) {
+    case '-':
+    case '_':
+    case '.':
+    case '/':
+    case '\\':
+    case ':':
+    case '@':
+    case '+':
+    case '~':
+    case '{':
+    case '}':
+      return true;
+    default:
+      return false;
+  }
+}
+
+// The class of the first character outside the safe set, named for the
+// error message; nullptr when every character is safe.
+const char* UnsafeCharIn(std::string_view value) {
   for (const char c : value) {
+    if (IsSafeWrapperArgChar(c)) {
+      continue;
+    }
     switch (c) {
+      case ' ':
+        return "a space";
+      case '=':
+        return "an equals sign";
+      case ',':
+      case ';':
+        return "a separator (, or ;)";
       case '&':
         return "an ampersand";
       case '|':
@@ -51,6 +88,10 @@ const char* OperatorIn(std::string_view value) {
       default:
         break;
     }
+    if (const char* what = CmdChangeIn(std::string_view(&c, 1))) {
+      return what;
+    }
+    return "a character outside letters, digits and - _ . / \\ : @ + ~ { }";
   }
   return nullptr;
 }
@@ -61,8 +102,7 @@ bool NeedsQuotes(std::string_view arg) {
     return true;
   }
   for (const char c : arg) {
-    if (!base::IsAsciiAlphaNumeric(c) && c != '-' && c != '_' && c != '.' &&
-        c != '/' && c != '\\' && c != ':' && c != '@' && c != '+') {
+    if (!IsSafeWrapperArgChar(c)) {
       return true;
     }
   }
@@ -101,10 +141,10 @@ std::optional<WrapperArgProblem> FindWrapperArgProblem(
     return WrapperArgProblem{std::nullopt, what};
   }
   for (size_t i = 0; i < args.size(); ++i) {
-    if (const char* what = CmdChangeIn(args[i])) {
-      return WrapperArgProblem{i, what};
+    if (args[i].empty()) {
+      return WrapperArgProblem{i, "nothing (an empty argument)"};
     }
-    if (const char* what = OperatorIn(args[i])) {
+    if (const char* what = UnsafeCharIn(args[i])) {
       return WrapperArgProblem{i, what};
     }
   }

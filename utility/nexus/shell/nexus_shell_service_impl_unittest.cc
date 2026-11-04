@@ -1076,23 +1076,63 @@ constexpr char kEchoArgs[] =
 
 }  // namespace
 
-// An argv handed to a `.cmd` wrapper reaches it verbatim: spaces, backslashes,
-// an empty argument, parentheses and `; = ,`, through a wrapper path with
-// spaces, parentheses and `&`.
+// Refs, SHAs and paths without spaces reach a `.cmd` wrapper verbatim, through
+// a wrapper path with spaces, parentheses and `&`.
 TEST(NexusShellServiceImplTest, ExecPassesAWrapperItsArgvVerbatim) {
   WrapperHost host;
   host.Write(host.spaced(), "node.CMD", kEchoArgs);
 
   const ExecResponse run = host.Run(
-      "node", {"rev-parse", "C:\\Users\\me\\repo", "a b", "", "C:\\dir\\",
-               "p(q)", "x;y=z,w", "@scope/pkg", "https://h/x?a=1#f"});
+      "node", {"rev-parse", "--verify", "HEAD@{upstream}~0",
+               "0123456789abcdef0123456789abcdef01234567",
+               "C:\\Users\\me\\repo", "C:\\dir\\", "src/a+b.ts",
+               "@scope/pkg"});
   ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
                       << run.error_message.value_or("");
   EXPECT_EQ(StdoutOf(run),
-            "arg=[rev-parse]\r\narg=[C:\\Users\\me\\repo]\r\n"
-            "arg=[\"a b\"]\r\narg=[\"\"]\r\narg=[C:\\dir\\]\r\n"
-            "arg=[\"p(q)\"]\r\narg=[\"x;y=z,w\"]\r\narg=[@scope/pkg]\r\n"
-            "arg=[\"https://h/x?a=1#f\"]\r\n");
+            "arg=[rev-parse]\r\narg=[--verify]\r\narg=[HEAD@{upstream}~0]\r\n"
+            "arg=[0123456789abcdef0123456789abcdef01234567]\r\n"
+            "arg=[C:\\Users\\me\\repo]\r\narg=[C:\\dir\\]\r\n"
+            "arg=[src/a+b.ts]\r\narg=[@scope/pkg]\r\n");
+}
+
+// A wrapper that uses `%~1` as an unquoted `if` operand runs whatever follows
+// the comparison: `a==a md x` would create `x` with no operator at all. A
+// space or `=` is outside the safe set, so nothing is spawned.
+TEST(NexusShellServiceImplTest, ExecRefusesWhatAnIfOperandWrapperWouldRun) {
+  WrapperHost host;
+  host.Write(host.bin(), "node.cmd",
+             "@echo off\r\nif /i %~1 == help echo help-shown\r\n"
+             "echo wrapper-arg=%~1\r\n");
+
+  const ExecResponse plain = host.Run("node", {"help"});
+  ASSERT_TRUE(plain.ok) << plain.error_code.value_or("") << " "
+                        << plain.error_message.value_or("");
+  EXPECT_NE(StdoutOf(plain).find("help-shown"), std::string::npos)
+      << StdoutOf(plain);
+
+  const struct {
+    const char* arg;
+    const char* what;
+  } kRefused[] = {
+      {"a==a md made-if", "an equals sign"},
+      {"defined PATH md made-if2", "a space"},
+      {"a==a", "an equals sign"},
+      {"C:\\Program Files\\x", "a space"},
+  };
+  for (const auto& refused : kRefused) {
+    const ExecResponse run = host.Run("node", {refused.arg});
+    EXPECT_FALSE(run.ok) << refused.arg;
+    EXPECT_FALSE(run.result) << refused.arg;
+    EXPECT_EQ(run.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM")
+        << refused.arg;
+    const std::string message = run.error_message.value_or("");
+    EXPECT_NE(message.find("argument 1"), std::string::npos) << message;
+    EXPECT_NE(message.find(refused.what), std::string::npos) << message;
+    EXPECT_EQ(message.find(refused.arg), std::string::npos) << message;
+  }
+  EXPECT_FALSE(host.Exists("made-if"));
+  EXPECT_FALSE(host.Exists("made-if2"));
 }
 
 // A wrapper that drops the quotes (`%~1`) would run `& | < >` as operators,
@@ -1103,10 +1143,11 @@ TEST(NexusShellServiceImplTest, ExecRefusesOperatorsAQuoteStrippingWrapperWouldR
              "@echo off\r\nset A=%~1\r\necho wrapper-arg=%A%\r\n"
              "if defined PATH ( echo block-arg=%~1 )\r\n");
 
-  const ExecResponse plain = host.Run("node", {"q x;y=z"});
+  const ExecResponse plain = host.Run("node", {"refs/heads/q~1"});
   ASSERT_TRUE(plain.ok) << plain.error_code.value_or("") << " "
                         << plain.error_message.value_or("");
-  EXPECT_NE(StdoutOf(plain).find("wrapper-arg=q x;y=z"), std::string::npos)
+  EXPECT_NE(StdoutOf(plain).find("wrapper-arg=refs/heads/q~1"),
+            std::string::npos)
       << StdoutOf(plain);
 
   for (const char* arg : {"a&type,nul>amp-ran", "a|type,nul>pipe-ran",
@@ -1124,20 +1165,17 @@ TEST(NexusShellServiceImplTest, ExecRefusesOperatorsAQuoteStrippingWrapperWouldR
   }
 }
 
-// A wrapper that expands `%*` inside a parenthesised block: `)` used to end
-// the block and run what followed as a second command.
-TEST(NexusShellServiceImplTest, ExecKeepsAParenthesisInsideABlockWrapper) {
+// A wrapper that expands `%*` inside a parenthesised block: `)` would end the
+// block and run what followed, so a parenthesis is refused before launch.
+TEST(NexusShellServiceImplTest, ExecRefusesAParenthesisForABlockWrapper) {
   WrapperHost host;
   host.Write(host.bin(), "node.cmd",
              "@if not defined NEXUS_UNSET_FOR_TEST (echo wrapper-args=%*)\r\n");
 
   const ExecResponse run =
       host.Run("node", {"x),else,(md,injected-one-token"});
-  ASSERT_TRUE(run.ok) << run.error_code.value_or("") << " "
-                      << run.error_message.value_or("");
-  EXPECT_NE(StdoutOf(run).find("x),else,(md,injected-one-token"),
-            std::string::npos)
-      << StdoutOf(run);
+  EXPECT_FALSE(run.result);
+  EXPECT_EQ(run.error_code.value_or(""), "WRAPPER_ARGS_NOT_VERBATIM");
   EXPECT_FALSE(host.Exists("injected-one-token"));
 }
 

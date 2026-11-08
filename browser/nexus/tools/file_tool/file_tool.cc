@@ -990,6 +990,13 @@ constexpr int kGlobTimeoutMs = 120000;
 // 4 MiB holds tens of thousands of paths before we slice to `limit`.
 constexpr int kGlobMaxOutputBytes = 4 * 1024 * 1024;
 
+// A model-supplied path as a FilePath in the platform's own separator, so
+// one file spelled `D:/a` or `D:` is one key and one reported path. A
+// no-op where `/` is the only separator.
+base::FilePath ToolPathFromUtf8(const std::string& path) {
+  return base::FilePath::FromUTF8Unsafe(path).NormalizePathSeparators();
+}
+
 // Resolve `path` against `cwd_or_default`: absolute paths used as-is,
 // relative paths joined onto the default. Empty `path` returns the
 // default. Returns base::FilePath() if both inputs are empty; the
@@ -999,7 +1006,7 @@ base::FilePath ResolveAgainstCwd(const std::string& path,
   if (path.empty()) {
     return default_root;
   }
-  base::FilePath candidate = base::FilePath::FromUTF8Unsafe(path);
+  base::FilePath candidate = ToolPathFromUtf8(path);
   if (candidate.IsAbsolute()) {
     return candidate;
   }
@@ -1099,7 +1106,7 @@ void FileTool::ClearReadState() {
 
 void FileTool::RunReadOnUI(::nexus::generated::FilesReadInput input,
                            ToolCallback done) {
-  base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
+  base::FilePath path = ToolPathFromUtf8(input.file_path);
   if (!path.IsAbsolute()) {
     base::DictValue params;
     params.Set("reason", "file_path_not_absolute");
@@ -1186,7 +1193,7 @@ void FileTool::RunReadOnUI(::nexus::generated::FilesReadInput input,
 
 void FileTool::RunWriteOnUI(::nexus::generated::FilesWriteInput input,
                             ToolCallback done) {
-  base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
+  base::FilePath path = ToolPathFromUtf8(input.file_path);
   if (!path.IsAbsolute()) {
     base::DictValue params;
     params.Set("reason", "file_path_not_absolute");
@@ -1223,7 +1230,7 @@ void FileTool::RunWriteOnUI(::nexus::generated::FilesWriteInput input,
 
 void FileTool::RunEditOnUI(::nexus::generated::FilesEditInput input,
                            ToolCallback done) {
-  base::FilePath path = base::FilePath::FromUTF8Unsafe(input.file_path);
+  base::FilePath path = ToolPathFromUtf8(input.file_path);
   // Edit's pre-flight has more invariants than read/write.
   if (!path.IsAbsolute()) {
     base::DictValue params;
@@ -1284,7 +1291,7 @@ void FileTool::RunGlobOnUI(::nexus::generated::FilesGlobInput input,
   if (base::FilePath::FromUTF8Unsafe(input.pattern).IsAbsolute()) {
     auto [base_dir, tail] = ExtractGlobBaseDirectory(input.pattern);
     if (!base_dir.empty()) {
-      target = base::FilePath::FromUTF8Unsafe(base_dir);
+      target = ToolPathFromUtf8(base_dir);
       search_pattern = std::move(tail);
     } else {
       target = ResolveAgainstCwd(input.path.value_or(""), default_root);

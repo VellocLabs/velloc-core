@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/tools/file_tool/file_tool.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -27,6 +28,7 @@
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "build/build_config.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
@@ -1036,6 +1038,45 @@ TEST(FileToolTest, EditAfterReadSucceedsAndUpdatesReadState) {
   EXPECT_TRUE(second_edit_result.resolved);
   EXPECT_FALSE(second_edit_result.rejected);
 }
+
+#if BUILDFLAG(IS_WIN)
+// One file spelled with `\` on Read and `/` on Edit is the same file: the
+// Edit finds the Read's state and reports the path in `\` form.
+TEST(FileToolTest, EditAcceptsReadUnderOtherSeparatorAndReportsNativePath) {
+  base::test::TaskEnvironment task_environment;
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath file = temp_dir.GetPath().AppendASCII("notes.txt");
+  ASSERT_TRUE(base::WriteFile(file, "alpha\n"));
+  std::string slashed = file.AsUTF8Unsafe();
+  std::replace(slashed.begin(), slashed.end(), '\\', '/');
+  ASSERT_NE(slashed, file.AsUTF8Unsafe());
+
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+  CallResult read_result;
+  ::nexus::generated::FilesReadInput read_input;
+  read_input.file_path = file.AsUTF8Unsafe();
+  session.file_tool().RunReadOnUI(std::move(read_input),
+                                  MakeRecordingCallback(&read_result));
+  task_environment.RunUntilIdle();
+  ASSERT_TRUE(read_result.resolved);
+
+  CallResult edit_result;
+  ::nexus::generated::FilesEditInput edit_input;
+  edit_input.file_path = slashed;
+  edit_input.old_string = "alpha";
+  edit_input.new_string = "gamma";
+  session.file_tool().RunEditOnUI(std::move(edit_input),
+                                  MakeRecordingCallback(&edit_result));
+  task_environment.RunUntilIdle();
+
+  ASSERT_TRUE(edit_result.resolved) << edit_result.error_code;
+  ASSERT_TRUE(edit_result.value.is_dict());
+  const std::string* reported = edit_result.value.GetDict().FindString("path");
+  ASSERT_TRUE(reported);
+  EXPECT_EQ(file.AsUTF8Unsafe(), *reported);
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 TEST(FileToolTest, WriteExistingFileRequiresPriorRead) {
   base::test::TaskEnvironment task_environment;

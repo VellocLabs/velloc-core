@@ -991,7 +991,7 @@ constexpr int kGlobTimeoutMs = 120000;
 constexpr int kGlobMaxOutputBytes = 4 * 1024 * 1024;
 
 // A model-supplied path as a FilePath in the platform's own separator, so
-// one file spelled `D:/a` or `D:` is one key and one reported path. A
+// one file spelled `D:/a` or `D:\a` is one key and one reported path. A
 // no-op where `/` is the only separator.
 base::FilePath ToolPathFromUtf8(const std::string& path) {
   return base::FilePath::FromUTF8Unsafe(path).NormalizePathSeparators();
@@ -1205,9 +1205,11 @@ void FileTool::RunWriteOnUI(::nexus::generated::FilesWriteInput input,
   // On Windows, merely probing `\\host\share` (base::PathExists and
   // friends) makes the OS authenticate to that host, handing it the
   // user's hashed login.
-  if (base::StartsWith(input.file_path, "\\\\",
-                       base::CompareCase::SENSITIVE) ||
-      base::StartsWith(input.file_path, "//", base::CompareCase::SENSITIVE)) {
+  // Tested on the normalized path so a mixed `/\host` prefix is caught too.
+  const base::FilePath::StringType& path_value = path.value();
+  if (path_value.size() >= 2 &&
+      base::FilePath::IsSeparator(path_value[0]) &&
+      base::FilePath::IsSeparator(path_value[1])) {
     base::DictValue params;
     params.Set("reason", "unc_path");
     std::move(done).Reject("invalid_args", std::move(params));

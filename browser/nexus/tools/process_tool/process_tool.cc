@@ -267,7 +267,8 @@ base::FilePath ResolveAgainstCwd(const std::string& path,
   if (path.empty()) {
     return default_root;
   }
-  base::FilePath candidate = base::FilePath::FromUTF8Unsafe(path);
+  base::FilePath candidate =
+      base::FilePath::FromUTF8Unsafe(path).NormalizePathSeparators();
   if (candidate.IsAbsolute()) {
     return candidate;
   }
@@ -1329,4 +1330,11 @@ void nexus::ProcessTool::ApplySingleFileGrepDefaultsForTesting(
 std::vector<std::string> nexus::ProcessTool::SplitGlobPatternsForTesting(
     const std::string& glob) {
   return SplitGlobPatterns(glob);
+}
+
+// static
+base::FilePath nexus::ProcessTool::ResolveGrepTargetForTesting(
+    const std::string& path,
+    const base::FilePath& default_root) {
+  return ResolveAgainstCwd(path, default_root);
 }

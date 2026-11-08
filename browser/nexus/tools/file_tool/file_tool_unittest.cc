@@ -1833,6 +1833,28 @@ TEST(FileToolTest, WriteRejectsUncPath) {
 }
 
 // Spec 2-3-4 item 3: forward-slash UNC variant is also rejected.
+TEST(FileToolTest, WriteRejectsMixedSeparatorUncPath) {
+  base::test::TaskEnvironment task_environment;
+  ToolSession session(/*profile=*/nullptr, kSessionKey);
+
+  CallResult result;
+  ::nexus::generated::FilesWriteInput input;
+#if BUILDFLAG(IS_WIN)
+  input.file_path = "/\\server\\share\\file.txt";
+#else
+  input.file_path = "//server/share/file.txt";
+#endif
+  input.content = "data";
+  session.file_tool().RunWriteOnUI(std::move(input),
+                                   MakeRecordingCallback(&result));
+  task_environment.RunUntilIdle();
+
+  EXPECT_TRUE(result.rejected);
+  EXPECT_EQ("invalid_args", result.error_code);
+  ASSERT_TRUE(result.error_params.FindString("reason"));
+  EXPECT_EQ("unc_path", *result.error_params.FindString("reason"));
+}
+
 TEST(FileToolTest, WriteRejectsForwardSlashUncPath) {
   base::test::TaskEnvironment task_environment;
   ToolSession session(/*profile=*/nullptr, kSessionKey);

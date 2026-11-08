@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -59,6 +60,9 @@ class ProcessTool : public ToolBase {
       bool show_line_numbers);
   static std::vector<std::string> SplitGlobPatternsForTesting(
       const std::string& glob);
+  static base::FilePath ResolveGrepTargetForTesting(
+      const std::string& path,
+      const base::FilePath& default_root);
   // Applies the single-file Grep defaults (mode -> content, -C 5) exactly as
   // OnGrepPathChecked does before building argv; `target_is_file` is what
   // ClassifyGrepTargetOnBlocking would have reported.

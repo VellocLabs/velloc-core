@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
@@ -23,6 +24,7 @@
 #include "custom_browser/browser/nexus/tools/nexus_ripgrep_runner.h"
 #include "custom_browser/browser/nexus/tools/nexus_tool_callback.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
@@ -506,6 +508,19 @@ TEST(ProcessToolTest, RipgrepFailureRejectsGrepWithTheToolsDeclaredCode) {
   EXPECT_EQ("BINARY_NOT_FOUND", *record.params.FindString("service_code"));
   EXPECT_EQ("rg could not be installed. Install it manually.",
             *record.params.FindString("detail"));
+}
+
+TEST(ProcessToolTest, GrepTargetUsesPlatformSeparators) {
+  const base::FilePath root(FILE_PATH_LITERAL("/root"));
+#if BUILDFLAG(IS_WIN)
+  EXPECT_EQ(FILE_PATH_LITERAL("D:\\proj\\src"),
+            ProcessTool::ResolveGrepTargetForTesting("D:/proj/src", root)
+                .value());
+#else
+  EXPECT_EQ("/proj/a\\b",
+            ProcessTool::ResolveGrepTargetForTesting("/proj/a\\b", root)
+                .value());
+#endif
 }
 
 }  // namespace

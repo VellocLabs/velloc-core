@@ -297,6 +297,7 @@ void NexusHttpByteStream::AnswerPendingRead() {
     return;
   }
   read_hold_timer_.Stop();
+  ReadCallback callback = std::move(pending_read_);
   ReadResult result;
   result.data = queue_.Take(pending_read_max_bytes_);
   result.done = finished_ && queue_.empty();
@@ -305,8 +306,14 @@ void NexusHttpByteStream::AnswerPendingRead() {
     result.error_message = error_message_;
     result.extra = std::move(extra_);
   }
-  MaybeResume();
-  std::move(pending_read_).Run(std::move(result));
+  // The loader's resume may re-enter OnDataReceived / OnComplete / Fail
+  // synchronously, so it runs only after this read is answered, and not at
+  // all if answering it destroyed the stream.
+  base::WeakPtr<NexusHttpByteStream> self = weak_factory_.GetWeakPtr();
+  std::move(callback).Run(std::move(result));
+  if (self) {
+    MaybeResume();
+  }
 }
 
 void NexusHttpByteStream::MaybeResume() {

@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/location.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "content/public/browser/browser_context.h"
@@ -258,6 +260,13 @@ void NexusEgressContexts::Release(const std::string& key) {
     --entry.leases;
   }
   entry.last_used = base::TimeTicks::Now();
+  if (entry.leases == 0) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&NexusEgressContexts::DropIdle,
+                       weak_factory_.GetWeakPtr()),
+        kIdleLifetime);
+  }
 }
 
 void NexusEgressContexts::DropIdle() {

@@ -371,9 +371,7 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
 
   // The egress, when one is named: the request then travels on that proxy's
   // network context instead of the profile's.
-  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory =
-      url_loader_factory_for_testing_;
-  base::ScopedClosureRunner egress_lease;
+  std::optional<ProxyEndpoint> egress_endpoint;
   if (input.egress.has_value()) {
     auto endpoint = ResolveEgressEndpoint(*input.egress, lookup);
     if (!endpoint.has_value()) {
@@ -388,23 +386,7 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
                             std::move(data));
       return;
     }
-    if (!url_loader_factory) {
-      std::optional<NexusEgressContexts::Lease> lease =
-          NexusEgressContexts::GetForBrowserContext(profile_)->Acquire(
-              *endpoint);
-      if (!lease) {
-        std::move(done).Error(
-            "EGRESS_UNAVAILABLE",
-            "Too many different proxies are carrying requests.");
-        return;
-      }
-      url_loader_factory = std::move(lease->url_loader_factory);
-      egress_lease = std::move(lease->release);
-    }
-  }
-  if (!url_loader_factory) {
-    url_loader_factory = profile_->GetDefaultStoragePartition()
-                             ->GetURLLoaderFactoryForBrowserProcess();
+    egress_endpoint = std::move(*endpoint);
   }
 
   // Query parameters are appended AFTER the domain check, so a template can
@@ -537,8 +519,32 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
                                std::move(captures));
   }
 
+  // Acquired last: making a context can evict another proxy's idle one, which
+  // a request refused by a later check must not do.
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory =
+      url_loader_factory_for_testing_;
+  base::ScopedClosureRunner egress_lease;
+  if (egress_endpoint && !url_loader_factory) {
+    std::optional<NexusEgressContexts::Lease> lease =
+        NexusEgressContexts::GetForBrowserContext(profile_)->Acquire(
+            *egress_endpoint);
+    if (!lease) {
+      std::move(done).Error(
+          "EGRESS_UNAVAILABLE",
+          "Too many different proxies are carrying requests.");
+      return;
+    }
+    url_loader_factory = std::move(lease->url_loader_factory);
+    egress_lease = std::move(lease->release);
+  }
+  if (!url_loader_factory) {
+    url_loader_factory = profile_->GetDefaultStoragePartition()
+                             ->GetURLLoaderFactoryForBrowserProcess();
+  }
+
   auto stream = std::make_unique<NexusLlmRawStream>(
-      std::move(url_loader_factory), std::move(request), std::string(input.body.begin(), input.body.end()),
+      std::move(url_loader_factory), std::move(request),
+      std::string(input.body.begin(), input.body.end()),
       std::move(content_type), max_bytes, base::Milliseconds(idle_ms),
       base::BindRepeating(
           [](const GURL& base, const GURL& next) {

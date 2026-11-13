@@ -161,6 +161,17 @@ TEST_F(NexusEgressContextsTest, AnIdleContextIsDroppedAfterItsLifetime) {
   EXPECT_EQ(bound_.size(), 3u);
 }
 
+TEST_F(NexusEgressContextsTest, AnIdleContextIsDroppedWithoutAnotherRequest) {
+  {
+    auto released = contexts_.Acquire(Endpoint("http://idle.example.com"));
+  }
+  EXPECT_EQ(contexts_.context_count_for_testing(), 1u);
+  task_environment_.FastForwardBy(NexusEgressContexts::kIdleLifetime / 2);
+  EXPECT_EQ(contexts_.context_count_for_testing(), 1u);
+  task_environment_.FastForwardBy(NexusEgressContexts::kIdleLifetime / 2);
+  EXPECT_EQ(contexts_.context_count_for_testing(), 0u);
+}
+
 TEST_F(NexusEgressContextsTest, AtTheLimitAnIdleContextMakesRoomABusyOneDoesNot) {
   std::vector<NexusEgressContexts::Lease> held;
   for (size_t i = 0; i < NexusEgressContexts::kMaxContexts; ++i) {

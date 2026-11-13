@@ -18,7 +18,7 @@ namespace nexus {
 
 // The global proxy setting behind `network.proxyGet` / `network.proxySet`:
 // the profile's `proxy` preference, which every request on the profile's
-// network context follows (F-27).
+// network context follows (F-18).
 
 inline constexpr size_t kMaxProxyBypassListChars = 4096;
 

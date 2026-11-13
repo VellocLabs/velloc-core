@@ -34,7 +34,7 @@ namespace nexus {
 struct ProxyEndpoint;
 
 // The network contexts provider requests leave through when they name an
-// egress (F-27). A proxy is a property of a network context, so "this
+// egress (P-4). A proxy is a property of a network context, so "this
 // request through that proxy" is "this request on that proxy's context".
 //
 // Contract: one context per proxy server and credentials, made on first use

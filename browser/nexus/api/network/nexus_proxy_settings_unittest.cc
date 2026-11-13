@@ -133,12 +133,23 @@ TEST(ProxySettingsTest, RefusalsNameTheFieldAndTheReason) {
   pac.mode = "pac";
   pac.pac_url = "ftp://example.com/proxy.pac";
   EXPECT_EQ(RefusalOf(pac), "pacUrl:scheme");
+  pac.pac_url = "file:///C:/corp/proxy.pac";
+  EXPECT_EQ(RefusalOf(pac), "pacUrl:scheme");
   pac.pac_url = "not a url";
   EXPECT_EQ(RefusalOf(pac), "pacUrl:malformed");
 
   ProxySettingsRequest unknown;
-  unknown.mode = "autoDetect";
+  unknown.mode = "auto";
   EXPECT_EQ(RefusalOf(unknown), "mode:malformed");
+}
+
+TEST_F(ProxyPreferenceTest, AutoDetectIsStoredAndReadBack) {
+  ProxySettingsRequest request;
+  request.mode = "autoDetect";
+  Store(request);
+  const base::DictValue record = DescribeProxyPreference(prefs_);
+  EXPECT_EQ(*record.FindString("mode"), "autoDetect");
+  EXPECT_EQ(*record.FindString("source"), "user");
 }
 
 TEST_F(ProxyPreferenceTest, AnUnsetPreferenceReadsAsTheSystemDefault) {

@@ -441,8 +441,6 @@ TEST_F(NexusNetworkSecretsTest, StreamFinalUrlNeverEchoesAnExpandedSecret) {
   EXPECT_EQ(final_url->find("tok-123"), std::string::npos) << *final_url;
 }
 
-// formParams: the host encodes the form body and labels it, unless the guest
-// named its own Content-Type.
 // network.proxyGet / proxySet read and write the profile's proxy preference.
 class NexusNetworkProxyTest : public NexusNetworkStreamTest {
  protected:
@@ -498,6 +496,8 @@ TEST_F(NexusNetworkProxyTest, AValueHeldByPolicyRefusesTheWrite) {
   EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
 }
 
+// formParams: the host encodes the form body and labels it, unless the guest
+// named its own Content-Type.
 TEST_F(NexusNetworkStreamTest, FormParamsAreSentAsAUrlEncodedBody) {
   std::string seen_body;
   std::string seen_type;

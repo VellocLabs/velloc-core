@@ -16,7 +16,7 @@
 namespace nexus {
 
 // The `egress` input of `model.rawStreamOpen`: the proxy one provider request
-// leaves through (F-27).
+// leaves through (P-4).
 //
 //   { "url": "http://{{secret:proxy_user}}:{{secret:proxy_pass}}@host:3128",
 //     "hosts": ["host"] }

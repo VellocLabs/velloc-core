@@ -133,7 +133,7 @@ class NexusNetworkBridgeAdapter
       ::nexus::generated::NetworkWsCloseInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
-  // network.proxyGet / proxySet — the profile's proxy preference (F-27).
+  // network.proxyGet / proxySet — the profile's proxy preference (F-18).
   void HandleProxyGetOnUI(
       ::nexus::generated::NetworkProxyGetInput input,
       std::vector<blink::MessagePortDescriptor> ports,

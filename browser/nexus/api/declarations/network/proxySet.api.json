@@ -8,7 +8,7 @@
       "name": "mode",
       "type": "string",
       "required": true,
-      "description": "`system` (follow the operating system; removes the stored value), `direct` (no proxy), `fixed` (one proxy server, see `server`) or `pac` (see `pacUrl`)."
+      "description": "`system` (follow the operating system; removes the stored value), `direct` (no proxy), `fixed` (one proxy server, see `server`), `pac` (see `pacUrl`) or `autoDetect` (discover a PAC script on the network)."
     },
     {
       "name": "server",
@@ -26,7 +26,7 @@
       "name": "pacUrl",
       "type": "string",
       "required": false,
-      "description": "With `pac`: the http, https or file URL of the proxy auto-config script."
+      "description": "With `pac`: the http or https URL of the proxy auto-config script."
     }
   ],
   "runtime": {

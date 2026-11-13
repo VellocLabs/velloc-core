@@ -86,6 +86,10 @@ BuildProxyPreference(const ProxySettingsRequest& request) {
     return std::optional<base::DictValue>(
         ProxyConfigDictionary::CreateDirect());
   }
+  if (request.mode == kModeAutoDetect) {
+    return std::optional<base::DictValue>(
+        ProxyConfigDictionary::CreateAutoDetect());
+  }
   if (request.mode == kModeFixed) {
     const auto endpoint = ParseProxyEndpoint(request.server.value_or(""),
                                              ProxyCredentials::kRefuse);
@@ -110,7 +114,8 @@ BuildProxyPreference(const ProxySettingsRequest& request) {
     if (!url.is_valid() || url.has_username() || url.has_password()) {
       return Refuse("pacUrl", "malformed");
     }
-    if (!url.SchemeIsHTTPOrHTTPS() && !url.SchemeIsFile()) {
+    // The network service fetches a PAC script over http, https or data only.
+    if (!url.SchemeIsHTTPOrHTTPS()) {
       return Refuse("pacUrl", "scheme");
     }
     return std::optional<base::DictValue>(

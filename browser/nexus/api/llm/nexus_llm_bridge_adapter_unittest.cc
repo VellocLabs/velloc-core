@@ -237,7 +237,7 @@ TEST_F(NexusLlmRawStreamSlotsTest, RunningStreamsAreNotReclaimed) {
 }
 
 // An egress is checked before anything is sent: the proxy's host must be one
-// the person approved, and a secret it names must exist.
+// the person approved, and it may not name a stored secret.
 TEST_F(NexusLlmRawStreamSlotsTest, AnEgressOutsideItsHostsIsRefused) {
   base::DictValue payload;
   payload.Set("providerId", kProviderId);
@@ -259,7 +259,7 @@ TEST_F(NexusLlmRawStreamSlotsTest, AnEgressOutsideItsHostsIsRefused) {
   EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 0u);
 }
 
-TEST_F(NexusLlmRawStreamSlotsTest, AnEgressNamingAMissingSecretIsRefused) {
+TEST_F(NexusLlmRawStreamSlotsTest, AnEgressNamingAStoredSecretIsRefused) {
   base::DictValue payload;
   payload.Set("providerId", kProviderId);
   payload.Set("url", kStreamUrl);
@@ -267,14 +267,16 @@ TEST_F(NexusLlmRawStreamSlotsTest, AnEgressNamingAMissingSecretIsRefused) {
   body.Append(123);
   payload.Set("body", std::move(body));
   base::DictValue egress;
-  egress.Set("url", "{{secret:proxy_a}}");
+  egress.Set("url", "http://{{secret:api_key}}:x@proxy.example.com:3128");
   base::ListValue hosts;
   hosts.Append("proxy.example.com");
   egress.Set("hosts", std::move(hosts));
   payload.Set("egress", std::move(egress));
   Dispatch("rawStreamOpen", std::move(payload));
 
-  EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
+  EXPECT_EQ(delegate_.last_error_code, "EGRESS_INVALID");
+  ASSERT_TRUE(delegate_.last_error_data.FindString("reason"));
+  EXPECT_EQ(*delegate_.last_error_data.FindString("reason"), "template");
   EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 0u);
 }
 

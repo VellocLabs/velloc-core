@@ -15,10 +15,8 @@ namespace nexus {
 
 namespace {
 
-base::unexpected<EgressRefusal> Refuse(const char* reason) {
-  EgressRefusal refusal;
-  refusal.reason = reason;
-  return base::unexpected(std::move(refusal));
+base::unexpected<std::string> Refuse(const char* reason) {
+  return base::unexpected(std::string(reason));
 }
 
 bool HostIsListed(const net::ProxyServer& server,
@@ -40,28 +38,17 @@ bool HostIsListed(const net::ProxyServer& server,
 
 }  // namespace
 
-EgressRefusal::EgressRefusal() = default;
-EgressRefusal::EgressRefusal(EgressRefusal&&) = default;
-EgressRefusal& EgressRefusal::operator=(EgressRefusal&&) = default;
-EgressRefusal::~EgressRefusal() = default;
-
-base::expected<ProxyEndpoint, EgressRefusal> ResolveEgressEndpoint(
-    const base::DictValue& egress,
-    const SecretLookup& lookup) {
+base::expected<ProxyEndpoint, std::string> ResolveEgressEndpoint(
+    const base::DictValue& egress) {
   const std::string* url = egress.FindString("url");
   const base::ListValue* hosts = egress.FindList("hosts");
   if (!url || url->empty() || !hosts || hosts->empty()) {
     return Refuse("malformed");
   }
-  std::string expanded;
-  if (std::optional<SecretTemplateError> error =
-          ExpandSecretTemplates(*url, lookup, &expanded)) {
-    EgressRefusal refusal;
-    refusal.secret = std::move(error);
-    return base::unexpected(std::move(refusal));
+  if (url->find("{{") != std::string::npos) {
+    return Refuse("template");
   }
-  auto endpoint =
-      ParseProxyEndpoint(expanded, ProxyCredentials::kAllowForHttp);
+  auto endpoint = ParseProxyEndpoint(*url, ProxyCredentials::kAllowForHttp);
   if (!endpoint.has_value()) {
     return Refuse(ProxyEndpointProblemWireName(endpoint.error()));
   }

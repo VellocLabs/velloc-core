@@ -373,14 +373,10 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
   // network context instead of the profile's.
   std::optional<ProxyEndpoint> egress_endpoint;
   if (input.egress.has_value()) {
-    auto endpoint = ResolveEgressEndpoint(*input.egress, lookup);
+    auto endpoint = ResolveEgressEndpoint(*input.egress);
     if (!endpoint.has_value()) {
-      if (endpoint.error().secret) {
-        RefuseSecretTemplate(std::move(done), *endpoint.error().secret);
-        return;
-      }
       Dict data;
-      data.Set("reason", endpoint.error().reason);
+      data.Set("reason", endpoint.error());
       std::move(done).Error("EGRESS_INVALID",
                             "The egress is not a usable proxy.",
                             std::move(data));

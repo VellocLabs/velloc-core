@@ -49,7 +49,7 @@
       "name": "egress",
       "type": "object",
       "required": false,
-      "description": "The proxy this request leaves through, { url, hosts }. `url` is one proxy server as scheme://[user:password@]host[:port], scheme `http`, `https` or `socks5` (credentials on http and https only), and may carry `{{secret:NAME}}` naming the provider's stored secrets, substituted host-side. `hosts` is the list of proxy hosts the person approved; the proxy's host must be one of them. Without it the request follows the profile's proxy configuration. Errors: EGRESS_INVALID with error.data.reason `malformed`, `scheme`, `credentials` or `host`; SECRET_UNAVAILABLE as for a header; EGRESS_UNAVAILABLE when too many different proxies are carrying requests at once. Manifest primitive model.rawStreamOpen.egress: an older host ignores the input, so the guest sends it only to a host that lists the primitive."
+      "description": "The proxy this request leaves through, { url, hosts }. `url` is one proxy server as scheme://[user:password@]host[:port], scheme `http`, `https` or `socks5` (credentials on http and https only), used as written: a `{{…}}` placeholder is refused and no stored secret is ever filled into it. `hosts` is the list of proxy hosts the person approved; the proxy's host must be one of them. Without it the request follows the profile's proxy configuration. Errors: EGRESS_INVALID with error.data.reason `malformed`, `template`, `scheme`, `credentials` or `host`; EGRESS_UNAVAILABLE when too many different proxies are carrying requests at once. Manifest primitive model.rawStreamOpen.egress: an older host ignores the input, so the guest sends it only to a host that lists the primitive."
     },
     {
       "name": "streamId",

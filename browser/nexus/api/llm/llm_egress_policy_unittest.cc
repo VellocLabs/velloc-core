@@ -7,22 +7,11 @@
 #include <string>
 #include <utility>
 
-#include "base/functional/bind.h"
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
 namespace {
-
-SecretLookupOutcome Lookup(const std::string& name) {
-  SecretLookupOutcome outcome;
-  if (name == "proxy_url") {
-    outcome.value = "http://user:p%40ss@proxy.example.com:3128";
-  } else if (name == "proxy_pass") {
-    outcome.value = "s3cret";
-  }
-  return outcome;
-}
 
 base::DictValue Egress(const std::string& url,
                        std::initializer_list<const char*> hosts) {
@@ -37,15 +26,13 @@ base::DictValue Egress(const std::string& url,
 }
 
 std::string ReasonOf(const base::DictValue& egress) {
-  const auto endpoint =
-      ResolveEgressEndpoint(egress, base::BindRepeating(&Lookup));
-  return endpoint.has_value() ? std::string() : endpoint.error().reason;
+  const auto endpoint = ResolveEgressEndpoint(egress);
+  return endpoint.has_value() ? std::string() : endpoint.error();
 }
 
-TEST(LlmEgressPolicyTest, ASecretUrlResolvesToAServerAndItsCredentials) {
-  const auto endpoint =
-      ResolveEgressEndpoint(Egress("{{secret:proxy_url}}", {"Proxy.Example.com"}),
-                            base::BindRepeating(&Lookup));
+TEST(LlmEgressPolicyTest, AUrlResolvesToAServerAndItsCredentials) {
+  const auto endpoint = ResolveEgressEndpoint(Egress(
+      "http://user:p%40ss@proxy.example.com:3128", {"Proxy.Example.com"}));
   ASSERT_TRUE(endpoint.has_value());
   EXPECT_TRUE(endpoint->server.is_http());
   EXPECT_EQ(endpoint->server.GetHost(), "proxy.example.com");
@@ -54,18 +41,22 @@ TEST(LlmEgressPolicyTest, ASecretUrlResolvesToAServerAndItsCredentials) {
   EXPECT_EQ(endpoint->password, "p@ss");
 }
 
-TEST(LlmEgressPolicyTest, ASecretMayFillOnePartOfTheUrl) {
-  const auto endpoint = ResolveEgressEndpoint(
-      Egress("https://me:{{secret:proxy_pass}}@gate.example.com", {"gate.example.com"}),
-      base::BindRepeating(&Lookup));
-  ASSERT_TRUE(endpoint.has_value());
-  EXPECT_TRUE(endpoint->server.is_https());
-  EXPECT_EQ(endpoint->server.GetPort(), 443);
-  EXPECT_EQ(endpoint->password, "s3cret");
+// No stored secret can be sent to a proxy: a placeholder is refused, whole
+// address or one part, whatever it names.
+TEST(LlmEgressPolicyTest, APlaceholderInTheUrlIsRefused) {
+  EXPECT_EQ(ReasonOf(Egress("{{secret:proxy_url}}", {"proxy.example.com"})),
+            "template");
+  EXPECT_EQ(ReasonOf(Egress("http://{{secret:api_key}}:x@proxy.example.com",
+                            {"proxy.example.com"})),
+            "template");
+  EXPECT_EQ(ReasonOf(Egress("https://me:{{oauth:access_token}}@proxy.example.com",
+                            {"proxy.example.com"})),
+            "template");
 }
 
 TEST(LlmEgressPolicyTest, TheProxyHostMustBeOneOfTheListedHosts) {
-  EXPECT_EQ(ReasonOf(Egress("{{secret:proxy_url}}", {"other.example.com"})),
+  EXPECT_EQ(ReasonOf(Egress("http://user:pw@proxy.example.com:3128",
+                            {"other.example.com"})),
             "host");
   EXPECT_EQ(ReasonOf(Egress("http://evil.example.com:8080",
                             {"proxy.example.com", "example.com"})),
@@ -86,20 +77,9 @@ TEST(LlmEgressPolicyTest, RefusalsCarryTheirReason) {
             "credentials");
 }
 
-TEST(LlmEgressPolicyTest, AMissingSecretIsReportedAsTheSecretNotTheUrl) {
-  const auto endpoint = ResolveEgressEndpoint(
-      Egress("{{secret:absent}}", {"proxy.example.com"}),
-      base::BindRepeating(&Lookup));
-  ASSERT_FALSE(endpoint.has_value());
-  EXPECT_TRUE(endpoint.error().reason.empty());
-  ASSERT_TRUE(endpoint.error().secret.has_value());
-  EXPECT_EQ(endpoint.error().secret->secret, "absent");
-}
-
 TEST(LlmEgressPolicyTest, TheContextKeySeparatesServersAndCredentials) {
   const auto resolve = [](const std::string& url) {
-    return *ResolveEgressEndpoint(Egress(url, {"proxy.example.com"}),
-                                  base::BindRepeating(&Lookup));
+    return *ResolveEgressEndpoint(Egress(url, {"proxy.example.com"}));
   };
   const std::string plain = EgressContextKey(resolve("http://proxy.example.com:80"));
   EXPECT_EQ(plain, EgressContextKey(resolve("HTTP://proxy.example.com/")));

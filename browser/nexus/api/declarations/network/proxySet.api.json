@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "proxySet",
+  "struct_name": "NetworkProxySet",
+  "description": "Write the profile's proxy configuration. It takes effect for the next request, with no restart; a request already under way keeps its route. Resolves what proxyGet resolves. Errors: PROXY_INVALID with error.data = { field, reason } (reason `malformed`, `scheme`, `credentials`, `tooLong`), PROXY_OVERRIDDEN when a command-line switch, an extension or a policy holds the value. Additive action, manifest primitive network.proxy.",
+  "inputs": [
+    {
+      "name": "mode",
+      "type": "string",
+      "required": true,
+      "description": "`system` (follow the operating system; removes the stored value), `direct` (no proxy), `fixed` (one proxy server, see `server`) or `pac` (see `pacUrl`)."
+    },
+    {
+      "name": "server",
+      "type": "string",
+      "required": false,
+      "description": "With `fixed`: the proxy as scheme://host[:port], scheme `http`, `https`, `socks4` or `socks5`. A username or password in it is refused (reason `credentials`)."
+    },
+    {
+      "name": "bypassList",
+      "type": "string",
+      "required": false,
+      "description": "With `fixed`: hosts that are reached without the proxy, separated by `;` or `,`, in the proxy bypass rule syntax (`*.example.com`, `10.0.0.0/8`, `<local>`). At most 4096 characters."
+    },
+    {
+      "name": "pacUrl",
+      "type": "string",
+      "required": false,
+      "description": "With `pac`: the http, https or file URL of the proxy auto-config script."
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

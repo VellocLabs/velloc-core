@@ -54,6 +54,22 @@ source_set("raw_stream_policy") {
   ]
 }
 
+# The `egress` input of `model.rawStreamOpen`: which proxy a provider request
+# may leave through. Pure; unit-tested via llm_egress_policy_unittest.cc.
+source_set("egress_policy") {
+  sources = [
+    "llm_egress_policy.cc",
+    "llm_egress_policy.h",
+  ]
+
+  public_deps = [
+    ":raw_stream_policy",
+    "//base",
+    "//custom_browser/browser/nexus:proxy_settings",
+    "//net",
+  ]
+}
+
 # LLM preference registration.
 source_set("pref_registration") {
   sources = [

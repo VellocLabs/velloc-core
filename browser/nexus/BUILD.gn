@@ -114,6 +114,8 @@ action("nexus_tools_codegen") {
     "api/declarations/llm/setDefaultSelection.api.json",
     "api/declarations/network/httpGet.api.json",
     "api/declarations/network/httpRequest.api.json",
+    "api/declarations/network/proxyGet.api.json",
+    "api/declarations/network/proxySet.api.json",
     "api/declarations/network/streamCancel.api.json",
     "api/declarations/network/streamOpen.api.json",
     "api/declarations/network/streamRead.api.json",
@@ -322,6 +324,26 @@ source_set("network_egress_policy") {
 
   deps = [
     "//base",
+    "//net",
+    "//url",
+  ]
+}
+
+# The global proxy setting (`network.proxyGet` / `proxySet`): parsing one
+# proxy server text, and reading and building the profile's `proxy`
+# preference. A leaf so the lite test binary links it without the bridge.
+source_set("proxy_settings") {
+  sources = [
+    "api/network/nexus_proxy_endpoint.cc",
+    "api/network/nexus_proxy_endpoint.h",
+    "api/network/nexus_proxy_settings.cc",
+    "api/network/nexus_proxy_settings.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/prefs",
+    "//components/proxy_config",
     "//net",
     "//url",
   ]
@@ -721,6 +743,8 @@ source_set("bridge") {
     "api/llm/nexus_llm_bridge_adapter.h",
     "api/llm/nexus_llm_bridge_support.cc",
     "api/llm/nexus_llm_bridge_support.h",
+    "api/llm/nexus_egress_contexts.cc",
+    "api/llm/nexus_egress_contexts.h",
     "api/llm/nexus_llm_raw_stream.cc",
     "api/llm/nexus_llm_raw_stream.h",
     "api/llm/nexus_provider_oauth.cc",
@@ -887,6 +911,7 @@ source_set("bridge") {
     # `exec.listShells` (the exec adapter).
     ":host_shell",
     ":network_egress_policy",
+    ":proxy_settings",
     ":page_script_options",
     ":utility_tab_options",
     ":sign_in_status_page",
@@ -984,6 +1009,7 @@ source_set("bridge") {
     "//crypto",
     "//custom_browser/browser/nexus/api/llm:broker",
     "//custom_browser/browser/nexus/api/llm:pref_names",
+    "//custom_browser/browser/nexus/api/llm:egress_policy",
     "//custom_browser/browser/nexus/api/llm:raw_stream_policy",
     "//custom_browser/browser/nexus/api/llm:webui_host",
 
@@ -1280,6 +1306,7 @@ source_set("unit_tests_lite") {
   sources = [
     "api/alarms/alarm_schedule_unittest.cc",
     "api/llm/llm_provider_factory_unittest.cc",
+    "api/llm/llm_egress_policy_unittest.cc",
     "api/llm/llm_raw_stream_policy_unittest.cc",
     "api/llm/oauth/oauth_manager_unittest.cc",
     "api/llm/oauth/oauth_providers_unittest.cc",
@@ -1287,6 +1314,7 @@ source_set("unit_tests_lite") {
     "api/llm/provider_config_unittest.cc",
     "api/fs/nexus_fs_watcher_unittest.cc",
     "api/network/network_egress_policy_unittest.cc",
+    "api/network/nexus_proxy_settings_unittest.cc",
     "api/network/nexus_guest_request_unittest.cc",
     "api/page_script/page_script_options_unittest.cc",
     "api/ui/utility_tab_options_unittest.cc",
@@ -1323,6 +1351,7 @@ source_set("unit_tests_lite") {
     ":fs",
     ":host_shell",
     ":network_egress_policy",
+    ":proxy_settings",
     ":page_script_options",
     ":sign_in_status_page",
     ":utility_tab_options",
@@ -1358,6 +1387,7 @@ source_set("unit_tests_lite") {
     "//custom_browser/browser/nexus/api/llm:provider",
     "//custom_browser/browser/nexus/api/llm:provider_config",
     "//custom_browser/browser/nexus/api/llm:provider_factory",
+    "//custom_browser/browser/nexus/api/llm:egress_policy",
     "//custom_browser/browser/nexus/api/llm:raw_stream_policy",
     "//custom_browser/browser/nexus/api/llm:types",
     "//custom_browser/log:bridge_audit_log",
@@ -1387,6 +1417,7 @@ source_set("unit_tests") {
     "api/files/nexus_files_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_bridge_adapter_unittest.cc",
     "api/fs/nexus_fs_host_unittest.cc",
+    "api/llm/nexus_egress_contexts_unittest.cc",
     "api/llm/nexus_llm_bridge_adapter_unittest.cc",
     "api/llm/nexus_llm_raw_stream_unittest.cc",
     "api/network/nexus_http_byte_stream_unittest.cc",

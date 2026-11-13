@@ -8,6 +8,8 @@
 #include "custom_browser/browser/nexus/binaries/nexus_binary_config_registry.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker.h"
 #include "custom_browser/browser/nexus/api/llm/llm_broker_factory.h"
+#include "custom_browser/browser/nexus/api/llm/llm_egress_policy.h"
+#include "custom_browser/browser/nexus/api/llm/nexus_egress_contexts.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_llm_host.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_provider_oauth.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
@@ -367,6 +369,44 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
   const SecretLookup lookup = base::BindRepeating(
       &LookupStoredProviderSecret, base::Unretained(config));
 
+  // The egress, when one is named: the request then travels on that proxy's
+  // network context instead of the profile's.
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory =
+      url_loader_factory_for_testing_;
+  base::ScopedClosureRunner egress_lease;
+  if (input.egress.has_value()) {
+    auto endpoint = ResolveEgressEndpoint(*input.egress, lookup);
+    if (!endpoint.has_value()) {
+      if (endpoint.error().secret) {
+        RefuseSecretTemplate(std::move(done), *endpoint.error().secret);
+        return;
+      }
+      Dict data;
+      data.Set("reason", endpoint.error().reason);
+      std::move(done).Error("EGRESS_INVALID",
+                            "The egress is not a usable proxy.",
+                            std::move(data));
+      return;
+    }
+    if (!url_loader_factory) {
+      std::optional<NexusEgressContexts::Lease> lease =
+          NexusEgressContexts::GetForBrowserContext(profile_)->Acquire(
+              *endpoint);
+      if (!lease) {
+        std::move(done).Error(
+            "EGRESS_UNAVAILABLE",
+            "Too many different proxies are carrying requests.");
+        return;
+      }
+      url_loader_factory = std::move(lease->url_loader_factory);
+      egress_lease = std::move(lease->release);
+    }
+  }
+  if (!url_loader_factory) {
+    url_loader_factory = profile_->GetDefaultStoragePartition()
+                             ->GetURLLoaderFactoryForBrowserProcess();
+  }
+
   // Query parameters are appended AFTER the domain check, so a template can
   // only ever add to the query of an already-approved URL.
   if (input.queryParams.has_value()) {
@@ -498,11 +538,7 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
   }
 
   auto stream = std::make_unique<NexusLlmRawStream>(
-      url_loader_factory_for_testing_
-          ? url_loader_factory_for_testing_
-          : profile_->GetDefaultStoragePartition()
-                ->GetURLLoaderFactoryForBrowserProcess(),
-      std::move(request), std::string(input.body.begin(), input.body.end()),
+      std::move(url_loader_factory), std::move(request), std::string(input.body.begin(), input.body.end()),
       std::move(content_type), max_bytes, base::Milliseconds(idle_ms),
       base::BindRepeating(
           [](const GURL& base, const GURL& next) {
@@ -514,6 +550,7 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
       input.streamId.has_value()
           ? *input.streamId
           : base::Uuid::GenerateRandomV4().AsLowercaseString();
+  stream->HoldUntilDestroyed(std::move(egress_lease));
   NexusLlmRawStream* stream_ptr = stream.get();
   raw_streams_[stream_id] = std::move(stream);
   stream_ptr->Start(base::BindOnce(&NexusLlmBridgeAdapter::OnRawStreamOpened,

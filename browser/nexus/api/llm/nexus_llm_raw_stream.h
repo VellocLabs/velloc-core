@@ -5,10 +5,12 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_NEXUS_LLM_RAW_STREAM_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_NEXUS_LLM_RAW_STREAM_H_
 
+#include <utility>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -40,6 +42,12 @@ class NexusLlmRawStream : public NexusHttpByteStream {
       BodyTransform body_transform);
   ~NexusLlmRawStream() override;
 
+  // Keeps `lease` until the stream is destroyed: the hold on the network
+  // context an egress request travels on.
+  void HoldUntilDestroyed(base::ScopedClosureRunner lease) {
+    lease_ = std::move(lease);
+  }
+
   base::WeakPtr<NexusLlmRawStream> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
@@ -48,6 +56,7 @@ class NexusLlmRawStream : public NexusHttpByteStream {
   NexusLlmRawStream& operator=(const NexusLlmRawStream&) = delete;
 
  private:
+  base::ScopedClosureRunner lease_;
   base::WeakPtrFactory<NexusLlmRawStream> weak_factory_{this};
 };
 

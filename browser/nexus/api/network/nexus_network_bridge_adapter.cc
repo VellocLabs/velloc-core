@@ -14,11 +14,14 @@
 #include "base/time/time.h"
 #include "base/uuid.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/prefs/pref_service.h"
+#include "components/proxy_config/proxy_config_pref_names.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "custom_browser/browser/nexus/api/network/network_egress_policy.h"
 #include "custom_browser/browser/nexus/api/network/nexus_guest_request.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_host.h"
+#include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_provider_oauth.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
@@ -1084,6 +1087,61 @@ void NexusNetworkBridgeAdapter::EraseSocketSoon(const std::string& socket_id) {
             }
           },
           weak_factory_.GetWeakPtr(), socket_id));
+}
+
+// ===========================================================================
+// network.proxyGet / proxySet
+// ===========================================================================
+
+void NexusNetworkBridgeAdapter::HandleProxyGetOnUI(
+    ::nexus::generated::NetworkProxyGetInput /*input*/,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (!prefs_) {
+    std::move(done).Error("NETWORK_ERROR", "Profile prefs unavailable.");
+    return;
+  }
+  std::move(done).Success(DescribeProxyPreference(*prefs_));
+}
+
+void NexusNetworkBridgeAdapter::HandleProxySetOnUI(
+    ::nexus::generated::NetworkProxySetInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  if (!prefs_) {
+    std::move(done).Error("NETWORK_ERROR", "Profile prefs unavailable.");
+    return;
+  }
+  ProxySettingsRequest request;
+  request.mode = std::move(input.mode);
+  request.server = std::move(input.server);
+  request.bypass_list = std::move(input.bypassList);
+  request.pac_url = std::move(input.pacUrl);
+  auto value = BuildProxyPreference(request);
+  if (!value.has_value()) {
+    base::DictValue data;
+    data.Set("field", value.error().field);
+    data.Set("reason", value.error().reason);
+    std::move(done).Error("PROXY_INVALID",
+                          "Invalid proxy setting: " + value.error().field,
+                          std::move(data));
+    return;
+  }
+  // Security: a value held by a command-line switch, an extension or a
+  // policy stays in force whatever the user store holds, so a write that
+  // could not take effect is refused instead of stored.
+  if (!IsProxyPreferenceEditable(*prefs_)) {
+    std::move(done).Error(
+        "PROXY_OVERRIDDEN",
+        "The proxy configuration is set outside the user's settings.");
+    return;
+  }
+  if (value->has_value()) {
+    prefs_->SetDict(proxy_config::prefs::kProxy, std::move(**value));
+  } else {
+    prefs_->ClearPref(proxy_config::prefs::kProxy);
+  }
+  std::move(done).Success(DescribeProxyPreference(*prefs_));
 }
 
 }  // namespace nexus

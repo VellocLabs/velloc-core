@@ -37,6 +37,7 @@ class RecordingDelegate : public NexusBridgeResponseDelegate {
   int success_count = 0;
   int error_count = 0;
   std::string last_error_code;
+  base::DictValue last_error_data;
 
   void SendSuccessResponse(const std::string& /*id*/,
                            const base::DictValue& /*route*/,
@@ -56,6 +57,16 @@ class RecordingDelegate : public NexusBridgeResponseDelegate {
                          const std::string& /*message*/) override {
     ++error_count;
     last_error_code = code;
+    last_error_data.clear();
+  }
+  void SendErrorResponse(const std::string& /*id*/,
+                         const base::DictValue& /*route*/,
+                         const std::string& code,
+                         const std::string& /*message*/,
+                         const base::DictValue& params) override {
+    ++error_count;
+    last_error_code = code;
+    last_error_data = params.Clone();
   }
   void SendEvent(const base::DictValue& /*route*/,
                  base::Value /*payload*/) override {}
@@ -223,6 +234,68 @@ TEST_F(NexusLlmRawStreamSlotsTest, RunningStreamsAreNotReclaimed) {
   Open(100, /*with_response=*/true);
   EXPECT_EQ(delegate_.last_error_code, "TOO_MANY_STREAMS");
   EXPECT_EQ(adapter_->raw_stream_count_for_testing(), cap);
+}
+
+// An egress is checked before anything is sent: the proxy's host must be one
+// the person approved, and a secret it names must exist.
+TEST_F(NexusLlmRawStreamSlotsTest, AnEgressOutsideItsHostsIsRefused) {
+  base::DictValue payload;
+  payload.Set("providerId", kProviderId);
+  payload.Set("url", kStreamUrl);
+  base::ListValue body;
+  body.Append(123);
+  payload.Set("body", std::move(body));
+  base::DictValue egress;
+  egress.Set("url", "http://elsewhere.example.com:8080");
+  base::ListValue hosts;
+  hosts.Append("proxy.example.com");
+  egress.Set("hosts", std::move(hosts));
+  payload.Set("egress", std::move(egress));
+  Dispatch("rawStreamOpen", std::move(payload));
+
+  EXPECT_EQ(delegate_.last_error_code, "EGRESS_INVALID");
+  ASSERT_TRUE(delegate_.last_error_data.FindString("reason"));
+  EXPECT_EQ(*delegate_.last_error_data.FindString("reason"), "host");
+  EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 0u);
+}
+
+TEST_F(NexusLlmRawStreamSlotsTest, AnEgressNamingAMissingSecretIsRefused) {
+  base::DictValue payload;
+  payload.Set("providerId", kProviderId);
+  payload.Set("url", kStreamUrl);
+  base::ListValue body;
+  body.Append(123);
+  payload.Set("body", std::move(body));
+  base::DictValue egress;
+  egress.Set("url", "{{secret:proxy_a}}");
+  base::ListValue hosts;
+  hosts.Append("proxy.example.com");
+  egress.Set("hosts", std::move(hosts));
+  payload.Set("egress", std::move(egress));
+  Dispatch("rawStreamOpen", std::move(payload));
+
+  EXPECT_EQ(delegate_.last_error_code, "SECRET_UNAVAILABLE");
+  EXPECT_EQ(adapter_->raw_stream_count_for_testing(), 0u);
+}
+
+TEST_F(NexusLlmRawStreamSlotsTest, AnApprovedEgressOpensTheStream) {
+  factory_.AddResponse(kStreamUrl, "data: [DONE]\n\n");
+  base::DictValue payload;
+  payload.Set("providerId", kProviderId);
+  payload.Set("url", kStreamUrl);
+  base::ListValue body;
+  body.Append(123);
+  payload.Set("body", std::move(body));
+  base::DictValue egress;
+  egress.Set("url", "socks5://proxy.example.com:1080");
+  base::ListValue hosts;
+  hosts.Append("proxy.example.com");
+  egress.Set("hosts", std::move(hosts));
+  payload.Set("egress", std::move(egress));
+  Dispatch("rawStreamOpen", std::move(payload));
+
+  EXPECT_EQ(delegate_.error_count, 0) << delegate_.last_error_code;
+  EXPECT_EQ(delegate_.success_count, 1);
 }
 
 }  // namespace

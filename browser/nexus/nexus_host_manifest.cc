@@ -132,6 +132,11 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     "webWindow.signInResult",
     // Memory-pressure purge of the guest / GPU / agent-tab processes' caches.
     "appInfo.purgeRenderCaches",
+    // network.proxyGet / proxySet: the profile's proxy preference.
+    "network.proxy",
+    // rawStreamOpen `egress`: the request leaves through the named proxy (an
+    // older host would ignore the input and send the request without it).
+    "model.rawStreamOpen.egress",
 });
 
 template <size_t N>

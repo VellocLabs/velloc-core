@@ -18,6 +18,9 @@
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
+#include "components/proxy_config/proxy_config_dictionary.h"
+#include "components/proxy_config/proxy_config_pref_names.h"
+#include "components/proxy_config/proxy_prefs.h"
 #include "custom_browser/browser/nexus/boot_bundle/boot_bundle_index.h"
 #include "custom_browser/browser/nexus/boot_bundle/boot_bundle_store.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
@@ -440,6 +443,61 @@ TEST_F(NexusNetworkSecretsTest, StreamFinalUrlNeverEchoesAnExpandedSecret) {
 
 // formParams: the host encodes the form body and labels it, unless the guest
 // named its own Content-Type.
+// network.proxyGet / proxySet read and write the profile's proxy preference.
+class NexusNetworkProxyTest : public NexusNetworkStreamTest {
+ protected:
+  NexusNetworkProxyTest() {
+    prefs_.registry()->RegisterDictionaryPref(
+        proxy_config::prefs::kProxy, ProxyConfigDictionary::CreateSystem());
+    adapter_.SetPrefsForTesting(&prefs_);
+  }
+
+  static base::DictValue Fixed(const std::string& server) {
+    base::DictValue payload;
+    payload.Set("mode", "fixed");
+    payload.Set("server", server);
+    return payload;
+  }
+
+  TestingPrefServiceSimple prefs_;
+};
+
+TEST_F(NexusNetworkProxyTest, SetStoresThePreferenceAndAnswersWhatGetAnswers) {
+  Dispatch("proxyGet", base::DictValue());
+  ASSERT_EQ(delegate_.success_count, 1) << delegate_.last_error_code;
+  EXPECT_EQ(*delegate_.last_success.GetDict().FindString("mode"), "system");
+
+  Dispatch("proxySet", Fixed("socks5://127.0.0.1:1080"));
+  ASSERT_EQ(delegate_.success_count, 2) << delegate_.last_error_code;
+  EXPECT_EQ(*delegate_.last_success.GetDict().FindString("server"),
+            "socks5://127.0.0.1:1080");
+  const ProxyConfigDictionary stored(
+      prefs_.GetDict(proxy_config::prefs::kProxy).Clone());
+  ProxyPrefs::ProxyMode mode = ProxyPrefs::MODE_SYSTEM;
+  ASSERT_TRUE(stored.GetMode(&mode));
+  EXPECT_EQ(mode, ProxyPrefs::MODE_FIXED_SERVERS);
+
+  base::DictValue system;
+  system.Set("mode", "system");
+  Dispatch("proxySet", std::move(system));
+  EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
+  EXPECT_EQ(*delegate_.last_success.GetDict().FindString("source"), "default");
+}
+
+TEST_F(NexusNetworkProxyTest, AnInvalidServerStoresNothing) {
+  Dispatch("proxySet", Fixed("http://user:pass@proxy.example.com"));
+  EXPECT_EQ(delegate_.last_error_code, "PROXY_INVALID");
+  EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
+}
+
+TEST_F(NexusNetworkProxyTest, AValueHeldByPolicyRefusesTheWrite) {
+  prefs_.SetManagedPref(proxy_config::prefs::kProxy,
+                        base::Value(ProxyConfigDictionary::CreateDirect()));
+  Dispatch("proxySet", Fixed("http://proxy.example.com:8080"));
+  EXPECT_EQ(delegate_.last_error_code, "PROXY_OVERRIDDEN");
+  EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
+}
+
 TEST_F(NexusNetworkStreamTest, FormParamsAreSentAsAUrlEncodedBody) {
   std::string seen_body;
   std::string seen_type;

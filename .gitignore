@@ -6,3 +6,6 @@ __pycache__/
 # Runtime working dir (agent worktrees, handoffs). Untracked content here
 # would block custom_browser_tag.py's release clean check.
 /.velloc/
+
+# Optional local sources (see browser/nexus/render_cache_sources.gni).
+/internal

@@ -1,0 +1,16 @@
+# Copyright 2026 VellocLabs. All rights reserved.
+# Use of this source code is governed by the Apache License, Version 2.0,
+# which can be found in the LICENSE file.
+
+# Which definition of the render-cache hooks
+# (api/app_info/nexus_render_cache_hooks.h) this checkout builds: the sources
+# an optional source list names when it is present, otherwise the stub. Sets
+# `nexus_render_cache_sources` and `nexus_render_cache_unittest_sources`, both
+# source-absolute.
+
+if (path_exists("//custom_browser/internal/render_cache/sources.gni")) {
+  import("//custom_browser/internal/render_cache/sources.gni")
+} else {
+  nexus_render_cache_sources = [ "//custom_browser/browser/nexus/api/app_info/nexus_render_cache_hooks_stub.cc" ]
+  nexus_render_cache_unittest_sources = []
+}

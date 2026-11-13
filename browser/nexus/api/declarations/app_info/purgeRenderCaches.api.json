@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "purgeRenderCaches",
-  "description": "Ask the renderers and GPU process a Nexus client uses to drop their caches (decoded images, GPU transfer cache, font and Skia caches) by sending them a memory-pressure level and then NONE. On Windows and macOS the GPU process releases only its shader and program caches and free discardable memory. Nothing is terminated or frozen. Rate-limited per target in the host (10 s; per profile for guest and agentTabs); a purge that reached no process does not start the interval. A process running in the browser (--single-process, --in-process-gpu) is never sent a level. Returns { purged: string[], throttled: string[], guestProcesses, agentTabProcesses, gpuProcesses }. Additive action: an older host answers NOT_IMPLEMENTED.",
+  "description": "Ask the renderers and GPU process a Nexus client uses to drop their caches by sending them a memory-pressure level and then NONE. Nothing is terminated or frozen. Rate-limited per target in the host. Returns { purged: string[], throttled: string[], guestProcesses, agentTabProcesses, gpuProcesses, workingSetTrim? }. Present only in a build that has an implementation: such a host lists appInfo.purgeRenderCaches in the manifest's primitives; any other answers NOT_IMPLEMENTED.",
   "inputs": [
     {
       "name": "targets",
@@ -14,6 +14,12 @@
       "type": "string",
       "required": false,
       "description": "\"moderate\" or \"critical\" (default). An unknown level is invalid_args."
+    },
+    {
+      "name": "trimWorkingSet",
+      "type": "boolean",
+      "required": false,
+      "description": "true: also ask the host to empty its processes' working sets shortly after. Honoured only by a host that lists appInfo.purgeRenderCaches.trimWorkingSet; the reply's workingSetTrim is then \"scheduled\", \"below_spec\" or \"unsupported\", and is absent otherwise."
     }
   ],
   "runtime": {

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/app_info/nexus_render_cache_hooks.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 
 namespace nexus {
@@ -130,8 +131,6 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // host's sign-in status pages (an older host would close the window on
     // capture and reject the action as unknown).
     "webWindow.signInResult",
-    // Memory-pressure purge of the guest / GPU / agent-tab processes' caches.
-    "appInfo.purgeRenderCaches",
     // network.proxyGet / proxySet: the profile's proxy preference.
     "network.proxy",
     // rawStreamOpen `egress`: the request leaves through the named proxy (an
@@ -170,6 +169,7 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config,
   if (features.pty_supported) {
     primitives.Append("shell.spawn.pty");
   }
+  AppendRenderCachePrimitives(primitives);
   manifest.Set("primitives", std::move(primitives));
 
   // A `document` part may sit at the top level of a message, not only inside

@@ -14,6 +14,7 @@
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/proxy_config/proxy_prefs.h"
 #include "custom_browser/browser/nexus/api/network/nexus_proxy_endpoint.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/proxy_string_util.h"
 #include "url/gurl.h"
 
@@ -54,6 +55,36 @@ const char* WireMode(ProxyPrefs::ProxyMode mode) {
     default:
       return kModeSystem;
   }
+}
+
+// The one http or https proxy a stored fixed-servers text names.
+std::optional<net::HostPortPair> SignInProxyOf(const std::string& text) {
+  const bool bare = text.find("://") == std::string::npos;
+  const auto endpoint = ParseProxyEndpoint(
+      bare ? base::StrCat({"http://", text}) : text, ProxyCredentials::kRefuse);
+  if (!endpoint.has_value() ||
+      !(endpoint->server.is_http() || endpoint->server.is_https())) {
+    return std::nullopt;
+  }
+  return endpoint->server.host_port_pair();
+}
+
+// The stored sign-in when it was written for `server`.
+std::optional<ProxyAuthAnswer> SignInFor(const PrefService& prefs,
+                                         const net::HostPortPair& server) {
+  const PrefService::Preference* pref = prefs.FindPreference(kProxyAuthPref);
+  if (!pref || !pref->GetValue()->is_dict()) {
+    return std::nullopt;
+  }
+  const base::DictValue& stored = pref->GetValue()->GetDict();
+  const std::string* for_server = stored.FindString("server");
+  const std::string* username = stored.FindString("username");
+  const std::string* password = stored.FindString("password");
+  if (!for_server || *for_server != server.ToString() || !username ||
+      username->empty() || !password || password->empty()) {
+    return std::nullopt;
+  }
+  return ProxyAuthAnswer{*username, *password};
 }
 
 const char* WireSource(const PrefService::Preference& pref) {
@@ -125,6 +156,86 @@ BuildProxyPreference(const ProxySettingsRequest& request) {
   return Refuse("mode", "malformed");
 }
 
+base::expected<ProxyAuthChange, ProxySettingsProblem> ResolveProxyAuthChange(
+    const ProxySettingsRequest& request,
+    const base::DictValue& stored) {
+  const std::string username(base::TrimWhitespaceASCII(
+      request.username.value_or(""), base::TRIM_ALL));
+  const std::string& password =
+      request.password ? *request.password : base::EmptyString();
+  ProxyAuthChange change;
+  if (username.empty()) {
+    if (!password.empty()) {
+      return Refuse("username", "required");
+    }
+    return change;
+  }
+  if (request.mode != kModeFixed) {
+    return Refuse("username", "malformed");
+  }
+  const auto endpoint = ParseProxyEndpoint(request.server.value_or(""),
+                                           ProxyCredentials::kRefuse);
+  if (!endpoint.has_value()) {
+    return Refuse("server", ProxyEndpointProblemWireName(endpoint.error()));
+  }
+  // The SOCKS client offers no authentication.
+  if (!(endpoint->server.is_http() || endpoint->server.is_https())) {
+    return Refuse("username", "scheme");
+  }
+  if (username.size() > kMaxProxyAuthChars) {
+    return Refuse("username", "tooLong");
+  }
+  // Basic sign-in joins the two with a colon.
+  if (HasControlCharacter(username) ||
+      username.find(':') != std::string::npos) {
+    return Refuse("username", "malformed");
+  }
+  change.server = endpoint->server.host_port_pair().ToString();
+  change.username = username;
+  if (password.empty()) {
+    const std::string* for_server = stored.FindString("server");
+    const std::string* for_user = stored.FindString("username");
+    const std::string* kept = stored.FindString("password");
+    if (!for_server || *for_server != change.server || !for_user ||
+        *for_user != username || !kept || kept->empty()) {
+      return Refuse("password", "required");
+    }
+    change.kind = ProxyAuthChange::Kind::kKeep;
+    return change;
+  }
+  if (password.size() > kMaxProxyAuthChars) {
+    return Refuse("password", "tooLong");
+  }
+  if (HasControlCharacter(password)) {
+    return Refuse("password", "malformed");
+  }
+  change.kind = ProxyAuthChange::Kind::kStore;
+  change.password = password;
+  return change;
+}
+
+std::optional<ProxyAuthAnswer> StoredProxyAuthFor(
+    const PrefService& prefs,
+    const net::HostPortPair& challenger) {
+  const PrefService::Preference* pref =
+      prefs.FindPreference(proxy_config::prefs::kProxy);
+  if (!pref || !pref->IsUserControlled() || !pref->GetValue()->is_dict()) {
+    return std::nullopt;
+  }
+  const ProxyConfigDictionary in_force(pref->GetValue()->GetDict().Clone());
+  ProxyPrefs::ProxyMode mode = ProxyPrefs::MODE_SYSTEM;
+  std::string text;
+  if (!in_force.GetMode(&mode) || mode != ProxyPrefs::MODE_FIXED_SERVERS ||
+      !in_force.GetProxyServer(&text)) {
+    return std::nullopt;
+  }
+  const std::optional<net::HostPortPair> server = SignInProxyOf(text);
+  if (!server || *server != challenger) {
+    return std::nullopt;
+  }
+  return SignInFor(prefs, *server);
+}
+
 base::DictValue DescribeProxyPreference(const PrefService& prefs) {
   base::DictValue record;
   const PrefService::Preference* pref =
@@ -147,6 +258,12 @@ base::DictValue DescribeProxyPreference(const PrefService& prefs) {
                         text.find('=') == std::string::npos &&
                         text.find(';') == std::string::npos;
       record.Set("server", bare ? base::StrCat({"http://", text}) : text);
+      if (const std::optional<net::HostPortPair> server = SignInProxyOf(text)) {
+        if (const auto sign_in = SignInFor(prefs, *server)) {
+          record.Set("username", sign_in->username);
+          record.Set("hasPassword", true);
+        }
+      }
     }
     if (stored.GetBypassList(&text)) {
       record.Set("bypassList", text);

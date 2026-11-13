@@ -2,7 +2,7 @@
   "$schema": "../../../codegen/api_schema.json",
   "name": "proxySet",
   "struct_name": "NetworkProxySet",
-  "description": "Write the profile's proxy configuration. It takes effect for the next request, with no restart; a request already under way keeps its route. Resolves what proxyGet resolves. Errors: PROXY_INVALID with error.data = { field, reason } (reason `malformed`, `scheme`, `credentials`, `tooLong`), PROXY_OVERRIDDEN when a command-line switch, an extension or a policy holds the value. Additive action, manifest primitive network.proxy.",
+  "description": "Write the profile's proxy configuration. It takes effect for the next request, with no restart; a request already under way keeps its route. Resolves what proxyGet resolves. Errors: PROXY_INVALID with error.data = { field, reason } (reason `malformed`, `scheme`, `credentials`, `tooLong`, `required`), PROXY_OVERRIDDEN when a command-line switch, an extension or a policy holds the value. Additive action, manifest primitive network.proxy.",
   "inputs": [
     {
       "name": "mode",
@@ -14,7 +14,19 @@
       "name": "server",
       "type": "string",
       "required": false,
-      "description": "With `fixed`: the proxy as scheme://host[:port], scheme `http`, `https`, `socks4` or `socks5`. A username or password in it is refused (reason `credentials`)."
+      "description": "With `fixed`: the proxy as scheme://host[:port], scheme `http`, `https`, `socks4` or `socks5`. A username or password in it is refused (reason `credentials`): they go in `username` and `password`."
+    },
+    {
+      "name": "username",
+      "type": "string",
+      "required": false,
+      "description": "With `fixed` and an `http` or `https` server: the user name the proxy asks for, at most 255 characters, no `:`. Absent or empty removes the stored sign-in. Refused with a `socks4` or `socks5` server (field `username`, reason `scheme`)."
+    },
+    {
+      "name": "password",
+      "type": "string",
+      "required": false,
+      "description": "With `username`: the password, at most 255 characters. It is stored sealed and never returned. Absent or empty keeps the stored password when the server and the user name are the ones it was stored for, and is refused otherwise (field `password`, reason `required`)."
     },
     {
       "name": "bypassList",

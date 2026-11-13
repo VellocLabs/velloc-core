@@ -2,7 +2,7 @@
   "$schema": "../../../codegen/api_schema.json",
   "name": "proxyGet",
   "struct_name": "NetworkProxyGet",
-  "description": "Read the profile's proxy configuration, the one every request on the profile's network context follows (model requests, network.*, page loads). Resolves { mode, server?, bypassList?, pacUrl?, source, editable }: mode is `system`, `direct`, `fixed`, `pac` or `autoDetect`; source says which store the value in force comes from (`default`, `user`, `commandLine`, `extension`, `policy`); editable is false when a store above the user's holds the value, and proxySet is then refused. Additive action, manifest primitive network.proxy: an older host answers NOT_IMPLEMENTED.",
+  "description": "Read the profile's proxy configuration, the one every request on the profile's network context follows (model requests, network.*, page loads). Resolves { mode, server?, bypassList?, pacUrl?, username?, hasPassword?, source, editable }: username and hasPassword (true) are present when a sign-in is stored for the fixed server, and the password itself is never returned; mode is `system`, `direct`, `fixed`, `pac` or `autoDetect`; source says which store the value in force comes from (`default`, `user`, `commandLine`, `extension`, `policy`); editable is false when a store above the user's holds the value, and proxySet is then refused. Additive action, manifest primitive network.proxy: an older host answers NOT_IMPLEMENTED.",
   "inputs": [],
   "runtime": {
     "thread": "ui"

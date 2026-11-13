@@ -22,6 +22,7 @@
 #include "custom_browser/browser/nexus/api/network/nexus_guest_request.h"
 #include "custom_browser/browser/nexus/api/network/nexus_network_host.h"
 #include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/llm/nexus_provider_oauth.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
@@ -1117,6 +1118,8 @@ void NexusNetworkBridgeAdapter::HandleProxySetOnUI(
   request.server = std::move(input.server);
   request.bypass_list = std::move(input.bypassList);
   request.pac_url = std::move(input.pacUrl);
+  request.username = std::move(input.username);
+  request.password = std::move(input.password);
   auto value = BuildProxyPreference(request);
   if (!value.has_value()) {
     base::DictValue data;
@@ -1136,10 +1139,36 @@ void NexusNetworkBridgeAdapter::HandleProxySetOnUI(
         "The proxy configuration is set outside the user's settings.");
     return;
   }
+  const bool keeps_sign_in = prefs_->FindPreference(kProxyAuthPref);
+  const base::DictValue no_sign_in;
+  auto sign_in = ResolveProxyAuthChange(
+      request, keeps_sign_in ? prefs_->GetDict(kProxyAuthPref) : no_sign_in);
+  if (!sign_in.has_value() ||
+      (!keeps_sign_in && sign_in->kind != ProxyAuthChange::Kind::kClear)) {
+    base::DictValue data;
+    data.Set("field", sign_in.has_value() ? "username" : sign_in.error().field);
+    data.Set("reason",
+             sign_in.has_value() ? "malformed" : sign_in.error().reason);
+    std::move(done).Error("PROXY_INVALID", "Invalid proxy sign-in.",
+                          std::move(data));
+    return;
+  }
   if (value->has_value()) {
     prefs_->SetDict(proxy_config::prefs::kProxy, std::move(**value));
   } else {
     prefs_->ClearPref(proxy_config::prefs::kProxy);
+  }
+  // Security: the password is sealed before it is stored, and it is never
+  // read back to the guest.
+  if (sign_in->kind == ProxyAuthChange::Kind::kStore) {
+    base::DictValue stored;
+    stored.Set("server", sign_in->server);
+    stored.Set("username", sign_in->username);
+    stored.Set("password",
+               NexusSecretCrypt::GetInstance()->Encrypt(sign_in->password));
+    prefs_->SetDict(kProxyAuthPref, std::move(stored));
+  } else if (sign_in->kind == ProxyAuthChange::Kind::kClear && keeps_sign_in) {
+    prefs_->ClearPref(kProxyAuthPref);
   }
   std::move(done).Success(DescribeProxyPreference(*prefs_));
 }

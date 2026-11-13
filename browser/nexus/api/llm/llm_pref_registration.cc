@@ -2,6 +2,7 @@
 
 #include "components/prefs/pref_registry_simple.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
 
 namespace nexus {
 
@@ -12,6 +13,8 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kNexusActiveProviderId, std::string());
   registry->RegisterStringPref(prefs::kNexusWebappUrl, std::string());
   registry->RegisterBooleanPref(prefs::kNexusRuntimeFirstBootCompleted, false);
+  // The sign-in of the user's fixed proxy (F-18).
+  registry->RegisterDictionaryPref(kProxyAuthPref);
 
   // Where BrowserTool hosts the agent's tabs: false = active (Nexus) window,
   // true = a dedicated separate browser window. Default preserves the legacy

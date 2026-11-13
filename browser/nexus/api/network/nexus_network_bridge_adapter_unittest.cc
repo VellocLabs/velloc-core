@@ -24,6 +24,7 @@
 #include "custom_browser/browser/nexus/boot_bundle/boot_bundle_index.h"
 #include "custom_browser/browser/nexus/boot_bundle/boot_bundle_store.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
+#include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
 #include "custom_browser/browser/nexus/api/secrets/nexus_secret_store.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -447,6 +448,9 @@ class NexusNetworkProxyTest : public NexusNetworkStreamTest {
   NexusNetworkProxyTest() {
     prefs_.registry()->RegisterDictionaryPref(
         proxy_config::prefs::kProxy, ProxyConfigDictionary::CreateSystem());
+    prefs_.registry()->RegisterDictionaryPref(kProxyAuthPref);
+    NexusSecretCrypt::GetInstance()->SetEncryptorForTesting(
+        os_crypt_async::GetTestEncryptorForTesting());
     adapter_.SetPrefsForTesting(&prefs_);
   }
 
@@ -480,6 +484,49 @@ TEST_F(NexusNetworkProxyTest, SetStoresThePreferenceAndAnswersWhatGetAnswers) {
   Dispatch("proxySet", std::move(system));
   EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
   EXPECT_EQ(*delegate_.last_success.GetDict().FindString("source"), "default");
+}
+
+// The password is stored sealed, is never answered back, and goes when the
+// sign-in is removed.
+TEST_F(NexusNetworkProxyTest, ASignInIsStoredSealedAndNeverReadBack) {
+  base::DictValue payload = Fixed("http://proxy.example.com:3128");
+  payload.Set("username", "me");
+  payload.Set("password", "s3cret-pass");
+  Dispatch("proxySet", std::move(payload));
+  ASSERT_EQ(delegate_.success_count, 1) << delegate_.last_error_code;
+  const base::DictValue& answered = delegate_.last_success.GetDict();
+  EXPECT_EQ(*answered.FindString("username"), "me");
+  EXPECT_EQ(answered.FindBool("hasPassword"), true);
+  EXPECT_EQ(answered.DebugString().find("s3cret-pass"), std::string::npos);
+
+  const base::DictValue& stored = prefs_.GetDict(kProxyAuthPref);
+  EXPECT_EQ(*stored.FindString("server"), "proxy.example.com:3128");
+  ASSERT_TRUE(stored.FindString("password"));
+  EXPECT_TRUE(NexusSecretCrypt::IsEncrypted(*stored.FindString("password")));
+  EXPECT_EQ(NexusSecretCrypt::GetInstance()->Decrypt(
+                *stored.FindString("password")),
+            "s3cret-pass");
+
+  // The same proxy and user name with no password keeps it.
+  base::DictValue again = Fixed("http://proxy.example.com:3128");
+  again.Set("username", "me");
+  Dispatch("proxySet", std::move(again));
+  ASSERT_EQ(delegate_.success_count, 2) << delegate_.last_error_code;
+  EXPECT_EQ(NexusSecretCrypt::GetInstance()->Decrypt(
+                *prefs_.GetDict(kProxyAuthPref).FindString("password")),
+            "s3cret-pass");
+
+  // Another proxy with no password is refused and changes nothing.
+  base::DictValue moved = Fixed("http://other.example.com:3128");
+  moved.Set("username", "me");
+  Dispatch("proxySet", std::move(moved));
+  EXPECT_EQ(delegate_.last_error_code, "PROXY_INVALID");
+  EXPECT_EQ(*prefs_.GetDict(kProxyAuthPref).FindString("server"),
+            "proxy.example.com:3128");
+
+  // No user name removes the sign-in.
+  Dispatch("proxySet", Fixed("http://proxy.example.com:3128"));
+  EXPECT_FALSE(prefs_.GetUserPrefValue(kProxyAuthPref));
 }
 
 TEST_F(NexusNetworkProxyTest, AnInvalidServerStoresNothing) {

@@ -79,6 +79,7 @@ source_set("pref_registration") {
 
   deps = [
     ":pref_names",
+    "//custom_browser/browser/nexus:proxy_settings",
     "//base",
     "//components/prefs",
   ]

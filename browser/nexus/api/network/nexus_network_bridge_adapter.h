@@ -11,10 +11,12 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "base/values.h"
 #include "custom_browser/browser/nexus/api/llm/llm_raw_stream_policy.h"
 #include "custom_browser/browser/nexus/api/network/network_api.gen.h"
 #include "custom_browser/browser/nexus/api/network/nexus_http_byte_stream.h"
 #include "custom_browser/browser/nexus/api/network/nexus_guest_request.h"
+#include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
 #include "custom_browser/browser/nexus/api/network/nexus_websocket_connection.h"
 #include "custom_browser/browser/nexus/bridge_response_callback.h"
 
@@ -142,6 +144,10 @@ class NexusNetworkBridgeAdapter
       ::nexus::generated::NetworkProxySetInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // The write of a validated proxySet, once the OS encryptor is ready.
+  void StoreProxySettings(std::optional<base::DictValue> value,
+                          ProxyAuthChange sign_in,
+                          ::nexus::BridgeResponseCallback done);
   void OnWsOpened(std::string socket_id,
                   ::nexus::BridgeResponseCallback done,
                   std::string error_code,

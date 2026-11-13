@@ -17,7 +17,6 @@
 #include "content/public/browser/browser_context.h"
 #include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
 #include "custom_browser/browser/nexus/nexus_secret_crypt.h"
-#include "net/base/host_port_pair.h"
 
 namespace nexus {
 
@@ -54,9 +53,9 @@ std::optional<net::AuthCredentials> StoredProxyChallengeCredentials(
   if (!auth_info.is_proxy || !first_auth_attempt) {
     return std::nullopt;
   }
-  const std::optional<ProxyAuthAnswer> answer = StoredProxyAuthFor(
-      prefs, net::HostPortPair::FromSchemeHostPort(auth_info.challenger));
-  if (!answer) {
+  const std::optional<ProxyAuthAnswer> answer =
+      StoredProxyAuthFor(prefs, auth_info.challenger);
+  if (!answer || !NexusSecretCrypt::IsEncrypted(answer->sealed_password)) {
     return std::nullopt;
   }
   const std::string password =

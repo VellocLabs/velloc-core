@@ -15,8 +15,8 @@
 
 class PrefService;
 
-namespace net {
-class HostPortPair;
+namespace url {
+class SchemeHostPort;
 }
 
 namespace nexus {
@@ -29,7 +29,7 @@ inline constexpr size_t kMaxProxyBypassListChars = 4096;
 inline constexpr size_t kMaxProxyAuthChars = 255;
 
 // The profile preference holding the fixed proxy's sign-in:
-// { server: "host:port", username, password }. `password` is sealed by the
+// { server: "scheme://host:port", username, password }. `password` is sealed by the
 // writer (NexusSecretCrypt); this module never sees it in the clear.
 inline constexpr char kProxyAuthPref[] = "nexus.proxy_auth";
 
@@ -69,7 +69,7 @@ struct ProxyAuthChange {
     kKeep,   // The stored sign-in still applies as it is.
   };
   Kind kind = Kind::kClear;
-  std::string server;  // host:port
+  std::string server;  // scheme://host:port
   std::string username;
   std::string password;  // In the clear; the caller seals it.
 };
@@ -92,15 +92,17 @@ struct ProxyAuthAnswer {
 
 // Security: answers only when the `proxy` preference in force is the
 // user's own, names one fixed http or https proxy, that proxy is
-// `challenger`, and the stored sign-in was written for it.
+// `challenger` (scheme, host and port), and the stored sign-in was written
+// for it.
 std::optional<ProxyAuthAnswer> StoredProxyAuthFor(
     const PrefService& prefs,
-    const net::HostPortPair& challenger);
+    const url::SchemeHostPort& challenger);
 
 // Contract: the `proxy` preference in force as the wire record
 // { mode, server?, bypassList?, pacUrl?, username?, hasPassword?, source,
 // editable }. A fixed server stored without a scheme reads back as
-// `http://…`. The password is never part of the record.
+// `http://…`. `username` and `hasPassword` appear only under the user's own
+// setting. The password is never part of the record.
 base::DictValue DescribeProxyPreference(const PrefService& prefs);
 
 // False when a store above the user's (a command-line switch, an extension,

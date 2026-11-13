@@ -13,11 +13,16 @@
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "custom_browser/browser/nexus/api/network/nexus_proxy_endpoint.h"
-#include "net/base/host_port_pair.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "url/scheme_host_port.h"
 
 namespace nexus {
 namespace {
+
+url::SchemeHostPort Proxy(const std::string& url) {
+  return url::SchemeHostPort(GURL(url));
+}
 
 ProxySettingsRequest Fixed(const std::string& server) {
   ProxySettingsRequest request;
@@ -185,7 +190,7 @@ TEST(ProxySignInTest, AUserNameAndPasswordAreStoredForTheProxy) {
       SignedIn("http://Proxy.Example.com:3128", " me ", "s3cret"), {});
   ASSERT_TRUE(change.has_value());
   EXPECT_EQ(change->kind, ProxyAuthChange::Kind::kStore);
-  EXPECT_EQ(change->server, "proxy.example.com:3128");
+  EXPECT_EQ(change->server, "http://proxy.example.com:3128");
   EXPECT_EQ(change->username, "me");
   EXPECT_EQ(change->password, "s3cret");
 }
@@ -193,7 +198,7 @@ TEST(ProxySignInTest, AUserNameAndPasswordAreStoredForTheProxy) {
 TEST(ProxySignInTest, NoUserNameClearsTheStoredSignIn) {
   const auto fixed = ResolveProxyAuthChange(
       Fixed("http://proxy.example.com"),
-      SignIn("proxy.example.com:80", "me", "sealed"));
+      SignIn("http://proxy.example.com:80", "me", "sealed"));
   ASSERT_TRUE(fixed.has_value());
   EXPECT_EQ(fixed->kind, ProxyAuthChange::Kind::kClear);
   ProxySettingsRequest direct;
@@ -205,7 +210,7 @@ TEST(ProxySignInTest, NoUserNameClearsTheStoredSignIn) {
 
 // A password is kept only for the proxy and user name it was stored for.
 TEST(ProxySignInTest, AnOmittedPasswordKeepsOnlyItsOwnProxysPassword) {
-  const base::DictValue stored = SignIn("proxy.example.com:3128", "me", "sealed");
+  const base::DictValue stored = SignIn("http://proxy.example.com:3128", "me", "sealed");
   const auto same = ResolveProxyAuthChange(
       SignedIn("http://proxy.example.com:3128", "me", ""), stored);
   ASSERT_TRUE(same.has_value());
@@ -221,6 +226,11 @@ TEST(ProxySignInTest, AnOmittedPasswordKeepsOnlyItsOwnProxysPassword) {
                             stored),
             "password:required");
   EXPECT_EQ(SignInRefusalOf(SignedIn("http://proxy.example.com:3128", "me", "")),
+            "password:required");
+  // The same address over plain http is another proxy.
+  EXPECT_EQ(SignInRefusalOf(SignedIn("http://proxy.example.com:3128", "me", ""),
+                            SignIn("https://proxy.example.com:3128", "me",
+                                   "sealed")),
             "password:required");
 }
 
@@ -251,7 +261,7 @@ TEST(ProxySignInTest, RefusalsNameTheFieldAndTheReason) {
 
 TEST_F(ProxyPreferenceTest, AStoredSignInReadsBackWithoutItsPassword) {
   Store(Fixed("http://proxy.example.com:3128"));
-  StoreSignIn("proxy.example.com:3128", "me", "sealed-text");
+  StoreSignIn("http://proxy.example.com:3128", "me", "sealed-text");
   const base::DictValue record = DescribeProxyPreference(prefs_);
   ASSERT_TRUE(record.FindString("username"));
   EXPECT_EQ(*record.FindString("username"), "me");
@@ -266,35 +276,55 @@ TEST_F(ProxyPreferenceTest, AStoredSignInReadsBackWithoutItsPassword) {
 
 TEST_F(ProxyPreferenceTest, TheSignInAnswersOnlyTheUsersOwnFixedProxy) {
   Store(Fixed("http://proxy.example.com:3128"));
-  StoreSignIn("proxy.example.com:3128", "me", "sealed-text");
+  StoreSignIn("http://proxy.example.com:3128", "me", "sealed-text");
   const auto answer = StoredProxyAuthFor(
-      prefs_, net::HostPortPair("proxy.example.com", 3128));
+      prefs_, Proxy("http://proxy.example.com:3128"));
   ASSERT_TRUE(answer.has_value());
   EXPECT_EQ(answer->username, "me");
   EXPECT_EQ(answer->sealed_password, "sealed-text");
 
   EXPECT_FALSE(StoredProxyAuthFor(
-      prefs_, net::HostPortPair("evil.example.com", 3128)));
+      prefs_, Proxy("http://evil.example.com:3128")));
   EXPECT_FALSE(StoredProxyAuthFor(
-      prefs_, net::HostPortPair("proxy.example.com", 8080)));
+      prefs_, Proxy("http://proxy.example.com:8080")));
+  // The same address reached over another scheme is not the stored proxy.
+  EXPECT_FALSE(StoredProxyAuthFor(
+      prefs_, Proxy("https://proxy.example.com:3128")));
 
   // The setting changed to another proxy: the old sign-in is not offered.
   Store(Fixed("http://other.example.com:3128"));
   EXPECT_FALSE(StoredProxyAuthFor(
-      prefs_, net::HostPortPair("other.example.com", 3128)));
+      prefs_, Proxy("http://other.example.com:3128")));
   EXPECT_FALSE(StoredProxyAuthFor(
-      prefs_, net::HostPortPair("proxy.example.com", 3128)));
+      prefs_, Proxy("http://proxy.example.com:3128")));
 }
 
 TEST_F(ProxyPreferenceTest, AProxyHeldAboveTheUserStoreGetsNoSignIn) {
   Store(Fixed("http://proxy.example.com:3128"));
-  StoreSignIn("proxy.example.com:3128", "me", "sealed-text");
+  StoreSignIn("http://proxy.example.com:3128", "me", "sealed-text");
   prefs_.SetManagedPref(
       proxy_config::prefs::kProxy,
       base::Value(ProxyConfigDictionary::CreateFixedServers(
           "proxy.example.com:3128", "")));
   EXPECT_FALSE(StoredProxyAuthFor(
-      prefs_, net::HostPortPair("proxy.example.com", 3128)));
+      prefs_, Proxy("http://proxy.example.com:3128")));
+  // Nor is it reported as in force.
+  const base::DictValue record = DescribeProxyPreference(prefs_);
+  EXPECT_FALSE(record.contains("username"));
+  EXPECT_FALSE(record.contains("hasPassword"));
+}
+
+TEST_F(ProxyPreferenceTest, AnHttpsProxysSignInIsKeptForHttpsOnly) {
+  Store(Fixed("https://proxy.example.com:3128"));
+  StoreSignIn("https://proxy.example.com:3128", "me", "sealed-text");
+  EXPECT_TRUE(StoredProxyAuthFor(
+      prefs_, Proxy("https://proxy.example.com:3128")));
+  EXPECT_EQ(DescribeProxyPreference(prefs_).FindBool("hasPassword"), true);
+
+  Store(Fixed("http://proxy.example.com:3128"));
+  EXPECT_FALSE(StoredProxyAuthFor(
+      prefs_, Proxy("http://proxy.example.com:3128")));
+  EXPECT_FALSE(DescribeProxyPreference(prefs_).contains("hasPassword"));
 }
 
 TEST_F(ProxyPreferenceTest, AutoDetectIsStoredAndReadBack) {

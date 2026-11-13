@@ -9,11 +9,13 @@
 #include <utility>
 
 #include "base/values.h"
+#include "components/os_crypt/async/browser/test_utils.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "custom_browser/browser/nexus/api/network/nexus_proxy_settings.h"
+#include "custom_browser/browser/nexus/nexus_secret_crypt.h"
 #include "net/base/auth.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -31,11 +33,20 @@ class NexusProxyLoginTest : public testing::Test {
     prefs_.SetDict(proxy_config::prefs::kProxy,
                    ProxyConfigDictionary::CreateFixedServers(
                        "proxy.example.com:3128", ""));
+    NexusSecretCrypt::GetInstance()->SetEncryptorForTesting(
+        os_crypt_async::GetTestEncryptorForTesting());
+    StorePassword(NexusSecretCrypt::GetInstance()->Encrypt("s3cret-pass"));
+  }
+
+  ~NexusProxyLoginTest() override {
+    NexusSecretCrypt::GetInstance()->ClearEncryptorForTesting();
+  }
+
+  void StorePassword(const std::string& stored) {
     base::DictValue sign_in;
-    sign_in.Set("server", "proxy.example.com:3128");
+    sign_in.Set("server", "http://proxy.example.com:3128");
     sign_in.Set("username", "me");
-    // An unsealed value reads back as it is.
-    sign_in.Set("password", "s3cret-pass");
+    sign_in.Set("password", stored);
     prefs_.SetDict(kProxyAuthPref, std::move(sign_in));
   }
 
@@ -70,6 +81,13 @@ TEST_F(NexusProxyLoginTest, NothingElseIsAnswered) {
       prefs_, Challenge("http://evil.example.com:3128", true), true));
   EXPECT_FALSE(StoredProxyChallengeCredentials(
       prefs_, Challenge("http://proxy.example.com:3128", true), false));
+}
+
+// A password that reached the store unsealed is not sent anywhere.
+TEST_F(NexusProxyLoginTest, AnUnsealedPasswordIsNotAnswered) {
+  StorePassword("s3cret-pass");
+  EXPECT_FALSE(StoredProxyChallengeCredentials(
+      prefs_, Challenge("http://proxy.example.com:3128", true), true));
 }
 
 TEST_F(NexusProxyLoginTest, NoStoredSignInAnswersNothing) {

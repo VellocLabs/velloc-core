@@ -1139,36 +1139,66 @@ void NexusNetworkBridgeAdapter::HandleProxySetOnUI(
         "The proxy configuration is set outside the user's settings.");
     return;
   }
-  const bool keeps_sign_in = prefs_->FindPreference(kProxyAuthPref);
-  const base::DictValue no_sign_in;
-  auto sign_in = ResolveProxyAuthChange(
-      request, keeps_sign_in ? prefs_->GetDict(kProxyAuthPref) : no_sign_in);
-  if (!sign_in.has_value() ||
-      (!keeps_sign_in && sign_in->kind != ProxyAuthChange::Kind::kClear)) {
+  auto sign_in =
+      ResolveProxyAuthChange(request, prefs_->GetDict(kProxyAuthPref));
+  // Security: a password that already reads as sealed would be stored as it
+  // is and unsealed into the proxy's answer, whatever secret it seals.
+  if (sign_in.has_value() && sign_in->kind == ProxyAuthChange::Kind::kStore &&
+      NexusSecretCrypt::IsEncrypted(sign_in->password)) {
+    sign_in = base::unexpected(ProxySettingsProblem{"password", "malformed"});
+  }
+  if (!sign_in.has_value()) {
     base::DictValue data;
-    data.Set("field", sign_in.has_value() ? "username" : sign_in.error().field);
-    data.Set("reason",
-             sign_in.has_value() ? "malformed" : sign_in.error().reason);
+    data.Set("field", sign_in.error().field);
+    data.Set("reason", sign_in.error().reason);
     std::move(done).Error("PROXY_INVALID", "Invalid proxy sign-in.",
                           std::move(data));
     return;
   }
-  if (value->has_value()) {
-    prefs_->SetDict(proxy_config::prefs::kProxy, std::move(**value));
+  // A password waits for the OS encryptor: its not-ready fallback would
+  // store it in the clear.
+  if (sign_in->kind != ProxyAuthChange::Kind::kStore) {
+    StoreProxySettings(std::move(*value), std::move(*sign_in), std::move(done));
+    return;
+  }
+  NexusSecretCrypt::GetInstance()->WhenReady(base::BindOnce(
+      &NexusNetworkBridgeAdapter::StoreProxySettings,
+      weak_factory_.GetWeakPtr(), std::move(*value), std::move(*sign_in),
+      std::move(done)));
+}
+
+void NexusNetworkBridgeAdapter::StoreProxySettings(
+    std::optional<base::DictValue> value,
+    ProxyAuthChange sign_in,
+    ::nexus::BridgeResponseCallback done) {
+  if (!prefs_ || !IsProxyPreferenceEditable(*prefs_)) {
+    std::move(done).Error(
+        "PROXY_OVERRIDDEN",
+        "The proxy configuration is set outside the user's settings.");
+    return;
+  }
+  // Security: the password is stored only sealed, and it is never read back
+  // to the guest. The sign-in is written before the proxy it answers.
+  if (sign_in.kind == ProxyAuthChange::Kind::kStore) {
+    const std::string sealed =
+        NexusSecretCrypt::GetInstance()->Encrypt(sign_in.password);
+    if (!NexusSecretCrypt::IsEncrypted(sealed)) {
+      std::move(done).Error("ENCRYPT_FAILED",
+                            "The OS keystore could not seal the password.");
+      return;
+    }
+    base::DictValue stored;
+    stored.Set("server", sign_in.server);
+    stored.Set("username", sign_in.username);
+    stored.Set("password", sealed);
+    prefs_->SetDict(kProxyAuthPref, std::move(stored));
+  } else if (sign_in.kind == ProxyAuthChange::Kind::kClear) {
+    prefs_->ClearPref(kProxyAuthPref);
+  }
+  if (value.has_value()) {
+    prefs_->SetDict(proxy_config::prefs::kProxy, std::move(*value));
   } else {
     prefs_->ClearPref(proxy_config::prefs::kProxy);
-  }
-  // Security: the password is sealed before it is stored, and it is never
-  // read back to the guest.
-  if (sign_in->kind == ProxyAuthChange::Kind::kStore) {
-    base::DictValue stored;
-    stored.Set("server", sign_in->server);
-    stored.Set("username", sign_in->username);
-    stored.Set("password",
-               NexusSecretCrypt::GetInstance()->Encrypt(sign_in->password));
-    prefs_->SetDict(kProxyAuthPref, std::move(stored));
-  } else if (sign_in->kind == ProxyAuthChange::Kind::kClear && keeps_sign_in) {
-    prefs_->ClearPref(kProxyAuthPref);
   }
   std::move(done).Success(DescribeProxyPreference(*prefs_));
 }

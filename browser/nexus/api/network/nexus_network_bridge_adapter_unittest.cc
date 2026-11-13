@@ -15,6 +15,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/test/bind.h"
 #include "base/values.h"
+#include "components/os_crypt/async/browser/os_crypt_async.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
@@ -500,7 +501,7 @@ TEST_F(NexusNetworkProxyTest, ASignInIsStoredSealedAndNeverReadBack) {
   EXPECT_EQ(answered.DebugString().find("s3cret-pass"), std::string::npos);
 
   const base::DictValue& stored = prefs_.GetDict(kProxyAuthPref);
-  EXPECT_EQ(*stored.FindString("server"), "proxy.example.com:3128");
+  EXPECT_EQ(*stored.FindString("server"), "http://proxy.example.com:3128");
   ASSERT_TRUE(stored.FindString("password"));
   EXPECT_TRUE(NexusSecretCrypt::IsEncrypted(*stored.FindString("password")));
   EXPECT_EQ(NexusSecretCrypt::GetInstance()->Decrypt(
@@ -522,11 +523,46 @@ TEST_F(NexusNetworkProxyTest, ASignInIsStoredSealedAndNeverReadBack) {
   Dispatch("proxySet", std::move(moved));
   EXPECT_EQ(delegate_.last_error_code, "PROXY_INVALID");
   EXPECT_EQ(*prefs_.GetDict(kProxyAuthPref).FindString("server"),
-            "proxy.example.com:3128");
+            "http://proxy.example.com:3128");
 
   // No user name removes the sign-in.
   Dispatch("proxySet", Fixed("http://proxy.example.com:3128"));
   EXPECT_FALSE(prefs_.GetUserPrefValue(kProxyAuthPref));
+}
+
+// Until the OS encryptor is ready nothing is written, so the password is
+// never stored in the clear; the write lands once it is.
+TEST_F(NexusNetworkProxyTest, ASignInWaitsForTheEncryptor) {
+  NexusSecretCrypt::GetInstance()->ClearEncryptorForTesting();
+  base::DictValue payload = Fixed("http://proxy.example.com:3128");
+  payload.Set("username", "me");
+  payload.Set("password", "s3cret-pass");
+  Dispatch("proxySet", std::move(payload));
+  EXPECT_EQ(delegate_.success_count, 0);
+  EXPECT_FALSE(prefs_.GetUserPrefValue(kProxyAuthPref));
+  EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
+
+  const std::unique_ptr<os_crypt_async::OSCryptAsync> os_crypt =
+      os_crypt_async::GetTestOSCryptAsyncForTesting();
+  NexusSecretCrypt::GetInstance()->EnsureAcquired(os_crypt.get());
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(delegate_.success_count, 1) << delegate_.last_error_code;
+  EXPECT_TRUE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
+  EXPECT_TRUE(NexusSecretCrypt::IsEncrypted(
+      *prefs_.GetDict(kProxyAuthPref).FindString("password")));
+}
+
+// A password that is itself a sealed value is refused: it would be unsealed
+// into the proxy's answer.
+TEST_F(NexusNetworkProxyTest, ASealedLookingPasswordIsRefused) {
+  base::DictValue payload = Fixed("http://proxy.example.com:3128");
+  payload.Set("username", "me");
+  payload.Set("password",
+              NexusSecretCrypt::GetInstance()->Encrypt("another-secret"));
+  Dispatch("proxySet", std::move(payload));
+  EXPECT_EQ(delegate_.last_error_code, "PROXY_INVALID");
+  EXPECT_FALSE(prefs_.GetUserPrefValue(kProxyAuthPref));
+  EXPECT_FALSE(prefs_.GetUserPrefValue(proxy_config::prefs::kProxy));
 }
 
 TEST_F(NexusNetworkProxyTest, AnInvalidServerStoresNothing) {

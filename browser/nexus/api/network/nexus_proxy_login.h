@@ -27,7 +27,7 @@ namespace nexus {
 // the first one, so a refused sign-in is not repeated; and only when the
 // challenger is the fixed proxy the user's own setting names, so the password
 // cannot be drawn out by another proxy or by a value a policy or switch put
-// in force.
+// in force. A password stored unsealed is not answered.
 std::optional<net::AuthCredentials> StoredProxyChallengeCredentials(
     const PrefService& prefs,
     const net::AuthChallengeInfo& auth_info,

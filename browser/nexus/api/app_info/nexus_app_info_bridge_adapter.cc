@@ -4,8 +4,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/memory_pressure_listener.h"
-#include "base/strings/strcat.h"
 #include "base/system/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"

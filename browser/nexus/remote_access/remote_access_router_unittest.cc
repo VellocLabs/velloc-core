@@ -38,6 +38,7 @@ TEST(RemoteAccessRouterTest, ProxiesTheImmutableEntry) {
   const char* paths[] = {
       "/v1/b/20260917T103000000Z/",
       "/v1/b/20260917T103000000Z/index.html",
+      "/v1/b/20260917T103000000Z/mobile.html",
       "/v1/b/20260917T103000000Z/assets-manifest.json",
   };
   for (const char* p : paths) {
@@ -126,6 +127,12 @@ TEST(RemoteAccessRouterTest, RejectsOtherPathsAndWrongVersion) {
   EXPECT_EQ(Route(MakeGet("/etc/passwd"), ctx).kind, RouteKind::kReject);
   EXPECT_EQ(Route(MakeGet("/v1/build-info.json"), ctx).kind,
             RouteKind::kReject);
+  // The entry serves its two pages by exact name, no other document.
+  EXPECT_EQ(Route(MakeGet("/v1/b/20260917T103000000Z/other.html"), ctx).kind,
+            RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/v1/b/20260917T103000000Z/mobile.html/x"), ctx).kind,
+            RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/v1/mobile.html"), ctx).kind, RouteKind::kReject);
   // An entry with a non-key alphabet is not an entry.
   EXPECT_EQ(Route(MakeGet("/v1/b/has-hyphen-/"), ctx).kind, RouteKind::kReject);
   EXPECT_EQ(Route(MakeGet("/v1/b/"), ctx).kind, RouteKind::kReject);
@@ -475,6 +482,8 @@ TEST(RemoteAccessRouterTest, IsBuildEntryPathIsTheEntryDirectoryOnly) {
 
   // Proxyable, but not the directory: `Location:` names the entry itself.
   EXPECT_FALSE(IsBuildEntryPath("/v1/b/20260917T103000000Z/index.html", kVersion));
+  EXPECT_FALSE(
+      IsBuildEntryPath("/v1/b/20260917T103000000Z/mobile.html", kVersion));
   EXPECT_FALSE(IsBuildEntryPath("/v1/b/20260917T103000000Z", kVersion));
   EXPECT_FALSE(IsBuildEntryPath("/v1/assets/app.js", kVersion));
   EXPECT_FALSE(IsBuildEntryPath("/managed-binaries.json", kVersion));

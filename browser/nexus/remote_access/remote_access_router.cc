@@ -246,7 +246,7 @@ bool NormalizePath(std::string_view raw_path, std::string* out_path) {
 
 bool IsProxyablePath(std::string_view path, int interface_version) {
   const std::string prefix = VersionPrefix(interface_version);
-  // Immutable entry: /v<N>/b/<key>/, optionally + index.html /
+  // Immutable entry: /v<N>/b/<key>/, optionally + index.html / mobile.html /
   // assets-manifest.json. Everything else under /b/ is not served.
   const std::string build_prefix = prefix + "b/";
   if (base::StartsWith(path, build_prefix,
@@ -262,7 +262,7 @@ bool IsProxyablePath(std::string_view path, int interface_version) {
       return false;
     }
     const std::string_view tail = rest.substr(slash);  // includes leading '/'
-    return tail == "/" || tail == "/index.html" ||
+    return tail == "/" || tail == "/index.html" || tail == "/mobile.html" ||
            tail == "/assets-manifest.json";
   }
   // Versioned assets: /v<N>/assets/**

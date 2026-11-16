@@ -158,8 +158,8 @@ bool IsProxyablePath(std::string_view path, int interface_version);
 
 // True when `path` is EXACTLY one build's immutable entry directory for this
 // interface version — `/v<N>/b/<key>/` and nothing appended. The strict half
-// of IsProxyablePath (which also admits the entry's index.html and
-// assets-manifest.json), and the ONLY shape the listener will put in a
+// of IsProxyablePath (which also admits the entry's index.html, mobile.html
+// and assets-manifest.json), and the ONLY shape the listener will put in a
 // `Location:` header: that is what makes a path the runtime reported over its
 // control socket safe to redirect to — it can name no other origin, carry no
 // CR/LF, and hold no traversal.

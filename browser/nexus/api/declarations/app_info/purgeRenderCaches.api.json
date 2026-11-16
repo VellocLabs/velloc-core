@@ -1,7 +1,7 @@
 {
   "$schema": "../../../codegen/api_schema.json",
   "name": "purgeRenderCaches",
-  "description": "Ask the renderers and GPU process a Nexus client uses to drop their caches by sending them a memory-pressure level and then NONE. Nothing is terminated or frozen. Rate-limited per target in the host. Returns { purged: string[], throttled: string[], guestProcesses, agentTabProcesses, gpuProcesses, workingSetTrim?, skipped? }. Present only in a build that has an implementation and, for a debug build, only when started with --velloc-memory-purge-for-testing: such a host lists appInfo.purgeRenderCaches in the manifest's primitives; any other answers NOT_IMPLEMENTED. Within 60 s of the browser process starting it answers APP_INFO_STARTUP_GRACE, unless started with that switch.",
+  "description": "Ask the renderers and GPU process a Nexus client uses to drop their caches by sending them a memory-pressure level and then NONE. Nothing is terminated or frozen. Rate-limited per target in the host. Returns { purged: string[], throttled: string[], guestProcesses, agentTabProcesses, gpuProcesses, workingSetTrim?, skipped? }. Present only in a build that has an implementation and, for a debug build, only when started with --velloc-memory-purge-for-testing: such a host lists appInfo.purgeRenderCaches in the manifest's primitives; any other answers NOT_IMPLEMENTED. Within 60 s of the browser process starting it answers APP_INFO_STARTUP_GRACE; a debug build started with that switch is outside the grace and also lists appInfo.purgeRenderCaches.forTesting, which promises no more than that. A release build always purges but keeps the grace, switch or not.",
   "inputs": [
     {
       "name": "targets",
@@ -25,7 +25,7 @@
       "name": "onlyWhenAppInactive",
       "type": "boolean",
       "required": false,
-      "description": "true: do nothing while the foreground window belongs to the browser process, and answer skipped: \"app_active\" with empty lists and zero counts. Honoured only by a host that lists appInfo.purgeRenderCaches.onlyWhenAppInactive."
+      "description": "true: do nothing while the foreground window belongs to the browser process, and answer skipped: \"app_active\" with empty lists and zero counts. Honoured only by a host that lists appInfo.purgeRenderCaches.onlyWhenAppInactive. The skip is decided before targets and level are resolved, so a request carrying an unknown one is answered with the skip, not invalid_args, while a host window is in the foreground."
     }
   ],
   "runtime": {

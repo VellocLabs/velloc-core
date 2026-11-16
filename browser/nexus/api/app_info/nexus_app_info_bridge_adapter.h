@@ -58,9 +58,13 @@ class NexusAppInfoBridgeAdapter
       ::nexus::BridgeResponseCallback done) override;
 
   // Sends a memory-pressure level to the requested targets' processes
-  // (NexusRenderCachePurger). Returns `{purged, throttled, guestProcesses,
+  // (NexusRenderCachePurger). Answers NOT_IMPLEMENTED where this build does not
+  // offer the purge, APP_INFO_STARTUP_GRACE inside the startup grace, and, for
+  // `onlyWhenAppInactive` while one of this process's windows holds the
+  // foreground, a success with `skipped: "app_active"` and empty counts instead
+  // of a purge. Otherwise returns `{purged, throttled, guestProcesses,
   // agentTabProcesses, gpuProcesses}`; an unknown target or level is
-  // invalid_args.
+  // invalid_args, except on the foreground skip.
   void HandlePurgeRenderCachesOnUI(
       ::nexus::generated::PurgeRenderCachesInput input,
       std::vector<blink::MessagePortDescriptor> ports,

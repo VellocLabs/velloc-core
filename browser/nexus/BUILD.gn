@@ -1078,9 +1078,22 @@ source_set("guest_config") {
   ]
 }
 
-# Context-menu policy for the Nexus panel guest <webview>: no menu by
-# default; a single "Inspect" (opens DevTools) when the
-# `nexus.inspect_menu_enabled` pref is on (`/debug inspect on|off`).
+# Which items the Nexus guest context menu shows (edit commands on an
+# editable target, Inspect behind the pref). Pure; a leaf so the lite test
+# binary can link it.
+source_set("guest_menu_model") {
+  sources = [
+    "nexus_guest_menu_model.cc",
+    "nexus_guest_menu_model.h",
+  ]
+
+  deps = [ "//third_party/blink/public/common" ]
+}
+
+# Context-menu policy for the Nexus panel guest <webview>: an edit menu
+# (Undo, Redo, Cut, Copy, Paste, Select All) on editable targets, Inspect
+# (opens DevTools) when the `nexus.inspect_menu_enabled` pref is on
+# (`/debug inspect on|off`), and no menu otherwise.
 # Consumed by the ENABLE_CUSTOM_BROWSER-guarded hook in
 # chrome/browser/guest_view/web_view/chrome_web_view_guest_delegate.cc
 # (dep added to //chrome/browser/guest_view:impl).
@@ -1091,7 +1104,9 @@ source_set("webview_context_menu") {
   ]
 
   deps = [
+    ":guest_menu_model",
     "//base",
+    "//chrome/app:generated_resources_grit",
     "//chrome/browser/devtools",
     "//chrome/browser/profiles:profile",
     "//components/prefs",
@@ -1102,6 +1117,7 @@ source_set("webview_context_menu") {
     "//extensions/browser",
     "//ui/aura",
     "//ui/base",
+    "//ui/events",
     "//ui/gfx/geometry",
     "//ui/menus",
     "//ui/views",
@@ -1330,6 +1346,7 @@ source_set("unit_tests_lite") {
     "tools/browser_tool/js_dialog_unittest.cc",
     "tools/browser_tool/label_targets_unittest.cc",
     "tools/browser_tool/node_registry_unittest.cc",
+    "nexus_guest_menu_model_unittest.cc",
     "nexus_installer_channel_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
@@ -1346,6 +1363,7 @@ source_set("unit_tests_lite") {
   deps = [
     ":alarm_schedule",
     ":domain",
+    ":guest_menu_model",
     ":js_dialog",
     ":observation_index",
     ":installer_channel",

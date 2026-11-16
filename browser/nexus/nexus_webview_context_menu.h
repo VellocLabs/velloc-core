@@ -13,11 +13,12 @@ class WebViewGuest;
 namespace nexus {
 
 // Context-menu policy for the Nexus guest <webview> (`persist:nexus`), called
-// from a guarded hook before the default webview menu. Returns true when
-// handled: with `nexus.inspect_menu_enabled` OFF (default) the menu is
-// swallowed; ON shows a single "Inspect" item. The pref is read per
+// from a guarded hook before the default webview menu. Always handles a
+// Nexus guest: an editable target gets the native edit menu (Undo, Redo,
+// Cut, Copy, Paste, Select All), `nexus.inspect_menu_enabled` ON adds
+// "Inspect", and anything else shows no menu. The pref is read per
 // right-click. Returns false for every non-Nexus guest (partition name + a
-// chrome:// WebUI owner).
+// chrome:// WebUI owner). (F-4)
 bool MaybeHandleNexusGuestContextMenu(
     extensions::WebViewGuest* guest,
     content::RenderFrameHost& render_frame_host,

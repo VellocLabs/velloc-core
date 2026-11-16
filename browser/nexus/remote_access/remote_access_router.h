@@ -151,7 +151,7 @@ std::string QueryParam(std::string_view raw_path, std::string_view name);
 bool ConstantTimeEquals(std::string_view a, std::string_view b);
 
 // True when `path` is one of the three proxyable shapes for this interface
-// version: the immutable build entry and its two files, a
+// version: the immutable build entry and its three files, a
 // versioned asset, or one of the fixed files — each matched exactly, under
 // /v<N>/ or at the root depending on where the deploy serves it.
 bool IsProxyablePath(std::string_view path, int interface_version);

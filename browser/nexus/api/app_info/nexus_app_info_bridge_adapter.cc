@@ -9,6 +9,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 #include "components/version_info/version_info.h"
+#include "custom_browser/browser/nexus/api/app_info/nexus_memory_purge_gate.h"
 #include "custom_browser/browser/nexus/api/app_info/nexus_render_cache_hooks.h"
 #include "custom_browser/browser/nexus/api/llm/llm_pref_names.h"
 #include "custom_browser/browser/nexus/nexus_client_restart.h"
@@ -105,6 +106,29 @@ void NexusAppInfoBridgeAdapter::HandlePurgeRenderCachesOnUI(
     ::nexus::generated::PurgeRenderCachesInput input,
     std::vector<blink::MessagePortDescriptor> /*ports*/,
     ::nexus::BridgeResponseCallback done) {
+  // Security: a debug build answers as if it had no purge unless started for
+  // a test; no caller purges inside the startup grace (P-3).
+  if (!MemoryPurgeEnabledInThisProcess()) {
+    std::move(done).Error("NOT_IMPLEMENTED",
+                          "appInfo.purgeRenderCaches: not in this build");
+    return;
+  }
+  if (InMemoryPurgeStartupGraceNow()) {
+    std::move(done).Error("APP_INFO_STARTUP_GRACE",
+                          "appInfo.purgeRenderCaches: inside the startup grace");
+    return;
+  }
+  if (input.onlyWhenAppInactive.value_or(false) && AppWindowInForeground()) {
+    base::DictValue skipped;
+    skipped.Set("purged", base::ListValue());
+    skipped.Set("throttled", base::ListValue());
+    skipped.Set("guestProcesses", 0);
+    skipped.Set("agentTabProcesses", 0);
+    skipped.Set("gpuProcesses", 0);
+    skipped.Set("skipped", "app_active");
+    std::move(done).Success(std::move(skipped));
+    return;
+  }
   HandlePurgeRenderCaches(profile_, std::move(input), std::move(done));
 }
 

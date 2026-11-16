@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "base/values.h"
+#include "custom_browser/browser/nexus/api/app_info/nexus_memory_purge_gate.h"
 #include "custom_browser/browser/nexus/api/app_info/nexus_render_cache_hooks.h"
 #include "custom_browser/browser/nexus/nexus_bridge_support.h"
 
@@ -169,7 +170,17 @@ base::DictValue BuildNexusHostManifest(base::DictValue agent_config,
   if (features.pty_supported) {
     primitives.Append("shell.spawn.pty");
   }
-  AppendRenderCachePrimitives(primitives);
+  // A debug build offers the memory purge only to a test run (P-3).
+  if (MemoryPurgeEnabledInThisProcess()) {
+    const size_t before = primitives.size();
+    AppendRenderCachePrimitives(primitives);
+    if (primitives.size() > before) {
+      primitives.Append("appInfo.purgeRenderCaches.onlyWhenAppInactive");
+      if (MemoryPurgeForTestingInThisProcess()) {
+        primitives.Append("appInfo.purgeRenderCaches.forTesting");
+      }
+    }
+  }
   manifest.Set("primitives", std::move(primitives));
 
   // A `document` part may sit at the top level of a message, not only inside

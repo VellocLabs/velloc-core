@@ -616,6 +616,17 @@ source_set("sign_in_status_page") {
   ]
 }
 
+# When the host may run the memory purge at all (P-3): build type, test switch,
+# startup grace, foreground window. Base only, so the lite binary tests it.
+source_set("memory_purge_gate") {
+  sources = [
+    "api/app_info/nexus_memory_purge_gate.cc",
+    "api/app_info/nexus_memory_purge_gate.h",
+  ]
+
+  deps = [ "//base" ]
+}
+
 # The installer's one-shot channel marker → `nexus.webapp_url` (G-3); base +
 # prefs only, so the lite binary tests it.
 source_set("installer_channel") {
@@ -909,6 +920,9 @@ source_set("bridge") {
     # BuildObservationDict drains NexusPendingAgentNotice into `notices[]`.
     ":agent_notice",
     ":fs",
+
+    # appInfo.purgeRenderCaches and the manifest consult the purge gate.
+    ":memory_purge_gate",
 
     # `exec.listShells` (the exec adapter).
     ":host_shell",
@@ -1348,6 +1362,7 @@ source_set("unit_tests_lite") {
     "tools/browser_tool/node_registry_unittest.cc",
     "nexus_guest_menu_model_unittest.cc",
     "nexus_installer_channel_unittest.cc",
+    "api/app_info/nexus_memory_purge_gate_unittest.cc",
     "nexus_secret_crypt_unittest.cc",
     "permissions/nexus_permission_manager_unittest.cc",
     "remote_access/nexus_remote_access_clients_unittest.cc",
@@ -1367,6 +1382,7 @@ source_set("unit_tests_lite") {
     ":js_dialog",
     ":observation_index",
     ":installer_channel",
+    ":memory_purge_gate",
 
     # nexus_fs_watcher_unittest.cc — the fs.watch core (//base only).
     ":fs",

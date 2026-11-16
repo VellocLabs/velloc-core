@@ -27,8 +27,9 @@ void RegisterNexusProfilePrefs(PrefRegistrySimple* registry) {
   // chrome's pref store tolerates unknown keys.
 
   // "Inspect" context-menu item inside the Nexus guest <webview>. Default
-  // OFF — the guest shows no context menu at all. Flipped via the hidden
-  // `/debug inspect on|off` slash subcommand (ui.setInspectMenuEnabled).
+  // OFF. Gates that item only — editable targets always get the edit menu.
+  // Flipped via the hidden `/debug inspect on|off` slash subcommand
+  // (ui.setInspectMenuEnabled).
   registry->RegisterBooleanPref(prefs::kNexusInspectMenuEnabled, false);
 
   // Unified agent runtime config dict, pushed to the nexus_web SharedWorker.

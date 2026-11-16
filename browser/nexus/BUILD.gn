@@ -1419,6 +1419,9 @@ source_set("unit_tests_lite") {
     "//services/network:test_support",
     "//services/network/public/cpp",
     "//testing/gtest",
+
+    # blink::ContextMenuDataEditFlags (nexus_guest_menu_model_unittest.cc).
+    "//third_party/blink/public/common",
     "//url",
   ]
 }

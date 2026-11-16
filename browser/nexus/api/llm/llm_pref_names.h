@@ -37,10 +37,11 @@ inline constexpr char kNexusBrowserToolsSeparateWindow[] =
 
 // Whether right-clicking inside the Nexus guest <webview> offers the
 // "Inspect" context-menu item (opens DevTools on the guest). Default
-// false: the guest shows NO context menu at all — the panel is a product
-// surface, not a page. Toggled by the guest's hidden `/debug inspect
-// on|off` slash subcommand via the `ui.setInspectMenuEnabled` bridge
-// action; read at right-click time by MaybeHandleNexusGuestContextMenu,
+// false. Gates that item only: an editable target always gets the native
+// edit menu, and a non-editable target gets no menu at all — the panel is
+// a product surface, not a page. Toggled by the guest's hidden `/debug
+// inspect on|off` slash subcommand via the `ui.setInspectMenuEnabled`
+// bridge action; read at right-click time by MaybeHandleNexusGuestContextMenu,
 // so flips apply immediately (no reload).
 inline constexpr char kNexusInspectMenuEnabled[] =
     "nexus.inspect_menu_enabled";

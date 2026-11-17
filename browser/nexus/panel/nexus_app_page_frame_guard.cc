@@ -12,6 +12,7 @@
 
 #include "base/functional/bind.h"
 #include "components/network_hints/common/network_hints.mojom.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/render_frame_host.h"
@@ -121,7 +122,8 @@ bool IsAllowedAppPageFrameUrl(const GURL& url) {
 }
 
 AppPageFrames::AppPageFrames(content::WebContents* contents)
-    : content::WebContentsUserData<AppPageFrames>(*contents) {}
+    : content::WebContentsUserData<AppPageFrames>(*contents),
+      content::WebContentsObserver(contents) {}
 
 AppPageFrames::~AppPageFrames() = default;
 
@@ -148,7 +150,7 @@ bool AppPageFrames::Contains(content::RenderFrameHost& frame) {
     return false;
   }
   for (content::RenderFrameHost* each = &frame; each;
-       each = each->GetParent()) {
+       each = each->GetParentOrOuterDocument()) {
     if (frames->Has(each->GetFrameTreeNodeId())) {
       return true;
     }
@@ -158,8 +160,16 @@ bool AppPageFrames::Contains(content::RenderFrameHost& frame) {
 
 // static
 bool AppPageFrames::ContainsNavigation(content::NavigationHandle& handle) {
-  if (handle.IsInMainFrame()) {
-    return false;
+  const std::optional<blink::LocalFrameToken>& initiator_token =
+      handle.GetInitiatorFrameToken();
+  if (initiator_token) {
+    content::RenderFrameHost* initiator =
+        content::RenderFrameHost::FromFrameToken(
+            content::GlobalRenderFrameHostToken(handle.GetInitiatorProcessId(),
+                                                *initiator_token));
+    if (initiator && Contains(*initiator)) {
+      return true;
+    }
   }
   const AppPageFrames* frames =
       AppPageFrames::FromWebContents(handle.GetWebContents());
@@ -169,8 +179,12 @@ bool AppPageFrames::ContainsNavigation(content::NavigationHandle& handle) {
   if (frames->Has(handle.GetFrameTreeNodeId())) {
     return true;
   }
-  content::RenderFrameHost* parent = handle.GetParentFrame();
+  content::RenderFrameHost* parent = handle.GetParentFrameOrOuterDocument();
   return parent && Contains(*parent);
+}
+
+void AppPageFrames::FrameDeleted(content::FrameTreeNodeId frame_tree_node_id) {
+  latched_.erase(frame_tree_node_id);
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(AppPageFrames);

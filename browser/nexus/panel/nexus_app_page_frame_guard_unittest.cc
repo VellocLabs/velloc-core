@@ -16,6 +16,8 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/test/mock_navigation_handle.h"
+#include "content/public/test/mock_navigation_throttle_registry.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_navigation_throttle_inserter.h"
 #include "content/public/test/test_renderer_host.h"
@@ -66,14 +68,19 @@ class AppPageFrameGuardTest : public ChromeRenderViewHostTestHarness {
   }
 
   ThrottleAction StartNavigation(content::RenderFrameHost* frame,
-                                 const GURL& url) {
+                                 const GURL& url,
+                                 content::RenderFrameHost* initiator = nullptr) {
     content::TestNavigationThrottleInserter inserter(
         web_contents(), base::BindRepeating(&MaybeAddAppPageNavigationThrottle));
     auto simulator =
         content::NavigationSimulator::CreateRendererInitiated(url, frame);
+    if (initiator) {
+      simulator->SetInitiatorFrame(initiator);
+    }
     simulator->Start();
     return simulator->GetLastThrottleCheckResult().action();
   }
+
 };
 
 TEST(AppPageFrameUrlTest, OnlyLocalDocumentsAreAllowed) {
@@ -123,6 +130,42 @@ TEST_F(AppPageFrameGuardTest, CancelsANavigationInAFrameTheAppPageAdds) {
 
   EXPECT_EQ(ThrottleAction::CANCEL_AND_IGNORE,
             StartNavigation(nested, GURL("https://example.test/?d=secret")));
+}
+
+TEST_F(AppPageFrameGuardTest, LetsAnAppPageLoadLocalDocuments) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+
+  EXPECT_EQ(ThrottleAction::PROCEED,
+            StartNavigation(page, GURL("about:blank")));
+}
+
+TEST_F(AppPageFrameGuardTest, CancelsEveryRedirect) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::MockNavigationHandle handle(GURL("about:srcdoc"), page);
+  content::MockNavigationThrottleRegistry registry(&handle);
+  AppPageNavigationThrottle throttle(registry);
+
+  handle.set_url(GURL("https://example.test/?d=secret"));
+  EXPECT_EQ(ThrottleAction::CANCEL_AND_IGNORE,
+            throttle.WillRedirectRequest().action());
+}
+
+TEST_F(AppPageFrameGuardTest, CancelsANavigationTheAppPageStartsInTheGuest) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+
+  EXPECT_EQ(ThrottleAction::CANCEL_AND_IGNORE,
+            StartNavigation(main_rfh(), GURL("https://guest.test/?d=secret"),
+                            /*initiator=*/page));
+}
+
+TEST_F(AppPageFrameGuardTest, ADeletedAppPageFrameIsForgotten) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  AppPageFrames* frames = AppPageFrames::FromWebContents(web_contents());
+  ASSERT_TRUE(frames);
+  ASSERT_EQ(1u, frames->LatchedCountForTesting());
+
+  content::RenderFrameHostTester::For(page)->Detach();
+  EXPECT_EQ(0u, frames->LatchedCountForTesting());
 }
 
 TEST_F(AppPageFrameGuardTest, LeavesOtherFramesNavigating) {
@@ -179,6 +222,19 @@ TEST_F(AppPageFrameGuardTest, AnAppPageFrameGetsARefusingSocketManager) {
       &recorder);
   manager->StartNetworkNotifications(client.BindNewPipeAndPassRemote());
   EXPECT_EQ(0u, recorder.networks_.Get());
+
+  mojo::Remote<network::mojom::P2PSocket> socket;
+  mojo::PendingRemote<network::mojom::P2PSocketClient> socket_client;
+  auto socket_client_receiver = socket_client.InitWithNewPipeAndPassReceiver();
+  manager->CreateSocket(
+      network::P2PSocketType::P2P_SOCKET_UDP, net::IPEndPoint(),
+      network::P2PPortRange(), network::P2PHostAndIPEndPoint(),
+      net::MutableNetworkTrafficAnnotationTag(), std::nullopt,
+      std::move(socket_client), socket.BindNewPipeAndPassReceiver());
+  base::RunLoop disconnected;
+  socket.set_disconnect_handler(disconnected.QuitClosure());
+  disconnected.Run();
+  EXPECT_FALSE(socket.is_connected());
   EXPECT_TRUE(manager.is_connected());
 }
 
@@ -197,14 +253,45 @@ TEST_F(AppPageFrameGuardTest, OtherFramesKeepTheirSocketManager) {
 }
 #endif  // BUILDFLAG(IS_P2P_ENABLED)
 
+void BindHintsSentinel(
+    bool* bound,
+    content::RenderFrameHost*,
+    mojo::PendingReceiver<network_hints::mojom::NetworkHintsHandler>) {
+  *bound = true;
+}
+
 TEST_F(AppPageFrameGuardTest, AnAppPageFrameIgnoresNetworkHints) {
   content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  bool sentinel_bound = false;
   mojo::BinderMapWithContext<content::RenderFrameHost*> map;
+  map.Add<network_hints::mojom::NetworkHintsHandler>(
+      base::BindRepeating(&BindHintsSentinel, &sentinel_bound));
   OverrideAppPageFrameBinders(*page, map);
 
   mojo::Remote<network_hints::mojom::NetworkHintsHandler> hints;
   mojo::GenericPendingReceiver receiver(hints.BindNewPipeAndPassReceiver());
-  EXPECT_TRUE(map.TryBind(page, &receiver));
+  ASSERT_TRUE(map.TryBind(page, &receiver));
+  EXPECT_FALSE(sentinel_bound);
+
+  hints->PrefetchDNS({url::SchemeHostPort(GURL("https://example.test/"))});
+  hints->Preconnect(url::SchemeHostPort(GURL("https://example.test/")),
+                    /*allow_credentials=*/false);
+  hints.FlushForTesting();
+  EXPECT_TRUE(hints.is_connected());
+}
+
+TEST_F(AppPageFrameGuardTest, OtherFramesKeepTheirNetworkHints) {
+  content::RenderFrameHost* kernel = AddGuestChild(main_rfh(), "");
+  bool sentinel_bound = false;
+  mojo::BinderMapWithContext<content::RenderFrameHost*> map;
+  map.Add<network_hints::mojom::NetworkHintsHandler>(
+      base::BindRepeating(&BindHintsSentinel, &sentinel_bound));
+  OverrideAppPageFrameBinders(*kernel, map);
+
+  mojo::Remote<network_hints::mojom::NetworkHintsHandler> hints;
+  mojo::GenericPendingReceiver receiver(hints.BindNewPipeAndPassReceiver());
+  ASSERT_TRUE(map.TryBind(kernel, &receiver));
+  EXPECT_TRUE(sentinel_bound);
 }
 
 }  // namespace

@@ -8,6 +8,7 @@
 #include "base/containers/flat_set.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
 class GURL;
@@ -40,9 +41,11 @@ bool IsAllowedAppPageFrameUrl(const GURL& url);
 // frame is latched the first time it is seen named `kAppPageFrameName` in the
 // Nexus guest, which is when the guest adds it, before any of its documents
 // runs a script. A latch lasts for the frame's lifetime: the page renaming its
-// window never clears it. Every frame below a latched one is an app-page frame
-// too. UI thread only.
-class AppPageFrames : public content::WebContentsUserData<AppPageFrames> {
+// window never clears it; it is dropped when the frame is deleted. Every frame
+// below a latched one, fenced frames included, is an app-page frame too. UI
+// thread only.
+class AppPageFrames : public content::WebContentsUserData<AppPageFrames>,
+                      public content::WebContentsObserver {
  public:
   ~AppPageFrames() override;
 
@@ -53,8 +56,11 @@ class AppPageFrames : public content::WebContentsUserData<AppPageFrames> {
   // `frame` or one of its ancestors is latched.
   static bool Contains(content::RenderFrameHost& frame);
 
-  // The frame `handle` navigates, or one of its ancestors, is latched.
+  // The navigation is in an app-page frame, or an app-page frame started it,
+  // whichever frame or window it targets.
   static bool ContainsNavigation(content::NavigationHandle& handle);
+
+  size_t LatchedCountForTesting() const { return latched_.size(); }
 
  private:
   friend class content::WebContentsUserData<AppPageFrames>;
@@ -62,12 +68,16 @@ class AppPageFrames : public content::WebContentsUserData<AppPageFrames> {
 
   bool Has(content::FrameTreeNodeId id) const { return latched_.contains(id); }
 
+  // content::WebContentsObserver:
+  void FrameDeleted(content::FrameTreeNodeId frame_tree_node_id) override;
+
   base::flat_set<content::FrameTreeNodeId> latched_;
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 
-// Cancels a navigation in an app-page frame before its request starts, unless
+// Cancels a navigation in or started by an app-page frame before its request
+// starts, unless
 // it goes to a URL `IsAllowedAppPageFrameUrl` accepts. Nothing is committed,
 // so the page keeps running and its URL never leaves the machine.
 class AppPageNavigationThrottle : public content::NavigationThrottle {

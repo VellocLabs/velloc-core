@@ -107,11 +107,11 @@ void BindIgnoringNetworkHintsHandler(
 void OverrideBindersFromHook(
     content::RenderFrameHost* frame,
     mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
-  if (frame->GetParent() && frame->GetFrameName() == kAppPageFrameName) {
-    AppPageFrames::Note(*frame,
-                        IsNexusPanelGuestContents(
-                            content::WebContents::FromRenderFrameHost(frame)));
-  }
+  AppPageFrames::Note(*frame,
+                      frame->GetParent() &&
+                          frame->GetFrameName() == kAppPageFrameName &&
+                          IsNexusPanelGuestContents(
+                              content::WebContents::FromRenderFrameHost(frame)));
   OverrideAppPageFrameBinders(*frame, *map);
 }
 
@@ -129,17 +129,20 @@ AppPageFrames::~AppPageFrames() = default;
 
 // static
 void AppPageFrames::Note(content::RenderFrameHost& frame, bool in_nexus_guest) {
-  if (!in_nexus_guest || !frame.GetParent() ||
-      frame.GetFrameName() != kAppPageFrameName) {
-    return;
-  }
   content::WebContents* contents =
       content::WebContents::FromRenderFrameHost(&frame);
   if (!contents) {
     return;
   }
-  AppPageFrames::GetOrCreateForWebContents(contents)->latched_.insert(
-      frame.GetFrameTreeNodeId());
+  if (in_nexus_guest && frame.GetParent() &&
+      frame.GetFrameName() == kAppPageFrameName) {
+    AppPageFrames::GetOrCreateForWebContents(contents)->latched_.insert(
+        frame.GetFrameTreeNodeId());
+  }
+  if (Contains(frame)) {
+    AppPageFrames::FromWebContents(contents)->documents_.insert(
+        frame.GetGlobalFrameToken());
+  }
 }
 
 // static
@@ -160,21 +163,17 @@ bool AppPageFrames::Contains(content::RenderFrameHost& frame) {
 
 // static
 bool AppPageFrames::ContainsNavigation(content::NavigationHandle& handle) {
-  const std::optional<blink::LocalFrameToken>& initiator_token =
-      handle.GetInitiatorFrameToken();
-  if (initiator_token) {
-    content::RenderFrameHost* initiator =
-        content::RenderFrameHost::FromFrameToken(
-            content::GlobalRenderFrameHostToken(handle.GetInitiatorProcessId(),
-                                                *initiator_token));
-    if (initiator && Contains(*initiator)) {
-      return true;
-    }
-  }
   const AppPageFrames* frames =
       AppPageFrames::FromWebContents(handle.GetWebContents());
   if (!frames) {
     return false;
+  }
+  const std::optional<blink::LocalFrameToken>& initiator_token =
+      handle.GetInitiatorFrameToken();
+  if (initiator_token &&
+      frames->HasDocument(content::GlobalRenderFrameHostToken(
+          handle.GetInitiatorProcessId(), *initiator_token))) {
+    return true;
   }
   if (frames->Has(handle.GetFrameTreeNodeId())) {
     return true;

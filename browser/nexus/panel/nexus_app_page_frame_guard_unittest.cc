@@ -10,6 +10,7 @@
 
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "components/network_hints/common/network_hints.mojom.h"
@@ -30,6 +31,7 @@
 #include "net/base/network_interfaces.h"
 #include "services/network/public/cpp/network_service_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/features.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(IS_P2P_ENABLED)
@@ -158,6 +160,19 @@ TEST_F(AppPageFrameGuardTest, CancelsANavigationTheAppPageStartsInTheGuest) {
                             /*initiator=*/page));
 }
 
+TEST_F(AppPageFrameGuardTest, ADestroyedAppPageDocumentStillCountsAsInitiator) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  const content::GlobalRenderFrameHostToken token = page->GetGlobalFrameToken();
+  content::RenderFrameHostTester::For(page)->Detach();
+
+  content::MockNavigationHandle handle(GURL("https://guest.test/?d=secret"),
+                                       main_rfh());
+  handle.set_initiator_frame_token(&token.frame_token);
+  handle.set_initiator_process_id(
+      content::ChildProcessId::FromUnsafeValue(token.child_id));
+  EXPECT_TRUE(AppPageFrames::ContainsNavigation(handle));
+}
+
 TEST_F(AppPageFrameGuardTest, ADeletedAppPageFrameIsForgotten) {
   content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
   AppPageFrames* frames = AppPageFrames::FromWebContents(web_contents());
@@ -166,6 +181,30 @@ TEST_F(AppPageFrameGuardTest, ADeletedAppPageFrameIsForgotten) {
 
   content::RenderFrameHostTester::For(page)->Detach();
   EXPECT_EQ(0u, frames->LatchedCountForTesting());
+}
+
+class AppPageFencedFrameTest : public AppPageFrameGuardTest {
+ public:
+  AppPageFencedFrameTest() {
+    features_.InitAndEnableFeatureWithParameters(
+        blink::features::kFencedFrames, {{"implementation_type", "mparch"}});
+  }
+
+ private:
+  base::test::ScopedFeatureList features_;
+};
+
+TEST_F(AppPageFencedFrameTest, AFencedFrameInAnAppPageIsAnAppPageFrame) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::RenderFrameHostTester::For(page)->InitializeRenderFrameIfNeeded();
+  content::RenderFrameHost* fenced =
+      content::RenderFrameHostTester::For(page)->AppendFencedFrame();
+  ASSERT_TRUE(fenced);
+  AppPageFrames::Note(*fenced, /*in_nexus_guest=*/true);
+
+  EXPECT_TRUE(AppPageFrames::Contains(*fenced));
+  EXPECT_EQ(ThrottleAction::CANCEL_AND_IGNORE,
+            StartNavigation(fenced, GURL("https://example.test/?d=secret")));
 }
 
 TEST_F(AppPageFrameGuardTest, LeavesOtherFramesNavigating) {

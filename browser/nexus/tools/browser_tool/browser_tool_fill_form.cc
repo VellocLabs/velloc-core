@@ -10,12 +10,6 @@ namespace nexus {
 
 using namespace browser_tool_internal;  // NOLINT(build/namespaces)
 
-namespace {
-
-namespace apc = optimization_guide::proto;
-
-}  // namespace
-
 // =============================================================================
 // BrowserFillForm — batch form fill. Each `fields` entry is parsed into a
 // `FillFormFieldOp` and becomes one action (type / select / check / uncheck /
@@ -25,6 +19,8 @@ namespace apc = optimization_guide::proto;
 // =============================================================================
 
 namespace {
+
+namespace apc = optimization_guide::proto;
 
 constexpr int kFillFormMaxFields = 50;
 

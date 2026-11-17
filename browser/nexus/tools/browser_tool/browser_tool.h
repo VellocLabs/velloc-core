@@ -196,7 +196,7 @@ class BrowserTool : public ToolBase, public JsDialogWatcher::Delegate {
   // `submit_index` at the end. `fields` is declared as array<object>
   // in the schema (untyped at codegen level — pragmatic Option B from
   // the planning conversation), so the body manually parses each
-  // base::DictValue into a typed FieldOp inside browser_tool.cc.
+  // base::DictValue into a typed FieldOp inside browser_tool_fill_form.cc.
   void RunFillFormOnUI(::nexus::generated::BrowserFillFormInput input,
                    ToolCallback done);
   // BrowserDownload. Two modes (exactly one of index|url): `index` clicks

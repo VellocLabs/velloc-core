@@ -94,7 +94,8 @@ class NexusGuestMenu : public ui::SimpleMenuModel::Delegate {
       model_.SetEnabledAt(model_.GetItemCount() - 1, item.enabled);
     }
     menu_runner_ = std::make_unique<views::MenuRunner>(
-        &model_, views::MenuRunner::CONTEXT_MENU,
+        &model_,
+        views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU,
         base::BindRepeating(&NexusGuestMenu::OnMenuClosed,
                             base::Unretained(this)));
 

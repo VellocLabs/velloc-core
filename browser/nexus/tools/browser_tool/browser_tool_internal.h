@@ -1,7 +1,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_INTERNAL_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_INTERNAL_H_
 
-// Internal-only header shared by browser_tool.cc and browser_tool_actions.cc;
+// Internal-only header shared by browser_tool.cc and the browser_tool_*.cc
+// action files;
 // nothing outside nexus/tools/browser_tool/ should include it.
 
 #include <cstdint>
@@ -213,7 +214,7 @@ void MaybePrependActivateTab(apc::Actions* actions,
 
 // =============================================================================
 // Tree-walking helpers. Used by both the observation builder (in
-// browser_tool.cc) and the find_text walker (in browser_tool_actions.cc).
+// browser_tool.cc) and the find_text walker (in browser_tool_page_text.cc).
 // =============================================================================
 
 // Maps the proto's CONTENT_ATTRIBUTE_* enum onto the short type names

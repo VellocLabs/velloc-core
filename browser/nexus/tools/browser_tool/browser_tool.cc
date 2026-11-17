@@ -62,8 +62,8 @@ namespace nexus {
 // File-local shorthand: `using` directive scoped to this TU only so we
 // can call ResolveTabIdOrReject / MaybePrependActivateTab / etc.
 // without qualifying every call site. Bad style in headers; acceptable
-// in a single .cc file. Mirrored in browser_tool_actions.cc — both
-// files share the same helper namespace and need the same alias.
+// in a single .cc file. Mirrored in the browser_tool_*.cc action
+// files — they share the same helper namespace and need the same alias.
 using namespace browser_tool_internal;  // NOLINT(build/namespaces)
 
 namespace {

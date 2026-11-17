@@ -214,7 +214,8 @@ void MaybePrependActivateTab(apc::Actions* actions,
 
 // =============================================================================
 // Tree-walking helpers. Used by both the observation builder (in
-// browser_tool.cc) and the find_text walker (in browser_tool_page_text.cc).
+// browser_tool_observation.cc) and the find_text walker (in
+// browser_tool_page_text.cc).
 // =============================================================================
 
 // Maps the proto's CONTENT_ATTRIBUTE_* enum onto the short type names

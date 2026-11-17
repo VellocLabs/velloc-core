@@ -55,6 +55,11 @@ CUSTOM_BROWSER_HOOKS_EXPORT void MaybeInterceptURLLoaderFactory(
 CUSTOM_BROWSER_HOOKS_EXPORT void PopulateWebUIRenderFrameBinders(
     mojo::BinderMapWithContext<content::RenderFrameHost*>* map);
 
+// ---------- RenderFrame BinderMap override hook ----------
+CUSTOM_BROWSER_HOOKS_EXPORT void OverrideRenderFrameBinders(
+    content::RenderFrameHost* render_frame_host,
+    mojo::BinderMapWithContext<content::RenderFrameHost*>* map);
+
 // ---------- RenderFrame interface binding hook ----------
 CUSTOM_BROWSER_HOOKS_EXPORT bool TryBindRenderFrameInterface(
     content::RenderFrameHost* render_frame_host,

@@ -28,6 +28,9 @@ class HookRegistrar {
   virtual void AddWebUIRenderFrameBinderMapPopulator(
       WebUIRenderFrameBinderMapPopulatorCallback cb) = 0;
 
+  virtual void AddRenderFrameBinderOverride(
+      RenderFrameBinderOverrideCallback cb) = 0;
+
   virtual void AddRenderFrameInterfaceBinder(
       std::string_view interface_name,
       RenderFrameInterfaceBinderCallback cb) = 0;

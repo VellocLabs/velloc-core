@@ -1482,6 +1482,7 @@ source_set("unit_tests") {
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_bridge_bootstrap_host_unittest.cc",
     "nexus_guest_config_unittest.cc",
+    "panel/nexus_app_page_frame_guard_unittest.cc",
     "panel/nexus_background_panel_host_unittest.cc",
     "panel/nexus_guest_priority_voter_unittest.cc",
     # A guard on upstream behaviour: a held Web Lock is a CannotFreezeReason
@@ -1568,6 +1569,7 @@ source_set("unit_tests") {
     "//custom_browser/browser/nexus/api/llm:pref_registration",
     "//custom_browser/browser/nexus/launcher",
     "//custom_browser/browser/nexus/launcher:prefs",
+    "//custom_browser/browser/nexus/panel:app_page_frame_guard",
     "//custom_browser/browser/nexus/panel:background_panel_host",
     "//custom_browser/browser/nexus/panel:guest_priority",
 

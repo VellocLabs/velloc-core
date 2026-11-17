@@ -48,6 +48,12 @@ using NavigationThrottleProviderCallback =
 using WebUIRenderFrameBinderMapPopulatorCallback = base::RepeatingCallback<void(
     mojo::BinderMapWithContext<content::RenderFrameHost*>*)>;
 
+// Override-style hook for every frame's BinderMap, run after content's and
+// Chrome's own binders, so an `Add` here replaces theirs for `frame` only.
+using RenderFrameBinderOverrideCallback = base::RepeatingCallback<void(
+    content::RenderFrameHost* frame,
+    mojo::BinderMapWithContext<content::RenderFrameHost*>*)>;
+
 // Override-style hook: optionally replaces the anchor rect for a WebUI bubble.
 // Receives the anchor view and its default rect; returns a replacement or
 // std::nullopt.

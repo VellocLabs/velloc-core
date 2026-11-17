@@ -53,6 +53,11 @@ class HookRegistryImpl final : public HookRegistrar {
     webui_render_frame_binder_map_populators_.push_back(std::move(cb));
   }
 
+  void AddRenderFrameBinderOverride(
+      RenderFrameBinderOverrideCallback cb) override {
+    render_frame_binder_overrides_.push_back(std::move(cb));
+  }
+
   void AddRenderFrameInterfaceBinder(
       std::string_view interface_name,
       RenderFrameInterfaceBinderCallback cb) override {
@@ -84,6 +89,10 @@ class HookRegistryImpl final : public HookRegistrar {
   webui_render_frame_binder_map_populators() const {
     return webui_render_frame_binder_map_populators_;
   }
+  const std::vector<RenderFrameBinderOverrideCallback>&
+  render_frame_binder_overrides() const {
+    return render_frame_binder_overrides_;
+  }
   const std::vector<RenderFrameInterfaceBinderEntry>&
   render_frame_interface_binders() const {
     return render_frame_interface_binders_;
@@ -103,6 +112,7 @@ class HookRegistryImpl final : public HookRegistrar {
       url_loader_factory_interceptors_;
   std::vector<WebUIRenderFrameBinderMapPopulatorCallback>
       webui_render_frame_binder_map_populators_;
+  std::vector<RenderFrameBinderOverrideCallback> render_frame_binder_overrides_;
   std::vector<RenderFrameInterfaceBinderEntry> render_frame_interface_binders_;
   std::vector<std::unique_ptr<BrowserMainLifecycleHook>> main_hooks_;
   BubbleAnchorRectOverrideCallback bubble_anchor_rect_override_;
@@ -157,6 +167,19 @@ void PopulateWebUIRenderFrameBinders(
   for (const auto& populator :
        GetRegistry().webui_render_frame_binder_map_populators()) {
     populator.Run(map);
+  }
+}
+
+void OverrideRenderFrameBinders(
+    content::RenderFrameHost* render_frame_host,
+    mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
+  if (!render_frame_host || !map) {
+    return;
+  }
+
+  for (const auto& override_binders :
+       GetRegistry().render_frame_binder_overrides()) {
+    override_binders.Run(render_frame_host, map);
   }
 }
 

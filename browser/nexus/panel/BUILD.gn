@@ -43,6 +43,29 @@ source_set("panel_guest") {
   ]
 }
 
+# The host-side block on a plugin app page's frame: no navigation out of
+# about:srcdoc, no WebRTC socket, no DNS prefetch or preconnect. Docs: F-42.
+source_set("app_page_frame_guard") {
+  sources = [
+    "nexus_app_page_frame_guard.cc",
+    "nexus_app_page_frame_guard.h",
+  ]
+
+  public_deps = [ "//content/public/browser" ]
+
+  deps = [
+    ":panel_guest",
+    "//base",
+    "//components/network_hints/common:mojo_bindings",
+    "//custom_browser/chromium_hooks:hook_api",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/cpp:buildflags",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
 # Performance-manager voter that keeps the Nexus guest's renderers at
 # foreground priority while it is hidden or parked. Docs: P-2
 # ("Runtime priority").

@@ -32,6 +32,7 @@ source_set("hooks_registration") {
     "//custom_browser/browser/nexus:installer_channel_registration",
     "//custom_browser/browser/nexus/boot_bundle",
     "//custom_browser/browser/nexus/launcher:launcher",
+    "//custom_browser/browser/nexus/panel:app_page_frame_guard",
     "//custom_browser/browser/nexus/panel:guest_priority",
     "//custom_browser/chromium_hooks:hook_api",
     "//custom_browser/features/patch_webui:feature",

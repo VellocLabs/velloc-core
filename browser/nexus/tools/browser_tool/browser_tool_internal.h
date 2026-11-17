@@ -1,8 +1,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_INTERNAL_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_TOOLS_BROWSER_TOOL_BROWSER_TOOL_INTERNAL_H_
 
-// Internal-only header shared by browser_tool.cc and the browser_tool_*.cc
-// action files;
+// Internal-only header shared by browser_tool.cc and the other
+// browser_tool_*.cc files;
 // nothing outside nexus/tools/browser_tool/ should include it.
 
 #include <cstdint>

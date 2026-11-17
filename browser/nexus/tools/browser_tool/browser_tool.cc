@@ -1,7 +1,6 @@
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool.h"
 
 #include <algorithm>
-#include <array>
 #include <map>
 #include <utility>
 
@@ -31,7 +30,6 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "custom_browser/browser/nexus/tools/browser_tool/browser_tool_internal.h"
-#include "custom_browser/browser/nexus/tools/browser_tool/js_dialog.h"
 #include "custom_browser/browser/nexus/tools/tool_session.h"
 #include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/cpp/media_position.h"
@@ -43,7 +41,7 @@ namespace nexus {
 // File-local shorthand: `using` directive scoped to this TU only so we
 // can call ResolveTabIdOrReject / MaybePrependActivateTab / etc.
 // without qualifying every call site. Bad style in headers; acceptable
-// in a single .cc file. Mirrored in the browser_tool_*.cc action
+// in a single .cc file. Mirrored in the other browser_tool_*.cc
 // files — they share the same helper namespace and need the same alias.
 using namespace browser_tool_internal;  // NOLINT(build/namespaces)
 
@@ -215,7 +213,7 @@ void BrowserTool::OnActorTaskStateChanged(actor::ActorTask& task) {
   }
 
   // Diagnostic: every state transition for our task, to correlate with
-  // `tool_dropped` errors. VLOG(1): opt-in via --vmodule=browser_tool=1+.
+  // `tool_dropped` errors. VLOG(1): opt-in via --vmodule=browser_tool*=1+.
   VLOG(1) << "[BrowserTool] OnActorTaskStateChanged task_id="
           << task_id.value() << " state=" << static_cast<int>(state)
           << " session=" << GetSessionKey();
@@ -224,7 +222,7 @@ void BrowserTool::OnActorTaskStateChanged(actor::ActorTask& task) {
   // cached `task_id_` here: a stale id would make the next `PerformActions`
   // silently drop its callback and surface `tool_dropped`.
   if (actor::ActorTask::IsCompletedState(state)) {
-    // VLOG(1) — visible with --vmodule=browser_tool=1+. The state
+    // VLOG(1) — visible with --vmodule=browser_tool*=1+. The state
     // transition to terminal is an important diagnostic but happens
     // on routine cross-origin nav / task-stop paths too, so the
     // default-level INFO floor would make it too chatty.
@@ -368,7 +366,7 @@ std::optional<actor::TaskId> BrowserTool::EnsureTaskCreated(
     return std::nullopt;
   }
   // VLOG(1) — successful-task-create diagnostic, opt-in via
-  // --vmodule=browser_tool=1+. The failure-path equivalents above
+  // --vmodule=browser_tool*=1+. The failure-path equivalents above
   // stay LOG(WARNING) so they're always visible.
   VLOG(1) << "[BrowserTool] EnsureTaskCreated session=" << GetSessionKey()
           << " new task_id=" << task_id_->value()
@@ -433,7 +431,7 @@ void BrowserTool::RunActorAction(apc::Actions actions,
   actor::ActorTaskMetadata task_metadata;
 
   // Diagnostic: log the dispatch to locate where a callback goes missing when
-  // `tool_dropped` reaches the guest. VLOG(1): --vmodule=browser_tool=1+.
+  // `tool_dropped` reaches the guest. VLOG(1): --vmodule=browser_tool*=1+.
   VLOG(1) << "[BrowserTool] PerformActions dispatch action="
           << action_name << " task_id=" << task_id->value()
           << " task_state="
@@ -475,7 +473,7 @@ void BrowserTool::OnActorPerformActionsDone(
   // outer ToolCallback's destructor). See the matching dispatch log
   // in RunActorAction.
   //
-  // VLOG(1): opt-in via --vmodule=browser_tool=1+. Routine per-tool-
+  // VLOG(1): opt-in via --vmodule=browser_tool*=1+. Routine per-tool-
   // call line.
   VLOG(1) << "[BrowserTool] OnActorPerformActionsDone action="
           << action_name

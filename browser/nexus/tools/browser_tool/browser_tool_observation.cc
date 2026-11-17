@@ -25,10 +25,6 @@ namespace {
 
 namespace apc = optimization_guide::proto;
 
-}  // namespace
-
-namespace {
-
 // ContentAttributeTypeName, ExtractNodeText, TruncateUtf8Snippet,
 // IsActionable, and `kDescendantTextSnippetMax` live in
 // browser_tool_internal.h — this file's `using namespace

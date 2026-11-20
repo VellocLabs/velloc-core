@@ -69,7 +69,7 @@ struct RouteRequest {
   RouteRequest& operator=(RouteRequest&&) noexcept;
 
   std::string method;
-  // Request target as it arrived, e.g. "/v1/assets/x.js?y=1".
+  // Request target as it arrived, e.g. "/runtime/v1/assets/x.js?y=1".
   std::string raw_path;
   // `Host` header verbatim.
   std::string host_header;
@@ -153,11 +153,11 @@ bool ConstantTimeEquals(std::string_view a, std::string_view b);
 // True when `path` is one of the three proxyable shapes for this interface
 // version: the immutable build entry and its three files, a
 // versioned asset, or one of the fixed files — each matched exactly, under
-// /v<N>/ or at the root depending on where the deploy serves it.
+// /runtime/v<N>/ or at the root depending on where the deploy serves it.
 bool IsProxyablePath(std::string_view path, int interface_version);
 
 // True when `path` is EXACTLY one build's immutable entry directory for this
-// interface version — `/v<N>/b/<key>/` and nothing appended. The strict half
+// interface version — `/runtime/v<N>/b/<key>/` and nothing appended. The strict half
 // of IsProxyablePath (which also admits the entry's index.html, mobile.html
 // and assets-manifest.json), and the ONLY shape the listener will put in a
 // `Location:` header: that is what makes a path the runtime reported over its

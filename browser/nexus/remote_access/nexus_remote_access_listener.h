@@ -159,7 +159,7 @@ class NexusRemoteAccessListener {
 
   const ProxyCallback proxy_callback_;
   const ClientsChangedCallback clients_changed_;
-  // The entry path last reported by the runtime ("/v<N>/b/<key>/"), or empty
+  // The entry path last reported by the runtime ("/runtime/v<N>/b/<key>/"), or empty
   // when none has been: the seed for the next Start.
   std::string entry_path_;
   size_t client_count_ = 0;

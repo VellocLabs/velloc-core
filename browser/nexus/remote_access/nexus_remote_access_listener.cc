@@ -550,7 +550,7 @@ void NexusRemoteAccessListener::Core::HandleEntryRedirect(
   }
   net::HttpServerResponseInfo response(net::HTTP_FOUND);
   response.AddHeader("Location", entry_path_);
-  // Cacheable like the guest's /v<N>/index.html, so a remembered device opening
+  // Cacheable like the guest's /runtime/v<N>/index.html, so a remembered device opening
   // the address while this desktop is off gets its cached entry; the page
   // corrects a stale redirect itself (F-24). `private`: names this build.
   response.AddHeader("Cache-Control", kEntryRedirectCacheControl);

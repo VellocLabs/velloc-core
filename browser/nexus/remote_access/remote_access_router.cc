@@ -18,7 +18,7 @@ namespace nexus::remote_access {
 namespace {
 
 // The fixed files a remote page needs beyond the entry and assets, exact
-// matches under /v<N>/ (their root forms 404 upstream). The manifest and its
+// matches under /runtime/v<N>/ (their root forms 404 upstream). The manifest and its
 // two icons make the remote page installable (F-24).
 constexpr const char* kFixedVersionedFiles[] = {
     "product_logo_128.png",
@@ -90,9 +90,9 @@ bool IsBuildKey(std::string_view s) {
   return true;
 }
 
-// Join the version prefix, e.g. 1 → "/v1/".
+// Join the version prefix, e.g. 1 → "/runtime/v1/".
 std::string VersionPrefix(int version) {
-  return "/v" + base::NumberToString(version) + "/";
+  return "/runtime/v" + base::NumberToString(version) + "/";
 }
 
 }  // namespace
@@ -246,7 +246,7 @@ bool NormalizePath(std::string_view raw_path, std::string* out_path) {
 
 bool IsProxyablePath(std::string_view path, int interface_version) {
   const std::string prefix = VersionPrefix(interface_version);
-  // Immutable entry: /v<N>/b/<key>/, optionally + index.html / mobile.html /
+  // Immutable entry: /runtime/v<N>/b/<key>/, optionally + index.html / mobile.html /
   // assets-manifest.json. Everything else under /b/ is not served.
   const std::string build_prefix = prefix + "b/";
   if (base::StartsWith(path, build_prefix,
@@ -265,7 +265,7 @@ bool IsProxyablePath(std::string_view path, int interface_version) {
     return tail == "/" || tail == "/index.html" || tail == "/mobile.html" ||
            tail == "/assets-manifest.json";
   }
-  // Versioned assets: /v<N>/assets/**
+  // Versioned assets: /runtime/v<N>/assets/**
   const std::string assets_prefix = prefix + "assets/";
   if (base::StartsWith(path, assets_prefix, base::CompareCase::SENSITIVE)) {
     // Traversal was already rejected by NormalizePath; require something after

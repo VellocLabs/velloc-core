@@ -48,7 +48,7 @@ std::unique_ptr<TestingProfile> CreateTestingProfileWithNexusPrefs() {
 
 // The "v<N>/" path segment the binary pins https guest bases to.
 std::string VersionSegment() {
-  return std::string("v") + kNexusInterfaceVersionStr + "/";
+  return std::string("runtime/v") + kNexusInterfaceVersionStr + "/";
 }
 
 // TestingProfile creation needs a content task environment (UI/IO threads).

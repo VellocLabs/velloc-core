@@ -14,9 +14,10 @@ namespace nexus {
 // requests the web build matching its own contract.
 GURL GetResolvedNexusGuestURL(Profile* profile);
 
-// Appends the compiled-in interface version segment "v<N>/" to an https base
-// URL (https://app.velloc.app/ -> https://app.velloc.app/v1/). http bases and
-// bases already ending in a /v<digits>/ segment pass through unchanged.
+// Appends "runtime/v<N>/" (N = the compiled-in interface version) to an https
+// base URL (https://app.velloc.app/ -> https://app.velloc.app/runtime/v<N>/).
+// http bases and bases already ending in a /v<digits>/ segment pass through
+// unchanged.
 GURL AppendNexusInterfaceVersionToBase(const GURL& base);
 
 // True until the guest runtime has once finished booting on `profile`

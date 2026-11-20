@@ -338,12 +338,12 @@ TEST_F(NexusRemoteAccessListenerTest, ProxyRequestIsServedOnTheOwnerSequence) {
   ASSERT_EQ(result, StartResult::kOk);
 
   const std::string response =
-      HttpGet(port, "/v1/assets/app.js?cachebust=1", "hello-from-owner");
+      HttpGet(port, "/runtime/v1/assets/app.js?cachebust=1", "hello-from-owner");
 
   EXPECT_EQ(owner.calls(), 1);
   // (relaxed mode forwards the query — a dev server needs it; Release never
   // does, pinned by the router's own tests.)
-  EXPECT_EQ(owner.last_path(), "/v1/assets/app.js?cachebust=1");
+  EXPECT_EQ(owner.last_path(), "/runtime/v1/assets/app.js?cachebust=1");
   EXPECT_NE(response.find("HTTP/1.1 200"), std::string::npos) << response;
   EXPECT_NE(response.find("hello-from-owner"), std::string::npos) << response;
 }
@@ -359,7 +359,7 @@ TEST_F(NexusRemoteAccessListenerTest, ProxiesABodyLargerThanTheDefaultBuffer) {
   ASSERT_EQ(result, StartResult::kOk);
 
   const std::string response =
-      HttpGet(port, "/v1/assets/big.js", "hello-from-owner");
+      HttpGet(port, "/runtime/v1/assets/big.js", "hello-from-owner");
   EXPECT_GT(response.size(), 2u * 1024 * 1024);
   EXPECT_NE(response.find("hello-from-owner"), std::string::npos);
 }
@@ -384,11 +384,11 @@ TEST_F(NexusRemoteAccessListenerTest, EntryRedirectUsesTheControlHello) {
 
   std::unique_ptr<net::TCPClientSocket> control =
       OpenWebSocket(port, "/host/control?token=" + token);
-  SendText(*control, R"({"hello":1,"entryPath":"/v1/b/20260917T103000000Z/"})");
+  SendText(*control, R"({"hello":1,"entryPath":"/runtime/v1/b/20260917T103000000Z/"})");
 
   const std::string response = GetRootUntilRedirect(port);
   EXPECT_NE(response.find(" 302 "), std::string::npos) << response;
-  EXPECT_NE(response.find("Location:/v1/b/20260917T103000000Z/"),
+  EXPECT_NE(response.find("Location:/runtime/v1/b/20260917T103000000Z/"),
             std::string::npos)
       << response;
   EXPECT_EQ(owner.calls(), 0);  // a redirect fetches nothing upstream
@@ -414,7 +414,7 @@ TEST_F(NexusRemoteAccessListenerTest, EntryRedirectIsCacheableAndThe503IsNot) {
 
   std::unique_ptr<net::TCPClientSocket> control =
       OpenWebSocket(port, "/host/control?token=" + token);
-  SendText(*control, R"({"hello":1,"entryPath":"/v1/b/20260917T103000000Z/"})");
+  SendText(*control, R"({"hello":1,"entryPath":"/runtime/v1/b/20260917T103000000Z/"})");
 
   const std::string response = GetRootUntilRedirect(port);
   EXPECT_NE(response.find(" 302 "), std::string::npos) << response;
@@ -511,11 +511,11 @@ TEST_F(NexusRemoteAccessListenerTest, UnusableControlMessagesAreIgnored) {
   SendText(*control, R"({"hello":1,"entryPath":null})");
   SendText(*control, R"({"hello":1,"entryPath":"https://evil.example/"})");
   SendText(*control, R"({"closed":"0123456789abcdef0123456789abcdef"})");
-  SendText(*control, R"({"hello":1,"entryPath":"/v1/b/20260917T103000000Z/"})");
+  SendText(*control, R"({"hello":1,"entryPath":"/runtime/v1/b/20260917T103000000Z/"})");
 
   const std::string response = GetRootUntilRedirect(port);
   EXPECT_NE(response.find(" 302 "), std::string::npos) << response;
-  EXPECT_NE(response.find("Location:/v1/b/20260917T103000000Z/"),
+  EXPECT_NE(response.find("Location:/runtime/v1/b/20260917T103000000Z/"),
             std::string::npos)
       << response;
 }
@@ -535,7 +535,7 @@ TEST_F(NexusRemoteAccessListenerTest, ARestartKeepsTheReportedEntryPath) {
 
   std::unique_ptr<net::TCPClientSocket> control =
       OpenWebSocket(port, "/host/control?token=" + token);
-  SendText(*control, R"({"hello":1,"entryPath":"/v1/b/20260917T103000000Z/"})");
+  SendText(*control, R"({"hello":1,"entryPath":"/runtime/v1/b/20260917T103000000Z/"})");
   ASSERT_NE(GetRootUntilRedirect(port).find(" 302 "), std::string::npos);
   // Drain the Core's report of what it learned onto this (the owner's) thread.
   task_environment_.RunUntilIdle();
@@ -549,7 +549,7 @@ TEST_F(NexusRemoteAccessListenerTest, ARestartKeepsTheReportedEntryPath) {
   // A brand-new port with no control socket behind it, answering at once.
   const std::string response = HttpGet(restart_port, "/", "\r\n\r\n");
   EXPECT_NE(response.find(" 302 "), std::string::npos) << response;
-  EXPECT_NE(response.find("Location:/v1/b/20260917T103000000Z/"),
+  EXPECT_NE(response.find("Location:/runtime/v1/b/20260917T103000000Z/"),
             std::string::npos)
       << response;
 }

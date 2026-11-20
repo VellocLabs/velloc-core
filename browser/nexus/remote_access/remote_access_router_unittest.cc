@@ -36,10 +36,10 @@ RouteRequest MakeGet(std::string path) {
 TEST(RemoteAccessRouterTest, ProxiesTheImmutableEntry) {
   RouteContext ctx = MakeContext();
   const char* paths[] = {
-      "/v1/b/20260917T103000000Z/",
-      "/v1/b/20260917T103000000Z/index.html",
-      "/v1/b/20260917T103000000Z/mobile.html",
-      "/v1/b/20260917T103000000Z/assets-manifest.json",
+      "/runtime/v1/b/20260917T103000000Z/",
+      "/runtime/v1/b/20260917T103000000Z/index.html",
+      "/runtime/v1/b/20260917T103000000Z/mobile.html",
+      "/runtime/v1/b/20260917T103000000Z/assets-manifest.json",
   };
   for (const char* p : paths) {
     RouteDecision d = Route(MakeGet(p), ctx);
@@ -50,11 +50,11 @@ TEST(RemoteAccessRouterTest, ProxiesTheImmutableEntry) {
 
 TEST(RemoteAccessRouterTest, ProxiesVersionedAssets) {
   RouteContext ctx = MakeContext();
-  RouteDecision d = Route(MakeGet("/v1/assets/index-abc123.js"), ctx);
+  RouteDecision d = Route(MakeGet("/runtime/v1/assets/index-abc123.js"), ctx);
   EXPECT_EQ(d.kind, RouteKind::kProxy);
-  EXPECT_EQ(d.upstream_path, "/v1/assets/index-abc123.js");
+  EXPECT_EQ(d.upstream_path, "/runtime/v1/assets/index-abc123.js");
   // Nested asset paths (e.g. locales) proxy too.
-  RouteDecision d2 = Route(MakeGet("/v1/assets/locales/en-xyz.json"), ctx);
+  RouteDecision d2 = Route(MakeGet("/runtime/v1/assets/locales/en-xyz.json"), ctx);
   EXPECT_EQ(d2.kind, RouteKind::kProxy);
 }
 
@@ -66,9 +66,9 @@ TEST(RemoteAccessRouterTest, ProxiesVersionedAssets) {
 TEST(RemoteAccessRouterTest, ProxiesTheFixedFilesWhereTheDeployServesThem) {
   RouteContext ctx = MakeContext();
   for (const char* p :
-       {"/v1/product_logo_128.png", "/v1/velloc.icon",
-        "/v1/manifest.webmanifest", "/v1/app_icon_192.png",
-        "/v1/app_icon_512.png", "/managed-binaries.json"}) {
+       {"/runtime/v1/product_logo_128.png", "/runtime/v1/velloc.icon",
+        "/runtime/v1/manifest.webmanifest", "/runtime/v1/app_icon_192.png",
+        "/runtime/v1/app_icon_512.png", "/managed-binaries.json"}) {
     RouteDecision d = Route(MakeGet(p), ctx);
     ASSERT_EQ(d.kind, RouteKind::kProxy) << p;
     EXPECT_EQ(d.upstream_path, p);
@@ -77,12 +77,12 @@ TEST(RemoteAccessRouterTest, ProxiesTheFixedFilesWhereTheDeployServesThem) {
   // The versioned rows follow the binary's interface version.
   ctx.interface_version = 2;
   for (const char* p :
-       {"/v2/product_logo_128.png", "/v2/velloc.icon",
-        "/v2/manifest.webmanifest", "/v2/app_icon_512.png",
+       {"/runtime/v2/product_logo_128.png", "/runtime/v2/velloc.icon",
+        "/runtime/v2/manifest.webmanifest", "/runtime/v2/app_icon_512.png",
         "/managed-binaries.json"}) {
     EXPECT_EQ(Route(MakeGet(p), ctx).kind, RouteKind::kProxy) << p;
   }
-  EXPECT_EQ(Route(MakeGet("/v1/product_logo_128.png"), ctx).kind,
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/product_logo_128.png"), ctx).kind,
             RouteKind::kReject);
 }
 
@@ -96,21 +96,21 @@ TEST(RemoteAccessRouterTest, RefusesTheFixedFilesAnywhereElse) {
       "/manifest.webmanifest",
       "/app_icon_192.png",
       // Another interface version's copies are not this binary's contract.
-      "/v2/product_logo_128.png",
-      "/v2/velloc.icon",
-      "/v2/manifest.webmanifest",
+      "/runtime/v2/product_logo_128.png",
+      "/runtime/v2/velloc.icon",
+      "/runtime/v2/manifest.webmanifest",
       // managed-binaries.json is fetched root-relative only.
-      "/v1/managed-binaries.json",
+      "/runtime/v1/managed-binaries.json",
       // Exact matches, not prefixes.
-      "/v1/product_logo_128.png/x",
-      "/v1/product_logo_128.pngx",
-      "/v1/velloc.icon.map",
-      "/v1/manifest.webmanifest.bak",
-      "/v1/app_icon_256.png",
+      "/runtime/v1/product_logo_128.png/x",
+      "/runtime/v1/product_logo_128.pngx",
+      "/runtime/v1/velloc.icon.map",
+      "/runtime/v1/manifest.webmanifest.bak",
+      "/runtime/v1/app_icon_256.png",
       "/x/v1/product_logo_128.png",
       "/managed-binaries.json/x",
       // The entry directory is not the version root.
-      "/v1/b/20260917T103000000Z/product_logo_128.png",
+      "/runtime/v1/b/20260917T103000000Z/product_logo_128.png",
   };
   for (const char* p : refused) {
     RouteDecision d = Route(MakeGet(p), ctx);
@@ -122,37 +122,41 @@ TEST(RemoteAccessRouterTest, RefusesTheFixedFilesAnywhereElse) {
 TEST(RemoteAccessRouterTest, RejectsOtherPathsAndWrongVersion) {
   RouteContext ctx = MakeContext();
   // Wrong interface version is not this binary's contract.
-  EXPECT_EQ(Route(MakeGet("/v2/assets/x.js"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/runtime/v2/assets/x.js"), ctx).kind, RouteKind::kReject);
+  // The bare /v<N>/ layout is not served.
+  EXPECT_EQ(Route(MakeGet("/v1/assets/x.js"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/v1/b/20260917T103000000Z/"), ctx).kind,
+            RouteKind::kReject);
   // Arbitrary paths are not proxied.
   EXPECT_EQ(Route(MakeGet("/etc/passwd"), ctx).kind, RouteKind::kReject);
-  EXPECT_EQ(Route(MakeGet("/v1/build-info.json"), ctx).kind,
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/build-info.json"), ctx).kind,
             RouteKind::kReject);
   // The entry serves its two pages by exact name, no other document.
-  EXPECT_EQ(Route(MakeGet("/v1/b/20260917T103000000Z/other.html"), ctx).kind,
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/b/20260917T103000000Z/other.html"), ctx).kind,
             RouteKind::kReject);
-  EXPECT_EQ(Route(MakeGet("/v1/b/20260917T103000000Z/mobile.html/x"), ctx).kind,
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/b/20260917T103000000Z/mobile.html/x"), ctx).kind,
             RouteKind::kReject);
-  EXPECT_EQ(Route(MakeGet("/v1/mobile.html"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/mobile.html"), ctx).kind, RouteKind::kReject);
   // An entry with a non-key alphabet is not an entry.
-  EXPECT_EQ(Route(MakeGet("/v1/b/has-hyphen-/"), ctx).kind, RouteKind::kReject);
-  EXPECT_EQ(Route(MakeGet("/v1/b/"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/b/has-hyphen-/"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/b/"), ctx).kind, RouteKind::kReject);
   // The asset prefix must be followed by something.
-  EXPECT_EQ(Route(MakeGet("/v1/assets/"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/runtime/v1/assets/"), ctx).kind, RouteKind::kReject);
 }
 
 TEST(RemoteAccessRouterTest, RejectsTraversalAndBypasses) {
   RouteContext ctx = MakeContext();
   const char* bad[] = {
-      "/v1/../secret",
-      "/v1/assets/../build-info.json",
-      "/v1/assets/../../secret",
-      "/v1/%2e%2e/secret",        // percent-encoded ".."
-      "/v1/assets/%2E%2E/x",
-      "/v1/assets/..%2fsecret",   // encoded slash
-      "/v1/assets/%2e%2e%2fsecret",
-      "/v1/\\secret",              // backslash separator (Windows)
-      "/v1/assets/..\\secret",
-      "/v1/assets/%zz/x",          // malformed escape
+      "/runtime/v1/../secret",
+      "/runtime/v1/assets/../build-info.json",
+      "/runtime/v1/assets/../../secret",
+      "/runtime/v1/%2e%2e/secret",        // percent-encoded ".."
+      "/runtime/v1/assets/%2E%2E/x",
+      "/runtime/v1/assets/..%2fsecret",   // encoded slash
+      "/runtime/v1/assets/%2e%2e%2fsecret",
+      "/runtime/v1/\\secret",              // backslash separator (Windows)
+      "/runtime/v1/assets/..\\secret",
+      "/runtime/v1/assets/%zz/x",          // malformed escape
   };
   for (const char* p : bad) {
     RouteDecision d = Route(MakeGet(p), ctx);
@@ -164,30 +168,30 @@ TEST(RemoteAccessRouterTest, RejectsTraversalAndBypasses) {
 TEST(RemoteAccessRouterTest, AllowsDotsThatAreNotTraversal) {
   RouteContext ctx = MakeContext();
   // A segment that merely CONTAINS dots is a file name, not traversal.
-  RouteDecision d = Route(MakeGet("/v1/assets/..foo.js"), ctx);
+  RouteDecision d = Route(MakeGet("/runtime/v1/assets/..foo.js"), ctx);
   EXPECT_EQ(d.kind, RouteKind::kProxy);
-  RouteDecision d2 = Route(MakeGet("/v1/assets/x..js"), ctx);
+  RouteDecision d2 = Route(MakeGet("/runtime/v1/assets/x..js"), ctx);
   EXPECT_EQ(d2.kind, RouteKind::kProxy);
 }
 
 TEST(RemoteAccessRouterTest, CollapsesDuplicateSlashes) {
   RouteContext ctx = MakeContext();
-  RouteDecision d = Route(MakeGet("/v1//assets//x.js"), ctx);
+  RouteDecision d = Route(MakeGet("/runtime/v1//assets//x.js"), ctx);
   EXPECT_EQ(d.kind, RouteKind::kProxy);
-  EXPECT_EQ(d.upstream_path, "/v1/assets/x.js");
+  EXPECT_EQ(d.upstream_path, "/runtime/v1/assets/x.js");
   // "//" cannot smuggle a traversal past the segment check.
-  EXPECT_EQ(Route(MakeGet("/v1//..//assets/x"), ctx).kind, RouteKind::kReject);
+  EXPECT_EQ(Route(MakeGet("/runtime/v1//..//assets/x"), ctx).kind, RouteKind::kReject);
 }
 
 TEST(RemoteAccessRouterTest, HostMismatchIs403) {
   RouteContext ctx = MakeContext();
-  RouteRequest req = MakeGet("/v1/assets/x.js");
+  RouteRequest req = MakeGet("/runtime/v1/assets/x.js");
   req.host_header = "example.com:47615";  // DNS rebind attempt
   RouteDecision d = Route(req, ctx);
   EXPECT_EQ(d.kind, RouteKind::kReject);
   EXPECT_EQ(d.status, RejectStatus::kForbidden);
 
-  RouteRequest req2 = MakeGet("/v1/assets/x.js");
+  RouteRequest req2 = MakeGet("/runtime/v1/assets/x.js");
   req2.host_header = "192.168.1.10";  // missing port
   EXPECT_EQ(Route(req2, ctx).status, RejectStatus::kForbidden);
 }
@@ -210,28 +214,28 @@ TEST(RemoteAccessRouterTest, WildcardBindAcceptsAnyLocalNicHost) {
   // Each local NIC literal + the bound port proxies.
   for (const char* host :
        {"192.168.1.10:47615", "10.0.0.4:47615", "127.0.0.1:47615"}) {
-    RouteRequest req = MakeGet("/v1/assets/x.js");
+    RouteRequest req = MakeGet("/runtime/v1/assets/x.js");
     req.host_header = host;
     EXPECT_EQ(Route(req, ctx).kind, RouteKind::kProxy) << host;
   }
 
   // A NIC IP on the WRONG port is not this listener.
-  RouteRequest wrong_port = MakeGet("/v1/assets/x.js");
+  RouteRequest wrong_port = MakeGet("/runtime/v1/assets/x.js");
   wrong_port.host_header = "192.168.1.10:9999";
   EXPECT_EQ(Route(wrong_port, ctx).status, RejectStatus::kForbidden);
 
   // A foreign IP the machine does not have → 403.
-  RouteRequest foreign = MakeGet("/v1/assets/x.js");
+  RouteRequest foreign = MakeGet("/runtime/v1/assets/x.js");
   foreign.host_header = "203.0.113.5:47615";
   EXPECT_EQ(Route(foreign, ctx).status, RejectStatus::kForbidden);
 
   // A hostname (DNS rebind) → 403.
-  RouteRequest named = MakeGet("/v1/assets/x.js");
+  RouteRequest named = MakeGet("/runtime/v1/assets/x.js");
   named.host_header = "example.com:47615";
   EXPECT_EQ(Route(named, ctx).status, RejectStatus::kForbidden);
 
   // Missing port → 403.
-  RouteRequest no_port = MakeGet("/v1/assets/x.js");
+  RouteRequest no_port = MakeGet("/runtime/v1/assets/x.js");
   no_port.host_header = "192.168.1.10";
   EXPECT_EQ(Route(no_port, ctx).status, RejectStatus::kForbidden);
 }
@@ -316,7 +320,7 @@ TEST(RemoteAccessRouterTest, RootRedirectsToEntry) {
 
 TEST(RemoteAccessRouterTest, NonGetIsRejected) {
   RouteContext ctx = MakeContext();
-  RouteRequest req = MakeGet("/v1/assets/x.js");
+  RouteRequest req = MakeGet("/runtime/v1/assets/x.js");
   req.method = "POST";
   EXPECT_EQ(Route(req, ctx).kind, RouteKind::kReject);
 }
@@ -423,10 +427,10 @@ TEST(RemoteAccessRouterTest, HostLegParsesHexIdAndGates) {
 
 TEST(RemoteAccessRouterTest, ProxyDropsTheQuery) {
   RouteContext ctx = MakeContext();
-  RouteDecision d = Route(MakeGet("/v1/assets/x.js?v=123"), ctx);
+  RouteDecision d = Route(MakeGet("/runtime/v1/assets/x.js?v=123"), ctx);
   ASSERT_EQ(d.kind, RouteKind::kProxy);
   // The query never reaches the upstream.
-  EXPECT_EQ(d.upstream_path, "/v1/assets/x.js");
+  EXPECT_EQ(d.upstream_path, "/runtime/v1/assets/x.js");
 }
 
 TEST(RemoteAccessRouterTest, RelaxedProxyLetsAnyGetThrough) {
@@ -477,22 +481,22 @@ TEST(RemoteAccessRouterTest, ConstantTimeEquals) {
 // --- the build entry the runtime reports over its control socket -----------
 
 TEST(RemoteAccessRouterTest, IsBuildEntryPathIsTheEntryDirectoryOnly) {
-  EXPECT_TRUE(IsBuildEntryPath("/v1/b/20260917T103000000Z/", kVersion));
-  EXPECT_TRUE(IsBuildEntryPath("/v1/b/1/", kVersion));
+  EXPECT_TRUE(IsBuildEntryPath("/runtime/v1/b/20260917T103000000Z/", kVersion));
+  EXPECT_TRUE(IsBuildEntryPath("/runtime/v1/b/1/", kVersion));
 
   // Proxyable, but not the directory: `Location:` names the entry itself.
-  EXPECT_FALSE(IsBuildEntryPath("/v1/b/20260917T103000000Z/index.html", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v1/b/20260917T103000000Z/index.html", kVersion));
   EXPECT_FALSE(
-      IsBuildEntryPath("/v1/b/20260917T103000000Z/mobile.html", kVersion));
-  EXPECT_FALSE(IsBuildEntryPath("/v1/b/20260917T103000000Z", kVersion));
-  EXPECT_FALSE(IsBuildEntryPath("/v1/assets/app.js", kVersion));
+      IsBuildEntryPath("/runtime/v1/b/20260917T103000000Z/mobile.html", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v1/b/20260917T103000000Z", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v1/assets/app.js", kVersion));
   EXPECT_FALSE(IsBuildEntryPath("/managed-binaries.json", kVersion));
   // A key with anything but [0-9TZ] in it, an empty key, a second segment.
-  EXPECT_FALSE(IsBuildEntryPath("/v1/b/abc/", kVersion));
-  EXPECT_FALSE(IsBuildEntryPath("/v1/b//", kVersion));
-  EXPECT_FALSE(IsBuildEntryPath("/v1/b/20260917T103000000Z/x/", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v1/b/abc/", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v1/b//", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v1/b/20260917T103000000Z/x/", kVersion));
   // Another interface version's entry: this listener would 404 it.
-  EXPECT_FALSE(IsBuildEntryPath("/v2/b/20260917T103000000Z/", kVersion));
+  EXPECT_FALSE(IsBuildEntryPath("/runtime/v2/b/20260917T103000000Z/", kVersion));
   // Not a path on this origin at all.
   EXPECT_FALSE(IsBuildEntryPath("//evil.example/v1/b/1/", kVersion));
   EXPECT_FALSE(IsBuildEntryPath("https://evil.example/v1/b/1/", kVersion));
@@ -501,9 +505,9 @@ TEST(RemoteAccessRouterTest, IsBuildEntryPathIsTheEntryDirectoryOnly) {
 
 TEST(RemoteAccessRouterTest, EntryPathFromHelloTakesTheReportedEntry) {
   const std::optional<std::string> entry = EntryPathFromHello(
-      R"({"hello":1,"entryPath":"/v1/b/20260917T103000000Z/"})", kVersion);
+      R"({"hello":1,"entryPath":"/runtime/v1/b/20260917T103000000Z/"})", kVersion);
   ASSERT_TRUE(entry.has_value());
-  EXPECT_EQ(*entry, "/v1/b/20260917T103000000Z/");
+  EXPECT_EQ(*entry, "/runtime/v1/b/20260917T103000000Z/");
 }
 
 TEST(RemoteAccessRouterTest, EntryPathFromHelloRefusesEverythingElse) {
@@ -512,7 +516,7 @@ TEST(RemoteAccessRouterTest, EntryPathFromHelloRefusesEverythingElse) {
   EXPECT_FALSE(EntryPathFromHello(R"({"hello":1})", kVersion));
   // Not a hello: `{"closed":<legId>}` and anything a later revision adds must
   // not be read as one.
-  EXPECT_FALSE(EntryPathFromHello(R"({"entryPath":"/v1/b/1/"})", kVersion));
+  EXPECT_FALSE(EntryPathFromHello(R"({"entryPath":"/runtime/v1/b/1/"})", kVersion));
   EXPECT_FALSE(EntryPathFromHello(R"({"closed":"abc"})", kVersion));
   // Not JSON, or not an object.
   EXPECT_FALSE(EntryPathFromHello("", kVersion));
@@ -528,9 +532,9 @@ TEST(RemoteAccessRouterTest, EntryPathFromHelloRefusesEverythingElse) {
       R"({"hello":1,"entryPath":"//evil.example/"})", kVersion));
   EXPECT_FALSE(EntryPathFromHello(
       // The two-character JSON escapes below DECODE to a real CR LF.
-      R"({"hello":1,"entryPath":"/v1/b/1/\r\nX-Injected: 1"})", kVersion));
+      R"({"hello":1,"entryPath":"/runtime/v1/b/1/\r\nX-Injected: 1"})", kVersion));
   EXPECT_FALSE(EntryPathFromHello(
-      R"({"hello":1,"entryPath":"/v1/b/../../etc/"})", kVersion));
+      R"({"hello":1,"entryPath":"/runtime/v1/b/../../etc/"})", kVersion));
 }
 
 }  // namespace

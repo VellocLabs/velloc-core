@@ -74,7 +74,7 @@ constexpr net::NetworkTrafficAnnotationTag kProxyTraffic =
           "origin; no query, cookie, or arbitrary path is forwarded."
         trigger:
           "A remote browser, joined via the user-enabled remote-access "
-          "listener, requests the bundle over the listener's /v<N>/… routes."
+          "listener, requests the bundle over the listener's /runtime/v<N>/… routes."
         data:
           "A path under the guest origin. No user data, credentials, or "
           "conversation content is included — this is a GET for static "

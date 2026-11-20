@@ -85,7 +85,7 @@ GURL AppendNexusInterfaceVersionToBase(const GURL& base) {
   if (path.empty() || path.back() != '/') {
     path += '/';
   }
-  path += "v" NEXUS_IF_VERSION_STR(NEXUS_INTERFACE_VERSION) "/";
+  path += "runtime/v" NEXUS_IF_VERSION_STR(NEXUS_INTERFACE_VERSION) "/";
 
   GURL::Replacements replacements;
   replacements.SetPathStr(path);

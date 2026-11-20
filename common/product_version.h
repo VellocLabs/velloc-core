@@ -9,7 +9,7 @@ namespace custom_browser {
 //   {CUSTOM_BROWSER_MAJOR}.{chromium MAJOR}.{bridge interface version}.{CUSTOM_BROWSER_PATCH}
 // (e.g. "1.149.1.0") from custom_browser/VERSION, chrome/VERSION, and
 // browser/nexus/nexus_interface_version.h — so the app version always names
-// the nexus_web /v<N>/ contract this binary speaks. See
+// the nexus_web /runtime/v<N>/ contract this binary speaks. See
 // common/scripts/gen_product_version.py and G-3.
 inline constexpr char kCustomBrowserProductVersion[] =
     CUSTOM_BROWSER_PRODUCT_VERSION;

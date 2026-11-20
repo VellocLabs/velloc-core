@@ -9,7 +9,7 @@ _custom_browser_version_file =
 # interface version}.{CUSTOM_BROWSER_PATCH} — composed from
 # custom_browser/VERSION (the single hand-edited source, which also owns
 # NEXUS_INTERFACE_VERSION) and chrome/VERSION. The interface version is
-# the same constant that pins the /v<N>/ guest URL, so the app version
+# the same constant that pins the /runtime/v<N>/ guest URL, so the app version
 # always names the web contract this binary speaks; it fans out here as
 # the generated nexus_interface_version.inc consumed by
 # browser/nexus/nexus_interface_version.h.

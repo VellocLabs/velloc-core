@@ -13,7 +13,7 @@ The product version is composed, not stored anywhere as one string:
     docs/agents/nexus-interface-versioning.md)
   - chromium MAJOR: chrome/VERSION (tracks the engine upgrade)
 
-The interface version is the same number that pins the /v<N>/ guest URL,
+The interface version is the same number that pins the /runtime/v<N>/ guest URL,
 so the app version always names the web contract the binary speaks. It
 fans out from VERSION as generated artifacts: --output-interface-inc
 emits the #define consumed by browser/nexus/nexus_interface_version.h,

@@ -206,7 +206,7 @@ export class NexusViewElement extends CrLitElement {
       // `loadabort` only covers network-layer failures (DNS, refused
       // connection). It is a latency optimisation, not the primary trigger:
       // an HTTP 404 — the interface-skew case, where the origin is reachable
-      // but does not serve this binary's /v<N>/ — is a SUCCESSFUL load that
+      // but does not serve this binary's /runtime/v<N>/ — is a SUCCESSFUL load that
       // never fires it. The handshake timeout below is what catches that.
       webview.addEventListener('loadabort', (e: Event) => {
         const detail = e as Event & {isTopLevel?: boolean, reason?: string};

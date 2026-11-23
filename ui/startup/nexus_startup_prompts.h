@@ -16,6 +16,13 @@ namespace custom_browser::nexus_startup_ui {
 // restore offer re-surfaces on the next normal window.
 bool MaybeSuppressStartupPrompts(BrowserWindowInterface* browser);
 
+// Shows the session-crashed bubble on |browser| once its popup anchor is
+// visible: at once when the window is already shown, otherwise on the first
+// show of its fallback popup anchor. Startup tabs are inserted before the
+// window is shown, when the bubble has nothing to anchor to.
+void ShowSessionCrashedBubbleWhenAnchored(BrowserWindowInterface* browser,
+                                          bool skip_tab_checking);
+
 // Consumes the deferred-crash-bubble marker for |browser|'s profile (if
 // any) and shows the session-crashed bubble on |browser| once the current
 // task completes — the consume site runs during Widget::Init, before

@@ -4,6 +4,7 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "base/task/sequenced_task_runner.h"
@@ -12,7 +13,11 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
+#include "chrome/browser/ui/browser_element_identifiers.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
+#include "ui/base/interaction/element_tracker.h"
+#include "ui/views/interaction/element_tracker_views.h"
 
 namespace custom_browser::nexus_startup_ui {
 
@@ -45,6 +50,69 @@ bool ConsumePendingDeferredCrashBubble(Profile* profile) {
   return true;
 }
 
+constexpr char kPendingAnchoredCrashBubbleKey[] =
+    "custom_browser_pending_anchored_crash_bubble";
+
+ui::ElementContext AnchorContextFor(BrowserWindowInterface* browser) {
+  BrowserView* view = BrowserView::GetBrowserViewForBrowser(browser);
+  return view ? views::ElementTrackerViews::GetContextForView(view)
+              : ui::ElementContext();
+}
+
+bool IsAnchorReady(BrowserWindowInterface* browser) {
+  const ui::ElementContext context = AnchorContextFor(browser);
+  return context && ui::ElementTracker::GetElementTracker()->IsElementVisible(
+                        kFallbackPopupAnchorElementId, context);
+}
+
+void ShowCrashBubbleNow(base::WeakPtr<BrowserWindowInterface> browser,
+                        bool skip_tab_checking) {
+  if (!browser) {
+    return;
+  }
+  SessionCrashedBubble::ShowIfNotOffTheRecordProfile(browser.get(),
+                                                     skip_tab_checking);
+}
+
+// Profile-owned wait for a window's popup anchor to become visible. At most
+// one per profile; a newer request replaces an older one.
+class PendingAnchoredCrashBubble : public base::SupportsUserData::Data {
+ public:
+  PendingAnchoredCrashBubble(Profile* profile,
+                             BrowserWindowInterface* browser,
+                             bool skip_tab_checking)
+      : profile_(profile),
+        browser_(browser->GetWeakPtr()),
+        skip_tab_checking_(skip_tab_checking) {
+    subscription_ =
+        ui::ElementTracker::GetElementTracker()
+            ->AddElementShownInAnyContextCallback(
+                kFallbackPopupAnchorElementId,
+                base::BindRepeating(&PendingAnchoredCrashBubble::OnAnchorShown,
+                                    base::Unretained(this)));
+  }
+
+ private:
+  void OnAnchorShown(ui::TrackedElement* element) {
+    if (browser_ && element->context() != AnchorContextFor(browser_.get())) {
+      return;
+    }
+    if (browser_) {
+      // Posted: showing a bubble from inside the tracker's notification
+      // would re-enter it.
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&ShowCrashBubbleNow, browser_, skip_tab_checking_));
+    }
+    profile_->RemoveUserData(kPendingAnchoredCrashBubbleKey);  // Deletes this.
+  }
+
+  const raw_ptr<Profile> profile_;
+  const base::WeakPtr<BrowserWindowInterface> browser_;
+  const bool skip_tab_checking_;
+  ui::ElementTracker::Subscription subscription_;
+};
+
 void ShowDeferredCrashBubbleNow(base::WeakPtr<BrowserWindowInterface> browser) {
   if (!browser) {
     return;
@@ -52,8 +120,8 @@ void ShowDeferredCrashBubbleNow(base::WeakPtr<BrowserWindowInterface> browser) {
   // skip_tab_checking=true: with `false`, SessionCrashedBubbleView::Show
   // silently drops the bubble when the window has no active tab yet — the
   // deferred restore offer must not be lost to startup-tab timing.
-  SessionCrashedBubble::ShowIfNotOffTheRecordProfile(
-      browser.get(), /*skip_tab_checking=*/true);
+  ShowSessionCrashedBubbleWhenAnchored(browser.get(),
+                                       /*skip_tab_checking=*/true);
 }
 
 }  // namespace
@@ -73,6 +141,22 @@ bool MaybeSuppressStartupPrompts(BrowserWindowInterface* browser) {
     SetPendingDeferredCrashBubble(as_browser->GetProfile());
   }
   return true;
+}
+
+void ShowSessionCrashedBubbleWhenAnchored(BrowserWindowInterface* browser,
+                                          bool skip_tab_checking) {
+  if (!browser || !browser->GetProfile()) {
+    return;
+  }
+  if (IsAnchorReady(browser)) {
+    SessionCrashedBubble::ShowIfNotOffTheRecordProfile(browser,
+                                                       skip_tab_checking);
+    return;
+  }
+  Profile* profile = browser->GetProfile();
+  profile->SetUserData(kPendingAnchoredCrashBubbleKey,
+                       std::make_unique<PendingAnchoredCrashBubble>(
+                           profile, browser, skip_tab_checking));
 }
 
 void MaybeShowDeferredCrashBubble(BrowserWindowInterface* browser) {

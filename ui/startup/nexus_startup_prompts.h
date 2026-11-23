@@ -24,9 +24,9 @@ void ShowSessionCrashedBubbleWhenAnchored(BrowserWindowInterface* browser,
                                           bool skip_tab_checking);
 
 // Consumes the deferred-crash-bubble marker for |browser|'s profile (if
-// any) and shows the session-crashed bubble on |browser| once the current
-// task completes — the consume site runs during Widget::Init, before
-// startup tabs exist. No-op without a marker.
+// any) and, from a posted task, shows the session-crashed bubble on |browser|
+// through ShowSessionCrashedBubbleWhenAnchored — the consume site runs during
+// Widget::Init, before startup tabs exist. No-op without a marker.
 void MaybeShowDeferredCrashBubble(BrowserWindowInterface* browser);
 
 }  // namespace custom_browser::nexus_startup_ui

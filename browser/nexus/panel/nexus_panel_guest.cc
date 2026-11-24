@@ -11,16 +11,9 @@
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
+#include "custom_browser/chromium_hooks/nexus_guest_groups.h"
 
 namespace nexus {
-
-namespace {
-
-// Matches `<webview id="nexusPane" partition="persist:nexus">` in
-// resources/browser_webui/pages/nexus/nexus_view.ts.
-constexpr char kNexusGuestPartitionName[] = "nexus";
-
-}  // namespace
 
 bool IsNexusPanelGuest(const guest_view::GuestViewBase* guest,
                        content::RenderFrameHost& frame_in_guest) {
@@ -36,7 +29,8 @@ bool IsNexusPanelGuest(const guest_view::GuestViewBase* guest,
       frame_in_guest.GetSiteInstance()
           ->GetSecurityPrincipal()
           .GetStoragePartitionConfig();
-  return partition_config.partition_name() == kNexusGuestPartitionName;
+  return partition_config.partition_name() ==
+         custom_browser::kNexusGuestPartitionName;
 }
 
 bool IsNexusPanelGuestContents(content::WebContents* contents) {

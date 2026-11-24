@@ -65,7 +65,13 @@ class NexusBackgroundPanelHost : public KeyedService,
   // page, and with it the runtime, and releases the keep-alive.
   void StartRuntimeHost();
   void StopRuntimeHost();
-  bool has_runtime_host() const { return runtime_host_ != nullptr; }
+  // True while the page exists and its renderer has not gone away.
+  bool has_runtime_host() const;
+  // Whether this profile's sessions can be running with no window to show
+  // them: a parked page, or a live runtime host page.
+  bool runs_without_window() const {
+    return has_parked() || has_runtime_host();
+  }
   content::WebContents* runtime_host_for_testing() const {
     return runtime_host_.get();
   }
@@ -77,6 +83,7 @@ class NexusBackgroundPanelHost : public KeyedService,
     runtime_host_url_for_testing_ = url;
   }
   content::WebContents* parked_for_testing() const { return parked_.get(); }
+  void set_runtime_host_reload_enabled_for_testing(bool enabled);
 
   // KeyedService:
   void Shutdown() override;
@@ -99,6 +106,7 @@ class NexusBackgroundPanelHost : public KeyedService,
   std::unique_ptr<RuntimeHostObserver> runtime_host_observer_;
   std::unique_ptr<ScopedProfileKeepAlive> runtime_keep_alive_;
   GURL runtime_host_url_for_testing_;
+  bool runtime_host_reload_enabled_ = true;
 };
 
 class NexusBackgroundPanelHostFactory

@@ -145,6 +145,39 @@ TEST_F(NexusBackgroundPanelHostTest, RuntimeHostOutlivesTheParkedPage) {
   EXPECT_FALSE(host()->has_runtime_host());
 }
 
+// A runtime host page whose renderer is gone does not count as running, and
+// the next start replaces it.
+TEST_F(NexusBackgroundPanelHostTest, CrashedRuntimeHostIsReplacedOnStart) {
+  ASSERT_TRUE(host());
+  host()->set_runtime_host_url_for_testing(GURL("about:blank"));
+  host()->set_runtime_host_reload_enabled_for_testing(false);
+  host()->StartRuntimeHost();
+  content::WebContents* page = host()->runtime_host_for_testing();
+  ASSERT_TRUE(page);
+  static_cast<content::MockRenderProcessHost*>(
+      page->GetPrimaryMainFrame()->GetProcess())
+      ->SimulateCrash();
+  EXPECT_FALSE(host()->has_runtime_host());
+  EXPECT_FALSE(host()->runs_without_window());
+  host()->StartRuntimeHost();
+  ASSERT_TRUE(host()->has_runtime_host());
+  EXPECT_NE(page, host()->runtime_host_for_testing());
+}
+
+// The group keys are three distinct addresses.
+TEST_F(NexusBackgroundPanelHostTest, GuestGroupKeysAreDistinct) {
+  using custom_browser::NexusGuestGroupsSlot;
+  using custom_browser::NexusGuestGroupsUserDataKey;
+  const void* enabled =
+      NexusGuestGroupsUserDataKey(NexusGuestGroupsSlot::kEnabled);
+  const void* runtime =
+      NexusGuestGroupsUserDataKey(NexusGuestGroupsSlot::kRuntime);
+  const void* ui = NexusGuestGroupsUserDataKey(NexusGuestGroupsSlot::kUi);
+  EXPECT_NE(enabled, runtime);
+  EXPECT_NE(enabled, ui);
+  EXPECT_NE(runtime, ui);
+}
+
 // The "nexus" partition has two process groups while the service lives: one
 // SiteInstance each, unrelated to one another, and none for other partitions.
 TEST_F(NexusBackgroundPanelHostTest, GuestGroupsLiveWithTheService) {

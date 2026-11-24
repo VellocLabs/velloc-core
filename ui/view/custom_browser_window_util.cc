@@ -306,11 +306,12 @@ bool HandlePlainRelaunch(Profile* profile,
   // profile's window is the one to reopen, or its sessions run invisibly
   // with nothing ever taking them back.
   if (auto* host = nexus::NexusBackgroundPanelHostFactory::GetForProfile(profile);
-      !host || !(host->has_parked() || host->has_runtime_host())) {
+      !host || !host->runs_without_window()) {
     if (ProfileManager* profile_manager = g_browser_process->profile_manager()) {
       for (Profile* loaded : profile_manager->GetLoadedProfiles()) {
         auto* other = nexus::NexusBackgroundPanelHostFactory::GetForProfile(loaded);
-        if (other && (other->has_parked() || other->has_runtime_host())) {
+        if (other && other->runs_without_window() &&
+            !FindNexusWindow(loaded)) {
           profile = loaded;
           break;
         }

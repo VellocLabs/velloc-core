@@ -236,9 +236,10 @@ std::optional<gfx::Rect> OnGetBubbleAnchorRect(
 }
 
 const void* NexusGuestGroupsUserDataKey(NexusGuestGroupsSlot slot) {
-  static const int kEnabledKey = 0;
-  static const int kRuntimeKey = 0;
-  static const int kUiKey = 0;
+  // Distinct values: identical constants may be folded into one address.
+  static const int kEnabledKey = 1;
+  static const int kRuntimeKey = 2;
+  static const int kUiKey = 3;
   switch (slot) {
     case NexusGuestGroupsSlot::kEnabled:
       return &kEnabledKey;

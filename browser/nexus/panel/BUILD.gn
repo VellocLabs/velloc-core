@@ -44,6 +44,7 @@ source_set("panel_guest") {
     "//components/guest_view/browser",
     "//content/public/browser",
     "//content/public/common",
+    "//custom_browser/chromium_hooks:hook_core",
   ]
 }
 

@@ -36,6 +36,13 @@ nexus_web guest in a `<webview id="nexusPane">` directly:
 5. The bootstrap controller forwards those ports into the guest webview.
 6. The guest forwards `workerPort` into the SharedWorker.
 
+The profile's runtime host page (`NexusBackgroundPanelHost::StartRuntimeHost`,
+`chrome://custom.top-chrome/?nexusRuntimeHost=1`) runs the same handshake for
+one more guest: `resources/browser_webui/pages/nexus/nexus_runtime_host.ts`
+renders an unnamed `<webview>` and calls `bootstrapRuntimeHost()`. That guest
+holds the runtime SharedWorker's process; a window's guest is named
+`nexus-ui` and renders apart from it (P-2).
+
 After that, the page-thread is off the hot path for every capability —
 `fs.*` / `model.*` / `ui.*` / `process.*` / `glic.*` all run over the
 SharedWorker direct port.

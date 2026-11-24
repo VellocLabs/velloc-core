@@ -45,8 +45,13 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
   explicit RuntimeHostObserver(content::WebContents* contents)
       : content::WebContentsObserver(contents) {}
 
+  void set_reload_enabled(bool enabled) { reload_enabled_ = enabled; }
+
   void PrimaryMainFrameRenderProcessGone(
       base::TerminationStatus status) override {
+    if (!reload_enabled_) {
+      return;
+    }
     const base::TimeTicks now = base::TimeTicks::Now();
     if (now - window_start_ > kRuntimeHostReloadWindow) {
       window_start_ = now;
@@ -69,6 +74,7 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
     }
   }
 
+  bool reload_enabled_ = true;
   base::TimeTicks window_start_;
   int reloads_ = 0;
   base::WeakPtrFactory<RuntimeHostObserver> weak_factory_{this};
@@ -94,9 +100,12 @@ GURL NexusBackgroundPanelHost::RuntimeHostUrl() {
 }
 
 void NexusBackgroundPanelHost::StartRuntimeHost() {
-  if (runtime_host_) {
+  if (has_runtime_host()) {
     return;
   }
+  // A page whose renderer is gone and that its observer gave up on is
+  // replaced, so opening a window always brings the runtime back.
+  StopRuntimeHost();
   runtime_keep_alive_ = std::make_unique<ScopedProfileKeepAlive>(
       profile_, ProfileKeepAliveOrigin::kNexusBackgroundPanel);
   content::WebContents::CreateParams params(profile_);
@@ -104,10 +113,23 @@ void NexusBackgroundPanelHost::StartRuntimeHost() {
   runtime_host_ = content::WebContents::Create(params);
   runtime_host_observer_ =
       std::make_unique<RuntimeHostObserver>(runtime_host_.get());
+  runtime_host_observer_->set_reload_enabled(runtime_host_reload_enabled_);
   runtime_host_->GetController().LoadURL(
       runtime_host_url_for_testing_.is_valid() ? runtime_host_url_for_testing_
                                                : RuntimeHostUrl(),
       content::Referrer(), ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+}
+
+bool NexusBackgroundPanelHost::has_runtime_host() const {
+  return runtime_host_ && !runtime_host_->IsCrashed();
+}
+
+void NexusBackgroundPanelHost::set_runtime_host_reload_enabled_for_testing(
+    bool enabled) {
+  runtime_host_reload_enabled_ = enabled;
+  if (runtime_host_observer_) {
+    runtime_host_observer_->set_reload_enabled(enabled);
+  }
 }
 
 void NexusBackgroundPanelHost::StopRuntimeHost() {

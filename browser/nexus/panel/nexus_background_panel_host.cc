@@ -104,10 +104,14 @@ void NexusBackgroundPanelHost::StartRuntimeHost() {
     return;
   }
   // A page whose renderer is gone and that its observer gave up on is
-  // replaced, so opening a window always brings the runtime back.
-  StopRuntimeHost();
-  runtime_keep_alive_ = std::make_unique<ScopedProfileKeepAlive>(
-      profile_, ProfileKeepAliveOrigin::kNexusBackgroundPanel);
+  // replaced, so opening a window always brings the runtime back. Its
+  // keep-alive carries over to the new page.
+  runtime_host_observer_.reset();
+  runtime_host_.reset();
+  if (!runtime_keep_alive_) {
+    runtime_keep_alive_ = std::make_unique<ScopedProfileKeepAlive>(
+        profile_, ProfileKeepAliveOrigin::kNexusBackgroundPanel);
+  }
   content::WebContents::CreateParams params(profile_);
   params.initially_hidden = true;
   runtime_host_ = content::WebContents::Create(params);

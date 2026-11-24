@@ -161,7 +161,9 @@ TEST_F(NexusBackgroundPanelHostTest, CrashedRuntimeHostIsReplacedOnStart) {
   EXPECT_FALSE(host()->runs_without_window());
   host()->StartRuntimeHost();
   ASSERT_TRUE(host()->has_runtime_host());
-  EXPECT_NE(page, host()->runtime_host_for_testing());
+  EXPECT_FALSE(host()->runtime_host_for_testing()->IsCrashed());
+  host()->StopRuntimeHost();
+  EXPECT_FALSE(host()->has_runtime_host());
 }
 
 // The group keys are three distinct addresses.

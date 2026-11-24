@@ -7,6 +7,10 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/functional/bind.h"
+#include "base/memory/weak_ptr.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
@@ -15,18 +19,103 @@
 #include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/prefs/pref_service.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/chromium_hooks/nexus_guest_groups.h"
+#include "custom_browser/common/url_constants.h"
+#include "net/base/url_util.h"
+#include "ui/base/page_transition_types.h"
 
 namespace nexus {
+
+namespace {
+
+// A runtime host page whose renderer keeps dying is left alone after this
+// many reloads inside the window.
+constexpr int kRuntimeHostMaxReloads = 3;
+constexpr base::TimeDelta kRuntimeHostReloadWindow = base::Minutes(1);
+
+}  // namespace
+
+// Reloads the runtime host page when its own renderer goes away. The guest
+// inside reloads itself; this covers the page around it.
+class NexusBackgroundPanelHost::RuntimeHostObserver
+    : public content::WebContentsObserver {
+ public:
+  explicit RuntimeHostObserver(content::WebContents* contents)
+      : content::WebContentsObserver(contents) {}
+
+  void PrimaryMainFrameRenderProcessGone(
+      base::TerminationStatus status) override {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    if (now - window_start_ > kRuntimeHostReloadWindow) {
+      window_start_ = now;
+      reloads_ = 0;
+    }
+    if (++reloads_ > kRuntimeHostMaxReloads) {
+      return;
+    }
+    // Not from inside the notification: the frame tree is mid-teardown.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&RuntimeHostObserver::Reload,
+                                  weak_factory_.GetWeakPtr()));
+  }
+
+ private:
+  void Reload() {
+    if (web_contents()) {
+      web_contents()->GetController().Reload(content::ReloadType::NORMAL,
+                                             /*check_for_repost=*/false);
+    }
+  }
+
+  base::TimeTicks window_start_;
+  int reloads_ = 0;
+  base::WeakPtrFactory<RuntimeHostObserver> weak_factory_{this};
+};
 
 NexusBackgroundPanelHost::NexusBackgroundPanelHost(Profile* profile)
     : profile_(profile) {
   CHECK(profile_);
+  custom_browser::EnableNexusGuestGroups(profile_);
 }
 
 NexusBackgroundPanelHost::~NexusBackgroundPanelHost() {
   // Shutdown() normally ran already; be safe for tests that delete directly.
   DropParked();
+  StopRuntimeHost();
+  custom_browser::DisableNexusGuestGroups(profile_);
+}
+
+// static
+GURL NexusBackgroundPanelHost::RuntimeHostUrl() {
+  return net::AppendQueryParameter(GURL(custom_browser::kChromeUICustomBrowserURL),
+                                   "nexusRuntimeHost", "1");
+}
+
+void NexusBackgroundPanelHost::StartRuntimeHost() {
+  if (runtime_host_) {
+    return;
+  }
+  runtime_keep_alive_ = std::make_unique<ScopedProfileKeepAlive>(
+      profile_, ProfileKeepAliveOrigin::kNexusBackgroundPanel);
+  content::WebContents::CreateParams params(profile_);
+  params.initially_hidden = true;
+  runtime_host_ = content::WebContents::Create(params);
+  runtime_host_observer_ =
+      std::make_unique<RuntimeHostObserver>(runtime_host_.get());
+  runtime_host_->GetController().LoadURL(
+      runtime_host_url_for_testing_.is_valid() ? runtime_host_url_for_testing_
+                                               : RuntimeHostUrl(),
+      content::Referrer(), ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+}
+
+void NexusBackgroundPanelHost::StopRuntimeHost() {
+  runtime_host_observer_.reset();
+  // Contents first (it may still reach into the profile), then the
+  // keep-alive that guaranteed the profile was there for it.
+  runtime_host_.reset();
+  runtime_keep_alive_.reset();
 }
 
 // static
@@ -57,6 +146,9 @@ std::unique_ptr<content::WebContents> NexusBackgroundPanelHost::Take() {
 
 void NexusBackgroundPanelHost::Shutdown() {
   DropParked();
+  StopRuntimeHost();
+  // The held SiteInstances go while the profile is still whole.
+  custom_browser::DisableNexusGuestGroups(profile_);
 }
 
 void NexusBackgroundPanelHost::PrimaryMainFrameRenderProcessGone(

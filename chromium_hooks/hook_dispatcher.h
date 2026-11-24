@@ -76,6 +76,13 @@ CUSTOM_BROWSER_HOOKS_EXPORT std::optional<gfx::Rect> OnGetBubbleAnchorRect(
     const views::View* anchor_view,
     const gfx::Rect& default_rect);
 
+// ---------- Nexus guest groups ----------
+// The BrowserContext user-data keys behind nexus_guest_groups.h: the same
+// addresses for every module that reads that header.
+enum class NexusGuestGroupsSlot { kEnabled, kRuntime, kUi };
+CUSTOM_BROWSER_HOOKS_EXPORT const void* NexusGuestGroupsUserDataKey(
+    NexusGuestGroupsSlot slot);
+
 }  // namespace custom_browser
 
 #endif  // CUSTOM_BROWSER_CHROMIUM_HOOKS_HOOK_DISPATCHER_H_

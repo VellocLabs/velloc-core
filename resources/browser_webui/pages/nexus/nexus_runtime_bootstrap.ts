@@ -29,6 +29,12 @@ export type BootFailureReporter = (detail: {
 const NEXUS_INIT_PING_INTERVAL_MS = 100;
 const NEXUS_INIT_TIMEOUT_MS = 30_000;
 const BRIDGE_BOOTSTRAP_TIMEOUT_MS = 30_000;
+// Fragment that marks the runtime host page; the guest's entry reads it.
+const RUNTIME_HOST_FRAGMENT = 'role=runtime-host';
+// A guest whose renderer died is loaded again, at most this many times per
+// window of time, so a page that dies on every load is left alone.
+const RENDERER_EXIT_MAX_RELOADS = 3;
+const RENDERER_EXIT_WINDOW_MS = 60_000;
 
 function debugTrace(message: string, details?: unknown): void {
   if (details === undefined) {
@@ -48,6 +54,16 @@ function buildGuestUrl(): URL {
   // (nexus_web/src/branding/productName.ts), unifying all branding on the
   // build-time path. (The boot welcome overlay still uses the loadTimeData
   // `customBrowserProductName` directly — see nexus_welcome.ts.)
+  return url;
+}
+
+// The runtime host page is the guest's own document plus a fragment: the same
+// HTTP-cache entry, so both documents name the same worker script.
+export function buildRuntimeHostUrl(guestUrl: URL): URL {
+  const url = new URL(guestUrl.toString());
+  const existing = url.hash.replace(/^#/, '');
+  url.hash = existing ? `${existing}&${RUNTIME_HOST_FRAGMENT}` :
+                        RUNTIME_HOST_FRAGMENT;
   return url;
 }
 
@@ -231,6 +247,61 @@ function waitForBootstrapAndForward(
   });
 }
 
+// Loads `view` again whenever its renderer process exits. A window's guest
+// and the runtime host guest render in separate processes, so the first can
+// die while the second, and the runtime with it, keeps running.
+function reloadOnRendererExit(view: BootstrapWebView, label: string): void {
+  let recent: number[] = [];
+  view.addEventListener('exit', () => {
+    const now = Date.now();
+    recent = recent.filter(at => now - at < RENDERER_EXIT_WINDOW_MS);
+    if (recent.length >= RENDERER_EXIT_MAX_RELOADS) {
+      debugTrace('renderer exited again; leaving the guest alone', {label});
+      return;
+    }
+    recent.push(now);
+    debugTrace('renderer exited; loading the guest again', {label});
+    (view as BootstrapWebView & {reload?: () => void}).reload?.();
+  });
+}
+
+// Contract: boots the runtime host guest in `host`, the one <webview> of the
+// profile's runtime host page. The guest's renderer holds the runtime
+// SharedWorker; this page hands it the worker's bridge port through the same
+// handshake a window runs for its guest, on every load of the guest. Nothing
+// is reported: the page has no UI. (P-2)
+export function bootstrapRuntimeHost(host: HTMLElement|null): void {
+  if (!isBootstrapWebView(host)) {
+    throw new Error('bootstrapRuntimeHost requires a <webview> element');
+  }
+  const hostView: BootstrapWebView = host;
+  const guestUrl = buildGuestUrl();
+  const guestOrigin = originOf(guestUrl);
+  let activeHandshake: AbortController|null = null;
+  hostView.addEventListener('contentload', () => {
+    activeHandshake?.abort();
+    const controller = new AbortController();
+    activeHandshake = controller;
+    const {signal} = controller;
+    void (async () => {
+      try {
+        await waitForGuestAck(hostView, guestOrigin, signal);
+        NexusBridgeBootstrap.getRemote().guestReady();
+        await waitForBootstrapAndForward(hostView, guestOrigin, signal);
+        debugTrace('runtime host bootstrap complete');
+      } catch (e) {
+        if (!signal.aborted) {
+          debugTrace('runtime host bootstrap failed', {
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+    })();
+  });
+  reloadOnRendererExit(hostView, 'runtime host');
+  hostView.src = buildRuntimeHostUrl(guestUrl).toString();
+}
+
 // One theme sync per webview: a re-handshake (guest reload) replaces the
 // previous sender instead of stacking a second one.
 const themeSyncStops = new WeakMap<HTMLElement, () => void>();
@@ -350,6 +421,8 @@ export async function bootstrapNexusGuest(
     invalidateShellClient();
     runHandshake('contentload');
   });
+
+  reloadOnRendererExit(guest, 'ui guest');
 
   // About to load the guest page + run the handshake.
   reportStatus('connecting');

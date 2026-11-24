@@ -486,7 +486,7 @@ export class NexusViewElement extends CrLitElement {
     // native view reports no background colour and no radius: the host then
     // paints no corner overlay over the tab.
     return html`
-      <webview id="nexusPane"
+      <webview id="nexusPane" name="nexus-ui"
                class=${this.bootWelcomeDismissed_ ? '' : 'tiny-corner'}
                partition="persist:nexus" allowtransparency="on">
       </webview>

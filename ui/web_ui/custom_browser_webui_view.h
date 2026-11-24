@@ -145,6 +145,10 @@ class CustomBrowserWebUIView :  // public CustomBrowserUIEmbedder,
   // window is closed"): a kNexus window's contents is parked with the
   // profile's NexusBackgroundPanelHost instead of dying with the window.
   bool ShouldParkForBackground() const;
+  // Whether the profile's runtime host page outlives this window: the window
+  // is the kNexus one, background mode is on and the browser is not exiting.
+  // Holds even when this window's own page is not worth parking.
+  bool ShouldKeepRuntimeInBackground() const;
   void ParkForBackground();
 
   // content::WebContentsDelegate:

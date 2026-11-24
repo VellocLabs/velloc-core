@@ -14,9 +14,13 @@
 #include "components/prefs/testing_pref_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/storage_partition_config.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
+#include "custom_browser/chromium_hooks/nexus_guest_groups.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
@@ -103,6 +107,77 @@ TEST_F(NexusBackgroundPanelHostTest, NoServiceForOffTheRecordProfile) {
   Profile* otr = profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
   EXPECT_EQ(nullptr, NexusBackgroundPanelHostFactory::GetForProfile(otr));
   EXPECT_EQ(nullptr, NexusBackgroundPanelHostFactory::GetForProfile(nullptr));
+}
+
+// The runtime host page is one never-shown page per profile, started once
+// and gone when stopped.
+TEST_F(NexusBackgroundPanelHostTest, RuntimeHostStartsOnceAndStops) {
+  ASSERT_TRUE(host());
+  EXPECT_FALSE(host()->has_runtime_host());
+  const GURL url("about:blank");
+  host()->set_runtime_host_url_for_testing(url);
+  host()->StartRuntimeHost();
+  content::WebContents* page = host()->runtime_host_for_testing();
+  ASSERT_TRUE(page);
+  EXPECT_EQ(url, page->GetVisibleURL());
+  EXPECT_EQ("nexusRuntimeHost=1",
+            NexusBackgroundPanelHost::RuntimeHostUrl().query());
+  EXPECT_EQ(content::Visibility::HIDDEN, page->GetVisibility());
+  host()->StartRuntimeHost();
+  EXPECT_EQ(page, host()->runtime_host_for_testing());
+  host()->StopRuntimeHost();
+  EXPECT_FALSE(host()->has_runtime_host());
+}
+
+// Parking and taking a window's page leaves the runtime host page alone.
+TEST_F(NexusBackgroundPanelHostTest, RuntimeHostOutlivesTheParkedPage) {
+  ASSERT_TRUE(host());
+  host()->set_runtime_host_url_for_testing(GURL("about:blank"));
+  host()->StartRuntimeHost();
+  content::WebContents* page = host()->runtime_host_for_testing();
+  host()->Park(MakeContents());
+  static_cast<content::MockRenderProcessHost*>(
+      host()->parked_for_testing()->GetPrimaryMainFrame()->GetProcess())
+      ->SimulateCrash();
+  EXPECT_FALSE(host()->has_parked());
+  EXPECT_EQ(page, host()->runtime_host_for_testing());
+  host()->Shutdown();
+  EXPECT_FALSE(host()->has_runtime_host());
+}
+
+// The "nexus" partition has two process groups while the service lives: one
+// SiteInstance each, unrelated to one another, and none for other partitions.
+TEST_F(NexusBackgroundPanelHostTest, GuestGroupsLiveWithTheService) {
+  const auto nexus_config = content::StoragePartitionConfig::Create(
+      profile(), "owner", "nexus", /*in_memory=*/false);
+  const auto other_config = content::StoragePartitionConfig::Create(
+      profile(), "owner", "other", /*in_memory=*/false);
+  using custom_browser::GetNexusGuestGroupSiteInstance;
+  using custom_browser::NexusGuestGroup;
+  EXPECT_FALSE(GetNexusGuestGroupSiteInstance(profile(), nexus_config,
+                                              NexusGuestGroup::kRuntime));
+
+  ASSERT_TRUE(host());
+  scoped_refptr<content::SiteInstance> runtime = GetNexusGuestGroupSiteInstance(
+      profile(), nexus_config, NexusGuestGroup::kRuntime);
+  scoped_refptr<content::SiteInstance> ui = GetNexusGuestGroupSiteInstance(
+      profile(), nexus_config, NexusGuestGroup::kUi);
+  ASSERT_TRUE(runtime);
+  ASSERT_TRUE(ui);
+  EXPECT_EQ(runtime, GetNexusGuestGroupSiteInstance(profile(), nexus_config,
+                                                    NexusGuestGroup::kRuntime));
+  EXPECT_EQ(ui, GetNexusGuestGroupSiteInstance(profile(), nexus_config,
+                                               NexusGuestGroup::kUi));
+  EXPECT_NE(runtime, ui);
+  EXPECT_FALSE(runtime->IsRelatedSiteInstance(ui.get()));
+  EXPECT_FALSE(GetNexusGuestGroupSiteInstance(profile(), other_config,
+                                              NexusGuestGroup::kRuntime));
+
+  runtime.reset();
+  ui.reset();
+  host()->Shutdown();
+  EXPECT_FALSE(GetNexusGuestGroupSiteInstance(profile(), nexus_config,
+                                              NexusGuestGroup::kRuntime));
 }
 
 }  // namespace

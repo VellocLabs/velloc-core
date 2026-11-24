@@ -106,6 +106,9 @@ CustomBrowserWebUIView::CustomBrowserWebUIView(
   if (custom_browser_view_->IsNexusUIMode()) {
     if (auto* host =
             nexus::NexusBackgroundPanelHostFactory::GetForProfile(profile)) {
+      // Before this window's page: the runtime lives in the host page's
+      // process group, not in the one the page's guest renders in.
+      host->StartRuntimeHost();
       owned_contents_ = host->Take();
       reattached = owned_contents_ != nullptr;
     }
@@ -139,17 +142,33 @@ CustomBrowserWebUIView::~CustomBrowserWebUIView() {
     ParkForBackground();
     return;
   }
+  const bool stop_runtime = custom_browser_view_ &&
+                            custom_browser_view_->IsNexusUIMode() &&
+                            !ShouldKeepRuntimeInBackground();
+  Profile* profile =
+      custom_browser_view_ ? custom_browser_view_->GetProfile() : nullptr;
   DeinitializeWebView();
   // `web_view_` (a child view, destroyed after this body) holds a raw
   // pointer to the contents: unhook it before the contents dies.
   web_view_->SetWebContents(nullptr);
   owned_contents_.reset();
+  if (stop_runtime) {
+    // Close means close: the runtime goes with its window.
+    if (auto* host =
+            nexus::NexusBackgroundPanelHostFactory::GetForProfile(profile)) {
+      host->StopRuntimeHost();
+    }
+  }
 }
 
 bool CustomBrowserWebUIView::ShouldParkForBackground() const {
   if (!owned_contents_ || owned_contents_->IsCrashed()) {
     return false;
   }
+  return ShouldKeepRuntimeInBackground();
+}
+
+bool CustomBrowserWebUIView::ShouldKeepRuntimeInBackground() const {
   if (!custom_browser_view_ || !custom_browser_view_->IsNexusUIMode()) {
     return false;  // Only the kNexus window's page is worth keeping.
   }

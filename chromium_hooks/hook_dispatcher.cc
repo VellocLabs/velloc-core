@@ -235,4 +235,18 @@ std::optional<gfx::Rect> OnGetBubbleAnchorRect(
   return std::nullopt;
 }
 
+const void* NexusGuestGroupsUserDataKey(NexusGuestGroupsSlot slot) {
+  static const int kEnabledKey = 0;
+  static const int kRuntimeKey = 0;
+  static const int kUiKey = 0;
+  switch (slot) {
+    case NexusGuestGroupsSlot::kEnabled:
+      return &kEnabledKey;
+    case NexusGuestGroupsSlot::kRuntime:
+      return &kRuntimeKey;
+    case NexusGuestGroupsSlot::kUi:
+      return &kUiKey;
+  }
+}
+
 }  // namespace custom_browser

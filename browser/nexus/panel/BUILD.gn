@@ -25,6 +25,10 @@ source_set("background_panel_host") {
     "//components/keyed_service/core",
     "//components/prefs",
     "//content/public/browser",
+    "//custom_browser/chromium_hooks:hook_core",
+    "//net",
+    "//ui/base",
+    "//url",
   ]
 }
 

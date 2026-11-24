@@ -12,6 +12,7 @@
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "url/gurl.h"
 
 class Profile;
 class ScopedProfileKeepAlive;
@@ -27,7 +28,8 @@ namespace nexus {
 // close with prefs::kBackgroundModeEnabled set, the window hands its contents
 // here instead of destroying them; the next kNexus window `Take()`s them back,
 // so the guest and its sessions survive. Holds a ScopedProfileKeepAlive so the
-// Profile is not unloaded under a parked page.
+// Profile is not unloaded under a parked page. Also owns the profile's runtime
+// host page and turns on the partition's two guest process groups.
 class NexusBackgroundPanelHost : public KeyedService,
                                  public content::WebContentsObserver {
  public:
@@ -55,6 +57,25 @@ class NexusBackgroundPanelHost : public KeyedService,
   std::unique_ptr<content::WebContents> Take();
 
   bool has_parked() const { return parked_ != nullptr; }
+
+  // The profile's runtime host page: a top-chrome page that no window ever
+  // shows. Its one guest holds the runtime SharedWorker's process, so the
+  // worker outlives every window page (P-2). StartRuntimeHost() is
+  // idempotent and takes a profile keep-alive; StopRuntimeHost() destroys the
+  // page, and with it the runtime, and releases the keep-alive.
+  void StartRuntimeHost();
+  void StopRuntimeHost();
+  bool has_runtime_host() const { return runtime_host_ != nullptr; }
+  content::WebContents* runtime_host_for_testing() const {
+    return runtime_host_.get();
+  }
+
+  // The URL the runtime host page loads.
+  static GURL RuntimeHostUrl();
+  // Replaces that URL: a unit test has no top-chrome page to load.
+  void set_runtime_host_url_for_testing(const GURL& url) {
+    runtime_host_url_for_testing_ = url;
+  }
   content::WebContents* parked_for_testing() const { return parked_.get(); }
 
   // KeyedService:
@@ -67,11 +88,17 @@ class NexusBackgroundPanelHost : public KeyedService,
       base::TerminationStatus status) override;
 
  private:
+  class RuntimeHostObserver;
+
   void DropParked();
 
   const raw_ptr<Profile> profile_;
   std::unique_ptr<content::WebContents> parked_;
   std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive_;
+  std::unique_ptr<content::WebContents> runtime_host_;
+  std::unique_ptr<RuntimeHostObserver> runtime_host_observer_;
+  std::unique_ptr<ScopedProfileKeepAlive> runtime_keep_alive_;
+  GURL runtime_host_url_for_testing_;
 };
 
 class NexusBackgroundPanelHostFactory

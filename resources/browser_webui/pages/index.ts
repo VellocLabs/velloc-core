@@ -5,6 +5,7 @@ import './vertical/vertical_page.js';
 import './vertical_compact/vertical_compact_page.js';
 import './horizontal_compact/horizontal_compact_page.js';
 import './nexus/nexus_page.js';
+import {isRuntimeHostPage} from './nexus/nexus_runtime_host.js';
 import './single_web/single_web_page.js';
 import {uiStore, type UiStoreObserver} from '../ui_store.js';
 import {UIMode} from '../ui_view_controller.mojom-webui.js';
@@ -24,11 +25,17 @@ export class MainApp extends CrLitElement {
   `;
 
   mode: UIMode = uiStore.mode;
+  // The runtime host page belongs to no window: it draws no layout and
+  // follows no mode.
+  private readonly runtimeHost_ = isRuntimeHostPage();
   private readonly uiStoreObserver_: UiStoreObserver = {
     onUiModeChanged: (mode) => this.switchPage_(mode),
   };
 
   override firstUpdated() {
+    if (this.runtimeHost_) {
+      return;
+    }
     ColorChangeUpdater.forDocument().start();
     uiStore.addObserver(this.uiStoreObserver_);
     errorReporter.start();
@@ -48,6 +55,9 @@ export class MainApp extends CrLitElement {
   }
 
   protected override render() {
+    if (this.runtimeHost_) {
+      return html`<nexus-runtime-host></nexus-runtime-host>`;
+    }
     return html`
       ${this.mode === UIMode.kSidebar ? html`<vertical-page></vertical-page>` :
         this.mode === UIMode.kCompactSidebar ? html`<vertical-compact-page></vertical-compact-page>` :

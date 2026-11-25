@@ -135,6 +135,9 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // webWindow.open isolatedSession: a session of the window's own (an
     // older host would ignore the input and open the person's profile).
     "webWindow.isolatedSession",
+    // webWindow.open storagePartition and deleteStoragePartition: a kept
+    // session by name (an older host would open the person's profile).
+    "webWindow.storagePartition",
     // network.proxyGet / proxySet: the profile's proxy preference.
     "network.proxy",
     // rawStreamOpen `egress`: the request leaves through the named proxy (an

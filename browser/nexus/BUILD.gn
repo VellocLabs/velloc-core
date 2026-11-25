@@ -224,6 +224,7 @@ action("nexus_tools_codegen") {
     "api/declarations/files/write.api.json",
     "api/declarations/web_window/back.api.json",
     "api/declarations/web_window/close.api.json",
+    "api/declarations/web_window/deleteStoragePartition.api.json",
     "api/declarations/web_window/focus.api.json",
     "api/declarations/web_window/forward.api.json",
     "api/declarations/web_window/list.api.json",
@@ -792,14 +793,14 @@ source_set("bridge") {
     "api/system_prefs/nexus_system_prefs_bridge_adapter.h",
     "api/ui/nexus_ui_bridge_adapter.cc",
     "api/ui/nexus_ui_bridge_adapter.h",
-    "api/web_window/isolated_window_session.cc",
-    "api/web_window/isolated_window_session.h",
     "api/web_window/nexus_web_window_bridge_adapter.cc",
     "api/web_window/nexus_web_window_bridge_adapter.h",
     "api/web_window/sign_in_window.cc",
     "api/web_window/sign_in_window.h",
     "api/web_window/single_web_window.cc",
     "api/web_window/single_web_window.h",
+    "api/web_window/web_window_storage.cc",
+    "api/web_window/web_window_storage.h",
     "api/page_script/nexus_page_script_bridge_adapter.cc",
     "api/page_script/nexus_page_script_bridge_adapter.h",
     "tools/page_script/page_script_channel.cc",
@@ -1480,7 +1481,7 @@ source_set("unit_tests") {
     "api/sqlite/nexus_sqlite_bridge_adapter_unittest.cc",
     "api/sqlite/nexus_sqlite_connection_unittest.cc",
     "api/ui/nexus_ui_bridge_adapter_unittest.cc",
-    "api/web_window/isolated_window_session_unittest.cc",
+    "api/web_window/web_window_storage_unittest.cc",
     "api/web_window/sign_in_window_unittest.cc",
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_bridge_bootstrap_host_unittest.cc",
@@ -1560,10 +1561,6 @@ source_set("unit_tests") {
 
     # ui::TestClipboard (nexus_ui_bridge_adapter_unittest.cc).
     "//ui/base/clipboard:clipboard_test_support",
-
-    # FakeGlobalBrowserCollection and MockBrowserWindowInterface
-    # (isolated_window_session_unittest.cc).
-    "//chrome/browser/ui/browser_window/test:test_support",
 
     # GetTestEncryptorForTesting (the secrets / network secret tests).
     "//components/os_crypt/async/browser:test_support",

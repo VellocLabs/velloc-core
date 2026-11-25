@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../codegen/api_schema.json",
+  "name": "deleteStoragePartition",
+  "description": "Delete everything the kept session `name` stored (webWindow.open storagePartition): cookies and site data. The same name opens an empty session afterwards. invalid_args when the name is not 8 to 32 lower-case letters, and while a window of this profile is open in that session. Answers once the data is gone. Manifest primitive webWindow.storagePartition. Returns { ok: true }.",
+  "struct_name": "WebWindowDeleteStoragePartition",
+  "inputs": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "description": "The kept session's name, as given to open's storagePartition."
+    }
+  ],
+  "errors": [
+    {
+      "code": "invalid_args",
+      "params": [
+        "reason"
+      ]
+    }
+  ],
+  "runtime": {
+    "thread": "ui"
+  }
+}

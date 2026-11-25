@@ -12,6 +12,10 @@
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/referrer.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -59,15 +63,39 @@ BrowserWindowInterface* OpenSingleWebWindow(
     return nullptr;
   }
 
-  NavigateParams navigate(browser, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
-  navigate.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
   const bool focus =
       params.focus &&
       params.show_state != ui::mojom::WindowShowState::kMinimized;
-  navigate.window_action =
+  const NavigateParams::WindowAction window_action =
       focus ? NavigateParams::WindowAction::kShowWindow
             : NavigateParams::WindowAction::kShowWindowInactive;
+  if (!params.storage) {
+    NavigateParams navigate(browser, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+    navigate.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    navigate.window_action = window_action;
+    Navigate(&navigate);
+    return browser;
+  }
+
+  // The tab is made in its partition first and then put in the window; the
+  // navigator does not load a tab it was handed.
+  content::WebContents::CreateParams create_contents(
+      profile, content::SiteInstance::CreateForFixedStoragePartition(
+                   profile, url, *params.storage));
+  NavigateParams navigate(browser,
+                          content::WebContents::Create(create_contents));
+  navigate.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  navigate.window_action = window_action;
   Navigate(&navigate);
+  content::WebContents* inserted = navigate.navigated_or_inserted_contents;
+  if (!inserted) {
+    // Security: never fall back to a tab of the profile's own session.
+    BrowserWindow::FromBrowser(browser)->Close();
+    return nullptr;
+  }
+  inserted->GetController().LoadURL(url, content::Referrer(),
+                                    ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                    std::string());
   return browser;
 }
 

@@ -77,6 +77,13 @@ class NexusWebWindowBridgeAdapter
       ::nexus::generated::WebWindowShowSignInResultInput input,
       std::vector<blink::MessagePortDescriptor> ports,
       ::nexus::BridgeResponseCallback done) override;
+  // Contract: invalid_args for a name that is not IsWebWindowStorageName
+  // and while a window of this profile is open in that session; answers
+  // after the stored data is gone.
+  void HandleDeleteStoragePartitionOnUI(
+      ::nexus::generated::WebWindowDeleteStoragePartitionInput input,
+      std::vector<blink::MessagePortDescriptor> ports,
+      ::nexus::BridgeResponseCallback done) override;
   void HandleListOnUI(::nexus::generated::WebWindowListInput input,
                       std::vector<blink::MessagePortDescriptor> ports,
                       ::nexus::BridgeResponseCallback done) override;

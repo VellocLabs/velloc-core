@@ -21,12 +21,12 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "custom_browser/browser/nexus/api/web_window/isolated_window_session.h"
 #include "custom_browser/browser/nexus/api/web_window/sign_in_status_page.h"
 #include "custom_browser/browser/nexus/api/web_window/sign_in_window.h"
 #include "custom_browser/browser/nexus/api/web_window/single_web_window.h"
 #include "custom_browser/browser/nexus/api/web_window/web_window_options.h"
 #include "custom_browser/browser/nexus/api/web_window/web_window_redirect_capture.h"
+#include "custom_browser/browser/nexus/api/web_window/web_window_storage.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 
@@ -87,6 +87,11 @@ class NexusWebWindowBridgeAdapter::Window
   void CloseByApi() {
     closing_by_api_ = true;
     BrowserWindow::FromBrowser(browser_)->Close();
+  }
+
+  // The session of its own the window runs in, held until this object goes.
+  void set_storage(std::unique_ptr<WebWindowStorage> storage) {
+    storage_ = std::move(storage);
   }
 
   // awaitSignInResult: the captured sign-in waits for showSignInResult.
@@ -194,6 +199,7 @@ class NexusWebWindowBridgeAdapter::Window
   bool awaits_sign_in_ = false;
   bool sign_in_pending_ = false;
   std::unique_ptr<SignInSuccessCloser> success_closer_;
+  std::unique_ptr<WebWindowStorage> storage_;
   base::CallbackListSubscription did_close_;
   base::CallbackListSubscription close_cancelled_;
   base::CallbackListSubscription active_tab_;
@@ -306,22 +312,31 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   }
   params.show_state = show_state;
   params.focus = input.focus.value_or(true);
-  // Security: an isolated window never falls back to the person's profile.
-  const bool isolated = input.isolatedSession.value_or(false);
-  Profile* window_profile = profile_.get();
-  if (isolated) {
-    window_profile = CreateIsolatedWindowSession(profile_);
-    if (!window_profile) {
-      std::move(done).Error(errors::kWindowCreateFailed,
-                            "no session of its own can be made for it");
+  // Security: a window asked to run in a session of its own never opens in
+  // the person's; OpenSingleWebWindow fails instead.
+  std::unique_ptr<WebWindowStorage> storage;
+  if (input.storagePartition.has_value()) {
+    const char* reason = nullptr;
+    if (input.isolatedSession.value_or(false)) {
+      reason = "isolatedSession and storagePartition exclude each other";
+    } else if (!IsWebWindowStorageName(*input.storagePartition)) {
+      reason = "storagePartition must be 8 to 32 lower-case letters";
+    }
+    if (reason) {
+      base::DictValue error_params;
+      error_params.Set("reason", reason);
+      std::move(done).Error(errors::kInvalidArgs, reason,
+                            std::move(error_params));
       return;
     }
+    storage = WebWindowStorage::Kept(profile_, *input.storagePartition);
+  } else if (input.isolatedSession.value_or(false)) {
+    storage = WebWindowStorage::Fresh(profile_);
   }
-  BrowserWindowInterface* browser =
-      OpenSingleWebWindow(window_profile, url, params);
-  if (isolated) {
-    DestroyIsolatedWindowSessionWhenUnused(window_profile);
+  if (storage) {
+    params.storage = storage->config();
   }
+  BrowserWindowInterface* browser = OpenSingleWebWindow(profile_, url, params);
   if (!browser) {
     std::move(done).Error(errors::kWindowCreateFailed,
                           "the window could not be created");
@@ -329,6 +344,7 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   }
 
   auto window = std::make_unique<Window>(this, browser);
+  window->set_storage(std::move(storage));
   const int32_t window_id = window->id();
   if (capture_target) {
     // Security: an unarmed window would let the redirect reach the port.
@@ -364,6 +380,31 @@ void NexusWebWindowBridgeAdapter::HandleCloseOnUI(
   }
   window->CloseByApi();
   std::move(done).Success(OkResult(true));
+}
+
+void NexusWebWindowBridgeAdapter::HandleDeleteStoragePartitionOnUI(
+    ::nexus::generated::WebWindowDeleteStoragePartitionInput input,
+    std::vector<blink::MessagePortDescriptor> /*ports*/,
+    ::nexus::BridgeResponseCallback done) {
+  const char* reason = nullptr;
+  if (!IsWebWindowStorageName(input.name)) {
+    reason = "name must be 8 to 32 lower-case letters";
+  } else if (IsWebWindowStorageInUse(profile_, input.name)) {
+    reason = "a window is open in it";
+  }
+  if (reason) {
+    base::DictValue params;
+    params.Set("reason", reason);
+    std::move(done).Error(errors::kInvalidArgs, reason, std::move(params));
+    return;
+  }
+  DeleteWebWindowStorage(
+      profile_, input.name,
+      base::BindOnce(
+          [](::nexus::BridgeResponseCallback done) {
+            std::move(done).Success(OkResult(true));
+          },
+          std::move(done)));
 }
 
 void NexusWebWindowBridgeAdapter::HandleShowSignInResultOnUI(

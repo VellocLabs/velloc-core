@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "content/public/browser/storage_partition_config.h"
 #include "ui/base/mojom/window_show_state.mojom-shared.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -31,6 +32,10 @@ struct SingleWebWindowParams {
   bool origin_specified = false;
   ui::mojom::WindowShowState show_state = ui::mojom::WindowShowState::kNormal;
   bool focus = true;
+  // Security: with a value, the tab is fixed to that storage partition of the
+  // profile for its whole life (WebWindowStorage), across every navigation.
+  // Absent: the profile's own session.
+  std::optional<content::StoragePartitionConfig> storage;
 };
 
 // Opens `url` in a new single-web window (kSingleWeb, F-29) of `profile`:

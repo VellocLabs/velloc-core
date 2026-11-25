@@ -5,13 +5,16 @@
 #include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 
 #include <memory>
+#include <optional>
 
+#include "base/test/bind.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/prefs/testing_pref_service.h"
+#include "content/public/browser/dedicated_worker_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/site_instance.h"
@@ -24,6 +27,7 @@
 #include "custom_browser/browser/nexus/nexus_test_support.h"
 #include "custom_browser/browser/nexus/panel/nexus_parked_page_workers.h"
 #include "custom_browser/chromium_hooks/nexus_guest_groups.h"
+#include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace nexus {
@@ -48,10 +52,13 @@ class NexusBackgroundPanelHostTest : public ChromeRenderViewHostTestHarness {
                                                              nullptr);
   }
 
-  // Attaches a stand-in guest to `outer` under a new child frame.
+  // Attaches a stand-in guest to `outer` under a new child frame, loading a
+  // document into `outer` first when it has none.
   void AttachGuest(content::WebContents* outer) {
-    content::NavigationSimulator::NavigateAndCommitFromBrowser(
-        outer, GURL("about:blank"));
+    if (outer->GetLastCommittedURL().is_empty()) {
+      content::NavigationSimulator::NavigateAndCommitFromBrowser(
+          outer, GURL("about:blank"));
+    }
     content::RenderFrameHost* child =
         content::RenderFrameHostTester::For(outer->GetPrimaryMainFrame())
             ->AppendChild("guest");
@@ -248,6 +255,121 @@ TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
   EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
       << "a page back in a window is not parked";
   host()->StopRuntimeHost();
+}
+
+// A runtime host guest that loads again is no live runtime until the load
+// ends, and both ends of the load are reported. (P-2)
+TEST_F(NexusBackgroundPanelHostTest, HostGuestLoadingAgainIsNotIdle) {
+  ASSERT_TRUE(host());
+  std::unique_ptr<content::WebContents> contents = MakeContents();
+  content::WebContents* raw = contents.get();
+  host()->Park(std::move(contents));
+  host()->set_runtime_host_url_for_testing(GURL("about:blank"));
+  host()->set_runtime_host_reload_enabled_for_testing(false);
+  host()->StartRuntimeHost();
+  AttachGuest(host()->runtime_host_for_testing());
+  content::WebContents* host_guest =
+      host()->runtime_host_for_testing()->GetInnerWebContents().front();
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      host_guest, GURL("https://runtime.test/"));
+  ASSERT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+
+  int changes = 0;
+  base::CallbackListSubscription subscription =
+      NexusBackgroundPanelHost::AddStateChangedCallback(
+          base::BindRepeating([](int* count) { ++*count; }, &changes));
+  std::unique_ptr<content::NavigationSimulator> reload =
+      content::NavigationSimulator::CreateBrowserInitiated(
+          GURL("https://runtime.test/again"), host_guest);
+  reload->Start();
+  EXPECT_GT(changes, 0) << "the start of the load is reported";
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+  // The stand-in guest cannot swap in a new document; the load ending is
+  // what counts.
+  const int before_end = changes;
+  reload->Fail(net::ERR_ABORTED);
+  EXPECT_GT(changes, before_end);
+  EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+  host()->Shutdown();
+}
+
+// A runtime host guest that goes away is no longer watched, and the one
+// attached after it is.
+TEST_F(NexusBackgroundPanelHostTest, GoneHostGuestIsNoLongerWatched) {
+  ASSERT_TRUE(host());
+  EXPECT_EQ(0u, host()->runtime_host_guest_observers_for_testing());
+  host()->set_runtime_host_url_for_testing(GURL("about:blank"));
+  host()->set_runtime_host_reload_enabled_for_testing(false);
+  host()->StartRuntimeHost();
+  content::WebContents* page = host()->runtime_host_for_testing();
+  AttachGuest(page);
+  EXPECT_EQ(1u, host()->runtime_host_guest_observers_for_testing());
+
+  int changes = 0;
+  base::CallbackListSubscription subscription =
+      NexusBackgroundPanelHost::AddStateChangedCallback(
+          base::BindRepeating([](int* count) { ++*count; }, &changes));
+  // A new document in the host page takes the guest's frame with it.
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      page, GURL("https://host.test/"));
+  ASSERT_TRUE(page->GetInnerWebContents().empty());
+  EXPECT_EQ(0u, host()->runtime_host_guest_observers_for_testing());
+  EXPECT_GT(changes, 0) << "the guest going is reported";
+
+  AttachGuest(page);
+  EXPECT_EQ(1u, host()->runtime_host_guest_observers_for_testing());
+  host()->StopRuntimeHost();
+  EXPECT_EQ(0u, host()->runtime_host_guest_observers_for_testing());
+}
+
+// A guest attached to an already parked page is asked for the workers it
+// runs, each time, also in a partition that is already followed.
+TEST_F(NexusBackgroundPanelHostTest, GuestAttachedLaterBringsItsWorkers) {
+  ASSERT_TRUE(host());
+  std::unique_ptr<content::WebContents> contents = MakeContents();
+  content::WebContents* raw = contents.get();
+  host()->Park(std::move(contents));
+  NexusParkedPageWorkers* workers = host()->parked_workers_for_testing();
+  ASSERT_TRUE(workers);
+
+  // Stands in for the partition: reports `running` as a worker of the guest
+  // attached last, when there is one.
+  int asked = 0;
+  std::optional<blink::DedicatedWorkerToken> running;
+  workers->set_enumerator_for_testing(base::BindLambdaForTesting(
+      [&](content::DedicatedWorkerService::Observer* observer) {
+        ++asked;
+        if (running) {
+          observer->OnWorkerCreated(*running, content::ChildProcessId(),
+                                    url::Origin(),
+                                    raw->GetInnerWebContents()
+                                        .back()
+                                        ->GetPrimaryMainFrame()
+                                        ->GetGlobalId());
+        }
+      }));
+  int changes = 0;
+  base::CallbackListSubscription subscription =
+      NexusBackgroundPanelHost::AddStateChangedCallback(
+          base::BindRepeating([](int* count) { ++*count; }, &changes));
+
+  AttachGuest(raw);
+  EXPECT_EQ(1, asked);
+  EXPECT_FALSE(workers->has_workers());
+  EXPECT_EQ(0, changes);
+
+  running.emplace();
+  AttachGuest(raw);
+  EXPECT_EQ(2, asked) << "the second guest's partition was followed already";
+  EXPECT_TRUE(workers->has_workers());
+  EXPECT_EQ(1, changes) << "one report for the attach, none from inside it";
+
+  workers->OnBeforeWorkerDestroyed(
+      *running,
+      raw->GetInnerWebContents().back()->GetPrimaryMainFrame()->GetGlobalId());
+  EXPECT_FALSE(workers->has_workers());
+  EXPECT_EQ(2, changes);
+  host()->Shutdown();
 }
 
 // The worker tracker counts workers of frames in the parked page's guests,

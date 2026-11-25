@@ -106,7 +106,11 @@ void NexusParkedPageWorkers::ObserveGuest(content::WebContents* guest) {
   // Workers the guest started before it was attached or observed: when they
   // were first reported its frames did not belong to this page yet.
   enumerating_ = true;
-  service->EnumerateDedicatedWorkers(this);
+  if (enumerator_for_testing_) {
+    enumerator_for_testing_.Run(this);
+  } else {
+    service->EnumerateDedicatedWorkers(this);
+  }
   enumerating_ = false;
 }
 

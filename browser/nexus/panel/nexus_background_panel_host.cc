@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "base/callback_list.h"
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/task/sequenced_task_runner.h"
@@ -92,18 +94,24 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
       content::WebContents* inner_web_contents,
       content::RenderFrameHost* render_frame_host) override {
     guest_observers_.push_back(
-        std::make_unique<GuestObserver>(inner_web_contents));
+        std::make_unique<GuestObserver>(inner_web_contents, this));
     NexusBackgroundPanelHost::NotifyStateChanged();
   }
+
+  size_t guest_observer_count() const { return guest_observers_.size(); }
 
  private:
   // The host page's guest: the runtime's own renderer. Whether it is loaded
   // and alive decides whether a parked page still carries the runtime.
   class GuestObserver : public content::WebContentsObserver {
    public:
-    explicit GuestObserver(content::WebContents* guest)
-        : content::WebContentsObserver(guest) {}
+    GuestObserver(content::WebContents* guest, RuntimeHostObserver* owner)
+        : content::WebContentsObserver(guest), owner_(owner) {}
 
+    // A guest that loads again runs no runtime until the load ends.
+    void DidStartLoading() override {
+      NexusBackgroundPanelHost::NotifyStateChanged();
+    }
     void DidStopLoading() override {
       NexusBackgroundPanelHost::NotifyStateChanged();
     }
@@ -112,10 +120,21 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
       NexusBackgroundPanelHost::NotifyStateChanged();
     }
     void WebContentsDestroyed() override {
-      Observe(nullptr);
-      NexusBackgroundPanelHost::NotifyStateChanged();
+      // Deletes this observer.
+      owner_->OnGuestDestroyed(this);
     }
+
+   private:
+    const raw_ptr<RuntimeHostObserver> owner_;
   };
+
+  void OnGuestDestroyed(GuestObserver* observer) {
+    std::erase_if(guest_observers_,
+                  [observer](const std::unique_ptr<GuestObserver>& held) {
+                    return held.get() == observer;
+                  });
+    NexusBackgroundPanelHost::NotifyStateChanged();
+  }
 
   void Reload() {
     if (web_contents()) {
@@ -193,6 +212,12 @@ bool NexusBackgroundPanelHost::runtime_host_has_guest() const {
     }
   }
   return false;
+}
+
+size_t NexusBackgroundPanelHost::runtime_host_guest_observers_for_testing()
+    const {
+  return runtime_host_observer_ ? runtime_host_observer_->guest_observer_count()
+                                : 0;
 }
 
 void NexusBackgroundPanelHost::set_runtime_host_reload_enabled_for_testing(

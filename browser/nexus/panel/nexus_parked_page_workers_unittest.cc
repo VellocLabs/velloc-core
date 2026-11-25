@@ -60,5 +60,32 @@ TEST(ParkedWorkerSetTest, WorkerOfAnotherPageIsNotCounted) {
   EXPECT_TRUE(set.empty());
 }
 
+// A worker reported twice before its parent waits once: it is admitted once
+// with the parent, and nothing of it is left waiting after it ends.
+TEST(ParkedWorkerSetTest, WorkerReportedTwiceWaitsOnce) {
+  ParkedWorkerSet set;
+  const Token parent, child;
+  EXPECT_FALSE(set.AddNested(child, parent));
+  EXPECT_FALSE(set.AddNested(child, parent));
+  EXPECT_TRUE(set.AddFromPage(parent));
+  EXPECT_FALSE(set.AddNested(child, parent)) << "already counted";
+  EXPECT_FALSE(set.Remove(parent));
+  EXPECT_TRUE(set.Remove(child));
+  EXPECT_TRUE(set.empty());
+
+  // The parent joining again brings no ended child back with it.
+  EXPECT_TRUE(set.AddFromPage(parent));
+  EXPECT_TRUE(set.Remove(parent));
+  EXPECT_TRUE(set.empty());
+
+  // Ended while still waiting: a later parent admits nothing for it.
+  EXPECT_FALSE(set.AddNested(child, parent));
+  EXPECT_FALSE(set.AddNested(child, parent));
+  EXPECT_FALSE(set.Remove(child));
+  EXPECT_TRUE(set.AddFromPage(parent));
+  EXPECT_TRUE(set.Remove(parent));
+  EXPECT_TRUE(set.empty());
+}
+
 }  // namespace
 }  // namespace nexus

@@ -7,6 +7,7 @@
 
 #include <map>
 #include <set>
+#include <utility>
 
 #include "base/functional/callback.h"
 #include "base/scoped_multi_source_observation.h"
@@ -67,6 +68,13 @@ class NexusParkedPageWorkers
 
   bool has_workers() const { return !workers_.empty(); }
 
+  // Replaces the partition's report of its running workers.
+  using Enumerator = base::RepeatingCallback<
+      void(content::DedicatedWorkerService::Observer*)>;
+  void set_enumerator_for_testing(Enumerator enumerator) {
+    enumerator_for_testing_ = std::move(enumerator);
+  }
+
   // content::WebContentsObserver:
   void InnerWebContentsAttached(
       content::WebContents* inner_web_contents,
@@ -88,6 +96,7 @@ class NexusParkedPageWorkers
   bool IsFrameOfParkedPage(const content::GlobalRenderFrameHostId& id) const;
 
   base::RepeatingClosure on_changed_;
+  Enumerator enumerator_for_testing_;
   ParkedWorkerSet workers_;
   bool enumerating_ = false;
   base::ScopedMultiSourceObservation<content::DedicatedWorkerService,

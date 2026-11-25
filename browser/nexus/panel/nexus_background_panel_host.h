@@ -5,6 +5,7 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_PANEL_NEXUS_BACKGROUND_PANEL_HOST_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_PANEL_NEXUS_BACKGROUND_PANEL_HOST_H_
 
+#include <cstddef>
 #include <memory>
 
 #include "base/callback_list.h"
@@ -89,8 +90,8 @@ class NexusBackgroundPanelHost : public KeyedService,
   // Runs `callback` after a page is parked, taken or dropped, after the parked
   // page's first worker starts or its last one ends, and after the runtime
   // host page starts, stops, loses its renderer, commits again or attaches
-  // its guest, and after that guest finishes loading, loses its renderer or
-  // goes, in any profile. UI thread.
+  // its guest, and after that guest starts or finishes loading, loses its
+  // renderer or goes, in any profile. UI thread.
   static base::CallbackListSubscription AddStateChangedCallback(
       base::RepeatingClosure callback);
 
@@ -109,6 +110,8 @@ class NexusBackgroundPanelHost : public KeyedService,
     return parked_workers_.get();
   }
   void set_runtime_host_reload_enabled_for_testing(bool enabled);
+  // How many guests of the runtime host page are being watched.
+  size_t runtime_host_guest_observers_for_testing() const;
 
   // KeyedService:
   void Shutdown() override;

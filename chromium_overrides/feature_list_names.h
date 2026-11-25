@@ -5,6 +5,7 @@
 #ifndef CUSTOM_BROWSER_CHROMIUM_OVERRIDES_FEATURE_LIST_NAMES_H_
 #define CUSTOM_BROWSER_CHROMIUM_OVERRIDES_FEATURE_LIST_NAMES_H_
 
+#include <string>
 #include <string_view>
 
 #include "base/strings/string_split.h"
@@ -29,6 +30,36 @@ inline bool FeatureListNamesFeature(std::string_view feature_list,
     }
   }
   return false;
+}
+
+// Upstream features pinned OFF by name through --disable-features, which
+// wins over the source default, a field trial and --enable-features.
+inline constexpr const char* kPinnedOffFeatureNames[] = {
+    // Our search-engine UI relies on the legacy getSearchEnginesList()
+    // message and /searchEngines route (CHECK crash).
+    "SearchSettingsUpdate",
+    // Gates Chrome's WebUI toolbar, a second always-visible top-chrome WebUI
+    // that would share the chrome://custom.top-chrome shell renderer and hold
+    // it at foreground priority while hidden (P-2).
+    "InitialWebUI",
+    // Its startup metrics task waits on another process for the OneDrive
+    // folder's sync state; with no answer it holds browser shutdown open (P-5).
+    "CloudSyncedFolderChecker",
+};
+
+// `disable_features`, a --disable-features value, extended so it names every
+// pinned-off feature. Entries already present are kept as written; a value
+// that already names them all is returned unchanged.
+inline std::string WithPinnedOffFeatures(std::string disable_features) {
+  for (const char* feature : kPinnedOffFeatureNames) {
+    if (FeatureListNamesFeature(disable_features, feature)) {
+      continue;
+    }
+    disable_features = disable_features.empty()
+                           ? std::string(feature)
+                           : std::string(feature) + "," + disable_features;
+  }
+  return disable_features;
 }
 
 }  // namespace custom_browser

@@ -1500,6 +1500,9 @@ source_set("unit_tests") {
     # //chrome/browser/ui (browser_view_sources), and this is the only nexus
     # test binary that links that target.
     "//custom_browser/ui/prefs/custom_browser_ui_prefs_unittest.cc",
+    # Compares a pinned-off name with the upstream feature object, which the
+    # //base-only lite binary does not link.
+    "//custom_browser/chromium_overrides/feature_list_pins_unittest.cc",
     # Lives beside its header in ui/view, but the predicate reads
     # views::View::GetVisibleBounds(), which is empty for any view outside a
     # Widget. A real Widget needs ChromeViewsTestBase and the GL/compositor
@@ -1543,6 +1546,7 @@ source_set("unit_tests") {
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/test:test_support",
     "//components/keep_alive_registry",
+    "//custom_browser/browser:feature_list_names",
 
     # MessagePortDescriptorPair / WebMessageArrayBufferPayload: a body sent
     # over a transferred port (nexus_network_bridge_adapter_unittest.cc).
@@ -1591,6 +1595,11 @@ source_set("unit_tests") {
     "//url",
   ]
   sources += nexus_render_cache_unittest_sources
+
+  if (is_win) {
+    # kCloudSyncedFolderChecker (feature_list_pins_unittest.cc).
+    deps += [ "//chrome/browser/win:cloud_synced_folder_checker" ]
+  }
 }
 
 # Standalone test binary for the lightweight nexus unit tests. Run with:

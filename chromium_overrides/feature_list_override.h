@@ -90,32 +90,14 @@ inline void AppendFeatureListOverrides(
       std::cref(actor::kGlicBlockFileSystemAccessApiFilePicker),
       base::FeatureList::OVERRIDE_ENABLE_FEATURE);
 
-  // Pinned OFF via --disable-features: the pin wins over field trials and
-  // drops every study that carries the feature.
-  // - "SearchSettingsUpdate": our search-engine UI relies on the legacy
-  //   getSearchEnginesList() message and /searchEngines route (CHECK crash).
-  // - "InitialWebUI": gates Chrome's WebUI toolbar, a second always-visible
-  //   top-chrome WebUI that would share the chrome://custom.top-chrome shell
-  //   renderer and hold it at foreground priority while hidden (P-2).
+  // Pin kPinnedOffFeatureNames OFF via --disable-features.
   {
-    constexpr const char* kPinnedOffFeatures[] = {"SearchSettingsUpdate",
-                                                  "InitialWebUI"};
     auto* command_line = base::CommandLine::ForCurrentProcess();
-    std::string disable_features =
+    const std::string disable_features =
         command_line->GetSwitchValueASCII(::switches::kDisableFeatures);
-    bool changed = false;
-    for (const char* feature : kPinnedOffFeatures) {
-      if (FeatureListNamesFeature(disable_features, feature)) {
-        continue;
-      }
-      disable_features = disable_features.empty()
-                             ? std::string(feature)
-                             : std::string(feature) + "," + disable_features;
-      changed = true;
-    }
-    if (changed) {
-      command_line->AppendSwitchASCII(::switches::kDisableFeatures,
-                                      disable_features);
+    std::string pinned = WithPinnedOffFeatures(disable_features);
+    if (pinned != disable_features) {
+      command_line->AppendSwitchASCII(::switches::kDisableFeatures, pinned);
     }
   }
 }

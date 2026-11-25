@@ -16,6 +16,10 @@
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_renderer_host.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
+#include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_access_result.h"
+#include "net/cookies/cookie_options.h"
+#include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -31,6 +35,17 @@ class WebWindowStorageTest : public testing::Test {
     test::AddGlicDisablingFactory(builder);
     profile_ = builder.Build();
   }
+
+  // A tab fixed to `storage`'s partition, as OpenSingleWebWindow makes one.
+  std::unique_ptr<content::WebContents> TabIn(const WebWindowStorage& storage) {
+    content::WebContents::CreateParams params(
+        profile_.get(),
+        content::SiteInstance::CreateForFixedStoragePartition(
+            profile_.get(), GURL("https://accounts.vendor-a.test/"),
+            storage.config()));
+    return content::WebContents::Create(params);
+  }
+
 
   content::BrowserTaskEnvironment task_environment_;
   content::RenderViewHostTestEnabler rvh_enabler_;
@@ -114,6 +129,79 @@ TEST_F(WebWindowStorageTest, DeleteAnswersForALoadedAndAnUnloadedSession) {
   DeleteWebWindowStorage(profile_.get(), "vellocprofilec",
                          never_opened.GetCallback());
   EXPECT_TRUE(never_opened.Wait());
+}
+
+TEST_F(WebWindowStorageTest, ATabKeepsItsSessionInUseAfterTheOpenerLetsGo) {
+  auto storage = WebWindowStorage::Kept(profile_.get(), kName);
+  std::unique_ptr<content::WebContents> tab = TabIn(*storage);
+  storage->KeepWith(tab.get());
+  storage->KeepWith(tab.get());
+  storage.reset();
+  EXPECT_TRUE(IsWebWindowStorageInUse(profile_.get(), kName));
+  tab.reset();
+  EXPECT_FALSE(IsWebWindowStorageInUse(profile_.get(), kName));
+}
+
+TEST_F(WebWindowStorageTest, APopupOfTheSessionKeepsItInUse) {
+  auto storage = WebWindowStorage::Kept(profile_.get(), kName);
+  std::unique_ptr<content::WebContents> tab = TabIn(*storage);
+  storage->KeepWith(tab.get());
+  std::unique_ptr<content::WebContents> popup = TabIn(*storage);
+  std::unique_ptr<content::WebContents> elsewhere =
+      content::WebContents::Create(
+          content::WebContents::CreateParams(profile_.get()));
+  storage.reset();
+  KeepWebWindowStorageForPopup(tab.get(), popup.get());
+  KeepWebWindowStorageForPopup(tab.get(), elsewhere.get());
+  tab.reset();
+  EXPECT_TRUE(IsWebWindowStorageInUse(profile_.get(), kName));
+  popup.reset();
+  EXPECT_FALSE(IsWebWindowStorageInUse(profile_.get(), kName));
+}
+
+TEST_F(WebWindowStorageTest, AFreshSessionIsClearedOnlyWhenItsLastTabIsGone) {
+  auto storage = WebWindowStorage::Fresh(profile_.get());
+  const content::StoragePartitionConfig config = storage->config();
+  std::unique_ptr<content::WebContents> tab = TabIn(*storage);
+  storage->KeepWith(tab.get());
+  storage.reset();
+  EXPECT_NE(profile_->GetStoragePartition(config, /*can_create=*/false),
+            nullptr);
+  tab.reset();
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(WebWindowStorageTest, DeletingUntilItAnswers) {
+  base::test::TestFuture<void> done;
+  DeleteWebWindowStorage(profile_.get(), kName, done.GetCallback());
+  EXPECT_TRUE(IsWebWindowStorageDeleting(profile_.get(), kName));
+  EXPECT_FALSE(IsWebWindowStorageDeleting(profile_.get(), "vellocprofilec"));
+  EXPECT_TRUE(done.Wait());
+  EXPECT_FALSE(IsWebWindowStorageDeleting(profile_.get(), kName));
+}
+
+TEST_F(WebWindowStorageTest, DeleteClearsALoadedSessionsCookiesBeforeItAnswers) {
+  const GURL site("https://accounts.vendor-a.test/");
+  content::StoragePartition* partition = nullptr;
+  {
+    auto storage = WebWindowStorage::Kept(profile_.get(), kName);
+    partition = profile_->GetStoragePartition(storage->config());
+  }
+  auto cookie = net::CanonicalCookie::CreateForTesting(
+      site, "acct=alice; Secure", base::Time::Now(),
+      net::CookieSourceType::kHTTP);
+  base::test::TestFuture<net::CookieAccessResult> set;
+  partition->GetCookieManagerForBrowserProcess()->SetCanonicalCookie(
+      *cookie, site, net::CookieOptions::MakeAllInclusive(), set.GetCallback());
+  ASSERT_TRUE(set.Get().status.IsInclude());
+
+  base::test::TestFuture<void> done;
+  DeleteWebWindowStorage(profile_.get(), kName, done.GetCallback());
+  EXPECT_TRUE(done.Wait());
+  base::test::TestFuture<const std::vector<net::CanonicalCookie>&> left;
+  partition->GetCookieManagerForBrowserProcess()->GetAllCookies(
+      left.GetCallback());
+  EXPECT_TRUE(left.Get().empty());
 }
 
 TEST_F(WebWindowStorageTest, LettingGoAfterTheProfileIsGoneIsSafe) {

@@ -89,11 +89,6 @@ class NexusWebWindowBridgeAdapter::Window
     BrowserWindow::FromBrowser(browser_)->Close();
   }
 
-  // The session of its own the window runs in, held until this object goes.
-  void set_storage(std::unique_ptr<WebWindowStorage> storage) {
-    storage_ = std::move(storage);
-  }
-
   // awaitSignInResult: the captured sign-in waits for showSignInResult.
   void set_awaits_sign_in() { awaits_sign_in_ = true; }
   bool awaits_sign_in() const { return awaits_sign_in_; }
@@ -199,7 +194,6 @@ class NexusWebWindowBridgeAdapter::Window
   bool awaits_sign_in_ = false;
   bool sign_in_pending_ = false;
   std::unique_ptr<SignInSuccessCloser> success_closer_;
-  std::unique_ptr<WebWindowStorage> storage_;
   base::CallbackListSubscription did_close_;
   base::CallbackListSubscription close_cancelled_;
   base::CallbackListSubscription active_tab_;
@@ -314,13 +308,16 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   params.focus = input.focus.value_or(true);
   // Security: a window asked to run in a session of its own never opens in
   // the person's; OpenSingleWebWindow fails instead.
-  std::unique_ptr<WebWindowStorage> storage;
+  scoped_refptr<WebWindowStorage> storage;
   if (input.storagePartition.has_value()) {
     const char* reason = nullptr;
     if (input.isolatedSession.value_or(false)) {
       reason = "isolatedSession and storagePartition exclude each other";
     } else if (!IsWebWindowStorageName(*input.storagePartition)) {
       reason = "storagePartition must be 8 to 32 lower-case letters";
+    } else if (IsWebWindowStorageDeleting(profile_,
+                                          *input.storagePartition)) {
+      reason = "the storagePartition is being deleted";
     }
     if (reason) {
       base::DictValue error_params;
@@ -344,7 +341,13 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   }
 
   auto window = std::make_unique<Window>(this, browser);
-  window->set_storage(std::move(storage));
+  if (storage) {
+    // The tab holds its session, so a window that outlives this connection,
+    // and the popups it opens, keep it in use.
+    if (content::WebContents* web_contents = window->contents()) {
+      storage->KeepWith(web_contents);
+    }
+  }
   const int32_t window_id = window->id();
   if (capture_target) {
     // Security: an unarmed window would let the redirect reach the port.
@@ -391,6 +394,8 @@ void NexusWebWindowBridgeAdapter::HandleDeleteStoragePartitionOnUI(
     reason = "name must be 8 to 32 lower-case letters";
   } else if (IsWebWindowStorageInUse(profile_, input.name)) {
     reason = "a window is open in it";
+  } else if (IsWebWindowStorageDeleting(profile_, input.name)) {
+    reason = "it is being deleted";
   }
   if (reason) {
     base::DictValue params;

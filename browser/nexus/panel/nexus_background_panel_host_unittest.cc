@@ -22,6 +22,7 @@
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
+#include "custom_browser/browser/nexus/panel/nexus_parked_page_workers.h"
 #include "custom_browser/chromium_hooks/nexus_guest_groups.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -222,8 +223,24 @@ TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
   const int before_attach = changes;
   AttachGuest(host()->runtime_host_for_testing());
   EXPECT_GT(changes, before_attach);
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
+      << "the runtime host guest has not loaded anything yet";
+  content::WebContents* host_guest =
+      host()->runtime_host_for_testing()->GetInnerWebContents().front();
+  const int before_load = changes;
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      host_guest, GURL("https://runtime.test/"));
+  EXPECT_GT(changes, before_load);
   EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
       << "the runtime host guest is live and no worker runs in the page";
+
+  const int before_guest_crash = changes;
+  static_cast<content::MockRenderProcessHost*>(
+      host_guest->GetPrimaryMainFrame()->GetProcess())
+      ->SimulateCrash();
+  EXPECT_GT(changes, before_guest_crash)
+      << "the runtime's own renderer going away is reported";
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
 
   const int before_take = changes;
   std::unique_ptr<content::WebContents> taken = host()->Take();
@@ -231,6 +248,46 @@ TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
   EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
       << "a page back in a window is not parked";
   host()->StopRuntimeHost();
+}
+
+// The worker tracker counts workers of frames in the parked page's guests,
+// and their nested workers, and nothing the page itself or another page runs.
+TEST_F(NexusBackgroundPanelHostTest, ParkedPageWorkersCountOnlyTheGuests) {
+  ASSERT_TRUE(host());
+  std::unique_ptr<content::WebContents> contents = MakeContents();
+  content::WebContents* raw = contents.get();
+  AttachGuest(raw);
+  host()->Park(std::move(contents));
+  NexusParkedPageWorkers* workers = host()->parked_workers_for_testing();
+  ASSERT_TRUE(workers);
+  int changes = 0;
+  base::CallbackListSubscription subscription =
+      NexusBackgroundPanelHost::AddStateChangedCallback(
+          base::BindRepeating([](int* count) { ++*count; }, &changes));
+
+  content::WebContents* guest = raw->GetInnerWebContents().front();
+  const blink::DedicatedWorkerToken from_page, from_guest, nested;
+  const url::Origin origin;
+  const content::ChildProcessId process;
+  workers->OnWorkerCreated(from_page, process, origin,
+                           raw->GetPrimaryMainFrame()->GetGlobalId());
+  EXPECT_FALSE(workers->has_workers()) << "the page's own frame is no guest";
+  EXPECT_EQ(0, changes);
+
+  workers->OnWorkerCreated(from_guest, process, origin,
+                           guest->GetPrimaryMainFrame()->GetGlobalId());
+  EXPECT_TRUE(workers->has_workers());
+  EXPECT_EQ(1, changes);
+  workers->OnWorkerCreated(nested, process, origin, from_guest);
+  workers->OnBeforeWorkerDestroyed(from_guest,
+                                   guest->GetPrimaryMainFrame()->GetGlobalId());
+  EXPECT_TRUE(workers->has_workers()) << "the nested worker still runs";
+  EXPECT_EQ(1, changes);
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+  workers->OnBeforeWorkerDestroyed(nested, from_guest);
+  EXPECT_FALSE(workers->has_workers());
+  EXPECT_EQ(2, changes);
+  host()->Shutdown();
 }
 
 // The group keys are three distinct addresses.

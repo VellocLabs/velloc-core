@@ -36,11 +36,15 @@ class ParkedWorkerSet {
 
  private:
   void Admit(const blink::DedicatedWorkerToken& worker);
+  void DropOrphan(const blink::DedicatedWorkerToken& worker);
 
   std::set<blink::DedicatedWorkerToken> workers_;
-  // Workers whose creating worker is not in the set yet, by creator.
+  // Workers whose creating worker is not in the set yet, by creator, and the
+  // same pairs by worker.
   std::multimap<blink::DedicatedWorkerToken, blink::DedicatedWorkerToken>
       orphans_;
+  std::map<blink::DedicatedWorkerToken, blink::DedicatedWorkerToken>
+      orphan_parents_;
 };
 
 // Follows the dedicated workers that frames of a parked page's guests run:

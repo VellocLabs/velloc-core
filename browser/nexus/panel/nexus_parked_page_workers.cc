@@ -26,17 +26,32 @@ bool ParkedWorkerSet::AddFromPage(const blink::DedicatedWorkerToken& worker) {
 bool ParkedWorkerSet::AddNested(const blink::DedicatedWorkerToken& worker,
                                 const blink::DedicatedWorkerToken& parent) {
   if (!workers_.contains(parent)) {
-    orphans_.emplace(parent, worker);
+    if (orphan_parents_.emplace(worker, parent).second) {
+      orphans_.emplace(parent, worker);
+    }
     return false;
   }
   return AddFromPage(worker);
 }
 
 bool ParkedWorkerSet::Remove(const blink::DedicatedWorkerToken& worker) {
-  std::erase_if(orphans_, [&](const auto& entry) {
-    return entry.second == worker;
-  });
+  DropOrphan(worker);
   return workers_.erase(worker) && workers_.empty();
+}
+
+void ParkedWorkerSet::DropOrphan(const blink::DedicatedWorkerToken& worker) {
+  auto parent = orphan_parents_.find(worker);
+  if (parent == orphan_parents_.end()) {
+    return;
+  }
+  auto [begin, end] = orphans_.equal_range(parent->second);
+  for (auto it = begin; it != end; ++it) {
+    if (it->second == worker) {
+      orphans_.erase(it);
+      break;
+    }
+  }
+  orphan_parents_.erase(parent);
 }
 
 void ParkedWorkerSet::Admit(const blink::DedicatedWorkerToken& worker) {
@@ -50,6 +65,7 @@ void ParkedWorkerSet::Admit(const blink::DedicatedWorkerToken& worker) {
     auto [begin, end] = orphans_.equal_range(next);
     for (auto it = begin; it != end; ++it) {
       pending.push_back(it->second);
+      orphan_parents_.erase(it->second);
     }
     orphans_.erase(begin, end);
   }
@@ -84,11 +100,11 @@ void NexusParkedPageWorkers::ObserveGuest(content::WebContents* guest) {
       guest->GetPrimaryMainFrame()
           ->GetStoragePartition()
           ->GetDedicatedWorkerService();
-  if (observations_.IsObservingSource(service)) {
-    return;
+  if (!observations_.IsObservingSource(service)) {
+    observations_.AddObservation(service);
   }
-  observations_.AddObservation(service);
-  // Workers the guest started before it was observed.
+  // Workers the guest started before it was attached or observed: when they
+  // were first reported its frames did not belong to this page yet.
   enumerating_ = true;
   service->EnumerateDedicatedWorkers(this);
   enumerating_ = false;

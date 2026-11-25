@@ -4,6 +4,7 @@
 
 #include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -90,10 +91,32 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
   void InnerWebContentsAttached(
       content::WebContents* inner_web_contents,
       content::RenderFrameHost* render_frame_host) override {
+    guest_observers_.push_back(
+        std::make_unique<GuestObserver>(inner_web_contents));
     NexusBackgroundPanelHost::NotifyStateChanged();
   }
 
  private:
+  // The host page's guest: the runtime's own renderer. Whether it is loaded
+  // and alive decides whether a parked page still carries the runtime.
+  class GuestObserver : public content::WebContentsObserver {
+   public:
+    explicit GuestObserver(content::WebContents* guest)
+        : content::WebContentsObserver(guest) {}
+
+    void DidStopLoading() override {
+      NexusBackgroundPanelHost::NotifyStateChanged();
+    }
+    void PrimaryMainFrameRenderProcessGone(
+        base::TerminationStatus status) override {
+      NexusBackgroundPanelHost::NotifyStateChanged();
+    }
+    void WebContentsDestroyed() override {
+      Observe(nullptr);
+      NexusBackgroundPanelHost::NotifyStateChanged();
+    }
+  };
+
   void Reload() {
     if (web_contents()) {
       web_contents()->GetController().Reload(content::ReloadType::NORMAL,
@@ -101,6 +124,7 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
     }
   }
 
+  std::vector<std::unique_ptr<GuestObserver>> guest_observers_;
   bool reload_enabled_ = true;
   base::TimeTicks window_start_;
   int reloads_ = 0;
@@ -163,7 +187,8 @@ bool NexusBackgroundPanelHost::runtime_host_has_guest() const {
     return false;
   }
   for (content::WebContents* guest : runtime_host_->GetInnerWebContents()) {
-    if (!guest->IsCrashed()) {
+    if (!guest->IsCrashed() && !guest->IsLoading() &&
+        !guest->GetLastCommittedURL().is_empty()) {
       return true;
     }
   }

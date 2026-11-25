@@ -71,8 +71,8 @@ class NexusBackgroundPanelHost : public KeyedService,
   void StopRuntimeHost();
   // True while the page exists and its renderer has not gone away.
   bool has_runtime_host() const;
-  // True while, in addition, the page's guest is attached and its renderer
-  // (the runtime's) has not gone away.
+  // True while, in addition, the page's guest is attached, has loaded, and
+  // its renderer (the runtime's) has not gone away.
   bool runtime_host_has_guest() const;
   // Whether this profile's sessions can be running with no window to show
   // them: a parked page, or a live runtime host page.
@@ -89,7 +89,8 @@ class NexusBackgroundPanelHost : public KeyedService,
   // Runs `callback` after a page is parked, taken or dropped, after the parked
   // page's first worker starts or its last one ends, and after the runtime
   // host page starts, stops, loses its renderer, commits again or attaches
-  // its guest, in any profile. UI thread.
+  // its guest, and after that guest finishes loading, loses its renderer or
+  // goes, in any profile. UI thread.
   static base::CallbackListSubscription AddStateChangedCallback(
       base::RepeatingClosure callback);
 
@@ -104,6 +105,9 @@ class NexusBackgroundPanelHost : public KeyedService,
     runtime_host_url_for_testing_ = url;
   }
   content::WebContents* parked_for_testing() const { return parked_.get(); }
+  NexusParkedPageWorkers* parked_workers_for_testing() const {
+    return parked_workers_.get();
+  }
   void set_runtime_host_reload_enabled_for_testing(bool enabled);
 
   // KeyedService:

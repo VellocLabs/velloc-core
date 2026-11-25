@@ -306,14 +306,22 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   }
   params.show_state = show_state;
   params.focus = input.focus.value_or(true);
-  // Security: an isolated window never falls back to the person's profile;
-  // its session is destroyed after the window, or now if none was created.
-  Profile* session = input.isolatedSession.value_or(false)
-                         ? CreateIsolatedWindowSession(profile_)
-                         : nullptr;
+  // Security: an isolated window never falls back to the person's profile.
+  const bool isolated = input.isolatedSession.value_or(false);
+  Profile* window_profile = profile_.get();
+  if (isolated) {
+    window_profile = CreateIsolatedWindowSession(profile_);
+    if (!window_profile) {
+      std::move(done).Error(errors::kWindowCreateFailed,
+                            "no session of its own can be made for it");
+      return;
+    }
+  }
   BrowserWindowInterface* browser =
-      OpenSingleWebWindow(session ? session : profile_.get(), url, params);
-  DestroyIsolatedWindowSessionAfter(browser, session);
+      OpenSingleWebWindow(window_profile, url, params);
+  if (isolated) {
+    DestroyIsolatedWindowSessionWhenUnused(window_profile);
+  }
   if (!browser) {
     std::move(done).Error(errors::kWindowCreateFailed,
                           "the window could not be created");

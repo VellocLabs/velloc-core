@@ -1480,6 +1480,7 @@ source_set("unit_tests") {
     "api/sqlite/nexus_sqlite_bridge_adapter_unittest.cc",
     "api/sqlite/nexus_sqlite_connection_unittest.cc",
     "api/ui/nexus_ui_bridge_adapter_unittest.cc",
+    "api/web_window/isolated_window_session_unittest.cc",
     "api/web_window/sign_in_window_unittest.cc",
     "launcher/nexus_background_mode_manager_unittest.cc",
     "nexus_bridge_bootstrap_host_unittest.cc",
@@ -1559,6 +1560,10 @@ source_set("unit_tests") {
 
     # ui::TestClipboard (nexus_ui_bridge_adapter_unittest.cc).
     "//ui/base/clipboard:clipboard_test_support",
+
+    # FakeGlobalBrowserCollection and MockBrowserWindowInterface
+    # (isolated_window_session_unittest.cc).
+    "//chrome/browser/ui/browser_window/test:test_support",
 
     # GetTestEncryptorForTesting (the secrets / network secret tests).
     "//components/os_crypt/async/browser:test_support",

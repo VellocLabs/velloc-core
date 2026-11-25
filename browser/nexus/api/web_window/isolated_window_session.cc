@@ -11,9 +11,12 @@
 #include "base/scoped_observation.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
+#include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 
 namespace nexus {
@@ -30,56 +33,82 @@ void DestroySession(base::WeakPtr<Profile> session) {
   }
 }
 
-// Owns itself: waits for one browser to close, then destroys its session.
-class SessionReaper : public BrowserCollectionObserver {
+// Posted, never run inline: a closing browser still refers to its profile.
+void PostDestroySession(Profile* session) {
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&DestroySession, session->GetWeakPtr()));
+}
+
+// Whether a browser of `session` is listed, one that is closing included.
+bool HasWindow(Profile* session) {
+  bool found = false;
+  GlobalBrowserCollection::GetInstance()->ForEach(
+      [session, &found](BrowserWindowInterface* browser) {
+        found = browser->GetProfile() == session;
+        return !found;
+      });
+  return found;
+}
+
+// Owns itself: destroys the session after its last browser closed, or goes
+// away with the session if that is destroyed first.
+class SessionReaper : public BrowserCollectionObserver, public ProfileObserver {
  public:
-  SessionReaper(BrowserWindowInterface* browser, Profile* session)
-      : browser_(browser), session_(session->GetWeakPtr()) {
-    observation_.Observe(GlobalBrowserCollection::GetInstance());
+  explicit SessionReaper(Profile* session) : session_(session) {
+    browsers_.Observe(GlobalBrowserCollection::GetInstance());
+    profile_.Observe(session);
   }
 
   // BrowserCollectionObserver:
   void OnBrowserClosed(BrowserWindowInterface* browser) override {
-    if (browser != browser_) {
+    if (browser->GetProfile() != session_ || HasWindow(session_)) {
       return;
     }
-    browser_ = nullptr;
-    observation_.Reset();
-    // Not here: the closing browser still refers to its profile.
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(&DestroySession, session_));
-    delete this;
+    PostDestroySession(session_);
+    Stop();
   }
+
+  // ProfileObserver:
+  void OnProfileWillBeDestroyed(Profile* profile) override { Stop(); }
 
  private:
   ~SessionReaper() override = default;
 
-  raw_ptr<BrowserWindowInterface> browser_;
-  base::WeakPtr<Profile> session_;
+  void Stop() {
+    browsers_.Reset();
+    profile_.Reset();
+    delete this;
+  }
+
+  raw_ptr<Profile> session_;
   base::ScopedObservation<GlobalBrowserCollection, BrowserCollectionObserver>
-      observation_{this};
+      browsers_{this};
+  base::ScopedObservation<Profile, ProfileObserver> profile_{this};
 };
 
 }  // namespace
 
 Profile* CreateIsolatedWindowSession(Profile* profile) {
+  Profile* original = profile->GetOriginalProfile();
+  if (!IncognitoModePrefs::IsIncognitoAllowed(original)) {
+    return nullptr;
+  }
   // The DevTools kind of unique off-the-record profile is the one Chromium
   // lets open browser windows; nothing else here is about DevTools.
-  return profile->GetOriginalProfile()->GetOffTheRecordProfile(
+  return original->GetOffTheRecordProfile(
       Profile::OTRProfileID::CreateUniqueForDevTools(),
       /*create_if_needed=*/true);
 }
 
-void DestroyIsolatedWindowSessionAfter(BrowserWindowInterface* browser,
-                                       Profile* session) {
+void DestroyIsolatedWindowSessionWhenUnused(Profile* session) {
   if (!session) {
     return;
   }
-  if (!browser) {
-    DestroySession(session->GetWeakPtr());
+  if (!HasWindow(session)) {
+    PostDestroySession(session);
     return;
   }
-  new SessionReaper(browser, session);
+  new SessionReaper(session);
 }
 
 }  // namespace nexus

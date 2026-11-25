@@ -5,29 +5,21 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_API_WEB_WINDOW_ISOLATED_WINDOW_SESSION_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_WEB_WINDOW_ISOLATED_WINDOW_SESSION_H_
 
-class BrowserWindowInterface;
 class Profile;
 
 namespace nexus {
 
-// The session of a single-web window opened with `isolatedSession` (F-29):
-// an off-the-record profile of its own.
-//
-// Security: nothing of `profile` (cookies, stored passwords, site data) is
-// in it, and no two calls return the same one, so two sign-in windows never
-// share a signed-in state. Everything it stored goes when it is destroyed.
-//
-// Contract: UI thread. `profile` is a regular profile. The caller must hand
-// the result to DestroyIsolatedWindowSessionAfter(), or it lives as long as
-// `profile`.
+// Security: a fresh off-the-record session of `profile` for one single-web
+// window (F-29): none of the profile's cookies or site data, never shared
+// with another call. Null when policy disables off-the-record windows.
+// Contract: UI thread; pass the result to
+// DestroyIsolatedWindowSessionWhenUnused(), or it lives as long as `profile`.
 Profile* CreateIsolatedWindowSession(Profile* profile);
 
-// Destroys `session` once `browser`, its one window, has closed; at once
-// when `browser` is null (the window was never created). Outlives the
-// caller: a connection that goes away while its window is closing does not
-// leak the session.
-void DestroyIsolatedWindowSessionAfter(BrowserWindowInterface* browser,
-                                       Profile* session);
+// Destroys `session` once no window of it is open, popups included: soon if
+// none is open now. Outlives the caller; stops if the session is destroyed
+// first (shutdown).
+void DestroyIsolatedWindowSessionWhenUnused(Profile* session);
 
 }  // namespace nexus
 

@@ -5,6 +5,7 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_PANEL_NEXUS_GUEST_PRIORITY_VOTER_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_PANEL_NEXUS_GUEST_PRIORITY_VOTER_H_
 
+#include "base/callback_list.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "components/performance_manager/public/execution_context_priority/execution_context_priority.h"
@@ -17,12 +18,14 @@
 namespace nexus {
 
 // Casts a USER_BLOCKING priority vote for every frame of a Nexus guest page,
-// sandboxed child frames included, so the guest's renderers (the UI with the
-// runtime SharedWorker, and the mod-host frames' own renderer) stay out of
-// the OS background class while the guest is hidden or parked. (P-2)
+// sandboxed child frames included, so the guest's renderers (the runtime host
+// guest with the runtime SharedWorker, the UI guest, and the spawner frames'
+// own renderers) stay out of the OS background class while the guest is
+// hidden or parked. (P-2)
 //
 // Contract: on the performance-manager graph's sequence (UI thread);
-// `is_guest_page` is asked on page add and on every main-frame URL change.
+// `is_guest_page` is asked on page add, on every main-frame URL change, and
+// for every page each time `subscribe_to_changes` reports a change.
 class NexusGuestPriorityVoter
     : public performance_manager::execution_context_priority::PriorityVoter,
       public performance_manager::PageNodeObserver,
@@ -30,10 +33,17 @@ class NexusGuestPriorityVoter
  public:
   using IsGuestPageCallback = base::RepeatingCallback<bool(
       const performance_manager::PageNode*)>;
+  // Registers a closure to run when `is_guest_page`'s answer may have
+  // changed for some page; the subscription ends the registration.
+  using SubscribeCallback =
+      base::RepeatingCallback<base::CallbackListSubscription(
+          base::RepeatingClosure)>;
 
   static const char kGuestPageReason[];
 
-  explicit NexusGuestPriorityVoter(IsGuestPageCallback is_guest_page);
+  explicit NexusGuestPriorityVoter(
+      IsGuestPageCallback is_guest_page,
+      SubscribeCallback subscribe_to_changes = SubscribeCallback());
   ~NexusGuestPriorityVoter() override;
 
   NexusGuestPriorityVoter(const NexusGuestPriorityVoter&) = delete;
@@ -69,6 +79,7 @@ class NexusGuestPriorityVoter
   }
 
  private:
+  void UpdateAllPages();
   void UpdatePage(const performance_manager::PageNode* page_node);
   void VoteForSubtree(const performance_manager::FrameNode* frame_node);
   void InvalidateSubtree(const performance_manager::FrameNode* frame_node);
@@ -76,6 +87,9 @@ class NexusGuestPriorityVoter
   void InvalidateFrame(const performance_manager::FrameNode* frame_node);
 
   IsGuestPageCallback is_guest_page_;
+  SubscribeCallback subscribe_to_changes_;
+  base::CallbackListSubscription changes_subscription_;
+  raw_ptr<performance_manager::Graph> graph_ = nullptr;
   performance_manager::execution_context_priority::VotingChannel
       voting_channel_;
   absl::flat_hash_set<raw_ptr<const performance_manager::PageNode>>
@@ -84,7 +98,9 @@ class NexusGuestPriorityVoter
       voted_frames_;
 };
 
-// The production predicate: the page's WebContents is the Nexus panel guest.
+// The production predicate: the page's WebContents is a Nexus panel guest,
+// and not a guest of a window's page parked while the profile's runtime host
+// page is live.
 bool IsNexusGuestPage(const performance_manager::PageNode* page_node);
 
 // Adds a NexusGuestPriorityVoter to the performance manager's voting system.

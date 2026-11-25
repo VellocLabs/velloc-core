@@ -27,6 +27,7 @@ source_set("background_panel_host") {
     "//content/public/browser",
     "//custom_browser/chromium_hooks:hook_core",
     "//net",
+    "//third_party/blink/public/common",
     "//ui/base",
     "//url",
   ]
@@ -88,7 +89,9 @@ source_set("guest_priority") {
   ]
 
   deps = [
+    ":background_panel_host",
     ":panel_guest",
+    "//components/guest_view/browser",
     "//content/public/browser",
   ]
 }

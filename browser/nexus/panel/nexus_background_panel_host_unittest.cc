@@ -166,6 +166,51 @@ TEST_F(NexusBackgroundPanelHostTest, CrashedRuntimeHostIsReplacedOnStart) {
   EXPECT_FALSE(host()->has_runtime_host());
 }
 
+// A parked page counts as idle only while the runtime host page runs, and the
+// state-change callbacks fire on every step the voter must re-check. (P-2)
+TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
+  ASSERT_TRUE(host());
+  int changes = 0;
+  base::CallbackListSubscription subscription =
+      NexusBackgroundPanelHost::AddStateChangedCallback(
+          base::BindRepeating([](int* count) { ++*count; }, &changes));
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(nullptr));
+
+  std::unique_ptr<content::WebContents> contents = MakeContents();
+  content::WebContents* raw = contents.get();
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+
+  host()->Park(std::move(contents));
+  EXPECT_EQ(1, changes);
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
+      << "no runtime host page: the parked page still hosts the runtime";
+
+  host()->set_runtime_host_url_for_testing(GURL("about:blank"));
+  host()->set_runtime_host_reload_enabled_for_testing(false);
+  host()->StartRuntimeHost();
+  EXPECT_GE(changes, 2);
+  EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+
+  const int before_crash = changes;
+  static_cast<content::MockRenderProcessHost*>(
+      host()->runtime_host_for_testing()->GetPrimaryMainFrame()->GetProcess())
+      ->SimulateCrash();
+  EXPECT_GT(changes, before_crash);
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
+      << "a runtime host page whose renderer is gone runs nothing";
+
+  host()->StopRuntimeHost();
+  host()->StartRuntimeHost();
+  EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+
+  const int before_take = changes;
+  std::unique_ptr<content::WebContents> taken = host()->Take();
+  EXPECT_GT(changes, before_take);
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
+      << "a page back in a window is not parked";
+  host()->StopRuntimeHost();
+}
+
 // The group keys are three distinct addresses.
 TEST_F(NexusBackgroundPanelHostTest, GuestGroupKeysAreDistinct) {
   using custom_browser::NexusGuestGroupsSlot;

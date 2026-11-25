@@ -7,6 +7,8 @@
 
 #include <memory>
 
+#include "base/callback_list.h"
+#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
@@ -72,6 +74,20 @@ class NexusBackgroundPanelHost : public KeyedService,
   bool runs_without_window() const {
     return has_parked() || has_runtime_host();
   }
+  // Whether `contents` is a parked page that no session still needs: its
+  // profile's runtime host page is live (so the host page holds the worker's
+  // bridge port and spawner) and no frame of the parked page's guests has a
+  // dedicated worker running (a run_js or mod worker spawned through this
+  // window, or its import worker). False for a null `contents` or a page that
+  // is not parked. (P-2)
+  static bool IsParkedAndIdle(content::WebContents* contents);
+  // Runs `callback` after a page is parked, taken or dropped, after the parked
+  // page's first worker starts or its last one ends, and after the runtime
+  // host page starts, stops, loses its renderer or commits again, in any
+  // profile. UI thread.
+  static base::CallbackListSubscription AddStateChangedCallback(
+      base::RepeatingClosure callback);
+
   content::WebContents* runtime_host_for_testing() const {
     return runtime_host_.get();
   }
@@ -96,11 +112,14 @@ class NexusBackgroundPanelHost : public KeyedService,
 
  private:
   class RuntimeHostObserver;
+  class ParkedWorkerTracker;
 
   void DropParked();
+  static void NotifyStateChanged();
 
   const raw_ptr<Profile> profile_;
   std::unique_ptr<content::WebContents> parked_;
+  std::unique_ptr<ParkedWorkerTracker> parked_workers_;
   std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive_;
   std::unique_ptr<content::WebContents> runtime_host_;
   std::unique_ptr<RuntimeHostObserver> runtime_host_observer_;

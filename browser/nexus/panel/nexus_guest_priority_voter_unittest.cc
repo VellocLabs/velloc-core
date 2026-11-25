@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include "base/callback_list.h"
 #include "base/functional/bind.h"
 #include "base/time/time.h"
 #include "components/performance_manager/graph/frame_node_impl.h"
@@ -44,6 +45,14 @@ bool IsGuestUrl(const PageNode* page_node) {
   return page_node->GetMainFrameUrl() == GURL(kGuestUrl);
 }
 
+// A guest page whose answer can be switched off, as a parked window's page is
+// when no session needs it.
+bool g_guest_needed = true;
+
+bool IsNeededGuestUrl(const PageNode* page_node) {
+  return g_guest_needed && IsGuestUrl(page_node);
+}
+
 void Commit(PageNodeImpl* page, const char* url) {
   static int64_t navigation_id = 0;
   page->OnMainFrameNavigationCommitted(
@@ -66,6 +75,19 @@ class NexusGuestPriorityVoterTest : public GraphTestHarness {
         base::BindRepeating(&IsGuestUrl));
     voter_->InitializeOnGraph(graph(), observer_.BuildVotingChannel());
   }
+
+  // Installs a voter that asks `IsNeededGuestUrl` and re-checks every page
+  // when `changes_` is notified.
+  void InstallVoterWithChanges() {
+    g_guest_needed = true;
+    voter_ = std::make_unique<NexusGuestPriorityVoter>(
+        base::BindRepeating(&IsNeededGuestUrl),
+        base::BindRepeating(&base::RepeatingClosureList::Add,
+                            base::Unretained(&changes_)));
+    voter_->InitializeOnGraph(graph(), observer_.BuildVotingChannel());
+  }
+
+  base::RepeatingClosureList changes_;
 
   bool HasGuestVote(const FrameNode* frame_node) const {
     return observer_.HasVote(
@@ -171,6 +193,34 @@ TEST_F(NexusGuestPriorityVoterTest, TearDownWithdrawsVotes) {
   voter_.reset();
 
   EXPECT_EQ(observer_.GetVoteCount(), 0u);
+}
+
+// When the predicate's answer changes (a parked page no session needs, then
+// needed again), a change notification moves every vote of the page.
+TEST_F(NexusGuestPriorityVoterTest, ReclassifiesPagesOnChange) {
+  InstallVoterWithChanges();
+  MockSinglePageWithMultipleProcessesGraph mock_graph(graph());
+  Commit(mock_graph.page.get(), kGuestUrl);
+  ASSERT_EQ(observer_.GetVoteCount(), 2u);
+
+  g_guest_needed = false;
+  EXPECT_EQ(observer_.GetVoteCount(), 2u) << "no re-check without a change";
+  changes_.Notify();
+  EXPECT_EQ(observer_.GetVoteCount(), 0u);
+
+  g_guest_needed = true;
+  changes_.Notify();
+  EXPECT_EQ(observer_.GetVoteCount(), 2u);
+  EXPECT_TRUE(HasGuestVote(mock_graph.frame.get()));
+  EXPECT_TRUE(HasGuestVote(mock_graph.child_frame.get()));
+}
+
+// After tear-down a change notification reaches nothing.
+TEST_F(NexusGuestPriorityVoterTest, NoReclassificationAfterTearDown) {
+  InstallVoterWithChanges();
+  voter_->TearDownOnGraph(graph());
+  voter_.reset();
+  EXPECT_TRUE(changes_.empty());
 }
 
 // The production predicate rejects a page with no guest behind it.

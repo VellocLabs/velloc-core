@@ -7,12 +7,15 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "components/performance_manager/public/execution_context/execution_context.h"
 #include "components/performance_manager/public/graph/graph.h"
 #include "components/performance_manager/public/performance_manager.h"
+#include "components/guest_view/browser/guest_view_base.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 #include "custom_browser/browser/nexus/panel/nexus_panel_guest.h"
 
 namespace nexus {
@@ -33,8 +36,10 @@ using performance_manager::execution_context_priority::VotingChannel;
 const char NexusGuestPriorityVoter::kGuestPageReason[] = "Nexus guest page.";
 
 NexusGuestPriorityVoter::NexusGuestPriorityVoter(
-    IsGuestPageCallback is_guest_page)
-    : is_guest_page_(std::move(is_guest_page)) {}
+    IsGuestPageCallback is_guest_page,
+    SubscribeCallback subscribe_to_changes)
+    : is_guest_page_(std::move(is_guest_page)),
+      subscribe_to_changes_(std::move(subscribe_to_changes)) {}
 
 NexusGuestPriorityVoter::~NexusGuestPriorityVoter() = default;
 
@@ -43,12 +48,27 @@ void NexusGuestPriorityVoter::InitializeOnGraph(Graph* graph,
   voting_channel_ = std::move(voting_channel);
   graph->AddPageNodeObserver(this);
   graph->AddFrameNodeObserver(this);
-  for (const PageNode* page_node : graph->GetAllPageNodes()) {
+  graph_ = graph;
+  UpdateAllPages();
+  if (subscribe_to_changes_) {
+    // Unretained: the subscription is a member, gone before `this`.
+    changes_subscription_ = subscribe_to_changes_.Run(base::BindRepeating(
+        &NexusGuestPriorityVoter::UpdateAllPages, base::Unretained(this)));
+  }
+}
+
+void NexusGuestPriorityVoter::UpdateAllPages() {
+  if (!graph_) {
+    return;
+  }
+  for (const PageNode* page_node : graph_->GetAllPageNodes()) {
     UpdatePage(page_node);
   }
 }
 
 void NexusGuestPriorityVoter::TearDownOnGraph(Graph* graph) {
+  changes_subscription_ = {};
+  graph_ = nullptr;
   graph->RemoveFrameNodeObserver(this);
   graph->RemovePageNodeObserver(this);
   for (const FrameNode* frame_node : voted_frames_) {
@@ -140,7 +160,15 @@ void NexusGuestPriorityVoter::InvalidateFrame(const FrameNode* frame_node) {
 
 bool IsNexusGuestPage(const PageNode* page_node) {
   base::WeakPtr<content::WebContents> contents = page_node->GetWebContents();
-  return contents && IsNexusPanelGuestContents(contents.get());
+  if (!contents || !IsNexusPanelGuestContents(contents.get())) {
+    return false;
+  }
+  // A window's page parked while no session needs it is left to the stock
+  // voters, which drop it to the background class (P-2).
+  const guest_view::GuestViewBase* guest =
+      guest_view::GuestViewBase::FromWebContents(contents.get());
+  return !guest || !NexusBackgroundPanelHost::IsParkedAndIdle(
+                       guest->owner_web_contents());
 }
 
 void InstallNexusGuestPriorityVoter() {
@@ -153,7 +181,8 @@ void InstallNexusGuestPriorityVoter() {
     return;
   }
   voting_system->AddPriorityVoter<NexusGuestPriorityVoter>(
-      base::BindRepeating(&IsNexusGuestPage));
+      base::BindRepeating(&IsNexusGuestPage),
+      base::BindRepeating(&NexusBackgroundPanelHost::AddStateChangedCallback));
 }
 
 void NexusGuestPriorityLifecycleHook::PreMainMessageLoopRun() {

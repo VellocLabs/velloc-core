@@ -39,10 +39,10 @@
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/view/window_hit_test.h"
 #include "custom_browser/ui/view/window_placement_stability.h"
-#include "ui/display/display.h"
-#include "ui/display/screen.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
 
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "chrome/browser/ui/sad_tab_helper.h"

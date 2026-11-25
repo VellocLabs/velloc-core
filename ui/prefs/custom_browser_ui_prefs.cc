@@ -263,9 +263,9 @@ bool CustomBrowserUiPrefs::LoadUILayoutParams(const UIMode& mode) {
   // Everything just loaded counts as touched. SaveCurrentUILayoutParams()
   // persists only touched entries, and a window does not necessarily receive
   // a page push for each of them: the background panel (P-6) hands a LIVE
-  // page to the next kNexus window, and that page re-measures only when its
-  // holders resize — a same-size window gets no UpsertNativeViewLayouts at
-  // all. Without this seed that window's close would persist an empty set and
+  // page to the next kNexus window, and that page pushes again only when its
+  // holders resize or the page becomes visible again — a window that sees
+  // neither gets no UpsertNativeViewLayouts at all. Without this seed that window's close would persist an empty set and
   // erase every stored layout for the mode, so each park/reopen cycle would
   // strip more native views (the caption buttons among them).
   for (const auto& layout : ui_layout_params_ptr_->child_layouts) {

@@ -101,7 +101,7 @@ TEST_F(CustomBrowserUiPrefsLayoutTest, PushedLayoutsArePersisted) {
 }
 
 // A window whose page never pushes layouts must not erase the stored layouts
-// on close: a parked page re-adopted by a same-size window pushes none (P-6).
+// on close: a parked page re-adopted by a window need not push any (P-6).
 TEST_F(CustomBrowserUiPrefsLayoutTest, SilentWindowDoesNotEraseStoredLayouts) {
   RunWindow(/*page_pushes_layouts=*/true);
 

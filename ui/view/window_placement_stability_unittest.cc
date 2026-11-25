@@ -30,8 +30,8 @@ gfx::Size SaveThenRestore(const gfx::Rect& pixel_bounds, float scale, bool fix) 
 }
 
 TEST(WindowPlacementStabilityTest, ReportedBoundsGrowTheWindowOnEveryReopen) {
-  // The reported bug, without the correction: a cycle adds pixels on an axis
-  // whose size is not a whole number of DIP, and never removes any.
+  // Without the correction, a cycle adds pixels on an axis whose size is not
+  // a whole number of DIP, and never removes any.
   gfx::Rect window(36, 36, 3813, 2052);
   const gfx::Size first = SaveThenRestore(window, kFractionalScale, false);
   EXPECT_GT(first.width(), window.width());

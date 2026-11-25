@@ -84,6 +84,7 @@ export class NexusGuestRecoveryElement extends CrLitElement {
       color: var(--text-disabled);
       word-break: break-all;
       max-width: 100%;
+      user-select: text;
     }
 
     .recovery-url .label {

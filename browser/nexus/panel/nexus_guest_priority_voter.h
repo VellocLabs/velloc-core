@@ -18,10 +18,8 @@
 namespace nexus {
 
 // Casts a USER_BLOCKING priority vote for every frame of a Nexus guest page,
-// sandboxed child frames included, so the guest's renderers (the runtime host
-// guest with the runtime SharedWorker, the UI guest, and the spawner frames'
-// own renderers) stay out of the OS background class while the guest is
-// hidden or parked. (P-2)
+// child frames included, so the runtime's, the UI's and the spawner frames'
+// renderers stay out of the OS background class while hidden or parked. (P-2)
 //
 // Contract: on the performance-manager graph's sequence (UI thread);
 // `is_guest_page` is asked on page add, on every main-frame URL change, and

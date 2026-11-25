@@ -40,6 +40,10 @@ export class NexusPage extends CrLitElement {
        * stay one neutral until the final colours land. */
       background: var(--color-toolbar);
       color: var(--text-primary);
+      /* Nothing on this page is text to select, and a selection that covers
+       * the guest <webview> paints the selection colour over the whole
+       * window. */
+      user-select: none;
     }
 
     #pane {

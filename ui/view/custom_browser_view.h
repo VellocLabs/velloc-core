@@ -235,6 +235,10 @@ class CustomBrowserView : public BrowserView,
   // views::WidgetDelegate: the same allowlist for Windows system-menu and
   // app commands (WM_SYSCOMMAND / WM_APPCOMMAND), which bypass accelerators.
   bool ExecuteWindowsCommand(int command_id) override;
+  // views::WidgetDelegate: saves a size that restores to no more pixels than
+  // the window has, so closing and reopening it never grows it.
+  void SaveWindowPlacement(const gfx::Rect& bounds,
+                           ui::mojom::WindowShowState show_state) override;
 
   // Stores the active Nexus session's display title (already sanitized by
   // NexusUiBridgeAdapter) and refreshes the title bar. Empty clears back to

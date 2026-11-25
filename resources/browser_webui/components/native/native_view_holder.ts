@@ -65,6 +65,8 @@ export class NativeViewHolder extends CrLitElement {
     this.mo = new MutationObserver(() => this.scheduleSend());
     this.mo.observe(this, {attributes: true, attributeFilter: ['style','class','hidden','inert']});
 
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
+
     // Attach root observer
     this.attachRootObserver(this.getLayoutRoot());
 
@@ -84,9 +86,14 @@ export class NativeViewHolder extends CrLitElement {
     }
     // On detach, hide a view that was ever pushed to the browser: the native
     // side has no per-view removal and keeps it visible per the last layout.
+    // The hide is recorded as the last layout sent, so a holder that is
+    // connected again at the same place sends its layout again.
     if (this.lastJson !== undefined) {
-      BATCH.enqueue(this.buildParams());
+      const hidden = this.buildParams();
+      this.lastJson = JSON.stringify(hidden);
+      BATCH.enqueue(hidden);
     }
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
     this.ro?.disconnect();
     this.mo?.disconnect();
     this.detachRootObserver();
@@ -174,6 +181,17 @@ export class NativeViewHolder extends CrLitElement {
 
   private _onScroll = () => this.scheduleSend();
   private _onResize = () => this.scheduleSend();
+
+  // A page shown again may be in a different window than the one it last
+  // reported to (a parked page handed to a new window), and that window knows
+  // only the layouts it restored. Report again whatever was last sent.
+  private _onVisibilityChange = () => {
+    if (document.visibilityState !== 'visible') {
+      return;
+    }
+    this.lastJson = undefined;
+    this.scheduleSend();
+  };
 
   private findNearestScroller(el: Element): Element|Window {
     // If el itself scrolls, return it; else bubble to window.

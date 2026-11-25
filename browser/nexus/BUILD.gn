@@ -1508,6 +1508,7 @@ source_set("unit_tests") {
     # Widget. A real Widget needs ChromeViewsTestBase and the GL/compositor
     # setup of this binary's ChromeUnitTestSuite; the lite binary has neither.
     "//custom_browser/ui/view/view_visible_bounds_unittest.cc",
+    "//custom_browser/ui/view/window_placement_stability_unittest.cc",
     # Lives beside its header in ui/web_ui; the header reads
     # content::DropData, which the lite binary does not link.
     "//custom_browser/ui/web_ui/nexus_file_drop_policy_unittest.cc",

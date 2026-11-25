@@ -38,6 +38,9 @@
 #include "custom_browser/ui/view/custom_browser_view_layout.h"
 #include "custom_browser/ui/view/custom_browser_window_util.h"
 #include "custom_browser/ui/view/window_hit_test.h"
+#include "custom_browser/ui/view/window_placement_stability.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui_view.h"
 #include "custom_browser/ui/web_ui/custom_browser_webui.h"
 
@@ -270,6 +273,34 @@ bool CustomBrowserView::ExecuteWindowsCommand(int command_id) {
     }
   }
   return BrowserView::ExecuteWindowsCommand(command_id);
+}
+
+void CustomBrowserView::SaveWindowPlacement(
+    const gfx::Rect& bounds,
+    ui::mojom::WindowShowState show_state) {
+  gfx::Rect saved_bounds = bounds;
+#if BUILDFLAG(IS_WIN)
+  // The size in pixels the window returns to: its own when it is in the
+  // normal state, the stored normal position otherwise.
+  const HWND hwnd = GetWidget() ? views::HWNDForWidget(GetWidget()) : nullptr;
+  WINDOWPLACEMENT placement = {};
+  placement.length = sizeof(placement);
+  if (hwnd && ::GetWindowPlacement(hwnd, &placement)) {
+    RECT restored = placement.rcNormalPosition;
+    if (placement.showCmd != SW_SHOWNORMAL ||
+        ::GetWindowRect(hwnd, &restored)) {
+      const float scale = display::Screen::Get()
+                              ->GetDisplayNearestWindow(GetNativeWindow())
+                              .device_scale_factor();
+      saved_bounds = custom_browser::StableWindowPlacementBounds(
+          bounds,
+          gfx::Size(restored.right - restored.left,
+                    restored.bottom - restored.top),
+          scale);
+    }
+  }
+#endif
+  BrowserView::SaveWindowPlacement(saved_bounds, show_state);
 }
 
 std::u16string CustomBrowserView::GetAccessibleWindowTitle() const {

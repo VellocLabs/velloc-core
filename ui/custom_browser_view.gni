@@ -8,6 +8,8 @@ browser_view_sources = [
   "//custom_browser/ui/view/mouse_event_handler.h",
   "//custom_browser/ui/view/mouse_event_handler.cc",
   "//custom_browser/ui/view/window_hit_test.h",
+  "//custom_browser/ui/view/window_placement_stability.h",
+  "//custom_browser/ui/view/window_placement_stability.cc",
   "//custom_browser/ui/view/undisplayed_contents_sizer.h",
   "//custom_browser/ui/view/single_web_window_commands.h",
   "//custom_browser/ui/view/custom_browser_window_util.h",

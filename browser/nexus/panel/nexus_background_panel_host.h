@@ -26,6 +26,8 @@ class WebContents;
 
 namespace nexus {
 
+class NexusParkedPageWorkers;
+
 // Per-profile parking slot for the kNexus window's top-chrome WebContents. On
 // close with prefs::kBackgroundModeEnabled set, the window hands its contents
 // here instead of destroying them; the next kNexus window `Take()`s them back,
@@ -69,22 +71,25 @@ class NexusBackgroundPanelHost : public KeyedService,
   void StopRuntimeHost();
   // True while the page exists and its renderer has not gone away.
   bool has_runtime_host() const;
+  // True while, in addition, the page's guest is attached and its renderer
+  // (the runtime's) has not gone away.
+  bool runtime_host_has_guest() const;
   // Whether this profile's sessions can be running with no window to show
   // them: a parked page, or a live runtime host page.
   bool runs_without_window() const {
     return has_parked() || has_runtime_host();
   }
   // Whether `contents` is a parked page that no session still needs: its
-  // profile's runtime host page is live (so the host page holds the worker's
-  // bridge port and spawner) and no frame of the parked page's guests has a
+  // profile's runtime host page and that page's guest are live (so the host
+  // guest holds the worker's bridge port and spawner) and no frame of the parked page's guests has a
   // dedicated worker running (a run_js or mod worker spawned through this
-  // window, or its import worker). False for a null `contents` or a page that
-  // is not parked. (P-2)
+  // window, or its import worker). False for a null `contents` or a page
+  // that is not parked. (P-2)
   static bool IsParkedAndIdle(content::WebContents* contents);
   // Runs `callback` after a page is parked, taken or dropped, after the parked
   // page's first worker starts or its last one ends, and after the runtime
-  // host page starts, stops, loses its renderer or commits again, in any
-  // profile. UI thread.
+  // host page starts, stops, loses its renderer, commits again or attaches
+  // its guest, in any profile. UI thread.
   static base::CallbackListSubscription AddStateChangedCallback(
       base::RepeatingClosure callback);
 
@@ -112,14 +117,13 @@ class NexusBackgroundPanelHost : public KeyedService,
 
  private:
   class RuntimeHostObserver;
-  class ParkedWorkerTracker;
 
   void DropParked();
   static void NotifyStateChanged();
 
   const raw_ptr<Profile> profile_;
   std::unique_ptr<content::WebContents> parked_;
-  std::unique_ptr<ParkedWorkerTracker> parked_workers_;
+  std::unique_ptr<NexusParkedPageWorkers> parked_workers_;
   std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive_;
   std::unique_ptr<content::WebContents> runtime_host_;
   std::unique_ptr<RuntimeHostObserver> runtime_host_observer_;

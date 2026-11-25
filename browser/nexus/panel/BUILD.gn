@@ -12,6 +12,8 @@ source_set("background_panel_host") {
   sources = [
     "nexus_background_panel_host.cc",
     "nexus_background_panel_host.h",
+    "nexus_parked_page_workers.cc",
+    "nexus_parked_page_workers.h",
   ]
 
   deps = [

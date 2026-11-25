@@ -18,6 +18,8 @@
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/navigation_simulator.h"
+#include "content/public/test/test_renderer_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
 #include "custom_browser/chromium_hooks/nexus_guest_groups.h"
@@ -43,6 +45,18 @@ class NexusBackgroundPanelHostTest : public ChromeRenderViewHostTestHarness {
   std::unique_ptr<content::WebContents> MakeContents() {
     return content::WebContentsTester::CreateTestWebContents(profile(),
                                                              nullptr);
+  }
+
+  // Attaches a stand-in guest to `outer` under a new child frame.
+  void AttachGuest(content::WebContents* outer) {
+    content::NavigationSimulator::NavigateAndCommitFromBrowser(
+        outer, GURL("about:blank"));
+    content::RenderFrameHost* child =
+        content::RenderFrameHostTester::For(outer->GetPrimaryMainFrame())
+            ->AppendChild("guest");
+    content::RenderFrameHostTester::For(child)->InitializeRenderFrameIfNeeded();
+    outer->AttachInnerWebContents(MakeContents(), child,
+                                  /*is_full_page=*/false);
   }
 };
 
@@ -166,8 +180,9 @@ TEST_F(NexusBackgroundPanelHostTest, CrashedRuntimeHostIsReplacedOnStart) {
   EXPECT_FALSE(host()->has_runtime_host());
 }
 
-// A parked page counts as idle only while the runtime host page runs, and the
-// state-change callbacks fire on every step the voter must re-check. (P-2)
+// A parked page counts as idle only while the runtime host page and its guest
+// are live, and the state-change callbacks fire on every step the voter must
+// re-check. (P-2)
 TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
   ASSERT_TRUE(host());
   int changes = 0;
@@ -189,7 +204,8 @@ TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
   host()->set_runtime_host_reload_enabled_for_testing(false);
   host()->StartRuntimeHost();
   EXPECT_GE(changes, 2);
-  EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
+      << "the host page's guest, which holds the runtime, is not attached";
 
   const int before_crash = changes;
   static_cast<content::MockRenderProcessHost*>(
@@ -201,7 +217,13 @@ TEST_F(NexusBackgroundPanelHostTest, ParkedPageIsIdleOnlyBesideALiveRuntime) {
 
   host()->StopRuntimeHost();
   host()->StartRuntimeHost();
-  EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+  EXPECT_FALSE(NexusBackgroundPanelHost::IsParkedAndIdle(raw));
+
+  const int before_attach = changes;
+  AttachGuest(host()->runtime_host_for_testing());
+  EXPECT_GT(changes, before_attach);
+  EXPECT_TRUE(NexusBackgroundPanelHost::IsParkedAndIdle(raw))
+      << "the runtime host guest is live and no worker runs in the page";
 
   const int before_take = changes;
   std::unique_ptr<content::WebContents> taken = host()->Take();

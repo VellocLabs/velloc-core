@@ -4,18 +4,14 @@
 
 #include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 
-#include <set>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "base/callback_list.h"
 #include "base/check.h"
 #include "base/functional/bind.h"
-#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
-#include "base/scoped_multi_source_observation.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
@@ -26,11 +22,9 @@
 #include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/prefs/pref_service.h"
-#include "content/public/browser/dedicated_worker_service.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/panel/nexus_parked_page_workers.h"
 #include "custom_browser/chromium_hooks/nexus_guest_groups.h"
 #include "custom_browser/common/url_constants.h"
 #include "net/base/url_util.h"
@@ -58,71 +52,6 @@ std::vector<NexusBackgroundPanelHost*>& LiveHosts() {
 }
 
 }  // namespace
-
-// The dedicated workers that frames of a parked page's guests created: the
-// run_js and mod workers spawned through that window's spawner frames, and
-// the window's own import worker. Each one is work a session still runs
-// inside the parked page.
-class NexusBackgroundPanelHost::ParkedWorkerTracker
-    : public content::DedicatedWorkerService::Observer {
- public:
-  explicit ParkedWorkerTracker(content::WebContents* parked) : parked_(parked) {
-    for (content::WebContents* guest : parked_->GetInnerWebContents()) {
-      content::DedicatedWorkerService* service =
-          guest->GetPrimaryMainFrame()
-              ->GetStoragePartition()
-              ->GetDedicatedWorkerService();
-      if (observations_.IsObservingSource(service)) {
-        continue;
-      }
-      observations_.AddObservation(service);
-      service->EnumerateDedicatedWorkers(this);
-    }
-  }
-
-  bool has_workers() const { return !workers_.empty(); }
-
-  // content::DedicatedWorkerService::Observer:
-  void OnWorkerCreated(const blink::DedicatedWorkerToken& worker_token,
-                       content::ChildProcessId worker_process_id,
-                       const url::Origin& security_origin,
-                       content::DedicatedWorkerCreator creator) override {
-    if (!IsCreatedInParkedPage(creator)) {
-      return;
-    }
-    workers_.insert(worker_token);
-    if (workers_.size() == 1) {
-      NexusBackgroundPanelHost::NotifyStateChanged();
-    }
-  }
-  void OnBeforeWorkerDestroyed(const blink::DedicatedWorkerToken& worker_token,
-                               content::DedicatedWorkerCreator creator) override {
-    if (workers_.erase(worker_token) && workers_.empty()) {
-      NexusBackgroundPanelHost::NotifyStateChanged();
-    }
-  }
-  void OnFinalResponseURLDetermined(
-      const blink::DedicatedWorkerToken& worker_token,
-      const GURL& url) override {}
-
- private:
-  bool IsCreatedInParkedPage(const content::DedicatedWorkerCreator& creator) {
-    if (const auto* token = std::get_if<blink::DedicatedWorkerToken>(&creator)) {
-      return workers_.contains(*token);
-    }
-    content::RenderFrameHost* frame = content::RenderFrameHost::FromID(
-        std::get<content::GlobalRenderFrameHostId>(creator));
-    content::WebContents* contents =
-        frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
-    return contents && contents->GetOuterWebContents() == parked_;
-  }
-
-  const raw_ptr<content::WebContents> parked_;
-  base::ScopedMultiSourceObservation<content::DedicatedWorkerService,
-                                     content::DedicatedWorkerService::Observer>
-      observations_{this};
-  std::set<blink::DedicatedWorkerToken> workers_;
-};
 
 // Reloads the runtime host page when its own renderer goes away. The guest
 // inside reloads itself; this covers the page around it.
@@ -155,6 +84,12 @@ class NexusBackgroundPanelHost::RuntimeHostObserver
   }
 
   void PrimaryPageChanged(content::Page& page) override {
+    NexusBackgroundPanelHost::NotifyStateChanged();
+  }
+
+  void InnerWebContentsAttached(
+      content::WebContents* inner_web_contents,
+      content::RenderFrameHost* render_frame_host) override {
     NexusBackgroundPanelHost::NotifyStateChanged();
   }
 
@@ -223,6 +158,18 @@ bool NexusBackgroundPanelHost::has_runtime_host() const {
   return runtime_host_ && !runtime_host_->IsCrashed();
 }
 
+bool NexusBackgroundPanelHost::runtime_host_has_guest() const {
+  if (!has_runtime_host()) {
+    return false;
+  }
+  for (content::WebContents* guest : runtime_host_->GetInnerWebContents()) {
+    if (!guest->IsCrashed()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void NexusBackgroundPanelHost::set_runtime_host_reload_enabled_for_testing(
     bool enabled) {
   runtime_host_reload_enabled_ = enabled;
@@ -251,8 +198,8 @@ bool NexusBackgroundPanelHost::IsParkedAndIdle(
   }
   for (NexusBackgroundPanelHost* host : LiveHosts()) {
     if (host->parked_.get() == contents) {
-      return host->has_runtime_host() &&
-             !(host->parked_workers_ && host->parked_workers_->has_workers());
+      return host->runtime_host_has_guest() && host->parked_workers_ &&
+             !host->parked_workers_->has_workers();
     }
   }
   return false;
@@ -287,7 +234,9 @@ void NexusBackgroundPanelHost::Park(
   profile_keep_alive_ = std::make_unique<ScopedProfileKeepAlive>(
       profile_, ProfileKeepAliveOrigin::kNexusBackgroundPanel);
   content::WebContentsObserver::Observe(parked_.get());
-  parked_workers_ = std::make_unique<ParkedWorkerTracker>(parked_.get());
+  parked_workers_ = std::make_unique<NexusParkedPageWorkers>(
+      parked_.get(), base::BindRepeating(&NotifyStateChanged));
+  parked_workers_->Start();
   NotifyStateChanged();
 }
 

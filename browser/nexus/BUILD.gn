@@ -1485,6 +1485,7 @@ source_set("unit_tests") {
     "panel/nexus_app_page_frame_guard_unittest.cc",
     "panel/nexus_background_panel_host_unittest.cc",
     "panel/nexus_guest_priority_voter_unittest.cc",
+    "panel/nexus_parked_page_workers_unittest.cc",
     # A guard on upstream behaviour: a held Web Lock is a CannotFreezeReason
     # for every FreezingType — what the guest's runtime keep-alive relies on.
     "panel/nexus_runtime_freeze_exemption_unittest.cc",

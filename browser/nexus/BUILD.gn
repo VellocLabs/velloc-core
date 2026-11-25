@@ -792,6 +792,8 @@ source_set("bridge") {
     "api/system_prefs/nexus_system_prefs_bridge_adapter.h",
     "api/ui/nexus_ui_bridge_adapter.cc",
     "api/ui/nexus_ui_bridge_adapter.h",
+    "api/web_window/isolated_window_session.cc",
+    "api/web_window/isolated_window_session.h",
     "api/web_window/nexus_web_window_bridge_adapter.cc",
     "api/web_window/nexus_web_window_bridge_adapter.h",
     "api/web_window/sign_in_window.cc",

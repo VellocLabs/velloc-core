@@ -132,6 +132,9 @@ constexpr auto kNativePrimitives = std::to_array<const char*>({
     // host's sign-in status pages (an older host would close the window on
     // capture and reject the action as unknown).
     "webWindow.signInResult",
+    // webWindow.open isolatedSession: a session of the window's own (an
+    // older host would ignore the input and open the person's profile).
+    "webWindow.isolatedSession",
     // network.proxyGet / proxySet: the profile's proxy preference.
     "network.proxy",
     // rawStreamOpen `egress`: the request leaves through the named proxy (an

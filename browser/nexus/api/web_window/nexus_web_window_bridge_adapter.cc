@@ -21,6 +21,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "custom_browser/browser/nexus/api/web_window/isolated_window_session.h"
 #include "custom_browser/browser/nexus/api/web_window/sign_in_status_page.h"
 #include "custom_browser/browser/nexus/api/web_window/sign_in_window.h"
 #include "custom_browser/browser/nexus/api/web_window/single_web_window.h"
@@ -305,7 +306,14 @@ void NexusWebWindowBridgeAdapter::HandleOpenOnUI(
   }
   params.show_state = show_state;
   params.focus = input.focus.value_or(true);
-  BrowserWindowInterface* browser = OpenSingleWebWindow(profile_, url, params);
+  // Security: an isolated window never falls back to the person's profile;
+  // its session is destroyed after the window, or now if none was created.
+  Profile* session = input.isolatedSession.value_or(false)
+                         ? CreateIsolatedWindowSession(profile_)
+                         : nullptr;
+  BrowserWindowInterface* browser =
+      OpenSingleWebWindow(session ? session : profile_.get(), url, params);
+  DestroyIsolatedWindowSessionAfter(browser, session);
   if (!browser) {
     std::move(done).Error(errors::kWindowCreateFailed,
                           "the window could not be created");

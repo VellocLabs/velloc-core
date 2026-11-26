@@ -67,7 +67,7 @@ std::string GoogleProvider::GetId() const {
 }
 
 std::string GoogleProvider::GetDisplayName() const {
-  return "Google AI";
+  return "Google Gemini";
 }
 
 LlmProviderType GoogleProvider::GetProviderType() const {

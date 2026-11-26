@@ -289,8 +289,8 @@ translated for each locale.
       <message name="IDS_NEXUS_PROVIDER_ANTHROPIC" desc="Display name for the Anthropic provider" use_name_for_id="true">
         Anthropic
       </message>
-      <message name="IDS_NEXUS_PROVIDER_GOOGLE" desc="Display name for the Google AI provider" use_name_for_id="true">
-        Google AI
+      <message name="IDS_NEXUS_PROVIDER_GOOGLE" desc="Display name for the Google Gemini provider" use_name_for_id="true">
+        Google Gemini
       </message>
       <message name="IDS_NEXUS_PROVIDER_OLLAMA" desc="Display name for the Ollama provider" use_name_for_id="true">
         Ollama (Local)

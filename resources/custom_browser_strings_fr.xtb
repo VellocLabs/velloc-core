@@ -84,7 +84,7 @@
   <translation id="IDS_NEXUS_SETTINGS_WEBAPP_PAGE_TITLE">URL de l’application web de l’agent</translation>
   <translation id="IDS_NEXUS_PROVIDER_OPENAI">OpenAI</translation>
   <translation id="IDS_NEXUS_PROVIDER_ANTHROPIC">Anthropic</translation>
-  <translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google AI</translation>
+  <translation id="IDS_NEXUS_PROVIDER_GOOGLE">Google Gemini</translation>
   <translation id="IDS_NEXUS_PROVIDER_OLLAMA">Ollama (local)</translation>
   <translation id="IDS_NEXUS_SETTINGS_MODEL_LABEL">Modèle</translation>
   <translation id="IDS_NEXUS_SETTINGS_BASE_URL_LABEL">URL de base</translation>

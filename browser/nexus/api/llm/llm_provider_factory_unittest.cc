@@ -77,6 +77,14 @@ TEST(LlmProviderFactoryTest, RegisteredIdsIncludeAllExpectedProviders) {
   EXPECT_TRUE(contains("custom-anthropic"));
 }
 
+TEST(LlmProviderFactoryTest, GoogleProviderIsNamedGoogleGemini) {
+  auto google =
+      LlmProviderFactory::CreateProvider("google", NullLoaderFactory());
+  ASSERT_TRUE(google);
+  EXPECT_EQ(google->GetId(), "google");
+  EXPECT_EQ(google->GetDisplayName(), "Google Gemini");
+}
+
 TEST(LlmProviderFactoryTest, CustomProvidersHaveExpectedIdentity) {
   auto openai =
       LlmProviderFactory::CreateProvider("custom-openai", NullLoaderFactory());

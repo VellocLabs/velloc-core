@@ -187,6 +187,9 @@ void ApplySettingsConfigToPrefDict(const base::DictValue& settings,
   // Preset User-Agent — code-owned in the guest like the stream guards, and
   // mirrored the same way: '' or absent clears it (host default).
   SetStoredUserAgent(settings.FindString("userAgent"), out);
+  // The hosts a provider mod declares, code-owned in the guest and mirrored
+  // the same way: an absent list clears them.
+  SetStoredDeclaredHosts(settings.FindList("declaredHosts"), out);
   // User-created custom providers: the identity bits the broker needs to
   // REBUILD the provider on a cold boot, when only the pref survives (see
   // LoadProviderConfigs → EnsureCustomProvider). Without carrying these

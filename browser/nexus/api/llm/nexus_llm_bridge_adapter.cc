@@ -359,7 +359,12 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
     return;
   }
   GURL target(input.url);
-  if (std::optional<std::string> error = CheckRawStreamTarget(base, target)) {
+  // Security: the hosts the provider declares beside its base URL's domain;
+  // a redirect is held to the same set.
+  const std::vector<std::string> declared_hosts =
+      ReadDeclaredProviderHosts(config);
+  if (std::optional<std::string> error =
+          CheckRawStreamTarget(base, target, declared_hosts)) {
     std::move(done).Error("TARGET_NOT_ALLOWED", *error);
     return;
   }
@@ -543,10 +548,12 @@ void NexusLlmBridgeAdapter::ContinueRawStreamOpen(
       std::string(input.body.begin(), input.body.end()),
       std::move(content_type), max_bytes, base::Milliseconds(idle_ms),
       base::BindRepeating(
-          [](const GURL& base, const GURL& next) {
-            return !CheckRawStreamTarget(base, next).has_value();
+          [](const GURL& base, const std::vector<std::string>& declared_hosts,
+             const GURL& next) {
+            return !CheckRawStreamTarget(base, next, declared_hosts)
+                        .has_value();
           },
-          base),
+          base, declared_hosts),
       std::move(secret_headers), std::move(transform));
   const std::string stream_id =
       input.streamId.has_value()

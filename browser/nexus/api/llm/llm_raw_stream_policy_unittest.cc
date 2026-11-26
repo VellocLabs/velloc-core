@@ -46,6 +46,118 @@ TEST(LlmRawStreamPolicyTest, RejectsMissingBaseUrl) {
   EXPECT_TRUE(CheckRawStreamTarget(GURL(), GURL("https://api.example.com")));
 }
 
+// A registry the public suffix list calls private makes every host under it
+// a domain of its own: an API host and its token host are then two domains.
+TEST(LlmRawStreamPolicyTest, HostsUnderAPrivateRegistryAreSeparateDomains) {
+  const GURL base("https://daily-cloudcode-pa.googleapis.com");
+  const GURL token("https://oauth2.googleapis.com/token");
+  EXPECT_TRUE(CheckRawStreamTarget(base, token));
+  EXPECT_TRUE(CheckRawStreamTarget(base, token, {}));
+}
+
+TEST(LlmRawStreamPolicyTest, AllowsADeclaredHostOutsideTheBaseDomain) {
+  const GURL base("https://daily-cloudcode-pa.googleapis.com");
+  const std::vector<std::string> declared = {
+      "daily-cloudcode-pa.googleapis.com", "accounts.google.com",
+      "oauth2.googleapis.com", "www.googleapis.com"};
+  EXPECT_FALSE(CheckRawStreamTarget(
+      base, GURL("https://oauth2.googleapis.com/token"), declared));
+  EXPECT_FALSE(CheckRawStreamTarget(
+      base, GURL("https://www.googleapis.com/oauth2/v1/userinfo"), declared));
+  EXPECT_FALSE(CheckRawStreamTarget(
+      base, GURL("https://accounts.google.com/o/oauth2/revoke"), declared));
+  // The default port written out is the default port.
+  EXPECT_FALSE(CheckRawStreamTarget(
+      base, GURL("https://oauth2.googleapis.com:443/token"), declared));
+}
+
+TEST(LlmRawStreamPolicyTest, ADeclaredHostIsExactlyThatHost) {
+  const GURL base("https://daily-cloudcode-pa.googleapis.com");
+  const std::vector<std::string> declared = {"oauth2.googleapis.com",
+                                             "accounts.google.com"};
+  // Not another host of the same registry, not a sub-domain, not the parent.
+  EXPECT_TRUE(CheckRawStreamTarget(
+      base, GURL("https://storage.googleapis.com/bucket"), declared));
+  EXPECT_TRUE(CheckRawStreamTarget(
+      base, GURL("https://evil.oauth2.googleapis.com/token"), declared));
+  EXPECT_TRUE(CheckRawStreamTarget(base, GURL("https://google.com/"), declared));
+  EXPECT_TRUE(
+      CheckRawStreamTarget(base, GURL("https://mail.google.com/"), declared));
+  EXPECT_TRUE(CheckRawStreamTarget(
+      base, GURL("https://oauth2.googleapis.com.evil.org/token"), declared));
+}
+
+TEST(LlmRawStreamPolicyTest, ADeclaredHostIsHttpsOnTheDefaultPortOnly) {
+  const GURL base("https://api.example.com");
+  const std::vector<std::string> declared = {"login.example.net"};
+  EXPECT_FALSE(
+      CheckRawStreamTarget(base, GURL("https://login.example.net/t"), declared));
+  EXPECT_TRUE(
+      CheckRawStreamTarget(base, GURL("http://login.example.net/t"), declared));
+  EXPECT_TRUE(CheckRawStreamTarget(
+      base, GURL("https://login.example.net:8443/t"), declared));
+  EXPECT_TRUE(CheckRawStreamTarget(
+      base, GURL("https://u:p@login.example.net/t"), declared));
+  // A local http provider gains nothing on its own scheme.
+  EXPECT_TRUE(CheckRawStreamTarget(GURL("http://127.0.0.1:11434"),
+                                   GURL("http://login.example.net/t"),
+                                   declared));
+  // No base URL, no request: a declared host does not stand in for one.
+  EXPECT_TRUE(CheckRawStreamTarget(GURL(), GURL("https://login.example.net/t"),
+                                   declared));
+}
+
+TEST(LlmRawStreamPolicyTest, AnUndeclarableEntryAllowsNothing) {
+  const GURL base("https://api.example.com");
+  EXPECT_TRUE(
+      CheckRawStreamTarget(base, GURL("https://example.net/"), {"net"}));
+  EXPECT_TRUE(CheckRawStreamTarget(base, GURL("https://bbc.co.uk/"),
+                                   {"co.uk", "*.co.uk", ""}));
+  EXPECT_TRUE(
+      CheckRawStreamTarget(base, GURL("https://10.0.0.1/"), {"10.0.0.1"}));
+  EXPECT_TRUE(
+      CheckRawStreamTarget(base, GURL("https://localhost/"), {"localhost"}));
+  EXPECT_TRUE(CheckRawStreamTarget(base, GURL("https://login.example.net/"),
+                                   {"Login.Example.Net"}));
+}
+
+TEST(LlmRawStreamPolicyTest, DeclarableProviderHost) {
+  EXPECT_TRUE(IsDeclarableProviderHost("oauth2.googleapis.com"));
+  EXPECT_TRUE(IsDeclarableProviderHost("googleapis.com"));
+  EXPECT_TRUE(IsDeclarableProviderHost("api.vendor-a.test"));
+  EXPECT_FALSE(IsDeclarableProviderHost(""));
+  EXPECT_FALSE(IsDeclarableProviderHost("com"));
+  EXPECT_FALSE(IsDeclarableProviderHost("co.uk"));
+  EXPECT_FALSE(IsDeclarableProviderHost("localhost"));
+  EXPECT_FALSE(IsDeclarableProviderHost("127.0.0.1"));
+  EXPECT_FALSE(IsDeclarableProviderHost("*.example.com"));
+  EXPECT_FALSE(IsDeclarableProviderHost("example.com."));
+  EXPECT_FALSE(IsDeclarableProviderHost("example.com:443"));
+  EXPECT_FALSE(IsDeclarableProviderHost("example.com/path"));
+  EXPECT_FALSE(IsDeclarableProviderHost("https://example.com"));
+  EXPECT_FALSE(IsDeclarableProviderHost("Example.com"));
+  EXPECT_FALSE(IsDeclarableProviderHost("user@example.com"));
+  EXPECT_FALSE(IsDeclarableProviderHost("api.localhost"));
+  EXPECT_FALSE(IsDeclarableProviderHost("metadata.internal"));
+  EXPECT_FALSE(IsDeclarableProviderHost("nas.local"));
+  EXPECT_FALSE(IsDeclarableProviderHost("router.home.arpa"));
+  EXPECT_FALSE(IsDeclarableProviderHost("0x7f.1"));
+  EXPECT_FALSE(IsDeclarableProviderHost("bücher.example"));
+  EXPECT_TRUE(IsDeclarableProviderHost("xn--bcher-kva.example"));
+  EXPECT_TRUE(IsDeclarableProviderHost("api.internal-tools.com"));
+}
+
+TEST(LlmRawStreamPolicyTest, ALoopbackOrPrivateNameDeclaredAllowsNothing) {
+  const GURL base("https://api.example.com");
+  EXPECT_TRUE(CheckRawStreamTarget(base, GURL("https://api.localhost/"),
+                                   {"api.localhost"}));
+  EXPECT_TRUE(CheckRawStreamTarget(base, GURL("https://metadata.internal/"),
+                                   {"metadata.internal"}));
+  // A target written with a trailing dot is not the declared host.
+  EXPECT_TRUE(CheckRawStreamTarget(base, GURL("https://login.example.net./t"),
+                                   {"login.example.net"}));
+}
+
 TEST(LlmRawStreamPolicyTest, ForbiddenHeaders) {
   EXPECT_TRUE(IsForbiddenRawStreamHeader("Cookie"));
   EXPECT_TRUE(IsForbiddenRawStreamHeader("HOST"));

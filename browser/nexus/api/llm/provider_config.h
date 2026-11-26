@@ -6,6 +6,7 @@
 #define CUSTOM_BROWSER_BROWSER_NEXUS_API_LLM_PROVIDER_CONFIG_H_
 
 #include <string>
+#include <vector>
 
 #include "base/containers/flat_map.h"
 #include "base/values.h"
@@ -69,6 +70,20 @@ SecretLookupOutcome LookupStoredProviderSecret(const base::DictValue* config,
 // by key — keeping an absent or empty value would leave a previous preset's
 // User-Agent on the wire.
 void SetStoredUserAgent(const std::string* user_agent, base::DictValue& config);
+
+// Stores |hosts| as the provider config's declared hosts (`declared_hosts`):
+// the hosts beside its base URL's domain that its raw transport may reach.
+// Security: only names IsDeclarableProviderHost accepts are kept, at most
+// kMaxDeclaredProviderHosts. Null or nothing kept REMOVES the key: the guest
+// sends the list on every `publishProviderConfigs`, and a provider that
+// stopped declaring hosts must not keep the old ones.
+void SetStoredDeclaredHosts(const base::ListValue* hosts,
+                            base::DictValue& config);
+
+// The declared hosts of a stored provider config (null: none), for
+// CheckRawStreamTarget.
+std::vector<std::string> ReadDeclaredProviderHosts(
+    const base::DictValue* config);
 
 // True when the stored config carries something the user supplied (a
 // credential, endpoint, model choice or custom-provider marker) — unlike

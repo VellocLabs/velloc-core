@@ -119,6 +119,45 @@ void SetStoredUserAgent(const std::string* user_agent,
   }
 }
 
+void SetStoredDeclaredHosts(const base::ListValue* hosts,
+                            base::DictValue& config) {
+  base::ListValue kept;
+  if (hosts) {
+    for (const base::Value& host : *hosts) {
+      if (kept.size() >= kMaxDeclaredProviderHosts) {
+        break;
+      }
+      if (host.is_string() && IsDeclarableProviderHost(host.GetString())) {
+        kept.Append(host.GetString());
+      }
+    }
+  }
+  if (kept.empty()) {
+    config.Remove("declared_hosts");
+  } else {
+    config.Set("declared_hosts", std::move(kept));
+  }
+}
+
+std::vector<std::string> ReadDeclaredProviderHosts(
+    const base::DictValue* config) {
+  std::vector<std::string> out;
+  const base::ListValue* hosts =
+      config ? config->FindList("declared_hosts") : nullptr;
+  if (!hosts) {
+    return out;
+  }
+  for (const base::Value& host : *hosts) {
+    if (out.size() >= kMaxDeclaredProviderHosts) {
+      break;
+    }
+    if (host.is_string()) {
+      out.push_back(host.GetString());
+    }
+  }
+  return out;
+}
+
 bool HasUserProviderSetup(const base::DictValue& config) {
   static constexpr const char* kUserSuppliedStringKeys[] = {
       "api_key", "account_token", "default_model", "model",

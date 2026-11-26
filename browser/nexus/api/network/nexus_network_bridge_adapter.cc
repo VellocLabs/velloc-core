@@ -444,8 +444,9 @@ void NexusNetworkBridgeAdapter::ResolveOAuthForRequest(
   Profile* profile =
       browser_context_ ? Profile::FromBrowserContext(browser_context_)
                        : nullptr;
-  // The same anchor as model.rawStreamOpen: the request must stay on the
-  // provider's registrable domain.
+  // Security: the request must stay on the provider's registrable domain.
+  // Unlike model.rawStreamOpen, the provider's declared hosts do not widen
+  // this anchor: an OAuth value never leaves the base URL's domain.
   if (std::optional<std::string> refusal = CheckRawStreamTarget(
           GURL(GetProviderAnchorBaseUrl(profile, *provider_id)), GURL(url))) {
     std::move(callback).Run(std::nullopt, "TARGET_NOT_ALLOWED",

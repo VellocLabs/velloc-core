@@ -7,7 +7,7 @@
       "name": "providerId",
       "type": "string",
       "required": true,
-      "description": "Configured provider whose secrets may be referenced and whose active base URL bounds the target: `url` must share its scheme and registrable domain."
+      "description": "Configured provider whose secrets may be referenced and whose active base URL bounds the target: `url` must share its scheme and registrable domain, or be https on the default port at exactly one of the provider's declared hosts (publishProviderConfigs `declaredHosts`)."
     },
     {
       "name": "url",

@@ -33,8 +33,27 @@ namespace nexus {
 // `agent.us.example.com` for inference) works, but the injected credential
 // never leaves the provider's domain. Returns an error message, or nullopt
 // when allowed.
-std::optional<std::string> CheckRawStreamTarget(const GURL& base_url,
-                                                const GURL& target);
+
+// Security: |declared_hosts| are the hosts the provider's manifest declares
+// and the person consented to (ReadDeclaredProviderHosts). A target outside
+// the base URL's domain is also allowed when it is https on the default port
+// and its host is exactly one of them: a sign-in whose token endpoint is on
+// another registrable domain than the API. A host name is never widened to
+// its sub-domains or its registrable domain here.
+std::optional<std::string> CheckRawStreamTarget(
+    const GURL& base_url,
+    const GURL& target,
+    const std::vector<std::string>& declared_hosts = {});
+
+// The most declared hosts a provider config carries; the rest are dropped.
+inline constexpr size_t kMaxDeclaredProviderHosts = 16;
+
+// True for a host name a provider may declare: canonical (lower case, no
+// scheme, port, path, wildcard or trailing dot), not an IP literal, not a
+// loopback or private-use name (`*.localhost`, `*.internal`, `*.local`, ...),
+// and with a registrable domain of its own under the public registries, so
+// neither a bare suffix (`com`, `co.uk`) nor a single label (`localhost`).
+bool IsDeclarableProviderHost(std::string_view host);
 
 // True when a caller-supplied request header must be rejected: headers the
 // guest must never set on a credentialed request (Cookie, Host,

@@ -5,6 +5,7 @@
 #include "custom_browser/browser/nexus/api/llm/provider_config.h"
 
 #include "base/base64.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -222,6 +223,43 @@ TEST_F(ProviderConfigSealTest, LookupStoredProviderSecretWaitsOnKeystore) {
 // an empty or absent value must REMOVE the stored one — otherwise a provider
 // that lost its preset (a custom provider moved off the OpenCode Zen URL, a
 // slot re-pointed at another endpoint) keeps sending the old User-Agent.
+
+TEST_F(ProviderConfigTest, DeclaredHostsKeepOnlyDeclarableNames) {
+  base::DictValue config;
+  base::ListValue hosts;
+  hosts.Append("oauth2.googleapis.com");
+  hosts.Append("*.googleapis.com");
+  hosts.Append("com");
+  hosts.Append(7);
+  hosts.Append("www.googleapis.com");
+  SetStoredDeclaredHosts(&hosts, config);
+  EXPECT_EQ(ReadDeclaredProviderHosts(&config),
+            (std::vector<std::string>{"oauth2.googleapis.com",
+                                      "www.googleapis.com"}));
+}
+
+TEST_F(ProviderConfigTest, DeclaredHostsAreCappedAndClearedWhenAbsent) {
+  base::DictValue config;
+  base::ListValue many;
+  for (int i = 0; i < 40; ++i) {
+    many.Append("h" + base::NumberToString(i) + ".example.com");
+  }
+  SetStoredDeclaredHosts(&many, config);
+  EXPECT_EQ(ReadDeclaredProviderHosts(&config).size(),
+            kMaxDeclaredProviderHosts);
+
+  // A publish without the list, or with nothing usable, drops the old one.
+  SetStoredDeclaredHosts(nullptr, config);
+  EXPECT_FALSE(config.contains("declared_hosts"));
+  base::ListValue useless;
+  useless.Append("localhost");
+  config.Set("declared_hosts", base::ListValue().Append("a.example.com"));
+  SetStoredDeclaredHosts(&useless, config);
+  EXPECT_FALSE(config.contains("declared_hosts"));
+
+  EXPECT_TRUE(ReadDeclaredProviderHosts(nullptr).empty());
+  EXPECT_TRUE(ReadDeclaredProviderHosts(&config).empty());
+}
 
 TEST_F(ProviderConfigTest, SetStoredUserAgentSetsNonEmptyValue) {
   base::DictValue config;

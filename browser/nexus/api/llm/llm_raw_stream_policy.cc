@@ -9,16 +9,73 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/base/url_util.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace nexus {
 
-std::optional<std::string> CheckRawStreamTarget(const GURL& base_url,
-                                                const GURL& target) {
+namespace {
+
+// Whether |target| is https on the default port at exactly a declared host.
+bool IsDeclaredHostTarget(const GURL& target,
+                          const std::vector<std::string>& declared_hosts) {
+  if (!target.SchemeIs(url::kHttpsScheme) || target.has_port()) {
+    return false;
+  }
+  const std::string host(target.host());
+  for (const std::string& declared : declared_hosts) {
+    if (IsDeclarableProviderHost(declared) && host == declared) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
+bool IsDeclarableProviderHost(std::string_view host) {
+  if (host.empty() || host.size() > 253 || host.back() == '.') {
+    return false;
+  }
+  for (char c : host) {
+    if (!base::IsAsciiLower(c) && !base::IsAsciiDigit(c) && c != '-' &&
+        c != '.') {
+      return false;
+    }
+  }
+  const GURL url(base::StrCat({"https://", host, "/"}));
+  if (!url.is_valid() || url.HostIsIPAddress() || url.host() != host) {
+    return false;
+  }
+  // Security: names that resolve to this machine or a private network.
+  if (net::HostStringIsLocalhost(host)) {
+    return false;
+  }
+  static constexpr std::string_view kPrivateUseSuffixes[] = {
+      "local", "internal", "lan", "localdomain", "intranet",
+      "corp",  "private",  "home", "home.arpa"};
+  for (std::string_view suffix : kPrivateUseSuffixes) {
+    if (host.size() > suffix.size() && host.ends_with(suffix) &&
+        host[host.size() - suffix.size() - 1] == '.') {
+      return false;
+    }
+  }
+  return !net::registry_controlled_domains::GetDomainAndRegistry(
+              host,
+              net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)
+              .empty();
+}
+
+std::optional<std::string> CheckRawStreamTarget(
+    const GURL& base_url,
+    const GURL& target,
+    const std::vector<std::string>& declared_hosts) {
   if (!base_url.is_valid() || !base_url.SchemeIsHTTPOrHTTPS()) {
     return "Provider has no valid http(s) base URL.";
   }
@@ -27,6 +84,9 @@ std::optional<std::string> CheckRawStreamTarget(const GURL& base_url,
   }
   if (target.has_username() || target.has_password()) {
     return "Target URL may not embed credentials.";
+  }
+  if (IsDeclaredHostTarget(target, declared_hosts)) {
+    return std::nullopt;
   }
   if (target.scheme() != base_url.scheme()) {
     return "Target scheme must match the provider base URL's scheme.";

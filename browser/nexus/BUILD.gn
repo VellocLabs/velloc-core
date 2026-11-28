@@ -1585,6 +1585,11 @@ source_set("unit_tests") {
     "//custom_browser/browser/nexus/panel:background_panel_host",
     "//custom_browser/browser/nexus/panel:guest_priority",
 
+    # IsolatedSandboxGroupFor and the registrar
+    # (panel/nexus_app_page_frame_guard_unittest.cc).
+    "//custom_browser/chromium_hooks:hook_api",
+    "//custom_browser/chromium_hooks:hook_core",
+
     # An in-process NexusShellServiceImpl behind the shell adapter
     # (nexus_shell_bridge_adapter_unittest.cc).
     "//custom_browser/utility/nexus/shell:nexus_shell_service",

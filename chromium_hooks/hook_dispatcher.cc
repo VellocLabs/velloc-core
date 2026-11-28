@@ -75,6 +75,11 @@ class HookRegistryImpl final : public HookRegistrar {
     bubble_anchor_rect_override_ = std::move(cb);
   }
 
+  void SetIsolatedSandboxGroupProvider(
+      IsolatedSandboxGroupProviderCallback cb) override {
+    isolated_sandbox_group_provider_ = std::move(cb);
+  }
+
   const std::vector<WebUIDataSourceConfiguringCallbackEntry>& configuring_callbacks() const {
     return configuring_callbacks_;
   }
@@ -104,6 +109,10 @@ class HookRegistryImpl final : public HookRegistrar {
   const BubbleAnchorRectOverrideCallback& bubble_anchor_rect_override() const {
     return bubble_anchor_rect_override_;
   }
+  const IsolatedSandboxGroupProviderCallback& isolated_sandbox_group_provider()
+      const {
+    return isolated_sandbox_group_provider_;
+  }
 
  private:
   std::vector<WebUIDataSourceConfiguringCallbackEntry> configuring_callbacks_;
@@ -116,6 +125,7 @@ class HookRegistryImpl final : public HookRegistrar {
   std::vector<RenderFrameInterfaceBinderEntry> render_frame_interface_binders_;
   std::vector<std::unique_ptr<BrowserMainLifecycleHook>> main_hooks_;
   BubbleAnchorRectOverrideCallback bubble_anchor_rect_override_;
+  IsolatedSandboxGroupProviderCallback isolated_sandbox_group_provider_;
 };
 
 HookRegistryImpl& GetRegistry() {
@@ -233,6 +243,14 @@ std::optional<gfx::Rect> OnGetBubbleAnchorRect(
     return cb.Run(anchor_view, default_rect);
   }
   return std::nullopt;
+}
+
+std::optional<int> IsolatedSandboxGroupFor(content::NavigationHandle& handle) {
+  const auto& provider = GetRegistry().isolated_sandbox_group_provider();
+  if (!provider) {
+    return std::nullopt;
+  }
+  return provider.Run(handle);
 }
 
 const void* NexusGuestGroupsUserDataKey(NexusGuestGroupsSlot slot) {

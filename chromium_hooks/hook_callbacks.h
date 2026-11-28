@@ -23,6 +23,7 @@ class URLLoaderFactoryBuilder;
 
 namespace content {
 class BrowserContext;
+class NavigationHandle;
 class NavigationThrottleRegistry;
 class RenderFrameHost;
 class WebUI;
@@ -75,6 +76,14 @@ using URLLoaderFactoryInterceptorCallback =
                                  content::RenderFrameHost*,
                                  bool is_navigation,
                                  network::URLLoaderFactoryBuilder&)>;
+
+// Provider-style hook, asked only for a sandboxed frame Chromium already puts
+// in a process apart from its parent: the grouping id that frame's SiteInfo
+// should carry, or std::nullopt to keep Chromium's grouping. An id is <= -2
+// and the same on every call for one frame, so frames with one id share a
+// process and no other frame joins them (F-42). UI thread.
+using IsolatedSandboxGroupProviderCallback =
+    base::RepeatingCallback<std::optional<int>(content::NavigationHandle&)>;
 
 }  // namespace custom_browser
 

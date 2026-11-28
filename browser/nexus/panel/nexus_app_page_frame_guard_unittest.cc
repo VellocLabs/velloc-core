@@ -6,6 +6,8 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/functional/bind.h"
@@ -23,6 +25,8 @@
 #include "content/public/test/test_navigation_throttle_inserter.h"
 #include "content/public/test/test_renderer_host.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
+#include "custom_browser/chromium_hooks/hook_dispatcher.h"
+#include "custom_browser/chromium_hooks/hook_registrar.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -183,6 +187,151 @@ TEST_F(AppPageFrameGuardTest, ADeletedAppPageFrameIsForgotten) {
   EXPECT_EQ(0u, frames->LatchedCountForTesting());
 }
 
+std::optional<int> GroupFor(content::RenderFrameHost* frame) {
+  content::MockNavigationHandle handle(GURL("about:srcdoc"), frame);
+  return AppPageFrames::SandboxGroupFor(handle);
+}
+
+TEST_F(AppPageFrameGuardTest, AnAppPageGetsAGroupOfItsOwn) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+
+  std::optional<int> group = GroupFor(page);
+  ASSERT_TRUE(group);
+  EXPECT_LE(*group, -2);
+  EXPECT_EQ(group, GroupFor(page));
+}
+
+TEST_F(AppPageFrameGuardTest, FramesInsideAnAppPageShareItsGroup) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::RenderFrameHost* nested = AddGuestChild(page, "");
+  content::RenderFrameHost* renamed = AddGuestChild(nested, kAppPageFrameName);
+
+  EXPECT_EQ(GroupFor(page), GroupFor(nested));
+  EXPECT_EQ(GroupFor(page), GroupFor(renamed));
+}
+
+TEST_F(AppPageFrameGuardTest, TwoAppPagesGetDifferentGroups) {
+  content::RenderFrameHost* first =
+      AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::RenderFrameHost* second =
+      AddGuestChild(main_rfh(), kAppPageFrameName);
+
+  ASSERT_TRUE(GroupFor(first));
+  ASSERT_TRUE(GroupFor(second));
+  EXPECT_NE(GroupFor(first), GroupFor(second));
+}
+
+TEST_F(AppPageFrameGuardTest, AppPagesOfTwoGuestsGetDifferentGroups) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  std::unique_ptr<content::WebContents> other = CreateTestWebContents();
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      other.get(), GURL("https://guest.test/"));
+  content::RenderFrameHost* other_page =
+      AddGuestChild(other->GetPrimaryMainFrame(), kAppPageFrameName);
+
+  ASSERT_TRUE(GroupFor(other_page));
+  EXPECT_NE(GroupFor(page), GroupFor(other_page));
+}
+
+TEST_F(AppPageFrameGuardTest, OtherFramesKeepChromiumGrouping) {
+  AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::RenderFrameHost* kernel = AddGuestChild(main_rfh(), "");
+  content::RenderFrameHost* outside = AddChild(main_rfh(), kAppPageFrameName);
+  AppPageFrames::Note(*outside, /*in_nexus_guest=*/false);
+
+  EXPECT_FALSE(GroupFor(kernel));
+  EXPECT_FALSE(GroupFor(outside));
+
+  std::unique_ptr<content::WebContents> tab = CreateTestWebContents();
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      tab.get(), GURL("https://example.test/"));
+  EXPECT_FALSE(GroupFor(AddChild(tab->GetPrimaryMainFrame(), "")));
+}
+
+TEST_F(AppPageFrameGuardTest, ADeletedAppPageFrameLosesItsGroup) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  const std::optional<int> before = GroupFor(page);
+  ASSERT_TRUE(before);
+  AppPageFrames* frames = AppPageFrames::FromWebContents(web_contents());
+  content::RenderFrameHostTester::For(page)->Detach();
+
+  content::RenderFrameHost* reopened =
+      AddGuestChild(main_rfh(), kAppPageFrameName);
+  ASSERT_TRUE(GroupFor(reopened));
+  EXPECT_NE(before, GroupFor(reopened));
+  EXPECT_EQ(1u, frames->LatchedCountForTesting());
+}
+
+// Keeps only the sandbox grouping provider, so registering touches no
+// process-wide hook.
+class GroupProviderRecorder : public custom_browser::HookRegistrar {
+ public:
+  void AddWebUIDataSourceConfiguringCallback(
+      std::string_view,
+      custom_browser::WebUIDataSourceConfiguringCallback) override {}
+  void AddNavigationThrottleProvider(
+      custom_browser::NavigationThrottleProviderCallback) override {}
+  void AddURLLoaderFactoryInterceptor(
+      custom_browser::URLLoaderFactoryInterceptorCallback) override {}
+  void AddWebUIRenderFrameBinderMapPopulator(
+      custom_browser::WebUIRenderFrameBinderMapPopulatorCallback) override {}
+  void AddRenderFrameBinderOverride(
+      custom_browser::RenderFrameBinderOverrideCallback) override {}
+  void AddRenderFrameInterfaceBinder(
+      std::string_view,
+      custom_browser::RenderFrameInterfaceBinderCallback) override {}
+  void AddBrowserMainLifecycleHook(
+      std::unique_ptr<custom_browser::BrowserMainLifecycleHook>) override {}
+  void SetBubbleAnchorRectOverride(
+      custom_browser::BubbleAnchorRectOverrideCallback) override {}
+  void SetIsolatedSandboxGroupProvider(
+      custom_browser::IsolatedSandboxGroupProviderCallback cb) override {
+    provider = std::move(cb);
+  }
+
+  custom_browser::IsolatedSandboxGroupProviderCallback provider;
+};
+
+TEST_F(AppPageFrameGuardTest, RegistersTheSandboxGroupProvider) {
+  GroupProviderRecorder registrar;
+  RegisterAppPageFrameGuardHooks(&registrar);
+  ASSERT_TRUE(registrar.provider);
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::RenderFrameHost* kernel = AddGuestChild(main_rfh(), "");
+
+  content::MockNavigationHandle page_handle(GURL("about:srcdoc"), page);
+  content::MockNavigationHandle kernel_handle(GURL("about:srcdoc"), kernel);
+  EXPECT_EQ(GroupFor(page), registrar.provider.Run(page_handle));
+  EXPECT_FALSE(registrar.provider.Run(kernel_handle));
+}
+
+TEST_F(AppPageFrameGuardTest, TheDispatcherKeepsChromiumGroupingWithoutAProvider) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::MockNavigationHandle handle(GURL("about:srcdoc"), page);
+  custom_browser::GetHookRegistrar()->SetIsolatedSandboxGroupProvider({});
+
+  EXPECT_FALSE(custom_browser::IsolatedSandboxGroupFor(handle));
+}
+
+TEST_F(AppPageFrameGuardTest, TheDispatcherAnswersWithTheRegisteredProvider) {
+  content::RenderFrameHost* page = AddGuestChild(main_rfh(), kAppPageFrameName);
+  content::RenderFrameHost* kernel = AddGuestChild(main_rfh(), "");
+  content::MockNavigationHandle page_handle(GURL("about:srcdoc"), page);
+  content::MockNavigationHandle kernel_handle(GURL("about:srcdoc"), kernel);
+  custom_browser::HookRegistrar* registrar = custom_browser::GetHookRegistrar();
+  RegisterAppPageFrameGuardHooks(registrar);
+
+  const std::optional<int> page_group =
+      custom_browser::IsolatedSandboxGroupFor(page_handle);
+  const std::optional<int> kernel_group =
+      custom_browser::IsolatedSandboxGroupFor(kernel_handle);
+  registrar->SetIsolatedSandboxGroupProvider({});
+
+  ASSERT_TRUE(page_group);
+  EXPECT_EQ(GroupFor(page), page_group);
+  EXPECT_FALSE(kernel_group);
+}
+
 class AppPageFencedFrameTest : public AppPageFrameGuardTest {
  public:
   AppPageFencedFrameTest() {
@@ -203,6 +352,7 @@ TEST_F(AppPageFencedFrameTest, AFencedFrameInAnAppPageIsAnAppPageFrame) {
   AppPageFrames::Note(*fenced, /*in_nexus_guest=*/true);
 
   EXPECT_TRUE(AppPageFrames::Contains(*fenced));
+  EXPECT_EQ(GroupFor(page), GroupFor(fenced));
   EXPECT_EQ(ThrottleAction::CANCEL_AND_IGNORE,
             StartNavigation(fenced, GURL("https://example.test/?d=secret")));
 }

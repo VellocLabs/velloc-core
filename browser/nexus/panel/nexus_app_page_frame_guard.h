@@ -5,6 +5,8 @@
 #ifndef CUSTOM_BROWSER_BROWSER_NEXUS_PANEL_NEXUS_APP_PAGE_FRAME_GUARD_H_
 #define CUSTOM_BROWSER_BROWSER_NEXUS_PANEL_NEXUS_APP_PAGE_FRAME_GUARD_H_
 
+#include <map>
+#include <optional>
 #include <set>
 
 #include "content/public/browser/frame_tree_node_id.h"
@@ -65,6 +67,14 @@ class AppPageFrames : public content::WebContentsUserData<AppPageFrames>,
   // the browser enforces.
   static bool ContainsNavigation(content::NavigationHandle& handle);
 
+  // The sandbox grouping id of the app page the navigating frame belongs to:
+  // that of the outermost latched frame among it and its ancestors. Each
+  // latch takes one id when it is made, from a browser-wide counter that runs
+  // down from -2 and never repeats, so an app page and the frames inside it
+  // share one process and no other frame joins it. std::nullopt for any frame
+  // that is not an app-page frame (F-42).
+  static std::optional<int> SandboxGroupFor(content::NavigationHandle& handle);
+
   size_t LatchedCountForTesting() const { return latched_.size(); }
 
  private:
@@ -72,6 +82,7 @@ class AppPageFrames : public content::WebContentsUserData<AppPageFrames>,
   explicit AppPageFrames(content::WebContents* contents);
 
   bool Has(content::FrameTreeNodeId id) const { return latched_.contains(id); }
+  std::optional<int> GroupOf(content::RenderFrameHost* frame) const;
   bool HasDocument(const content::GlobalRenderFrameHostToken& token) const {
     return documents_.contains(token);
   }
@@ -79,7 +90,8 @@ class AppPageFrames : public content::WebContentsUserData<AppPageFrames>,
   // content::WebContentsObserver:
   void FrameDeleted(content::FrameTreeNodeId frame_tree_node_id) override;
 
-  std::set<content::FrameTreeNodeId> latched_;
+  // Each latched frame and its sandbox grouping id.
+  std::map<content::FrameTreeNodeId, int> latched_;
   // Every app-page document ever created here, kept after it is destroyed so
   // a navigation it started is still recognised. Navigation out of an
   // app-page frame is blocked, so this holds a few entries per app page.
@@ -115,8 +127,8 @@ void OverrideAppPageFrameBinders(
     content::RenderFrameHost& frame,
     mojo::BinderMapWithContext<content::RenderFrameHost*>& map);
 
-// Installs the throttle provider and the binder override; the guest test is
-// `IsNexusPanelGuestContents`.
+// Installs the throttle provider, the binder override and the sandbox grouping
+// provider; the guest test is `IsNexusPanelGuestContents`.
 void RegisterAppPageFrameGuardHooks(custom_browser::HookRegistrar* registrar);
 
 }  // namespace nexus

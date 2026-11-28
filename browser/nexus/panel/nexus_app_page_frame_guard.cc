@@ -4,12 +4,14 @@
 
 #include "custom_browser/browser/nexus/panel/nexus_app_page_frame_guard.h"
 
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/check_op.h"
 #include "base/functional/bind.h"
 #include "components/network_hints/common/network_hints.mojom.h"
 #include "content/public/browser/global_routing_id.h"
@@ -35,6 +37,14 @@
 namespace nexus {
 
 namespace {
+
+// Browser-wide, so two guests never hand out one id. -1 is Chromium's "no id"
+// and per-document grouping uses positive navigation ids. UI thread only.
+int NextSandboxGroupId() {
+  static int next = -2;
+  CHECK_GT(next, std::numeric_limits<int>::min());
+  return next--;
+}
 
 #if BUILDFLAG(IS_P2P_ENABLED)
 // Contract: answers every call so the renderer neither waits nor reconnects.
@@ -136,8 +146,11 @@ void AppPageFrames::Note(content::RenderFrameHost& frame, bool in_nexus_guest) {
   }
   if (in_nexus_guest && frame.GetParent() &&
       frame.GetFrameName() == kAppPageFrameName) {
-    AppPageFrames::GetOrCreateForWebContents(contents)->latched_.insert(
-        frame.GetFrameTreeNodeId());
+    std::map<content::FrameTreeNodeId, int>& latched =
+        AppPageFrames::GetOrCreateForWebContents(contents)->latched_;
+    if (!latched.contains(frame.GetFrameTreeNodeId())) {
+      latched.emplace(frame.GetFrameTreeNodeId(), NextSandboxGroupId());
+    }
   }
   if (Contains(frame)) {
     AppPageFrames::FromWebContents(contents)->documents_.insert(
@@ -180,6 +193,41 @@ bool AppPageFrames::ContainsNavigation(content::NavigationHandle& handle) {
   }
   content::RenderFrameHost* parent = handle.GetParentFrameOrOuterDocument();
   return parent && Contains(*parent);
+}
+
+// static
+std::optional<int> AppPageFrames::SandboxGroupFor(
+    content::NavigationHandle& handle) {
+  const AppPageFrames* frames =
+      AppPageFrames::FromWebContents(handle.GetWebContents());
+  if (!frames) {
+    return std::nullopt;
+  }
+  std::optional<int> group =
+      frames->GroupOf(handle.GetParentFrameOrOuterDocument());
+  if (group) {
+    return group;
+  }
+  auto own = frames->latched_.find(handle.GetFrameTreeNodeId());
+  if (own != frames->latched_.end()) {
+    return own->second;
+  }
+  return std::nullopt;
+}
+
+std::optional<int> AppPageFrames::GroupOf(
+    content::RenderFrameHost* frame) const {
+  // The outermost latch wins: a frame the page itself names like an app page
+  // stays in the page's process.
+  std::optional<int> group;
+  for (content::RenderFrameHost* each = frame; each;
+       each = each->GetParentOrOuterDocument()) {
+    auto latch = latched_.find(each->GetFrameTreeNodeId());
+    if (latch != latched_.end()) {
+      group = latch->second;
+    }
+  }
+  return group;
 }
 
 void AppPageFrames::FrameDeleted(content::FrameTreeNodeId frame_tree_node_id) {
@@ -236,6 +284,8 @@ void RegisterAppPageFrameGuardHooks(custom_browser::HookRegistrar* registrar) {
       base::BindRepeating(&MaybeAddAppPageNavigationThrottle));
   registrar->AddRenderFrameBinderOverride(
       base::BindRepeating(&OverrideBindersFromHook));
+  registrar->SetIsolatedSandboxGroupProvider(
+      base::BindRepeating(&AppPageFrames::SandboxGroupFor));
 }
 
 }  // namespace nexus

@@ -40,6 +40,10 @@ class HookRegistrar {
 
   virtual void SetBubbleAnchorRectOverride(
       BubbleAnchorRectOverrideCallback cb) = 0;
+
+  // Replaces any earlier provider; a null callback removes it.
+  virtual void SetIsolatedSandboxGroupProvider(
+      IsolatedSandboxGroupProviderCallback cb) = 0;
 };
 
 }  // namespace custom_browser

@@ -23,6 +23,7 @@ class URLLoaderFactoryBuilder;
 
 namespace content {
 class BrowserContext;
+class NavigationHandle;
 class NavigationThrottleRegistry;
 class RenderFrameHost;
 class WebUI;
@@ -75,6 +76,12 @@ CUSTOM_BROWSER_HOOKS_EXPORT void RunBrowserMainPostMainMessageLoopRunHooks();
 CUSTOM_BROWSER_HOOKS_EXPORT std::optional<gfx::Rect> OnGetBubbleAnchorRect(
     const views::View* anchor_view,
     const gfx::Rect& default_rect);
+
+// ---------- Isolated sandbox grouping hook ----------
+// The registered provider's answer for `handle`, or std::nullopt when none is
+// registered. Called from NavigationRequest::GetUrlInfo, UI thread.
+CUSTOM_BROWSER_HOOKS_EXPORT std::optional<int> IsolatedSandboxGroupFor(
+    content::NavigationHandle& handle);
 
 // ---------- Nexus guest groups ----------
 // The BrowserContext user-data keys behind nexus_guest_groups.h: the same

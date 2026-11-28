@@ -25,6 +25,7 @@
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "custom_browser/browser/nexus/nexus_test_support.h"
+#include "custom_browser/browser/nexus/panel/nexus_app_page_frame_guard.h"
 #include "custom_browser/browser/nexus/panel/nexus_parked_page_workers.h"
 #include "custom_browser/chromium_hooks/nexus_guest_groups.h"
 #include "net/base/net_errors.h"
@@ -369,6 +370,39 @@ TEST_F(NexusBackgroundPanelHostTest, GuestAttachedLaterBringsItsWorkers) {
       raw->GetInnerWebContents().back()->GetPrimaryMainFrame()->GetGlobalId());
   EXPECT_FALSE(workers->has_workers());
   EXPECT_EQ(2, changes);
+  host()->Shutdown();
+}
+
+// A worker an app page starts in the guest, and the workers it nests, do not
+// count as the parked page being needed; one the guest's own frame starts does.
+TEST_F(NexusBackgroundPanelHostTest, AppPageWorkersDoNotKeepTheParkedPage) {
+  ASSERT_TRUE(host());
+  std::unique_ptr<content::WebContents> contents = MakeContents();
+  content::WebContents* raw = contents.get();
+  AttachGuest(raw);
+  host()->Park(std::move(contents));
+  NexusParkedPageWorkers* workers = host()->parked_workers_for_testing();
+  ASSERT_TRUE(workers);
+
+  content::WebContents* guest = raw->GetInnerWebContents().front();
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      guest, GURL("https://guest.test/"));
+  content::RenderFrameHost* page =
+      content::RenderFrameHostTester::For(guest->GetPrimaryMainFrame())
+          ->AppendChild(kAppPageFrameName);
+  AppPageFrames::Note(*page, /*in_nexus_guest=*/true);
+  ASSERT_TRUE(AppPageFrames::Contains(*page));
+
+  const blink::DedicatedWorkerToken from_app_page, nested, from_guest;
+  const url::Origin origin;
+  const content::ChildProcessId process;
+  workers->OnWorkerCreated(from_app_page, process, origin, page->GetGlobalId());
+  workers->OnWorkerCreated(nested, process, origin, from_app_page);
+  EXPECT_FALSE(workers->has_workers());
+
+  workers->OnWorkerCreated(from_guest, process, origin,
+                           guest->GetPrimaryMainFrame()->GetGlobalId());
+  EXPECT_TRUE(workers->has_workers());
   host()->Shutdown();
 }
 

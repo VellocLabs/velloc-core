@@ -19,11 +19,14 @@ namespace nexus {
 
 // Casts a USER_BLOCKING priority vote for every frame of a Nexus guest page,
 // child frames included, so the runtime's, the UI's and the spawner frames'
-// renderers stay out of the OS background class while hidden or parked. (P-2)
-//
+// renderers stay out of the OS background class while hidden or parked. A
+// frame `skip_frame` answers true for gets no vote, nor do the frames below
+// it; Chromium's own votes place them. (P-2, F-42)
+
 // Contract: on the performance-manager graph's sequence (UI thread);
 // `is_guest_page` is asked on page add, on every main-frame URL change, and
 // for every page each time `subscribe_to_changes` reports a change.
+// `skip_frame` is asked when a frame would be voted for.
 class NexusGuestPriorityVoter
     : public performance_manager::execution_context_priority::PriorityVoter,
       public performance_manager::PageNodeObserver,
@@ -37,11 +40,15 @@ class NexusGuestPriorityVoter
       base::RepeatingCallback<base::CallbackListSubscription(
           base::RepeatingClosure)>;
 
+  using SkipFrameCallback = base::RepeatingCallback<bool(
+      const performance_manager::FrameNode*)>;
+
   static const char kGuestPageReason[];
 
   explicit NexusGuestPriorityVoter(
       IsGuestPageCallback is_guest_page,
-      SubscribeCallback subscribe_to_changes = SubscribeCallback());
+      SubscribeCallback subscribe_to_changes = SubscribeCallback(),
+      SkipFrameCallback skip_frame = SkipFrameCallback());
   ~NexusGuestPriorityVoter() override;
 
   NexusGuestPriorityVoter(const NexusGuestPriorityVoter&) = delete;
@@ -84,8 +91,11 @@ class NexusGuestPriorityVoter
   void VoteForFrame(const performance_manager::FrameNode* frame_node);
   void InvalidateFrame(const performance_manager::FrameNode* frame_node);
 
+  bool Skips(const performance_manager::FrameNode* frame_node) const;
+
   IsGuestPageCallback is_guest_page_;
   SubscribeCallback subscribe_to_changes_;
+  SkipFrameCallback skip_frame_;
   base::CallbackListSubscription changes_subscription_;
   raw_ptr<performance_manager::Graph> graph_ = nullptr;
   performance_manager::execution_context_priority::VotingChannel
@@ -100,6 +110,10 @@ class NexusGuestPriorityVoter
 // and not a guest of a window's page parked while the profile's runtime host
 // page is live.
 bool IsNexusGuestPage(const performance_manager::PageNode* page_node);
+
+// The production `skip_frame`: the frame is an app-page frame (F-42), which
+// runs in a renderer of its own and follows the stock visibility votes.
+bool IsAppPageFrameNode(const performance_manager::FrameNode* frame_node);
 
 // Adds a NexusGuestPriorityVoter to the performance manager's voting system.
 // No-op when the performance manager or its voting system is absent.

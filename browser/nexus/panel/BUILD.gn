@@ -17,6 +17,7 @@ source_set("background_panel_host") {
   ]
 
   deps = [
+    ":app_page_frame_guard",
     "//base",
     "//chrome/browser:browser_process",
     "//chrome/browser/profiles",
@@ -91,6 +92,7 @@ source_set("guest_priority") {
   ]
 
   deps = [
+    ":app_page_frame_guard",
     ":background_panel_host",
     ":panel_guest",
     "//components/guest_view/browser",

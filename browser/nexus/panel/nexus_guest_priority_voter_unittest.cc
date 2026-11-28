@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <optional>
+#include <set>
 
 #include "base/callback_list.h"
 #include "base/functional/bind.h"
@@ -16,6 +17,7 @@
 #include "components/performance_manager/test_support/graph_test_harness.h"
 #include "components/performance_manager/test_support/mock_graphs.h"
 #include "components/performance_manager/test_support/voting.h"
+#include "content/public/browser/browsing_instance_id.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -40,6 +42,11 @@ using DummyVoteObserver =
 // so a main-frame commit is what makes a page a guest page.
 constexpr char kGuestUrl[] = "https://guest.test/";
 constexpr char kOtherUrl[] = "https://other.test/";
+
+// Frames created in this browsing instance are skipped from the moment they
+// are added, before a test can name them.
+const content::BrowsingInstanceId kSkippedBrowsingInstance =
+    content::BrowsingInstanceId::FromUnsafeValue(4242);
 
 bool IsGuestUrl(const PageNode* page_node) {
   return page_node->GetMainFrameUrl() == GURL(kGuestUrl);
@@ -87,7 +94,25 @@ class NexusGuestPriorityVoterTest : public GraphTestHarness {
     voter_->InitializeOnGraph(graph(), observer_.BuildVotingChannel());
   }
 
+  // Installs a voter that skips the frames in `skipped_`, as the production
+  // voter skips app-page frames.
+  void InstallVoterWithSkips() {
+    voter_ = std::make_unique<NexusGuestPriorityVoter>(
+        base::BindRepeating(&IsGuestUrl),
+        NexusGuestPriorityVoter::SubscribeCallback(),
+        base::BindRepeating(
+            [](const std::set<const FrameNode*>* skipped,
+               const FrameNode* frame_node) {
+              return skipped->contains(frame_node) ||
+                     frame_node->GetBrowsingInstanceId() ==
+                         kSkippedBrowsingInstance;
+            },
+            base::Unretained(&skipped_)));
+    voter_->InitializeOnGraph(graph(), observer_.BuildVotingChannel());
+  }
+
   base::RepeatingClosureList changes_;
+  std::set<const FrameNode*> skipped_;
 
   bool HasGuestVote(const FrameNode* frame_node) const {
     return observer_.HasVote(
@@ -155,6 +180,88 @@ TEST_F(NexusGuestPriorityVoterTest, FollowsFramesAddedAndRemoved) {
   child.reset();
   EXPECT_EQ(observer_.GetVoteCount(), 1u);
   EXPECT_TRUE(HasGuestVote(mock_graph.frame.get()));
+}
+
+// An app-page frame of a guest gets no vote; the guest's other frames keep
+// theirs.
+TEST_F(NexusGuestPriorityVoterTest, SkipsAnAppPageFrameAndKeepsTheOthers) {
+  InstallVoterWithSkips();
+  MockSinglePageWithMultipleProcessesGraph mock_graph(graph());
+  skipped_.insert(mock_graph.child_frame.get());
+
+  Commit(mock_graph.page.get(), kGuestUrl);
+
+  EXPECT_EQ(observer_.GetVoteCount(), 1u);
+  EXPECT_TRUE(HasGuestVote(mock_graph.frame.get()));
+  EXPECT_FALSE(HasGuestVote(mock_graph.child_frame.get()));
+}
+
+// Frames added later below an app-page frame get no vote either, while a
+// sibling frame of the guest does.
+TEST_F(NexusGuestPriorityVoterTest, FramesAddedBelowASkippedFrameGetNoVote) {
+  InstallVoterWithSkips();
+  MockSinglePageInSingleProcessGraph mock_graph(graph());
+  Commit(mock_graph.page.get(), kGuestUrl);
+  auto page_frame = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                          mock_graph.page.get(),
+                                          mock_graph.frame.get());
+  ASSERT_EQ(observer_.GetVoteCount(), 2u);
+  skipped_.insert(page_frame.get());
+
+  auto inner = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                     mock_graph.page.get(), page_frame.get());
+  auto deeper = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                      mock_graph.page.get(), inner.get());
+  auto kernel = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                      mock_graph.page.get(),
+                                      mock_graph.frame.get());
+
+  EXPECT_FALSE(HasGuestVote(inner.get()));
+  EXPECT_FALSE(HasGuestVote(deeper.get()));
+  EXPECT_TRUE(HasGuestVote(kernel.get()));
+}
+
+// A frame already skipped when it is added to a guest page gets no vote, nor
+// does a frame added below it; a sibling frame does.
+TEST_F(NexusGuestPriorityVoterTest, AFrameSkippedOnArrivalGetsNoVote) {
+  InstallVoterWithSkips();
+  MockSinglePageInSingleProcessGraph mock_graph(graph());
+  Commit(mock_graph.page.get(), kGuestUrl);
+  ASSERT_EQ(observer_.GetVoteCount(), 1u);
+
+  auto page_frame = CreateFrameNodeAutoId(
+      mock_graph.process.get(), mock_graph.page.get(), mock_graph.frame.get(),
+      kSkippedBrowsingInstance);
+  auto inner = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                     mock_graph.page.get(), page_frame.get());
+  auto kernel = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                      mock_graph.page.get(),
+                                      mock_graph.frame.get());
+
+  EXPECT_FALSE(HasGuestVote(page_frame.get()));
+  EXPECT_FALSE(HasGuestVote(inner.get()));
+  EXPECT_TRUE(HasGuestVote(kernel.get()));
+  EXPECT_EQ(observer_.GetVoteCount(), 2u);
+}
+
+// A frame skipped from the start is never voted, even when its page becomes
+// a guest after the frame exists.
+TEST_F(NexusGuestPriorityVoterTest, ASkippedSubtreeIsNotVotedOnReclassify) {
+  InstallVoterWithSkips();
+  MockSinglePageInSingleProcessGraph mock_graph(graph());
+  auto page_frame = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                          mock_graph.page.get(),
+                                          mock_graph.frame.get());
+  auto inner = CreateFrameNodeAutoId(mock_graph.process.get(),
+                                     mock_graph.page.get(), page_frame.get());
+  skipped_.insert(page_frame.get());
+
+  Commit(mock_graph.page.get(), kGuestUrl);
+
+  EXPECT_EQ(observer_.GetVoteCount(), 1u);
+  EXPECT_TRUE(HasGuestVote(mock_graph.frame.get()));
+  EXPECT_FALSE(HasGuestVote(page_frame.get()));
+  EXPECT_FALSE(HasGuestVote(inner.get()));
 }
 
 // Navigating away from the guest drops every vote of the page.

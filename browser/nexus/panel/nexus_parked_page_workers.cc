@@ -11,6 +11,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/panel/nexus_app_page_frame_guard.h"
 
 namespace nexus {
 
@@ -144,7 +145,11 @@ bool NexusParkedPageWorkers::IsFrameOfParkedPage(
   content::RenderFrameHost* frame = content::RenderFrameHost::FromID(id);
   content::WebContents* contents =
       frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
-  return contents && contents->GetOuterWebContents() == web_contents();
+  // An app page's workers run in its own renderer and serve only the page,
+  // which is released while hidden (F-42): they need nothing of the parked
+  // page.
+  return contents && contents->GetOuterWebContents() == web_contents() &&
+         !AppPageFrames::Contains(*frame);
 }
 
 }  // namespace nexus

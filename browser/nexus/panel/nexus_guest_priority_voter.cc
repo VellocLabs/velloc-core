@@ -14,7 +14,10 @@
 #include "components/performance_manager/public/graph/graph.h"
 #include "components/performance_manager/public/performance_manager.h"
 #include "components/guest_view/browser/guest_view_base.h"
+#include "components/performance_manager/public/render_frame_host_proxy.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "custom_browser/browser/nexus/panel/nexus_app_page_frame_guard.h"
 #include "custom_browser/browser/nexus/panel/nexus_background_panel_host.h"
 #include "custom_browser/browser/nexus/panel/nexus_panel_guest.h"
 
@@ -37,9 +40,15 @@ const char NexusGuestPriorityVoter::kGuestPageReason[] = "Nexus guest page.";
 
 NexusGuestPriorityVoter::NexusGuestPriorityVoter(
     IsGuestPageCallback is_guest_page,
-    SubscribeCallback subscribe_to_changes)
+    SubscribeCallback subscribe_to_changes,
+    SkipFrameCallback skip_frame)
     : is_guest_page_(std::move(is_guest_page)),
-      subscribe_to_changes_(std::move(subscribe_to_changes)) {}
+      subscribe_to_changes_(std::move(subscribe_to_changes)),
+      skip_frame_(std::move(skip_frame)) {}
+
+bool NexusGuestPriorityVoter::Skips(const FrameNode* frame_node) const {
+  return skip_frame_ && skip_frame_.Run(frame_node);
+}
 
 NexusGuestPriorityVoter::~NexusGuestPriorityVoter() = default;
 
@@ -100,9 +109,16 @@ void NexusGuestPriorityVoter::OnBeforeFrameNodeAdded(
     const PageNode* pending_page_node,
     const performance_manager::ProcessNode* pending_process_node,
     const FrameNode* pending_parent_or_outer_document_or_embedder) {
-  if (guest_pages_.contains(pending_page_node)) {
-    VoteForFrame(frame_node);
+  if (!guest_pages_.contains(pending_page_node)) {
+    return;
   }
+  for (const FrameNode* ancestor = pending_parent_frame_node; ancestor;
+       ancestor = ancestor->GetParentFrameNode()) {
+    if (Skips(ancestor)) {
+      return;
+    }
+  }
+  VoteForFrame(frame_node);
 }
 
 void NexusGuestPriorityVoter::OnBeforeFrameNodeRemoved(
@@ -129,6 +145,9 @@ void NexusGuestPriorityVoter::UpdatePage(const PageNode* page_node) {
 }
 
 void NexusGuestPriorityVoter::VoteForSubtree(const FrameNode* frame_node) {
+  if (Skips(frame_node)) {
+    return;
+  }
   VoteForFrame(frame_node);
   for (const FrameNode* child_frame_node : frame_node->GetChildFrameNodes()) {
     VoteForSubtree(child_frame_node);
@@ -143,7 +162,7 @@ void NexusGuestPriorityVoter::InvalidateSubtree(const FrameNode* frame_node) {
 }
 
 void NexusGuestPriorityVoter::VoteForFrame(const FrameNode* frame_node) {
-  if (!voted_frames_.insert(frame_node).second) {
+  if (Skips(frame_node) || !voted_frames_.insert(frame_node).second) {
     return;
   }
   voting_channel_.SubmitVote(
@@ -171,6 +190,12 @@ bool IsNexusGuestPage(const PageNode* page_node) {
                        guest->owner_web_contents());
 }
 
+bool IsAppPageFrameNode(const FrameNode* frame_node) {
+  content::RenderFrameHost* frame =
+      frame_node->GetRenderFrameHostProxy().Get();
+  return frame && AppPageFrames::Contains(*frame);
+}
+
 void InstallNexusGuestPriorityVoter() {
   if (!performance_manager::PerformanceManager::IsAvailable()) {
     return;
@@ -182,7 +207,8 @@ void InstallNexusGuestPriorityVoter() {
   }
   voting_system->AddPriorityVoter<NexusGuestPriorityVoter>(
       base::BindRepeating(&IsNexusGuestPage),
-      base::BindRepeating(&NexusBackgroundPanelHost::AddStateChangedCallback));
+      base::BindRepeating(&NexusBackgroundPanelHost::AddStateChangedCallback),
+      base::BindRepeating(&IsAppPageFrameNode));
 }
 
 void NexusGuestPriorityLifecycleHook::PreMainMessageLoopRun() {
